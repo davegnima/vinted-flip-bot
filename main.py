@@ -442,6 +442,15 @@ def scrape_vinted_listing(url):
                 clean_urls.append(u)
         result["photo_urls"] = clean_urls[:MAX_GALLERY_PHOTOS]
 
+        log.info(
+            "SCRAPING %s -> trovate %d foto totali, usate %d (limite %d):\n%s",
+            url,
+            len(clean_urls),
+            len(result["photo_urls"]),
+            MAX_GALLERY_PHOTOS,
+            "\n".join(f"  - {u}" for u in result["photo_urls"]) or "  (nessuna foto trovata)",
+        )
+
         size_match = re.search(r'"size_title"\s*:\s*"([^"]+)"', html)
         if size_match:
             result["size"] = size_match.group(1)
@@ -475,6 +484,20 @@ def download_image_bytes(url):
 # ---------------------------------------------------------------------------
 
 def call_gemini_vision(photos_bytes_list, listing_info):
+    user_text_for_log = (
+        f"Titolo annuncio: {listing_info.get('title')}\n"
+        f"Brand dichiarato: {listing_info.get('brand')}\n"
+        f"Prezzo richiesto: {listing_info.get('price')} EUR\n"
+        f"Taglia: {listing_info.get('size') or 'non disponibile'}\n"
+        f"Condizione dichiarata: {listing_info.get('condition') or 'non disponibile'}\n"
+        f"Descrizione venditore: {listing_info.get('description') or 'non disponibile'}\n"
+    )
+    log.info(
+        "PROMPT TESTUALE -> GEMINI (%d foto allegate):\n%s",
+        len(photos_bytes_list),
+        user_text_for_log,
+    )
+
     parts = [{"text": (
         f"Titolo annuncio: {listing_info.get('title')}\n"
         f"Brand dichiarato: {listing_info.get('brand')}\n"
@@ -531,6 +554,12 @@ def call_claude_oracle(photos_bytes_list, listing_info, gemini_analysis):
         f"--- ANALISI VISIVA PRELIMINARE (Gemini) ---\n{gemini_analysis}\n"
         "--- FINE ANALISI VISIVA ---\n\n"
         "Produci ora il report Vinted Flip Oracle Pro completo, sintetico come da istruzioni."
+    )
+
+    log.info(
+        "PROMPT TESTUALE -> CLAUDE (%d foto allegate):\n%s",
+        len(photos_bytes_list),
+        user_text,
     )
 
     content = [{"type": "text", "text": user_text}]
@@ -604,10 +633,25 @@ def process_listing(parsed, url, cover_photo_bytes):
         )
         return
 
-    log.info("Foto raccolte per analisi: %d", len(photo_bytes_list))
+    log.info(
+        "Foto raccolte per analisi: %d (fonte: %s)",
+        len(photo_bytes_list),
+        "scraping Vinted" if url and len(photo_bytes_list) > 1 else "fallback copertina Telegram",
+    )
 
     gemini_analysis = call_gemini_vision(photo_bytes_list, listing_info)
+    log.info(
+        "RISPOSTA GEMINI (%d foto inviate):\n%s",
+        len(photo_bytes_list),
+        gemini_analysis,
+    )
+
     final_report = call_claude_oracle(photo_bytes_list, listing_info, gemini_analysis)
+    log.info(
+        "RISPOSTA CLAUDE (%d foto inviate):\n%s",
+        len(photo_bytes_list),
+        final_report,
+    )
 
     header = (
         f"🆕 *{listing_info.get('title')}*\n"
