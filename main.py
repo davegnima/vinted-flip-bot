@@ -1,57 +1,80 @@
 """
-Vinted Flip Oracle Bot
-=======================
+Vinted Flip Oracle Bot (versione Telethon / userbot)
+======================================================
+Perche' questa versione: la Telegram Bot API non consegna ai bot i
+messaggi scritti da ALTRI bot (e' un limite di piattaforma, non
+configurabile). "Vinted Tracker" e' un bot, quindi il tuo bot "Vinted
+Notification" non poteva vederne i messaggi nemmeno essendo nello stesso
+gruppo. La soluzione e' usare un USERBOT: uno script che si autentica
+con il TUO account Telegram personale (numero di telefono), che vede
+tutto cio' che vede un utente normale -- bot compresi.
+
 Pipeline:
-  1. Polling sul bot Telegram "Vinted Notification" (Bot API, no userbot)
-  2. Quando arriva un messaggio da "Vinted Tracker" nel gruppo, estrae
+  1. Telethon (userbot, loggato col tuo numero) ascolta i nuovi messaggi
+     nel gruppo/forum "Dadegnima, Vinted Notification e Vinted Tracker"
+  2. Quando arriva un messaggio da "Vinted Tracker", estrae
      titolo / prezzo / brand / URL annuncio
-  3. Scraping della pagina Vinted per recuperare TUTTE le foto della galleria
-     + taglia/condizione/descrizione (se disponibili)
-  4. Gemini 3 Flash: analisi visiva pura (identificazione, autenticità,
-     condizione) -- NESSUN prezzo, NESSUna ricerca web
+  3. Scraping della pagina Vinted per recuperare TUTTE le foto della
+     galleria + taglia/condizione/descrizione (se disponibili)
+  4. Gemini 3 Flash: analisi visiva pura (identificazione, autenticita',
+     condizione) -- NESSUN prezzo, NESSUNA ricerca web
   5. Claude Sonnet 4.6: usa l'analisi di Gemini + foto + dati annuncio,
      fa ricerca web (tool web_search) e produce il report Vinted Flip
-     Oracle Pro completo (11 sezioni, ma istruito a scrivere sintetico)
-  6. Il risultato viene inviato in CHAT PRIVATA con te (non nel gruppo)
+     Oracle Pro completo (11 sezioni, sintetico)
+  6. L'invio del report avviene con la Bot API normale (il bot PUO'
+     sempre scrivere a una chat privata dove tu gli hai scritto prima
+     -- l'invio non e' soggetto al limite "bot non vede altri bot")
 
 Variabili d'ambiente richieste (mai scritte nel codice):
-  TELEGRAM_BOT_TOKEN     - token del bot "Vinted Notification"
+  TELEGRAM_API_ID        - da my.telegram.org (vedi DEPLOY_RAILWAY.md)
+  TELEGRAM_API_HASH      - da my.telegram.org
+  TELEGRAM_PHONE         - il tuo numero con prefisso internazionale (+39...)
+  TELEGRAM_SESSION_STRING - generata una tantum con generate_session.py,
+                            permette il login senza richiedere il codice
+                            SMS ad ogni riavvio del bot
+  TELEGRAM_GROUP_ID      - id del gruppo/forum da ascoltare (-100...)
+  TELEGRAM_BOT_TOKEN     - token del bot "Vinted Notification" (per INVIARE
+                           i report finali in chat privata)
   TELEGRAM_OWNER_CHAT_ID - il tuo chat id personale (dove ricevere i report)
-  TELEGRAM_GROUP_ID      - id del gruppo "Dadegnima, Vinted Notific..." da ascoltare
   ANTHROPIC_API_KEY      - chiave API Claude
   GEMINI_API_KEY         - chiave API Gemini
 
 Note operative:
-  - Usa LONG POLLING (getUpdates), non webhook: piu' semplice da hostare
-    su Railway/Render senza dominio pubblico.
   - Lo scraping Vinted e' il punto piu' fragile: se Vinted cambia markup
-    o blocca le richieste, la funzione scrape_vinted_listing() va aggiornata.
-    Il bot comunque NON si blocca: se lo scraping fallisce, usa solo la
-    foto di copertina del messaggio Telegram come fallback.
+    o blocca le richieste, la funzione scrape_vinted_listing() va
+    aggiornata. Il bot comunque NON si blocca: se lo scraping fallisce,
+    usa solo la foto di copertina del messaggio come fallback.
+  - Con i Topics attivi sul gruppo, ogni messaggio porta anche un
+    reply_to_top_id (l'ID del topic): non serve filtrarlo, ascoltiamo
+    tutto il gruppo indipendentemente dal topic specifico.
 """
 
 import os
 import re
-import time
+import asyncio
 import base64
 import logging
 import traceback
-from io import BytesIO
 
 import requests
+from telethon import TelegramClient, events
+from telethon.sessions import StringSession
 
 # ---------------------------------------------------------------------------
 # CONFIGURAZIONE
 # ---------------------------------------------------------------------------
 
+TELEGRAM_API_ID = int(os.environ["TELEGRAM_API_ID"])
+TELEGRAM_API_HASH = os.environ["TELEGRAM_API_HASH"]
+TELEGRAM_SESSION_STRING = os.environ["TELEGRAM_SESSION_STRING"]
+TELEGRAM_GROUP_ID = int(os.environ["TELEGRAM_GROUP_ID"])
+
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_OWNER_CHAT_ID = os.environ["TELEGRAM_OWNER_CHAT_ID"]
-TELEGRAM_GROUP_ID = os.environ["TELEGRAM_GROUP_ID"]
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
-TELEGRAM_FILE_API = f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}"
 
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 GEMINI_API_URL = (
@@ -62,8 +85,8 @@ GEMINI_API_URL = (
 CLAUDE_MODEL = "claude-sonnet-4-6"
 MAX_GALLERY_PHOTOS = 10  # tetto massimo foto da inviare ai modelli (costo)
 
-POLL_INTERVAL_SECONDS = 4
-STATE_FILE = "last_update_id.txt"
+# Adatta questa stringa se il nome/username esatto del bot terzo e' diverso
+VINTED_TRACKER_NAME_HINTS = ("vinted", "tracker")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -73,8 +96,7 @@ log = logging.getLogger("vinted_flip_bot")
 
 
 # ---------------------------------------------------------------------------
-# VINTED FLIP ORACLE PRO -- system prompt (versione integrale, con istruzione
-# aggiuntiva di sintesi e di USARE l'analisi visiva fornita da Gemini)
+# VINTED FLIP ORACLE PRO -- system prompt (identico alla versione precedente)
 # ---------------------------------------------------------------------------
 
 VINTED_FLIP_ORACLE_PRO_SYSTEM_PROMPT = r"""
@@ -248,67 +270,25 @@ REGOLE IMPORTANTI:
 
 
 # ---------------------------------------------------------------------------
-# UTILS: STATO (per non rielaborare update gia' visti se il processo riparte)
+# TELEGRAM BOT API HELPERS (solo per INVIARE i report finali)
 # ---------------------------------------------------------------------------
-
-def load_last_update_id():
-    try:
-        with open(STATE_FILE, "r") as f:
-            return int(f.read().strip())
-    except (FileNotFoundError, ValueError):
-        return 0
-
-
-def save_last_update_id(update_id):
-    with open(STATE_FILE, "w") as f:
-        f.write(str(update_id))
-
-
-# ---------------------------------------------------------------------------
-# TELEGRAM HELPERS
-# ---------------------------------------------------------------------------
-
-def telegram_get_updates(offset):
-    resp = requests.get(
-        f"{TELEGRAM_API}/getUpdates",
-        params={"offset": offset, "timeout": 30, "allowed_updates": '["message"]'},
-        timeout=40,
-    )
-    resp.raise_for_status()
-    return resp.json().get("result", [])
-
-
-def telegram_get_file_path(file_id):
-    resp = requests.get(f"{TELEGRAM_API}/getFile", params={"file_id": file_id}, timeout=20)
-    resp.raise_for_status()
-    return resp.json()["result"]["file_path"]
-
-
-def telegram_download_file_bytes(file_id):
-    file_path = telegram_get_file_path(file_id)
-    url = f"{TELEGRAM_FILE_API}/{file_path}"
-    resp = requests.get(url, timeout=30)
-    resp.raise_for_status()
-    return resp.content
-
 
 def telegram_send_message(chat_id, text):
     """Invia un messaggio, spezzandolo automaticamente se supera 4096 caratteri."""
-    MAX_LEN = 4000  # margine di sicurezza sotto il limite reale di 4096
+    MAX_LEN = 4000
     chunks = []
     remaining = text
     while remaining:
         if len(remaining) <= MAX_LEN:
             chunks.append(remaining)
             break
-        # spezza preferibilmente su un doppio newline vicino al limite
         split_at = remaining.rfind("\n\n", 0, MAX_LEN)
         if split_at == -1:
             split_at = MAX_LEN
         chunks.append(remaining[:split_at])
         remaining = remaining[split_at:]
 
-    for i, chunk in enumerate(chunks):
+    for chunk in chunks:
         resp = requests.post(
             f"{TELEGRAM_API}/sendMessage",
             json={
@@ -320,13 +300,11 @@ def telegram_send_message(chat_id, text):
             timeout=20,
         )
         if not resp.ok:
-            # fallback senza markdown se il parsing markdown fallisce
             requests.post(
                 f"{TELEGRAM_API}/sendMessage",
                 json={"chat_id": chat_id, "text": chunk, "disable_web_page_preview": True},
                 timeout=20,
             )
-        time.sleep(0.4)  # piccola pausa per non sforare rate limit
 
 
 def telegram_send_photo(chat_id, photo_bytes, caption=None):
@@ -349,23 +327,18 @@ BRAND_REGEX = re.compile(r"Brand\s*:\s*(.+)", re.IGNORECASE)
 
 
 def parse_vinted_tracker_message(text):
-    """Estrae titolo, prezzo, brand, url dal testo del messaggio del bot terzo.
+    """Estrae titolo, prezzo, brand dal testo del messaggio del bot terzo.
 
     Formato osservato:
         📌 <titolo>
         💰 Price : <prezzo> EUR
         🏷️ Brand : <brand>
         <hashtags>
-    L'URL spesso arriva in un messaggio separato successivo con un bottone
-    "URL" (inline keyboard), quindi viene gestito separatamente in
-    extract_url_from_update().
     """
     lines = [l.strip() for l in text.splitlines() if l.strip()]
     title = None
     for line in lines:
-        # la prima riga "pulita" (senza emoji note Price/Brand) e' il titolo
         if not line.lower().startswith(("price", "brand")) and "price" not in line.lower():
-            # rimuove eventuale pin emoji iniziale
             cleaned = line.lstrip("📌 ").strip()
             if cleaned and title is None:
                 title = cleaned
@@ -381,21 +354,9 @@ def parse_vinted_tracker_message(text):
     }
 
 
-def extract_url_from_message(message):
-    """Cerca un URL Vinted nel testo o nei bottoni inline del messaggio."""
-    text = message.get("text") or message.get("caption") or ""
-    match = URL_REGEX.search(text)
-    if match:
-        return match.group(0)
-
-    # alcuni bot mettono l'URL in un inline keyboard (bottone "URL")
-    reply_markup = message.get("reply_markup", {})
-    for row in reply_markup.get("inline_keyboard", []):
-        for button in row:
-            url = button.get("url", "")
-            if "vinted." in url:
-                return url
-    return None
+def extract_url_from_text(text):
+    match = URL_REGEX.search(text or "")
+    return match.group(0) if match else None
 
 
 # ---------------------------------------------------------------------------
@@ -414,11 +375,6 @@ VINTED_HEADERS = {
 def scrape_vinted_listing(url):
     """Tenta di recuperare tutte le foto della galleria + dati extra
     (taglia, condizione, descrizione) dalla pagina pubblica Vinted.
-
-    Ritorna un dict: {"photo_urls": [...], "size": str|None,
-                       "condition": str|None, "description": str|None}
-    In caso di fallimento ritorna un dict con liste/valori vuoti: il
-    chiamante deve gestire il fallback alla foto di copertina Telegram.
     """
     result = {"photo_urls": [], "size": None, "condition": None, "description": None}
     try:
@@ -426,13 +382,10 @@ def scrape_vinted_listing(url):
         resp.raise_for_status()
         html = resp.text
 
-        # le immagini della galleria Vinted sono tipicamente su un CDN
-        # con pattern .../images/.... .jpg|jpeg|png; deduplichiamo
         photo_urls = re.findall(
             r'https://images\d?\.vinted\.net/[^\s"\'\\]+\.(?:jpe?g|png|webp)',
             html,
         )
-        # rimuove eventuali thumbnail duplicate piccole, mantiene ordine
         seen = set()
         clean_urls = []
         for u in photo_urls:
@@ -499,13 +452,7 @@ def call_gemini_vision(photos_bytes_list, listing_info):
     )
 
     parts = [{"text": (
-        f"Titolo annuncio: {listing_info.get('title')}\n"
-        f"Brand dichiarato: {listing_info.get('brand')}\n"
-        f"Prezzo richiesto: {listing_info.get('price')} EUR\n"
-        f"Taglia: {listing_info.get('size') or 'non disponibile'}\n"
-        f"Condizione dichiarata: {listing_info.get('condition') or 'non disponibile'}\n"
-        f"Descrizione venditore: {listing_info.get('description') or 'non disponibile'}\n\n"
-        "Analizza le foto allegate secondo le tue istruzioni."
+        user_text_for_log + "\nAnalizza le foto allegate secondo le tue istruzioni."
     )}]
 
     for img_bytes in photos_bytes_list:
@@ -594,8 +541,6 @@ def call_claude_oracle(photos_bytes_list, listing_info, gemini_analysis):
     resp.raise_for_status()
     data = resp.json()
 
-    # Claude con tool web_search puo' restituire piu' blocchi (testo + tool_use
-    # + tool_result intermedi gia' risolti server-side); prendiamo solo i testi.
     text_blocks = [b["text"] for b in data.get("content", []) if b.get("type") == "text"]
     return "\n".join(text_blocks) if text_blocks else "[Nessun testo restituito da Claude]"
 
@@ -605,6 +550,10 @@ def call_claude_oracle(photos_bytes_list, listing_info, gemini_analysis):
 # ---------------------------------------------------------------------------
 
 def process_listing(parsed, url, cover_photo_bytes):
+    """Funzione sincrona (bloccante): viene lanciata in un thread separato
+    dall'event handler asincrono di Telethon, per non bloccare il loop
+    degli eventi mentre aspettiamo scraping/Gemini/Claude (che possono
+    richiedere fino a un minuto)."""
     listing_info = dict(parsed)
     listing_info["url"] = url
 
@@ -621,7 +570,6 @@ def process_listing(parsed, url, cover_photo_bytes):
             if img:
                 photo_bytes_list.append(img)
 
-    # fallback: se lo scraping non ha prodotto foto, usa la copertina Telegram
     if not photo_bytes_list and cover_photo_bytes:
         photo_bytes_list = [cover_photo_bytes]
 
@@ -640,18 +588,10 @@ def process_listing(parsed, url, cover_photo_bytes):
     )
 
     gemini_analysis = call_gemini_vision(photo_bytes_list, listing_info)
-    log.info(
-        "RISPOSTA GEMINI (%d foto inviate):\n%s",
-        len(photo_bytes_list),
-        gemini_analysis,
-    )
+    log.info("RISPOSTA GEMINI (%d foto inviate):\n%s", len(photo_bytes_list), gemini_analysis)
 
     final_report = call_claude_oracle(photo_bytes_list, listing_info, gemini_analysis)
-    log.info(
-        "RISPOSTA CLAUDE (%d foto inviate):\n%s",
-        len(photo_bytes_list),
-        final_report,
-    )
+    log.info("RISPOSTA CLAUDE (%d foto inviate):\n%s", len(photo_bytes_list), final_report)
 
     header = (
         f"🆕 *{listing_info.get('title')}*\n"
@@ -660,79 +600,77 @@ def process_listing(parsed, url, cover_photo_bytes):
         f"{'—'*20}\n"
     )
 
-    # invia prima la foto di copertina per contesto visivo immediato
     telegram_send_photo(TELEGRAM_OWNER_CHAT_ID, photo_bytes_list[0], caption=listing_info.get("title"))
     telegram_send_message(TELEGRAM_OWNER_CHAT_ID, header + final_report)
 
 
 # ---------------------------------------------------------------------------
-# LOOP DI POLLING
+# USERBOT TELETHON -- ricezione messaggi dal gruppo (vede anche i bot)
 # ---------------------------------------------------------------------------
 
-def handle_update(update):
-    message = update.get("message")
-    if not message:
-        return
+client = TelegramClient(
+    StringSession(TELEGRAM_SESSION_STRING),
+    TELEGRAM_API_ID,
+    TELEGRAM_API_HASH,
+)
 
-    chat_id = str(message.get("chat", {}).get("id"))
-    if chat_id != str(TELEGRAM_GROUP_ID):
-        return  # ignora messaggi fuori dal gruppo monitorato
 
-    sender = message.get("from", {})
-    sender_name = (sender.get("username") or sender.get("first_name") or "").lower()
-
-    # filtriamo solo i messaggi che arrivano dal bot "Vinted Tracker"
-    # adatta questa stringa se il nome/username esatto e' diverso
-    if "vinted" not in sender_name and "tracker" not in sender_name:
-        return
-
-    text = message.get("text") or message.get("caption") or ""
-    if not text.strip():
-        return
-
-    parsed = parse_vinted_tracker_message(text)
-    url = extract_url_from_message(message)
-
-    cover_photo_bytes = None
-    photos = message.get("photo")
-    if photos:
-        # Telegram manda piu' risoluzioni della stessa foto; prendi la piu' grande
-        largest = max(photos, key=lambda p: p.get("file_size", 0))
-        cover_photo_bytes = telegram_download_file_bytes(largest["file_id"])
-
-    log.info("Nuovo annuncio rilevato: %s | url=%s", parsed.get("title"), url)
-
+@client.on(events.NewMessage(chats=TELEGRAM_GROUP_ID))
+async def on_new_message(event):
     try:
-        process_listing(parsed, url, cover_photo_bytes)
+        sender = await event.get_sender()
+        sender_name = ((getattr(sender, "username", None) or "") + " " +
+                        (getattr(sender, "first_name", None) or "")).lower()
+
+        # filtriamo solo i messaggi che arrivano dal bot "Vinted Tracker"
+        if not any(hint in sender_name for hint in VINTED_TRACKER_NAME_HINTS):
+            return
+
+        text = event.message.message or ""
+        if not text.strip():
+            return
+
+        parsed = parse_vinted_tracker_message(text)
+        url = extract_url_from_text(text)
+
+        # se l'URL non e' nel testo, alcuni bot lo mettono in un bottone
+        # inline -- Telethon lo esp one nei bottoni del messaggio (event.message.buttons)
+        if not url and event.message.buttons:
+            for row in event.message.buttons:
+                for button in row:
+                    btn_url = getattr(button, "url", None) or ""
+                    if "vinted." in btn_url:
+                        url = btn_url
+                        break
+
+        cover_photo_bytes = None
+        if event.message.photo:
+            cover_photo_bytes = await event.message.download_media(bytes)
+
+        log.info("Nuovo annuncio rilevato: %s | url=%s", parsed.get("title"), url)
+
+        # process_listing e' bloccante (richieste HTTP sincrone): la
+        # eseguiamo in un thread separato per non bloccare il loop asyncio
+        # di Telethon mentre aspettiamo le risposte di Gemini/Claude.
+        await asyncio.to_thread(process_listing, parsed, url, cover_photo_bytes)
+
     except Exception:
         log.error("Errore nella pipeline:\n%s", traceback.format_exc())
-        telegram_send_message(
-            TELEGRAM_OWNER_CHAT_ID,
-            f"⚠️ Errore durante la valutazione di '{parsed.get('title')}'. "
-            f"Controlla i log.",
-        )
-
-
-def main():
-    log.info("Vinted Flip Oracle Bot avviato. In ascolto sul gruppo %s", TELEGRAM_GROUP_ID)
-    offset = load_last_update_id()
-
-    while True:
         try:
-            updates = telegram_get_updates(offset)
-            for update in updates:
-                offset = update["update_id"] + 1
-                save_last_update_id(offset)
-                handle_update(update)
-        except requests.exceptions.RequestException:
-            log.warning("Errore di rete nel polling, ritento:\n%s", traceback.format_exc())
-            time.sleep(5)
+            telegram_send_message(
+                TELEGRAM_OWNER_CHAT_ID,
+                "⚠️ Errore durante la valutazione di un nuovo annuncio. Controlla i log.",
+            )
         except Exception:
-            log.error("Errore inatteso nel loop principale:\n%s", traceback.format_exc())
-            time.sleep(5)
+            pass
 
-        time.sleep(POLL_INTERVAL_SECONDS)
+
+async def main():
+    log.info("Vinted Flip Oracle Bot (Telethon) avviato. In ascolto sul gruppo %s", TELEGRAM_GROUP_ID)
+    await client.start()
+    await client.run_until_disconnected()
 
 
 if __name__ == "__main__":
-    main()
+    with client:
+        client.loop.run_until_complete(main())
