@@ -140,7 +140,7 @@ Rispondi ESCLUSIVAMENTE con un oggetto JSON valido (nessun testo prima o dopo, n
     "brand_visibile": "...",
     "categoria_capo": "Es. T-shirt, Borsa, Giacca",
     "modello_specifico": "Se riconoscibile. Altrimenti vuoto.",
-    "taglia_visibile": "..."
+    "query_di_ricerca_ideale": "Stringa PERFETTA (max 6 parole) per cercare questo pezzo esatto online. Elimina parole inutili (es. 'cute', 'jogging'). Es: 'Marni abito floreale', 'Miu Miu borsa matelasse'."
   },
   "condizione_visibile": {
     "stato_generale": "Nuovo / Ottimo / Usato / Da riparare",
@@ -166,10 +166,10 @@ Rispondi ESCLUSIVAMENTE con un oggetto JSON valido (nessun testo prima o dopo, n
 }
 
 REGOLE CRITICHE:
-1. NON trascrivere le etichette parola per parola. Sintetizza la loro correttezza nel campo 'etichette_e_cuciture'.
-2. Se un logo non corrisponde al brand dichiarato o ha font palesemente errati, segnalalo subito in 'fake_flags_o_incongruenze'.
+1. NON trascrivere le etichette parola per parola. Sintetizza la correttezza nel campo 'etichette_e_cuciture'.
+2. Se un logo non corrisponde al brand o ha font errati, segnalalo in 'fake_flags_o_incongruenze'.
 3. Un pattern generico senza etichette NON prova l'autenticità: usa 'ASSENZA TOTALE DI PROVE'.
-4. "verdetto_grezzo" DEVE ESSERE 'NON COMPRARE' se rilevi buchi, macchie gravi, o se il legit check è 'Probabilmente falso'.
+4. "verdetto_grezzo" = NON COMPRARE se rilevi buchi, macchie gravi, o se è 'Probabilmente falso'.
 5. Rispettare i limiti di parole è TASSATIVO per ragioni di sistema.
 """.strip()
 
@@ -434,26 +434,15 @@ def _serper_scrape_page(url, max_chars=2500):
     except: return None
 
 def search_comps_serper(brand, modello, categoria):
-    # Uniamo solo i pezzi non vuoti
-    pezzi_specifici = [p for p in [brand, modello, categoria] if p]
-    query_specifica = " ".join(pezzi_specifici).strip()
-
-    # FILTRO ANTI-BROAD: Se la query è composta SOLO dal brand (es. "Miu Miu"), è inutile.
-    if not query_specifica or query_specifica.lower() == (brand or "").strip().lower():
-        return "RICERCA WEB: non eseguita (query troppo generica, manca categoria/modello e il titolo è vuoto)."
+    query_specifica = f"{brand} {modello} {categoria}".strip()
+    if not query_specifica: return "RICERCA WEB: non eseguita per mancanza dati."
 
     def esegui_ricerca(query_da_cercare):
-        # Togliamo il brand dalla query per Vinted/eBay per non sballare gli URL
-        resto_della_query = query_da_cercare
-        if brand:
-            resto_della_query = re.compile(re.escape(brand), re.IGNORECASE).sub("", query_da_cercare).strip()
-            
-        vinted_url, vinted_e_per_id = build_vinted_search_url(brand, resto_della_query)
-        ebay_url = search_comps_ebay_sold(brand, resto_della_query, "")
-        
+        vinted_url, vinted_e_per_id = build_vinted_search_url(brand, query_da_cercare.replace(brand, "").strip())
+        ebay_url = search_comps_ebay_sold(brand, query_da_cercare.replace(brand, "").strip(), "")
         serper_queries = [
             ("VESTIAIRE COLLECTIVE", f"{query_da_cercare} site:vestiairecollective.com"),
-            ("GOOGLE GENERICO", f"{query_da_cercare} prezzo usato"),
+            ("GOOGLE GENERICO", f"{query_da_cercare} prezzo valore usato"),
         ]
 
         results_by_label = {}
@@ -475,33 +464,6 @@ def search_comps_serper(brand, modello, categoria):
                     else: results_by_label[label] = "Fallita"
         return results_by_label
 
-    # 1. TENTATIVO CON QUERY SPECIFICA
-    log.info("🔎 Avvio ricerca Serper Specifica: '%s'", query_specifica)
-    risultati = esegui_ricerca(query_specifica)
-    fallimento_totale = all(any(m in v for m in ("Nessun", "Fallita")) for v in risultati.values())
-
-    # 2. TENTATIVO CON QUERY LARGA (Fallback Emergenza se non trova il modello preciso)
-    query_usata = query_specifica
-    avviso = ""
-    if fallimento_totale and modello:
-        pezzi_larghi = [p for p in [brand, categoria] if p]
-        query_larga = " ".join(pezzi_larghi).strip()
-        
-        # Facciamo la ricerca larga SOLO se non è ridotta al solo brand
-        if query_larga.lower() != (brand or "").strip().lower():
-            log.info("⚠️ Ricerca specifica fallita. Avvio ricerca WEB Larga: '%s'", query_larga)
-            risultati_larghi = esegui_ricerca(query_larga)
-            
-            # Usiamo i risultati larghi solo se hanno effettivamente trovato qualcosa
-            if not all(any(m in v for m in ("Nessun", "Fallita")) for v in risultati_larghi.values()):
-                risultati = risultati_larghi
-                query_usata = query_larga
-                avviso = "⚠️ NOTA: Ricerca di emergenza larga (il modello specifico non ha dato risultati)."
-
-    lines = [f"RICERCA WEB (base: '{query_usata}'):"]
-    if avviso: lines.append(avviso)
-    for label, res in risultati.items(): lines.append(f"\n📍 FONTE: {label}\n{res}")
-    return "\n".join(lines)
     # 1. TENTATIVO CON QUERY SPECIFICA
     log.info("🔎 Avvio ricerca Serper Specifica: '%s'", query_specifica)
     risultati = esegui_ricerca(query_specifica)
@@ -537,18 +499,28 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
         ident = gemini_data.get("identificazione", {})
         
         brand_per_ricerca = ident.get("brand_visibile") or listing_info.get("brand") or ""
-        categoria_per_ricerca = ident.get("categoria_capo") or ""
-        modello_per_ricerca = ident.get("modello_specifico") or ""
+        
+        # USA LA MENTE DI GEMINI: prendiamo la sua stringa perfetta!
+        query_ideale = ident.get("query_di_ricerca_ideale", "").strip()
+        
+        if query_ideale:
+            # Se Gemini ci ha fornito la stringa magica, usiamo quella
+            modello_per_ricerca = query_ideale
+            categoria_per_ricerca = ""  # Svuotiamo la categoria perché è già inclusa nella query_ideale
+        else:
+            # Fallback se Gemini non ha generato la query
+            categoria_per_ricerca = ident.get("categoria_capo") or ""
+            modello_per_ricerca = ident.get("modello_specifico") or ""
             
     except Exception:
         brand_per_ricerca = listing_info.get("brand") or ""
         modello_per_ricerca = ""
         categoria_per_ricerca = ""
 
-    # FALLBACK INTELLIGENTE: Se Gemini non ha estratto categoria/modello, usiamo il titolo!
+    # FALLBACK INTELLIGENTE: Se Gemini non ha estratto nulla, usiamo il titolo dell'annuncio
     if not categoria_per_ricerca and not modello_per_ricerca:
         titolo_annuncio = listing_info.get("title", "")
-        # Togliamo il brand dal titolo per evitare ricerche goffe tipo "Miu Miu Jogging miu miu"
+        # Togliamo il brand dal titolo per evitare ripetizioni
         if brand_per_ricerca:
             pattern_brand = re.compile(re.escape(brand_per_ricerca), re.IGNORECASE)
             titolo_annuncio = pattern_brand.sub("", titolo_annuncio).strip()
