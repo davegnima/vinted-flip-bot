@@ -437,7 +437,7 @@ def download_image_bytes(url, referer="[https://www.vinted.it/](https://www.vint
 
 def optimize_image_bytes(img_bytes, max_size=512):
     """Ridimensiona l'immagine per farla rientrare nella fascia di costo minima
-    di Gemini (~84 token invece di ~258) mantenendo intatta la leggibilità per l'AI."""
+    di Gemini (~84 token invece di ~258) mantenendo intatta la leggibilita' per l'AI."""
     try:
         img = Image.open(BytesIO(img_bytes))
         img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
