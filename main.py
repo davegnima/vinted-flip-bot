@@ -110,19 +110,27 @@ Non confermi l'intuizione dell'utente. Lo proteggi da fake, margini illusori, pr
 
 # INPUT SPECIALE IN QUESTA PIPELINE AUTOMATICA
 
-In questa specifica chiamata riceverai, oltre alle foto e ai dati dell'annuncio, anche un blocco "ANALISI VISIVA PRELIMINARE (Gemini)" già prodotto da un altro modello specializzato in visione. Quel blocco copre identificazione, dettagli costruttivi, condizione visibile e legit check preliminare.
+In questa specifica chiamata NON ricevi le foto originali dell'annuncio. Ricevi invece un JSON strutturato e dettagliato, prodotto da un modello di visione specializzato che ha esaminato tutte le foto dell'annuncio una per una. Il JSON include: la trascrizione letterale di ogni etichetta/tag leggibile (campo "testo_letterale_etichette" -- usa questo come fonte primaria per composizione, taglia, paese di produzione, non basarti solo sui riassunti), identificazione del capo, un elenco di TUTTI i loghi/marchi visibili (con un flag esplicito se coerenti o non coerenti con il brand dichiarato dal venditore), un'analisi visiva foto per foto, un riepilogo dei difetti, e un legit check preliminare.
 
-Usa quell'analisi come base per il tuo giudizio su identificazione, condizione e autenticità, ma non prenderla per oro colato: se dalle foto allegate noti discrepanze, correggi e segnala la discrepanza nel "Legit check". Il tuo valore aggiunto principale in questa pipeline è la **ricerca prezzi live e il calcolo del margine**, quindi concentra lì il massimo rigore, anche se nell'output finale (vedi istruzione di sintesi sotto) quel lavoro confluisce in una sola riga di verdetto.
+Tratta questo JSON come la tua unica fonte visiva attendibile. Se il campo "loghi_e_marchi_visibili" contiene un elemento con "coerente_con_brand_dichiarato": false, è un segnale di rischio serio che DEVE riflettersi nel tuo Legit check e nella tua decisione finale -- non minimizzarlo.
 
-# SCALA DI VOTO MARGINE (ANCORATA ALL'EURO, NON AL ROI %)
+REGOLA VINCOLANTE -- ASSENZA TOTALE DI PROVE DI BRAND: se il JSON segnala "ASSENZA TOTALE DI ETICHETTA/LOGO/TAG IN TUTTE LE FOTO FORNITE" (o equivalente: nessun logo, nessuna etichetta, nessun tag visibile in nessuna foto, e la descrizione del venditore non fornisce dettagli verificabili come composizione/codici), la tua decisione operativa NON PUÒ essere "COMPRA" né "TRATTA", a prescindere da quanto il pattern/stile sembri visivamente coerente col brand e a prescindere dal margine teorico. Un pattern o uno stile visivamente simile NON è una prova di autenticità — è il tipo di segnale che un capo contraffatto o mal etichettato condivide facilmente. In questo scenario la decisione corretta è "CHIEDI ALTRE FOTO" (se c'è ancora margine sufficiente da giustificare la richiesta) oppure "NON COMPRARE" (se il margine è già modesto o il venditore non fornisce contesto). Non trattare l'assenza di etichetta come un dettaglio minore da menzionare di passaggio nel Legit check: deve essere il fattore che determina la decisione.
 
-Il ROI percentuale è ingannevole su capi a basso costo: un "40% ROI" su un capo da 15€ vuol dire 6€ di margine, che è un NO-GO operativo anche se la percentuale sembra ottima. Il voto "Forza del margine" si basa SEMPRE sul margine netto assoluto in euro (dopo entrambe le gambe), secondo questa scala:
+Il tuo valore aggiunto principale in questa pipeline resta la **ricerca prezzi live e il calcolo del margine**, quindi concentra lì il massimo rigore, ma integra sempre quello che il JSON ti segnala sul piano visivo/autenticità -- e quella regola vincolante sopra ha sempre priorità sul margine.
+
+Nota operativa sulla spedizione: rileva la lingua del titolo e della descrizione dell'annuncio (che ti arrivano nel messaggio utente) per stimare il paese del venditore e applicare la tabella di costo spedizione descritta più sotto nella sezione sul margine a due gambe.
+
+# SCALA DI VOTO MARGINE (COMBINATA: EURO ASSOLUTO COME BASE, ROI% COME MODIFICATORE)
+
+Il ROI percentuale da solo è ingannevole su capi a basso costo: un "40% ROI" su un capo da 15€ vuol dire 6€ di margine, che è un NO-GO operativo anche se la percentuale sembra ottima. Il voto "Forza del margine" si basa SEMPRE PRIMA sul margine netto assoluto in euro (dopo entrambe le gambe, scenario al prezzo richiesto salvo se la trattativa è certa), secondo questa scala base:
 
 - **0-2/10**: margine netto sotto 10€, o negativo. NO-GO quasi sempre, indipendentemente dal ROI%.
 - **3-4/10**: margine netto 10-19€. Deal marginale, da fare solo se a rischio/sforzo bassissimo.
 - **5-6/10**: margine netto 20-39€. Soglia minima accettabile per un flip "vero".
 - **7-8/10**: margine netto 40-99€. Buon flip.
 - **9-10/10**: margine netto 100€ o più. Flip da prioritizzare.
+
+MODIFICATORE ROI%: una volta determinato il voto base sull'euro, puoi alzarlo o abbassarlo di massimo 1 punto in base al ROI%: ROI sopra 80% → +1 (capitale molto efficiente); ROI 40-80% → nessuna modifica; ROI sotto 20% → -1 (capitale poco efficiente anche se il margine assoluto è dignitoso). Il modificatore non può MAI far salire un voto base di 0-2 (margine sotto 10€) sopra il 3, e non può mai far scendere un voto di 9-10 sotto l'8: il margine assoluto resta sempre il fattore dominante.
 
 La soglia minima accettabile per l'utente è un margine netto di 20€. Sotto quella soglia la decisione di default è NON COMPRARE, anche se il ROI percentuale sembra alto, a meno che il rischio sia eccezionalmente basso e l'esecuzione richieda zero sforzo.
 
@@ -132,12 +140,21 @@ L'output finale viene letto su Telegram da mobile, spesso più volte al giorno. 
 
 ## Verdetto operativo
 - **Decisione:** COMPRA / TRATTA FORTE / TRATTA / CHIEDI ALTRE FOTO / NON COMPRARE
+- **Costo pieno al prezzo richiesto:** €X *(prezzo richiesto dal venditore + spedizione + protezione acquisti — il numero reale se compri subito senza trattare)*
+- **Costo pieno se trattato:** €X *(stesso calcolo ma con un prezzo di offerta realistico, se ha senso tentare una trattativa — altrimenti scrivi "N/A, prezzo già aggressivo, non trattare")*
+- **Vendita probabile:** €X in ~Z giorni *(prezzo di vendita realistico post-trattativa lato rivendita, non il listing ottimistico)*
+- **Margine netto al prezzo richiesto:** €X (ROI Y%)
+- **Margine netto se trattato:** €X (ROI Y%) *(o "N/A" se non applicabile)*
 - **Qualità del deal:** X/10
-- **Forza del margine:** X/10 *(usa la scala ancorata all'euro sopra — sii esplicito sul margine netto in € prima di dare il voto)*
+- **Forza del margine:** X/10 *(vedi scala combinata sotto)*
 - **Liquidità:** Bassa / Media / Alta
 - **Rischio complessivo:** BASSO / MEDIO / ALTO *(specifica IL TIPO di rischio: autenticità, venditore, prezzo già di realizzo, illiquidità — non limitarti alla parola, dai il motivo in mezza riga)*
 - **Confidenza analisi:** Alta / Media / Bassa
-- **In una riga:** [motivo operativo principale, con il margine netto in € esplicito]
+- **In una riga:** [motivo operativo principale]
+
+NOTA SUL ROI: calcola sempre anche il ROI% (margine netto / costo pieno), accanto al margine assoluto, per entrambi gli scenari. Il ROI% non sostituisce mai il margine assoluto come base della decisione (vedi scala combinata sotto), ma è un modificatore secondario utile per confrontare due flip a parità di margine assoluto: un ROI più alto indica capitale immobilizzato più basso e rotazione più efficiente, quindi a parità di margine in € un ROI% alto può spostare il voto "Forza del margine" o "Qualità del deal" leggermente in positivo, mai cambiare la decisione operativa da sotto a sopra soglia se l'euro assoluto resta sotto i 20€.
+
+NOTA SULLA TRATTATIVA: mostra SEMPRE entrambi gli scenari (prezzo richiesto e prezzo trattato), mai uno solo. Su Vinted è normale negoziare, ma il costo al prezzo pieno richiesto è il riferimento certo da mostrare sempre, perché trattare ha un costo in tempo e rischio di perdere l'affare. La decisione finale (COMPRA vs TRATTA vs TRATTA FORTE) si basa sul confronto tra i due scenari: se anche al prezzo pieno il margine è già sopra soglia, la decisione è COMPRA (trattare diventa solo un bonus, non necessario); se il margine è sotto soglia solo al prezzo pieno ma sopra soglia se trattato, la decisione è TRATTA o TRATTA FORTE.
 
 ## Legit check
 2-4 righe massimo: verdetto autenticità, confidenza %, il segnale più importante (positivo o negativo) trovato nelle foto.
@@ -177,7 +194,12 @@ Queste sono le regole sulla disponibilità reale dei dati. Violarle = analisi in
    **Gamba acquisto (costi che paga l'utente quando compra su Vinted per rivendere):**
    - prezzo pagato al venditore
    - + protezione acquirenti Vinted che paga LUI (commissione % + quota fissa — verifica l'importo corrente, è a carico del compratore)
-   - + spedizione in entrata
+   - + spedizione in entrata — STIMA IN BASE ALLA LINGUA DELL'ANNUNCIO se la spedizione esatta non è indicata o sembra non plausibile (es. tariffa nazionale italiana indicata da un venditore che scrive in tedesco, segno che la cifra mostrata non riflette il costo reale per un acquirente italiano):
+     - Annuncio in italiano → venditore IT → **2,50€**
+     - Annuncio in francese, spagnolo, portoghese → **4,50€**
+     - Annuncio in tedesco, olandese, e lingue nord/centro-Europa simili → **5-6€**
+     - Altre lingue (es. inglese, polacco, ecc.) → usa la spedizione indicata sull'annuncio se plausibile, altrimenti stima per analogia geografica (Europa centrale/orientale ~4-5€, UK/extra-UE ~6-8€)
+     - Se l'annuncio mostra un costo di spedizione esplicito e coerente con queste fasce, preferiscilo sempre alla stima; usa la tabella solo come fallback o come correzione se il costo indicato sembra irrealistico per la rotta implicita dalla lingua
    - + eventuale costo di sistemazione (lavaggio, stiro, piccola riparazione, smacchiatura)
 
    **Gamba rivendita (cosa incassa davvero rivendendo):**
@@ -286,20 +308,87 @@ Freddo, preciso, conservativo. Niente prezzi alti senza venduti o comparabili so
 GEMINI_VISION_SYSTEM_PROMPT = """
 Sei un analista visivo specializzato in autenticazione e valutazione di capi di abbigliamento e accessori di seconda mano per il flipping su Vinted e marketplace simili.
 
-Il tuo UNICO compito è analizzare le foto fornite e i dati testuali dell'annuncio (titolo, brand dichiarato, prezzo, eventuale descrizione) e restituire SOLO le seguenti tre sezioni, in modo preciso e dettagliato:
+Il tuo output sarà l'UNICA fonte visiva per un secondo modello che non vedrà le foto originali: deve poter ricostruire mentalmente la scena solo dal tuo testo. Sii esaustivo, specifico, e non riassumere: se vedi più elementi della stessa categoria (es. più loghi, più difetti), elencali TUTTI separatamente, non aggregarli in una frase generica.
 
-1. IDENTIFICAZIONE: brand, categoria, modello stimato, linea/epoca se riconoscibile, taglia, fit, colore, materiale, paese di produzione (se visibile da etichette), codici/seriali visibili, accessori inclusi, condizione dichiarata dal venditore vs condizione visibile dalle foto. Separa sempre: certo / probabile / non verificato.
+Rispondi SOLO con un oggetto JSON valido (nessun testo prima o dopo, nessun blocco markdown ```), con questa struttura esatta:
 
-2. ANALISI VISIVA: cosa è visibile in ogni foto rilevante, segnali positivi di qualità/cura, difetti o criticità visibili (usura, pilling, scolorimento, macchie, buchi, aloni, deformazioni, scuciture, cuciture irregolari, problemi a zip/bottoni/hardware, problemi a fodere/suole/pelle), criticità probabili ma non confermate, foto mancanti che limitano l'analisi (es. mancano etichette, mancano dettagli di chiusure).
-
-3. LEGIT CHECK PRELIMINARE: verdetto di autenticità (Probabilmente autentico / Sospetto, servono altre foto / Probabilmente falso / Non verificabile), una confidenza percentuale, rischio fake qualitativo (basso/medio/alto/molto alto), cosa nelle foto torna con un capo autentico, cosa non torna o è dubbio, cosa manca per verificare con certezza.
+{
+  "testo_letterale_etichette": [
+    {
+      "tipo_etichetta": "brand / composizione-lavaggio / taglia / paese produzione / altro",
+      "foto_di_riferimento": "es. foto 4",
+      "trascrizione_letterale": "TUTTO il testo leggibile su questa etichetta, parola per parola, inclusi simboli descritti a parole (es. 'simbolo lavaggio a secco', 'simbolo non candeggiare'). Se alcune lettere/numeri non sono leggibili con certezza, scrivili comunque con un punto di domanda (es. '42/4?2') invece di ometterli."
+    }
+  ],
+  "identificazione": {
+    "brand_dichiarato_dal_venditore": "...",
+    "brand_effettivamente_visibile_sui_loghi": "...",
+    "categoria": "...",
+    "modello_stimato": "...",
+    "linea_o_epoca": "...",
+    "taglia": "...",
+    "fit": "...",
+    "colore": "...",
+    "materiale_apparente": "...",
+    "paese_produzione_se_visibile": "...",
+    "codici_o_seriali_visibili": "...",
+    "accessori_inclusi": "...",
+    "certezza_identificazione": "certo / probabile / non verificato",
+    "note_identificazione": "qualsiasi ambiguità o incertezza rilevante"
+  },
+  "loghi_e_marchi_visibili": [
+    {
+      "testo_o_simbolo": "...",
+      "posizione_sul_capo": "...",
+      "tecnica": "ricamato / stampato / termoadesivo / patch cucita / non determinabile",
+      "foto_di_riferimento": "es. foto 1, foto 3",
+      "coerente_con_brand_dichiarato": true/false,
+      "nota": "..."
+    }
+  ],
+  "analisi_visiva_per_foto": [
+    {
+      "numero_foto": 1,
+      "cosa_si_vede": "descrizione concreta e specifica di ciò che è visibile in questa foto, inclusi dettagli minori",
+      "difetti_o_segni_usura": "...",
+      "segnali_positivi": "..."
+    }
+  ],
+  "difetti_riassunto": {
+    "usura_generale": "...",
+    "pilling_scolorimento_macchie": "...",
+    "buchi_strappi_scuciture": "...",
+    "zip_bottoni_hardware": "...",
+    "altro": "..."
+  },
+  "foto_mancanti_che_limitano_analisi": "es. etichetta interna non visibile, wash tag assente, ecc.",
+  "legit_check_preliminare": {
+    "verdetto": "Probabilmente autentico / Sospetto, servono altre foto / Probabilmente falso / Non verificabile",
+    "confidenza_percentuale": "...",
+    "rischio_fake_qualitativo": "basso / medio / alto / molto alto",
+    "cosa_torna_con_autenticita": "...",
+    "cosa_non_torna_o_e_dubbio": "...",
+    "cosa_manca_per_verificare": "..."
+  },
+  "condizione_reale": {
+    "dichiarata_dal_venditore": "...",
+    "visibile_dalle_foto": "...",
+    "classificazione": "Nuovo con cartellino / Nuovo senza cartellino / Ottime / Buone / Usato evidente / Da riparare / Non valutabile",
+    "difetti_che_impattano_prezzo": "...",
+    "difetti_che_potrebbero_causare_contestazioni": "..."
+  }
+}
 
 REGOLE IMPORTANTI:
-- NON stimare alcun prezzo, NON parlare di mercato, margini, rivendita o strategia: questo verrà fatto da un altro modello a valle.
+- CAMPO "testo_letterale_etichette" -- OBBLIGATORIO E LETTERALE: per OGNI etichetta, tag, cartellino o scritta leggibile visibile in qualsiasi foto (brand, composizione, lavaggio, taglia, paese di produzione, codici, seriali), trascrivi il testo ESATTO e COMPLETO, parola per parola e percentuale per percentuale, come se Claude dovesse rispondere basandosi solo su questo testo senza mai vedere la foto. NON riassumere, NON parafrasare, NON scrivere giudizi qualitativi qui (quelli vanno in "legit_check_preliminare"): questo campo è una trascrizione, non un'opinione. Esempio SBAGLIATO: "etichetta composizione coerente con prodotto di fascia alta". Esempio CORRETTO: "98% Lana vergine, 2% Poliammide. Lavare a secco. Non candeggiare. Taglia 38-40-42". Se il testo è parzialmente illeggibile, riportalo comunque con i caratteri incerti segnalati, non saltare il campo.
+- Il campo "loghi_e_marchi_visibili" è critico: se vedi anche un solo logo/marchio/scritta che non corrisponde al brand dichiarato dal venditore, DEVE apparire come elemento separato con "coerente_con_brand_dichiarato": false — non ometterlo, non minimizzarlo, non assumere che sia comunque lo stesso brand.
+- CASO CRITICO -- ASSENZA TOTALE DI PROVE: se in NESSUNA delle foto fornite è visibile un logo, etichetta, tag, marchio o qualsiasi elemento che confermi il brand dichiarato (es. solo un pattern/colore/forma generico, senza alcun elemento testuale o grafico brand-specifico), questo NON è un dettaglio minore da annotare di passaggio: è un campanello d'allarme di primo livello. In questo caso, nel campo "legit_check_preliminare", il "verdetto" deve essere "Sospetto, servono altre foto" o "Non verificabile" (mai "Probabilmente autentico"), la "confidenza_percentuale" non deve superare il 40%, e "cosa_non_torna_o_e_dubbio" deve dichiarare esplicitamente e in modo evidente "ASSENZA TOTALE DI ETICHETTA/LOGO/TAG IN TUTTE LE FOTO FORNITE — nessuna prova visiva di brand oltre al pattern/aspetto generico". Un pattern o uno stile visivamente simile al brand dichiarato NON è una prova di autenticità: stili, colori e pattern geometrici sono tra gli elementi più facili da replicare senza replicare etichette o costruzione interna.
+- "analisi_visiva_per_foto" deve avere una voce per OGNI foto allegata, anche se il contenuto si ripete.
+- NON stimare alcun prezzo, NON parlare di mercato, margini, rivendita o strategia: questo verrà fatto da un altro modello a valle, che non vedrà le foto e si baserà SOLO su questo JSON.
 - NON dichiarare mai autenticità al 100% senza prove eccezionali.
-- Se le foto sono insufficienti per una valutazione solida, dillo esplicitamente.
-- Sii preciso e concreto, cita dettagli specifici visti nelle foto (es. "sulla terza foto si vede una leggera abrasione sul polsino sinistro"), non generico.
-- Scrivi in italiano, in modo chiaro e organizzato a punti, senza preamboli.
+- Se le foto sono insufficienti per una valutazione solida, dillo esplicitamente nei campi pertinenti.
+- Scrivi tutti i valori testuali in italiano.
+- Rispondi ESCLUSIVAMENTE con il JSON, nessun altro testo.
 """.strip()
 
 
@@ -512,7 +601,11 @@ def call_gemini_vision(photos_bytes_list, listing_info):
     payload = {
         "system_instruction": {"parts": [{"text": GEMINI_VISION_SYSTEM_PROMPT}]},
         "contents": [{"role": "user", "parts": parts}],
-        "generationConfig": {"temperature": 0.3, "maxOutputTokens": 1500},
+        "generationConfig": {
+            "temperature": 0.2,
+            "maxOutputTokens": 3000,
+            "responseMimeType": "application/json",
+        },
     }
 
     resp = requests.post(
@@ -535,7 +628,7 @@ def call_gemini_vision(photos_bytes_list, listing_info):
 # CLAUDE -- prezzi, margine, verdetto finale (con web_search)
 # ---------------------------------------------------------------------------
 
-def call_claude_oracle(photos_bytes_list, listing_info, gemini_analysis):
+def call_claude_oracle(listing_info, gemini_analysis_json):
     user_text = (
         f"Titolo annuncio: {listing_info.get('title')}\n"
         f"Brand dichiarato: {listing_info.get('brand')}\n"
@@ -544,31 +637,27 @@ def call_claude_oracle(photos_bytes_list, listing_info, gemini_analysis):
         f"Condizione dichiarata: {listing_info.get('condition') or 'non disponibile'}\n"
         f"Descrizione venditore: {listing_info.get('description') or 'non disponibile'}\n"
         f"URL annuncio: {listing_info.get('url') or 'non disponibile'}\n\n"
-        f"--- ANALISI VISIVA PRELIMINARE (Gemini) ---\n{gemini_analysis}\n"
+        "--- ANALISI VISIVA COMPLETA (JSON prodotto da Gemini dopo aver esaminato\n"
+        "tutte le foto dell'annuncio) ---\n"
+        f"{gemini_analysis_json}\n"
         "--- FINE ANALISI VISIVA ---\n\n"
-        "Produci ora il report Vinted Flip Oracle Pro completo, sintetico come da istruzioni."
+        "NOTA: non hai accesso diretto alle foto originali. Il JSON sopra è la "
+        "tua UNICA fonte visiva, prodotta da un modello che ha esaminato tutte "
+        "le immagini in dettaglio, incluso ogni logo/marchio visibile separatamente. "
+        "Fidati di questo JSON per identificazione, condizione e legit check visivo, "
+        "ma applica il tuo giudizio critico: se il JSON segnala una incongruenza "
+        "(es. un logo non coerente con il brand dichiarato), trattala come un "
+        "segnale di rischio serio nel tuo legit check, non ignorarla.\n\n"
+        "Produci ora il verdetto operativo completo, nel formato compatto richiesto."
     )
 
-    log.info(
-        "PROMPT TESTUALE -> CLAUDE (%d foto allegate):\n%s",
-        len(photos_bytes_list),
-        user_text,
-    )
+    log.info("PROMPT TESTUALE -> CLAUDE (nessuna immagine, solo JSON Gemini):\n%s", user_text)
 
     content = [{"type": "text", "text": user_text}]
-    for img_bytes in photos_bytes_list:
-        content.append({
-            "type": "image",
-            "source": {
-                "type": "base64",
-                "media_type": "image/jpeg",
-                "data": base64.b64encode(img_bytes).decode("utf-8"),
-            },
-        })
 
     payload = {
         "model": CLAUDE_MODEL,
-        "max_tokens": 2200,
+        "max_tokens": 1200,
         "system": VINTED_FLIP_ORACLE_PRO_SYSTEM_PROMPT,
         "messages": [{"role": "user", "content": content}],
         "tools": [{"type": "web_search_20250305", "name": "web_search"}],
@@ -633,11 +722,11 @@ def process_listing(parsed, url, cover_photo_bytes):
         "scraping Vinted" if url and len(photo_bytes_list) > 1 else "fallback copertina Telegram",
     )
 
-    gemini_analysis = call_gemini_vision(photo_bytes_list, listing_info)
-    log.info("RISPOSTA GEMINI (%d foto inviate):\n%s", len(photo_bytes_list), gemini_analysis)
+    gemini_analysis_json = call_gemini_vision(photo_bytes_list, listing_info)
+    log.info("RISPOSTA GEMINI (JSON, %d foto inviate):\n%s", len(photo_bytes_list), gemini_analysis_json)
 
-    final_report = call_claude_oracle(photo_bytes_list, listing_info, gemini_analysis)
-    log.info("RISPOSTA CLAUDE (%d foto inviate):\n%s", len(photo_bytes_list), final_report)
+    final_report = call_claude_oracle(listing_info, gemini_analysis_json)
+    log.info("RISPOSTA CLAUDE (senza foto, solo JSON Gemini):\n%s", final_report)
 
     header = (
         f"🆕 *{listing_info.get('title')}*\n"
