@@ -887,6 +887,7 @@ def process_listing(parsed, url, cover_photo_bytes):
     listing_info = dict(parsed)
     listing_info["url"] = url
     photo_bytes_list = []
+    successful_urls = []  # <--- NUOVO: Tracciamo gli URL scaricati con successo
 
     if url:
         scraped = scrape_vinted_listing(url)
@@ -897,14 +898,24 @@ def process_listing(parsed, url, cover_photo_bytes):
 
         for photo_url in scraped.get("photo_urls", []):
             img = download_image_bytes(photo_url, referer=url)
-            if img: photo_bytes_list.append(img)
+            if img: 
+                photo_bytes_list.append(img)
+                successful_urls.append(photo_url)  # <--- Salviamo l'URL se il download riesce
             time.sleep(0.4)
 
     if not photo_bytes_list and cover_photo_bytes:
         photo_bytes_list = [cover_photo_bytes]
+        successful_urls = ["[Miniatura di Copertina prelevata da Telegram - Fallback]"]
 
     if not photo_bytes_list:
         return
+
+    # ---- NUOVO LOG ESPLICITO PER IL CHECK ----
+    log.info("================ CHECK IMMAGINI VERSO GEMINI ================")
+    log.info("Sto per comprimere e inviare a Gemini %d foto.", len(photo_bytes_list))
+    for i, img_url in enumerate(successful_urls, start=1):
+        log.info("  [Invio Foto %d] -> %s", i, img_url)
+    log.info("=============================================================")
 
     gemini_analysis_json = call_gemini_vision(photo_bytes_list, listing_info)
 
@@ -923,7 +934,6 @@ def process_listing(parsed, url, cover_photo_bytes):
 
     telegram_send_photo(TELEGRAM_OWNER_CHAT_ID, photo_bytes_list[0], caption=listing_info.get("title"))
     telegram_send_message(TELEGRAM_OWNER_CHAT_ID, header + final_report)
-
 
 # ---------------------------------------------------------------------------
 # TELETHON CLIENT E GESTIONE EVENTI (Con Protezione Timeout)
