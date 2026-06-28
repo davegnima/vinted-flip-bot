@@ -436,8 +436,7 @@ def download_image_bytes(url, referer="[https://www.vinted.it/](https://www.vint
 # ---------------------------------------------------------------------------
 
 def optimize_image_bytes(img_bytes, max_size=512):
-    """Ridimensiona l'immagine per farla rientrare nella fascia di costo minima
-    di Gemini (~84 token invece di ~258) mantenendo intatta la leggibilita' per l'AI."""
+    # Ridimensiona l'immagine per farla rientrare nella fascia di costo minima
     try:
         img = Image.open(BytesIO(img_bytes))
         img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
@@ -447,9 +446,9 @@ def optimize_image_bytes(img_bytes, max_size=512):
         img.save(out, format="JPEG", quality=85)
         return out.getvalue()
     except Exception as e:
-        log.warning("Ottimizzazione immagine (Pillow) fallita, uso byte originali: %s", e)
+        log.warning("Ottimizzazione (Pillow) fallita, uso byte originali: %s", e)
         return img_bytes
-
+        
 def call_gemini_vision(photos_bytes_list, listing_info, max_retries=4):
     user_text_for_log = (
         f"Titolo annuncio: {listing_info.get('title')}\n"
