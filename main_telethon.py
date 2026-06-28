@@ -141,10 +141,13 @@ ECCEZIONE — margine sopra soglia ma non schiacciante (20-40€) E confidenza M
 5. TRATTA (o TRATTA FORTE) — vedi vincolo/eccezione sopra, o Deal/Margine ≤3 con confidenza non Alta.
 6. NON COMPRARE — margine insufficiente anche scontando, Rischio ALTO, o legit check negativo. Usa CHIEDI ALTRE FOTO invece se il solo problema sono dati mancanti (non rischio economico) e legit check non negativo.
 
-**Asse Urgenza (3 livelli, indipendente):** quanto altri flipper rischiano di prenderlo prima di te (brand hype/tracciato, prezzo anomalo, drop limitato → veloce; nicchia → lento).
-- AGISCI ORA / HAI QUALCHE ORA / HAI TEMPO.
+**Asse Urgenza (3 livelli, indipendente — SOLO se la decisione qualità è COMPRA SUBITO/FORTE/COMPRA/SE CI TIENI/TRATTA; se è NON COMPRARE o CHIEDI ALTRE FOTO, scrivi "N/A" — non ha senso valutare l'urgenza di un acquisto che non farai per motivi di rischio/margine):** usa SEMPRE come segnale primario i giorni di pubblicazione (ricevuti nel messaggio utente). Un annuncio online da molti giorni (5+) per un capo altrimenti interessante è un segnale concreto che la domanda reale è più bassa di quanto sembri, o che altri flipper l'hanno già visto e scartato — non significa "tempo libero per trattare con calma", significa "rivedi anche la tua stima di vendita verso il basso". Un annuncio pubblicato da poche ore/1-2 giorni per un brand hype/tracciato è dove la concorrenza è reale.
+- AGISCI ORA — pubblicato di recente (0-2 giorni) E brand/modello hype o molto tracciato.
+- HAI QUALCHE ORA — pubblicato di recente ma capo non particolarmente hype, o pubblicato da qualche giorno (3-5) ma ancora plausibilmente conteso.
+- HAI TEMPO — pubblicato da molti giorni (5+) senza essere stato comprato (segnale di domanda debole, non urgenza), o capo di nicchia poco tracciato indipendentemente dall'età.
+Se l'età non è disponibile (scraping fallito), basati solo su hype/nicchia come prima e dillo implicitamente scegliendo il livello più cauto in caso di dubbio.
 
-Scrivi "Decisione: [qualità] · [urgenza]", es. "COMPRA SUBITO · AGISCI ORA".
+Scrivi "Decisione: [qualità] · [urgenza]", es. "COMPRA SUBITO · AGISCI ORA" o "NON COMPRARE · N/A".
 
 # PREZZI — REGOLE DI RICERCA
 1. Vinted mostra solo ASK (mai sold). Vietato inventare "sold Vinted".
@@ -423,7 +426,10 @@ def scrape_vinted_listing(url):
     """Tenta di recuperare tutte le foto della galleria + dati extra
     (taglia, condizione, descrizione) dalla pagina pubblica Vinted.
     """
-    result = {"photo_urls": [], "size": None, "condition": None, "description": None}
+    result = {
+        "photo_urls": [], "size": None, "condition": None, "description": None,
+        "created_at": None, "age_days": None,
+    }
     try:
         resp = _vinted_session.get(url, headers=VINTED_HEADERS, timeout=15)
         resp.raise_for_status()
@@ -473,6 +479,24 @@ def scrape_vinted_listing(url):
         desc_match = re.search(r'"description"\s*:\s*"((?:[^"\\]|\\.)*)"', html)
         if desc_match:
             result["description"] = desc_match.group(1).encode().decode("unicode_escape")
+
+        # Data di pubblicazione: serve per valutare l'urgenza reale (un
+        # annuncio online da giorni senza essere stato comprato e' un
+        # segnale che altri flipper potrebbero gia' averlo scartato o
+        # che la domanda e' piu' bassa di quanto sembri -- molto diverso
+        # da un annuncio appena pubblicato dove la corsa e' reale).
+        created_match = re.search(r'"created_at_ts"\s*:\s*"([^"]+)"', html)
+        if created_match:
+            result["created_at"] = created_match.group(1)
+            try:
+                from datetime import datetime, timezone
+                created_dt = datetime.fromisoformat(created_match.group(1))
+                if created_dt.tzinfo is None:
+                    created_dt = created_dt.replace(tzinfo=timezone.utc)
+                age_days = (datetime.now(timezone.utc) - created_dt).total_seconds() / 86400
+                result["age_days"] = round(age_days, 1)
+            except Exception:
+                log.warning("Impossibile calcolare l'eta' dell'annuncio da created_at_ts=%s", created_match.group(1))
 
     except Exception:
         log.warning("Scraping Vinted fallito per %s:\n%s", url, traceback.format_exc())
@@ -695,6 +719,12 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=4):
 # ---------------------------------------------------------------------------
 
 def call_claude_oracle(listing_info, gemini_analysis_json):
+    age_days = listing_info.get("age_days")
+    if age_days is not None:
+        age_text = f"{age_days:.1f} giorni fa"
+    else:
+        age_text = "non disponibile (probabile fallimento scraping data pubblicazione)"
+
     user_text = (
         f"Titolo annuncio: {listing_info.get('title')}\n"
         f"Brand dichiarato: {listing_info.get('brand')}\n"
@@ -702,6 +732,7 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
         f"Taglia: {listing_info.get('size') or 'non disponibile'}\n"
         f"Condizione dichiarata: {listing_info.get('condition') or 'non disponibile'}\n"
         f"Descrizione venditore: {listing_info.get('description') or 'non disponibile'}\n"
+        f"Annuncio pubblicato: {age_text}\n"
         f"URL annuncio: {listing_info.get('url') or 'non disponibile'}\n\n"
         "--- ANALISI VISIVA COMPLETA (JSON prodotto da Gemini dopo aver esaminato\n"
         "tutte le foto dell'annuncio) ---\n"
@@ -794,6 +825,7 @@ def process_listing(parsed, url, cover_photo_bytes):
         listing_info["size"] = scraped.get("size")
         listing_info["condition"] = scraped.get("condition")
         listing_info["description"] = scraped.get("description")
+        listing_info["age_days"] = scraped.get("age_days")
 
         for photo_url in scraped.get("photo_urls", []):
             img = download_image_bytes(photo_url, referer=url)
