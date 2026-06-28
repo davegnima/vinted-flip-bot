@@ -155,6 +155,8 @@ REGOLE DI STILE VINCOLANTI (non negoziabili):
 - Il motivo va SOLO nel campo "In una riga" (max 15 parole) e nel Legit check (max 20 parole). Non ripetere il motivo in più punti.
 - Numeri e decisioni sempre prima delle spiegazioni. Mai invertire l'ordine.
 
+VINCOLO TECNICO SULL'OUTPUT (leggi prima di scrivere qualsiasi cosa): il messaggio che produci viene inviato AUTOMATICAMENTE e INTERAMENTE a un bot Telegram, senza alcuna revisione umana. Qualsiasi testo che scrivi PRIMA del titolo "## Verdetto operativo" — note, ragionamento, "ricerco i prezzi live", "ho tutti i dati necessari", spiegazioni sul JSON troncato, calcoli intermedi, fonti consultate — finisce SPEDITO SU TELEGRAM esattamente come l'hai scritto, gonfiando il messaggio ben oltre il limite di 150 parole e rischiando di troncare il messaggio a metà frase per limiti tecnici della piattaforma. NON esiste un canale separato per il "ragionamento interno": se lo scrivi come testo prima del verdetto, lo scrivi in output, punto. Fai tutto il ragionamento, i calcoli e le verifiche che servono usando gli strumenti (web_search), ma la tua risposta testuale finale deve iniziare DIRETTAMENTE con "## Verdetto operativo" — zero testo, zero note, zero premesse prima di quel titolo.
+
 ## Verdetto operativo
 - **Decisione:** COMPRA / TRATTA FORTE / TRATTA / CHIEDI ALTRE FOTO / NON COMPRARE
 - **Costo pieno richiesto:** €X
@@ -405,8 +407,15 @@ REGOLE IMPORTANTI:
 # ---------------------------------------------------------------------------
 
 def telegram_send_message(chat_id, text):
-    """Invia un messaggio, spezzandolo automaticamente se supera 4096 caratteri."""
-    MAX_LEN = 4000
+    """Invia un messaggio, spezzandolo automaticamente se supera 4096 caratteri.
+
+    Note di robustezza: lo split prova prima a tagliare su un doppio
+    a-capo (separazione tra sezioni), poi su un singolo a-capo, e solo
+    come ultima risorsa taglia a metà testo. Se l'invio con Markdown
+    fallisce (es. asterischi/blockquote non bilanciati per via del
+    taglio), ritenta SENZA parse_mode: in quel caso il testo arriva
+    comunque per intero, solo senza la formattazione."""
+    MAX_LEN = 3500
     chunks = []
     remaining = text
     while remaining:
@@ -415,11 +424,13 @@ def telegram_send_message(chat_id, text):
             break
         split_at = remaining.rfind("\n\n", 0, MAX_LEN)
         if split_at == -1:
+            split_at = remaining.rfind("\n", 0, MAX_LEN)
+        if split_at == -1:
             split_at = MAX_LEN
         chunks.append(remaining[:split_at])
         remaining = remaining[split_at:]
 
-    for chunk in chunks:
+    for i, chunk in enumerate(chunks, start=1):
         resp = requests.post(
             f"{TELEGRAM_API}/sendMessage",
             json={
@@ -431,11 +442,20 @@ def telegram_send_message(chat_id, text):
             timeout=20,
         )
         if not resp.ok:
-            requests.post(
+            log.warning(
+                "sendMessage con Markdown fallita (chunk %d/%d) -- HTTP %d: %s -- ritento senza parse_mode",
+                i, len(chunks), resp.status_code, resp.text[:300],
+            )
+            resp2 = requests.post(
                 f"{TELEGRAM_API}/sendMessage",
                 json={"chat_id": chat_id, "text": chunk, "disable_web_page_preview": True},
                 timeout=20,
             )
+            if not resp2.ok:
+                log.error(
+                    "sendMessage fallita ANCHE senza Markdown (chunk %d/%d) -- HTTP %d: %s",
+                    i, len(chunks), resp2.status_code, resp2.text[:300],
+                )
 
 
 def telegram_send_photo(chat_id, photo_bytes, caption=None):
