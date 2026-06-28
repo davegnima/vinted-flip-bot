@@ -308,6 +308,7 @@ Rispondi SOLO con un oggetto JSON valido (nessun testo prima o dopo, nessun bloc
     "brand_effettivamente_visibile_sui_loghi": "...",
     "categoria": "...",
     "modello_stimato": "...",
+    "query_di_ricerca_ideale": "Stringa BREVE e PRECISA (max 5-6 parole) ottimizzata per cercare comps di questo capo esatto su Google/eBay/Vinted. Usa SOLO brand + 2-4 parole chiave davvero distintive (es. 'M Missoni top lurex', 'Patagonia pile Retro-X', 'JPG giacca denim archivio'). NON includere parole generiche di riempimento (es. 'con', 'in', 'di colore', materiali ovvi) e NON ripetere la categoria due volte. Una query troppo lunga o troppo specifica fa fallire la ricerca (un venditore reale raramente scrive titoli cosi' dettagliati) -- meglio una query un po' piu' generica che zero risultati.",
     "linea_o_epoca": "es. vintage anni '90, collezione recente, main line, diffusion line (es. M Missoni vs Missoni, Weekend Max Mara vs Max Mara) -- specifica se riconoscibile",
     "taglia": "...",
     "fit": "...",
@@ -370,6 +371,7 @@ Rispondi SOLO con un oggetto JSON valido (nessun testo prima o dopo, nessun bloc
 
 REGOLE IMPORTANTI:
 - CAMPO "testo_letterale_etichette" -- OBBLIGATORIO E LETTERALE: per OGNI etichetta, tag, cartellino o scritta leggibile visibile in qualsiasi foto (brand, composizione, lavaggio, taglia, paese di produzione, codici, seriali), trascrivi il testo ESATTO e COMPLETO, parola per parola e percentuale per percentuale, come se Claude dovesse rispondere basandosi solo su questo testo senza mai vedere la foto. NON riassumere, NON parafrasare, NON scrivere giudizi qualitativi qui (quelli vanno in "legit_check_preliminare"): questo campo è una trascrizione, non un'opinione. Esempio SBAGLIATO: "etichetta composizione coerente con prodotto di fascia alta". Esempio CORRETTO: "98% Lana vergine, 2% Poliammide. Lavare a secco. Non candeggiare. Taglia 38-40-42". Se il testo è parzialmente illeggibile, riportalo comunque con i caratteri incerti segnalati, non saltare il campo.
+- CAMPO "query_di_ricerca_ideale" -- questa stringa viene usata DIRETTAMENTE per cercare comps di prezzo su Google/eBay/Vinted: la sua qualità determina se la ricerca a valle trova risultati utili o torna vuota. Regole pratiche: (1) MAX 5-6 parole totali, brand incluso; (2) usa solo le 2-4 parole che un VENDITORE REALE scriverebbe nel titolo del suo annuncio (es. "M Missoni top lurex", non "M Missoni top smanicato in maglia metallica lurex"); (3) NON ripetere la categoria due volte, NON includere dettagli secondari (colore esatto, fit, dettagli di costruzione) che restringono troppo la ricerca; (4) in caso di dubbio tra una query più corta/generica e una più lunga/specifica, scegli SEMPRE quella più corta — una query troppo specifica produce zero risultati più spesso di quanto aiuti a trovare comps pertinenti.
 - Il campo "loghi_e_marchi_visibili" è critico: se vedi anche un solo logo/marchio/scritta che non corrisponde al brand dichiarato dal venditore, DEVE apparire come elemento separato con "coerente_con_brand_dichiarato": false — non ometterlo, non minimizzarlo, non assumere che sia comunque lo stesso brand.
 - CASO CRITICO -- ASSENZA TOTALE DI PROVE: se in NESSUNA delle foto fornite è visibile un logo, etichetta, tag, marchio o qualsiasi elemento che confermi il brand dichiarato (es. solo un pattern/colore/forma generico, senza alcun elemento testuale o grafico brand-specifico), questo NON è un dettaglio minore da annotare di passaggio: è un campanello d'allarme di primo livello. In questo caso, nel campo "legit_check_preliminare", il "verdetto" deve essere "Sospetto, servono altre foto" o "Non verificabile" (mai "Probabilmente autentico"), la "confidenza_percentuale" non deve superare il 40%, e "cosa_non_torna_o_e_dubbio" deve dichiarare esplicitamente e in modo evidente "ASSENZA TOTALE DI ETICHETTA/LOGO/TAG IN TUTTE LE FOTO FORNITE — nessuna prova visiva di brand oltre al pattern/aspetto generico". Un pattern o uno stile visivamente simile al brand dichiarato NON è una prova di autenticità: stili, colori e pattern geometrici sono tra gli elementi più facili da replicare senza replicare etichette o costruzione interna (es. il motivo check di Burberry o il monogram di Louis Vuitton sono entrambi ampiamente replicati su falsi; da soli, senza hardware/etichettatura coerente, non provano nulla).
 - "analisi_visiva_per_foto" deve avere una voce per OGNI foto allegata, anche se il contenuto si ripete: se ricevi 6 foto, devono esserci esattamente 6 oggetti distinti (numero_foto da 1 a 6), MAI accorpati in meno voci anche se due foto mostrano dettagli simili.
@@ -747,7 +749,8 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=4):
                     return "[Analisi visiva Gemini non disponibile: risposta vuota]"
 
                 extracted_text = "".join(
-                    p.get("text", "") for p in candidates[0]["content"]["parts"]
+                    p.get("text", "")
+                    for p in (candidates[0].get("content", {}) or {}).get("parts", []) or []
                 )
 
                 # VALIDAZIONE CONTENUTO: una risposta HTTP 200 non garantisce
@@ -1268,8 +1271,44 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
             or listing_info.get("brand")
             or ""
         )
-        modello_per_ricerca = ident.get("modello_stimato") or ""
-        categoria_per_ricerca = ident.get("categoria") or ""
+
+        # QUERY IDEALE: se Gemini ha fornito una query di ricerca gia'
+        # ottimizzata (breve, con le parole che un venditore reale
+        # userebbe), la usiamo al posto della concatenazione grezza
+        # modello+categoria -- piu' probabile che produca risultati
+        # utili su Google/eBay/Vinted (vedi note nel prompt Gemini).
+        # SAFETY CHECK: ignoriamo la query ideale se e' sospettosamente
+        # lunga (oltre 8 parole) -- segno che Gemini non ha rispettato
+        # il vincolo "max 5-6 parole" nonostante l'istruzione, nel qual
+        # caso il fallback alla logica precedente e' piu' sicuro.
+        query_ideale = (ident.get("query_di_ricerca_ideale") or "").strip()
+        if query_ideale and len(query_ideale.split()) <= 8:
+            # EVITA DUPLICAZIONE BRAND: query_di_ricerca_ideale spesso
+            # include già il brand al suo interno (es. "M Missoni top
+            # lurex"), ma brand_per_ricerca viene ri-concatenato davanti
+            # in search_comps_serper (per il lookup brand_id di Vinted,
+            # che richiede il brand come parametro separato) -- senza
+            # questa pulizia la query finale duplicherebbe il brand
+            # (es. "M Missoni M Missoni top lurex"). Rimuoviamo qui le
+            # parole del brand dalla query ideale, lasciando solo il
+            # resto (es. "top lurex") come modello_per_ricerca.
+            modello_per_ricerca = query_ideale
+            if brand_per_ricerca:
+                pattern_brand = re.compile(re.escape(brand_per_ricerca), re.IGNORECASE)
+                modello_per_ricerca = pattern_brand.sub("", modello_per_ricerca).strip()
+            categoria_per_ricerca = ""  # già incluso nella query ideale, evita duplicazione
+            log.info(
+                "Uso query_di_ricerca_ideale da Gemini: '%s' (brand rimosso, resto: '%s')",
+                query_ideale, modello_per_ricerca,
+            )
+        else:
+            if query_ideale:
+                log.warning(
+                    "query_di_ricerca_ideale scartata (troppo lunga, %d parole): '%s' -- fallback a modello+categoria.",
+                    len(query_ideale.split()), query_ideale,
+                )
+            modello_per_ricerca = ident.get("modello_stimato") or ""
+            categoria_per_ricerca = ident.get("categoria") or ""
     except (json.JSONDecodeError, ValueError, TypeError):
         brand_per_ricerca = listing_info.get("brand") or ""
         modello_per_ricerca = ""
