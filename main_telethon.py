@@ -39,21 +39,6 @@ Variabili d'ambiente richieste (mai scritte nel codice):
   ANTHROPIC_API_KEY      - chiave API Claude
   GEMINI_API_KEY         - chiave API Gemini
   SERPER_API_KEY         - chiave API Serper.dev per ricerca Google rapida
-
-Note operative:
-  - Lo scraping Vinted e' il punto piu' fragile: se Vinted cambia markup
-    o blocca le richieste, la funzione scrape_vinted_listing() va
-    aggiornata. Il bot comunque NON si blocca: se lo scraping fallisce,
-    usa solo la foto di copertina del messaggio come fallback.
-  - Con i Topics attivi sul gruppo, ogni messaggio porta anche un
-    reply_to_top_id (l'ID del topic): non serve filtrarlo, ascoltiamo
-    tutto il gruppo indipendentemente dal topic specifico.
-  - Gemini: dal 28/06/2026 la fatturazione e' attiva sul progetto
-    "Progetto Vinted", quindi i limiti free tier (5 RPM / 20 RPD) non
-    si applicano piu'. La funzione call_gemini_vision() mantiene
-    comunque un retry con backoff esponenziale su errori transitori
-    (503/429/5xx, timeout di rete), utile contro sovraccarichi
-    momentanei lato Google indipendenti dal piano di fatturazione.
 """
 
 import os
@@ -64,11 +49,13 @@ import asyncio
 import base64
 import logging
 import traceback
+from io import BytesIO
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
+from PIL import Image
 
 # ---------------------------------------------------------------------------
 # CONFIGURAZIONE
@@ -94,7 +81,7 @@ GEMINI_API_URL = (
 )
 
 CLAUDE_MODEL = "claude-sonnet-4-6"
-MAX_GALLERY_PHOTOS = 10  # tetto massimo foto da inviare ai modelli (costo)
+MAX_GALLERY_PHOTOS = 10  
 
 VINTED_TRACKER_NAME_HINTS = ("vinted", "tracker")
 
@@ -172,7 +159,7 @@ Voto Margine (€ assoluto base, ROI% modificatore ±1 max, mai cambia fascia): 
 REGOLE COMPRA/TRATTA (applica in ordine):
 1. Costo pieno <15€ E legit check non negativo (anche solo "probabile autentico" 70-80%) E margine 80€+ → COMPRA/COMPRA SUBITO sempre (mai TRATTA/CHIEDI FOTO): il downside di pochi euro è trascurabile, il rischio reale è perdere il pezzo aspettando. Taglia/condizione mancanti = domande POST-acquisto. Eccezione solo se legit check davvero negativo.
 2. Se margine pieno è già sopra 20€ (e non rientra nel punto 1), MAI scrivere TRATTA — trattare è bonus non condizione, scegli il livello COMPRA della matrice. Errore da evitare: "trattare è inutile" + decisione TRATTA.
-3. Eccezione al punto 2: margine sopra soglia ma 20-40€ (non schiacciante) E confidenza Media/Bassa E capo hype/monitorato → TRATTA è accettabile anche qui, perché il margine "sopra soglia" è incerto.
+3. Eccezione al punto 2: margine sopra soglia ma 20-40€ (non schiacciante) E confidenza Media/Bassa E capo hype/monitorato → TRATTA è accettabile anche qui, perché il margine "sopra soglia" è incerto (motiva il fattore tempo/incertezza in "In una riga"). Se nicchia o confidenza Alta, resta COMPRA.
 4. TRATTA/TRATTA FORTE altrimenti solo se margine pieno sotto soglia ma accettabile scontando, o Deal/Margine ≤3 con confidenza non Alta.
 5. ECCEZIONE "Y2K / HYPE IMPULSE BUY": Se il costo d'acquisto pieno è molto basso (< 25€), il brand ha un forte hype attuale (es. Mugler, Diesel vintage, Missoni, Carhartt Y2K) e il design è iconico/trendy, la liquidità batte la condizione e l'assenza di comps. In questi casi, anche senza comps o con difetti lavabili (macchie evidenti ma trattabili), il capo verrà venduto per acquisto d'impulso. Non scartarlo con "NON COMPRARE", ma usa "COMPRA" o "COMPRA SE CI TIENI", assegna Liquidità: Alta e spiega in "In una riga" che è un flip da hype/volume veloce.
 
@@ -187,11 +174,14 @@ REGOLE COMPRA/TRATTA (applica in ordine):
 6. NON COMPRARE — margine insufficiente anche scontando, Rischio ALTO, o legit check negativo. CHIEDI ALTRE FOTO invece se il solo problema è dati mancanti (non rischio economico) e legit check non negativo.
 
 **Asse Urgenza (3 livelli, indipendente — solo se qualità è COMPRA*/SE CI TIENI/TRATTA; se NON COMPRARE/CHIEDI FOTO scrivi "N/A"):**
-Priorità 1 — scarto prezzo/valore: ROI 150%+ o prezzo palesemente anomalo (pochi euro per brand riconoscibile autentico) → AGISCI ORA da solo.
-Priorità 2 — età pubblicazione (solo se scarto prezzo non già estremo): 0-2gg + brand hype → concorrenza reale. 5+gg senza compratori → domanda debole.
+Priorità 1 — scarto prezzo/valore: ROI 150%+ o prezzo palesemente anomalo (pochi euro per brand riconoscibile autentico) → AGISCI ORA da solo, indipendentemente da hype/età (un prezzo così salta all'occhio a chiunque, non serve hype per fare concorrenza).
+Priorità 2 — età pubblicazione (solo se scarto prezzo non già estremo): 0-2gg + brand hype → concorrenza reale. 5+gg senza compratori → domanda debole, non "tempo per trattare" (rivedi anche la stima di vendita al ribasso).
 - AGISCI ORA: scarto prezzo estremo, o 0-2gg + hype.
 - HAI QUALCHE ORA: margine buono non estremo, recente ma non hype, o 3-5gg ancora conteso.
 - HAI TEMPO: 5+gg senza compratori, o nicchia con prezzo non anomalo.
+Età non disponibile → basati su scarto prezzo/hype, livello più cauto in dubbio.
+
+Scrivi "Decisione: [qualità] · [urgenza]", es. "COMPRA SUBITO · AGISCI ORA" o "NON COMPRARE · N/A".
 
 # PREZZI — RICERCA E VALUTAZIONE
 1. Vinted mostra solo ASK mai sold — vietato inventare "sold Vinted".
@@ -202,15 +192,15 @@ Priorità 2 — età pubblicazione (solo se scarto prezzo non già estremo): 0-2
 6. VALUTAZIONE IN ASSENZA DI COMPS ESTERNI (VIETATO USARE N/A): Se la sezione ricerca dichiara "nessun risultato", "ricerca fallita", o se i comps forniti sono inutilizzabili/fuori scala, **NON USARE MAI "N/A"**. Devi obbligatoriamente stimare il prezzo di "Vendita probabile" basandoti sulla tua profonda conoscenza del mercato second-hand, del posizionamento del brand, del materiale e della categoria.
 7. Se stimi basandoti sulla tua conoscenza interna (per mancanza di comps validi), mantieni un approccio realistico e conservativo (quartile basso), dichiara "Confidenza: Bassa" o "Media" e scrivi "Stima basata su storico brand" in "In una riga". MAI lasciare "N/A" sulla vendita probabile o sul margine netto (salvo casi estremi in cui mancano del tutto brand, categoria e foto).
 
-DIFFUSION LINE (Missoni/Missoni Sport, Prada/Miu Miu, Armani/Emporio-Exchange, Max Mara/Weekend, ecc.): non vale automaticamente come la mainline — dipende dal brand. Solo comps mainline trovati → NON usarli come proxy diretto, confidenza bassa, stima al ribasso.
+DIFFUSION LINE (Missoni/Missoni Sport, Prada/Miu Miu, Armani/Emporio-Exchange, Max Mara/Weekend, ecc.): non vale automaticamente come la mainline — dipende dal brand. Solo comps mainline trovati → NON usarli come proxy diretto, confidenza bassa, stima al ribasso, dichiaralo.
 
 # LIQUIDITÀ
 Giorni vendita (0-7/7-14/14-30/30+) e liquidità (Bassa/Media/Alta) da: saturazione, tier domanda brand/modello, taglia (penalizza estreme), stagionalità, spedizione/rischio reso. Prezzo basso ≠ buon affare se illiquido.
 ERRORE DA NON RIPETERE: non confondere la liquidità del BRAND con la liquidità del PEZZO SPECIFICO (es. "Liquidità: Bassa (pezzo di nicchia, anche se il brand è molto liquido)").
 
 # COSA ANALIZZARE
-Identificazione: brand, categoria, modello, linea/epoca, taglia, fit, colore, materiale, paese produzione, retail originale, rarità reale.
-Visiva: usura, pilling, scolorimento, macchie, buchi, scuciture, hardware, fodere.
+Identificazione: brand, categoria, modello, linea/epoca, taglia, fit, colore, materiale, paese produzione, retail originale, rarità reale (certo/probabile/non verificato).
+Visiva: usura, pilling, scolorimento, macchie, buchi, scuciture, hardware, fodere, riparazioni, incongruenze foto/descrizione, foto mancanti.
 Legit check: Probabilmente autentico / Sospetto / Probabilmente falso / Non verificabile + confidenza% + rischio fake (basso/medio/alto/molto alto). Mai 100% senza prove eccezionali.
 Condizione: dichiarata vs visibile vs probabile vs non verificabile.
 
@@ -238,7 +228,6 @@ Max3 domande telegrafiche, o "Non rilevante".
 ## Messaggio da inviare
 SEMPRE in italiano anche se annuncio in altra lingua. Messaggio pronto breve, o "Non necessario".
 """.strip()
-
 
 GEMINI_VISION_SYSTEM_PROMPT = """
 Sei un analista visivo specializzato in autenticazione e valutazione di capi di abbigliamento e accessori di seconda mano per il flipping su Vinted e marketplace simili.
@@ -333,9 +322,8 @@ REGOLE IMPORTANTI:
 - Rispondi ESCLUSIVAMENTE con il JSON, nessun altro testo.
 """.strip()
 
-
 # ---------------------------------------------------------------------------
-# TELEGRAM BOT API HELPERS (solo per INVIARE i report finali)
+# TELEGRAM BOT API HELPERS
 # ---------------------------------------------------------------------------
 
 def telegram_send_message(chat_id, text):
@@ -366,20 +354,12 @@ def telegram_send_message(chat_id, text):
             timeout=20,
         )
         if not resp.ok:
-            log.warning(
-                "sendMessage con Markdown fallita (chunk %d/%d) -- HTTP %d: %s -- ritento senza parse_mode",
-                i, len(chunks), resp.status_code, resp.text[:300],
-            )
-            resp2 = requests.post(
+            log.warning("sendMessage con Markdown fallita. Ritento senza parse_mode.")
+            requests.post(
                 f"{TELEGRAM_API}/sendMessage",
                 json={"chat_id": chat_id, "text": chunk, "disable_web_page_preview": True},
                 timeout=20,
             )
-            if not resp2.ok:
-                log.error(
-                    "sendMessage fallita ANCHE senza Markdown (chunk %d/%d) -- HTTP %d: %s",
-                    i, len(chunks), resp2.status_code, resp2.text[:300],
-                )
 
 def telegram_send_photo(chat_id, photo_bytes, caption=None):
     files = {"photo": ("photo.jpg", photo_bytes)}
@@ -390,9 +370,8 @@ def telegram_send_photo(chat_id, photo_bytes, caption=None):
     if not resp.ok:
         log.warning("sendPhoto fallita: %s", resp.text[:300])
 
-
 # ---------------------------------------------------------------------------
-# PARSING DEL MESSAGGIO "Vinted Tracker" E SCRAPING
+# PARSING DEL MESSAGGIO E SCRAPING
 # ---------------------------------------------------------------------------
 
 URL_REGEX = re.compile(r"https?://(?:www\.)?vinted\.[a-z]+/items/\S+", re.IGNORECASE)
@@ -514,8 +493,23 @@ def download_image_bytes(url, referer="[https://www.vinted.it/](https://www.vint
     return None
 
 # ---------------------------------------------------------------------------
-# GEMINI -- analisi visiva
+# OTTIMIZZAZIONE FOTO E GEMINI (Analisi Visiva)
 # ---------------------------------------------------------------------------
+
+def optimize_image_bytes(img_bytes, max_size=512):
+    """Ridimensiona l'immagine per farla rientrare nella fascia di costo minima
+    di Gemini (~84 token invece di ~258) mantenendo intatta la leggibilità per l'AI."""
+    try:
+        img = Image.open(BytesIO(img_bytes))
+        img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+        out = BytesIO()
+        img.save(out, format="JPEG", quality=85)
+        return out.getvalue()
+    except Exception as e:
+        log.warning("Ottimizzazione immagine (Pillow) fallita, uso byte originali: %s", e)
+        return img_bytes
 
 def call_gemini_vision(photos_bytes_list, listing_info, max_retries=4):
     user_text_for_log = (
@@ -529,10 +523,11 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=4):
     parts = [{"text": user_text_for_log + "\nAnalizza le foto allegate secondo le tue istruzioni."}]
 
     for img_bytes in photos_bytes_list:
+        optimized_bytes = optimize_image_bytes(img_bytes)
         parts.append({
             "inline_data": {
                 "mime_type": "image/jpeg",
-                "data": base64.b64encode(img_bytes).decode("utf-8"),
+                "data": base64.b64encode(optimized_bytes).decode("utf-8"),
             }
         })
 
@@ -541,7 +536,7 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=4):
         "contents": [{"role": "user", "parts": parts}],
         "generationConfig": {
             "temperature": 0.2,
-            "maxOutputTokens": 6000,
+            "maxOutputTokens": 6000, 
             "responseMimeType": "application/json",
         },
     }
@@ -575,7 +570,6 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=4):
         "come se le foto non fossero analizzabili e applica la regola su assenza "
         "totale di prove di brand dove pertinente.]"
     )
-
 
 # ---------------------------------------------------------------------------
 # SERPER -- Ricerche di Prezzo (Comps)
@@ -670,7 +664,6 @@ def _serper_scrape_page(url, max_chars=2500):
     content = _clean_scraped_markdown(content)
     return content[:max_chars]
 
-
 def search_comps_serper(brand, modello, categoria):
     query_base = f"{brand} {modello} {categoria}".strip()
     if not query_base or query_base.lower() in ("nessuno", "non disponibile", ""):
@@ -728,7 +721,6 @@ def search_comps_serper(brand, modello, categoria):
         lines.append(f"\n📍 FONTE: {label}")
         lines.append(results_by_label.get(label, "  (risultato mancante)"))
     return "\n".join(lines)
-
 
 # ---------------------------------------------------------------------------
 # CLAUDE ORACLE
@@ -840,6 +832,9 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
 
     return final_text
 
+# ---------------------------------------------------------------------------
+# PIPELINE EARLY EXIT E GESTIONE SCARTI
+# ---------------------------------------------------------------------------
 
 def check_skip_pre_claude(gemini_analysis_json):
     try:
@@ -931,7 +926,7 @@ def process_listing(parsed, url, cover_photo_bytes):
 
 
 # ---------------------------------------------------------------------------
-# TELETHON CLIENT
+# TELETHON CLIENT E GESTIONE EVENTI (Con Protezione Timeout)
 # ---------------------------------------------------------------------------
 
 client = TelegramClient(StringSession(TELEGRAM_SESSION_STRING), TELEGRAM_API_ID, TELEGRAM_API_HASH)
@@ -967,14 +962,26 @@ async def on_new_message(event):
                         url = btn_url
                         break
 
-        cover_photo_bytes = await event.message.download_media(bytes) if event.message.photo else None
+        # TIMEOUT DI 7 SECONDI per evitare blocchi del server DC2 di Telegram
+        # Se Telegram è lento, saltiamo la copertina e andiamo diretti allo scrape di Vinted.
+        cover_photo_bytes = None
+        if event.message.photo:
+            try:
+                cover_photo_bytes = await asyncio.wait_for(
+                    event.message.download_media(bytes), 
+                    timeout=7.0
+                )
+            except Exception as e:
+                log.warning("Telegram lento o bloccato (DC2 timeout), salto download miniatura: %s", type(e).__name__)
+
+        log.info("Nuovo annuncio rilevato: %s | url=%s", parsed.get("title"), url)
         await asyncio.to_thread(process_listing, parsed, url, cover_photo_bytes)
 
     except Exception:
         log.error("Errore nella pipeline:\n%s", traceback.format_exc())
 
 async def main():
-    log.info("Vinted Flip Oracle Bot (Telethon) avviato. In ascolto sul gruppo %s", TELEGRAM_GROUP_ID)
+    log.info("Vinted Flip Oracle Bot (Telethon) avviato e ottimizzato. In ascolto sul gruppo %s", TELEGRAM_GROUP_ID)
     await client.start()
     await client.run_until_disconnected()
 
