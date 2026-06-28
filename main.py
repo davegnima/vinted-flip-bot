@@ -1,26 +1,16 @@
 """
 Vinted Flip Oracle Bot (versione Telethon / userbot)
 ======================================================
-Perche' questa versione: la Telegram Bot API non consegna ai bot i
-messaggi scritti da ALTRI bot (e' un limite di piattaforma, non
-configurabile). "Vinted Tracker" e' un bot, quindi il tuo bot "Vinted
-Notification" non poteva vederne i messaggi nemmeno essendo nello stesso
-gruppo. La soluzione e' usare un USERBOT: uno script che si autentica
-con il TUO account Telegram personale (numero di telefono), che vede
-tutto cio' che vede un utente normale -- bot compresi.
-
 Pipeline:
-  1. Telethon (userbot, loggato col tuo numero) ascolta i nuovi messaggi
-     nel gruppo/forum "Dadegnima, Vinted Notification e Vinted Tracker"
-  2. Quando arriva un messaggio da "Vinted Tracker", estrae
-     titolo / prezzo / brand / URL annuncio
-  3. Scraping della pagina Vinted per recuperare TUTTE le foto della
-     galleria + taglia/condizione/descrizione (se disponibili)
-  4. Gemini 3.5 Flash: analisi visiva pura ed esperto Legit Check di precisione
-     con output compresso in JSON per risparmio token massimo.
-  5. Claude Sonnet 4.6: usa l'analisi di Gemini + dati annuncio,
-     riceve i comps estratti in Python e produce il report finale completo.
-  6. L'invio del report avviene con la Bot API normale.
+  1. Telethon (userbot) ascolta i messaggi nel gruppo.
+  2. Estrae titolo, prezzo, brand, URL annuncio.
+  3. Esegue lo scraping di Vinted (galleria immagini HD + dati extra).
+  4. Gemini 3.5 Flash: esegue un esperto Legit Check visivo di precisione
+     con output compresso in JSON per il massimo risparmio di token.
+  5. Python interroga Serper API per i dati di mercato (Comps).
+  6. Claude Sonnet 4.6: unisce i dati, applica le matrici economiche
+     e sputa il verdetto finale pulito.
+  7. Spedizione automatica del report via Bot API in chat privata.
 """
 
 import os
@@ -63,7 +53,7 @@ GEMINI_API_URL = (
 )
 
 CLAUDE_MODEL = "claude-sonnet-4-6"
-MAX_GALLERY_PHOTOS = 6  # Tetto ideale per tagliare i token visivi
+MAX_GALLERY_PHOTOS = 6  # Ridotto per risparmiare token di input e velocizzare
 
 VINTED_TRACKER_NAME_HINTS = ("vinted", "tracker")
 
@@ -143,7 +133,7 @@ REGOLE COMPRA/TRATTA (applica in ordine):
 2. Se margine pieno è già sopra 20€ (e non rientra nel punto 1), MAI scrivere TRATTA. Scegli il livello COMPRA.
 3. Eccezione al punto 2: margine sopra soglia ma 20-40€ E confidenza Media/Bassa E capo hype/monitorato → TRATTA.
 4. TRATTA/TRATTA FORTE altrimenti solo se margine pieno sotto soglia ma accettabile scontando.
-5. ECCEZIONE "Y2K / HYPE IMPULSE BUY": Se il costo d'acquisto pieno è molto basso (< 25€), il brand ha un forte hype attuale (es. Mugler, Diesel vintage, Missoni, Carhartt Y2K) e il design è iconico/trendy, la liquidità batte la condizione e l'assenza di comps. In questi casi, anche senza comps o con difetti lavabili (macchie), il capo verrà venduto per acquisto d'impulso. Non scartarlo con "NON COMPRARE", ma usa "COMPRA" o "COMPRA SE CI TIENI", assegna Liquidità: Alta e spiega in "In una riga" che è un flip da hype/volume veloce.
+5. ECCEZIONE "Y2K / HYPE IMPULSE BUY": Se il costo d'acquisto pieno è molto basso (< 25€), il brand ha un forte hype attuale (es. Mugler, Diesel vintage, Missoni, Carhartt Y2K) e il design è iconico/trendy, la liquidità batte la Academic condition e l'assenza di comps. In questi casi, anche senza comps o con difetti lavabili (macchie), il capo verrà venduto per acquisto d'impulso. Non scartarlo con "NON COMPRARE", ma usa "COMPRA" o "COMPRA SE CI TIENI", assegna Liquidità: Alta e spiega in "In una riga" che è un flip da hype/volume veloce.
 
 # MATRICE DECISIONALE
 1. COMPRA SUBITO — Deal 9-10 E Margine 8-10 E Confidenza non Bassa E Rischio non ALTO, tutti insieme. Parsimonia (2-3/giorno).
@@ -165,6 +155,8 @@ Urgenza:
 4. COME USARE I COMPS: I RISULTATI RICERCA WEB forniti sotto sono la tua fonte primaria. Interpretali con giudizio critico.
 5. VALUTAZIONE IN ASSENZA DI COMPS ESTERNI (VIETATO USARE N/A): Se la sezione ricerca dichiara "nessun risultato" o "ricerca fallita", **NON USARE MAI "N/A"**. Devi obbligatoriamente stimare il prezzo di "Vendita probabile" basandoti sulla tua profonda conoscenza del mercato second-hand, del posizionamento del brand, del materiale e della categoria.
 6. Se stimi basandoti sulla tua conoscenza interna (per mancanza di comps validi), mantieni un approccio realistico e conservativo (quartile basso), dichiara "Confidenza: Bassa" o "Media" e scrivi "Stima basata su storico brand" in "In una riga". MAI lasciare "N/A" sulla vendita probabile o sul margine netto.
+
+DIFFUSION LINE: non vale automaticamente come la mainline.
 
 # LIQUIDITÀ
 Giorni vendita e liquidità da: saturazione, tier domanda brand/modello, taglia, stagionalità.
@@ -192,7 +184,7 @@ SEMPRE in italiano anche se annuncio in altra lingua. Messaggio pronto breve, o 
 """.strip()
 
 # ---------------------------------------------------------------------------
-# GEMINI VISION SYSTEM PROMPT (Versione Esperto Legit Check - Token-Diet)
+# GEMINI VISION SYSTEM PROMPT (Nuovo Legit Check - Token-Diet)
 # ---------------------------------------------------------------------------
 GEMINI_VISION_SYSTEM_PROMPT = """
 Sei un autenticatore esperto di streetwear, luxury e second-hand. Il tuo unico scopo è scovare fake analizzando pixel per pixel (cuciture, font, tag, proporzioni).
@@ -220,10 +212,10 @@ Rispondi ESCLUSIVAMENTE con questo oggetto JSON (zero testo fuori, nessun markdo
 }
 
 REGOLE CRITICHE:
-- "confidenza_pct" è un numero intero (es. 85). Mai 100 senza scontrino e tag perfetti.
-- "rischio_fake_brand" si basa sulla notorietà del brand nel mercato dei fake (es. Ralph Lauren/Nike = Alto).
-- "fake_flags": se vedi font sbavati, cuciture scarse o etichette generiche, indicalo. Se non c'è traccia del brand (solo pattern generici e nessun logo), SCRIVI TASSATIVAMENTE: 'ASSENZA TOTALE DI PROVE'.
-- Rispettare i limiti di parole è TASSATIVO per ragioni di sistema.
+1. NON trascrivere le etichette di lavaggio parola per parola. Estrai solo brand e taglia.
+2. Niente liste, niente spiegazioni prolisse. Taglia gli aggettivi.
+3. Se non c'è traccia del brand (solo pattern generici e nessun logo), SCRIVI TASSATIVAMENTE: 'ASSENZA TOTALE DI PROVE'.
+4. Rispettare i limiti di parole è TASSATIVO per ragioni di sistema.
 """.strip()
 
 
@@ -333,7 +325,7 @@ def scrape_vinted_listing(url):
     }
     log.info("Avvio scraping pagina annuncio: %s", url)
     try:
-        # Timeout a 8 secondi per non subire lo "hang" indefinito di Vinted
+        # Tassativo: 8 secondi per svicolare dallo shadowhang di Vinted
         resp = _vinted_session.get(url, headers=VINTED_HEADERS, timeout=8)
         resp.raise_for_status()
         html = resp.text
@@ -379,7 +371,7 @@ def scrape_vinted_listing(url):
 def download_image_bytes(url, referer="https://www.vinted.it/", max_retries=1):
     headers = dict(IMAGE_DOWNLOAD_HEADERS)
     headers["Referer"] = referer
-    # Timeout aggressivo a 4 secondi per impedire paralisi del bot
+    # Tassativo: 4 secondi a foto per non congelare la coda
     for attempt in range(1, max_retries + 1):
         try:
             resp = _vinted_session.get(url, headers=headers, timeout=4)
@@ -389,7 +381,7 @@ def download_image_bytes(url, referer="https://www.vinted.it/", max_retries=1):
     return None
 
 # ---------------------------------------------------------------------------
-# PIL FOTO COMPRESSION & GEMINI VISION
+# PIL FOTO COMPRESSION & GEMINI VISION (Con Logs Forensi)
 # ---------------------------------------------------------------------------
 
 def optimize_image_bytes(img_bytes, max_size=512):
@@ -418,12 +410,17 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=3):
             }
         })
 
+    # 1. LOG FORENSE: PROMPT DI SISTEMA DI GEMINI
+    log.info("--- [GEMINI CONFIG] SYSTEM PROMPT INVIATO ---")
+    log.info(GEMINI_VISION_SYSTEM_PROMPT)
+    log.info("--------------------------------------------")
+
     payload = {
         "system_instruction": {"parts": [{"text": GEMINI_VISION_SYSTEM_PROMPT}]},
         "contents": [{"role": "user", "parts": parts}],
         "generationConfig": {
             "temperature": 0.15,
-            "maxOutputTokens": 600,
+            "maxOutputTokens": 600,  # Concesso spazio per analisi ma senza sbrodolare
             "responseMimeType": "application/json",
         },
     }
@@ -431,41 +428,42 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=3):
     backoff_seconds = 2
     for attempt in range(1, max_retries + 1):
         try:
-            log.info("Invio richiesta a Gemini... (Attesa massima impostata a 120s per evitare timeout)")
+            log.info("🤖 [PASSAGGIO 2] Chiamata a Gemini Vision... (Attesa massima impostata a 120s per evitare timeout)")
             resp = requests.post(GEMINI_API_URL, params={"key": GEMINI_API_KEY}, json=payload, timeout=120)
             
             if resp.ok:
                 data = resp.json()
                 candidates = data.get("candidates", [])
                 if candidates and isinstance(candidates, list):
-                    # ESTRAZIONE BLINDATA: usiamo .get() a cascata per evitare qualsiasi KeyError 
-                    # se Google blocca la risposta per motivi di safety o filtri interni.
+                    # Estrazione sicura anti-KeyError su blocco safety
                     content_node = candidates[0].get("content", {})
                     parts_list = content_node.get("parts", []) if isinstance(content_node, dict) else []
-                    
                     extracted_text = "".join(p.get("text", "") for p in parts_list if isinstance(p, dict))
                     
                     if extracted_text and len(extracted_text.strip()) >= 30:
                         try:
                             json.loads(extracted_text)
+                            # 2. LOG FORENSE: OUTPUT REALE DI GEMINI
+                            log.info("--- [GEMINI RESPONSE] OUTPUT JSON RICEVUTO ---")
+                            log.info(extracted_text)
+                            log.info("---------------------------------------------")
                             return extracted_text
                         except ValueError:
                             pass
             
-            log.warning("Gemini ha risposto con un errore o JSON incompleto (tentativo %d/%d). Ritento...", attempt, max_retries)
+            log.warning("⚠️ Gemini ha risposto con un errore o JSON incompleto (tentativo %d/%d). Ritento...", attempt, max_retries)
             time.sleep(backoff_seconds)
             backoff_seconds *= 2
             
         except requests.exceptions.RequestException as exc:
-            log.warning("Errore di rete o Timeout scaduto su Gemini (tentativo %d/%d): %s - Ritento...", attempt, max_retries, type(exc).__name__)
+            log.warning("❌ Errore di rete o Timeout scaduto su Gemini (tentativo %d/%d): %s - Ritento...", attempt, max_retries, type(exc).__name__)
             if attempt < max_retries:
                 time.sleep(backoff_seconds)
                 backoff_seconds *= 2
             else:
                 break
 
-    # Fallback sicuro se la risposta viene bloccata o fallisce del tutto
-    return json.dumps({
+    fallback = json.dumps({
         "legit_check": {
             "brand_modello": listing_info.get("brand", "Non specificato"),
             "verdetto": "Non verificabile",
@@ -473,7 +471,7 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=3):
             "rischio_fake_brand": "Medio",
             "dettagli": {
                 "ok": "",
-                "fake_flags": "Blocco o rifiuto strutturale dalle API di Google.",
+                "fake_flags": "Timeout di rete a 120 secondi o errore persistente API.",
                 "mancanti": "Analisi visiva fallita."
             },
             "valutazione_flipper_preliminare": {
@@ -483,6 +481,8 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=3):
             }
         }
     })
+    log.warning("🚨 Usato JSON Fallback d'emergenza per Gemini.")
+    return fallback
 
 # ---------------------------------------------------------------------------
 # SERPER COMPS SEARCH
@@ -598,7 +598,7 @@ def search_comps_serper(brand, modello, categoria):
 
 
 # ---------------------------------------------------------------------------
-# CLAUDE ORACLE
+# CLAUDE ORACLE (Con Logs Forensi)
 # ---------------------------------------------------------------------------
 
 def call_claude_oracle(listing_info, gemini_analysis_json):
@@ -616,7 +616,13 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
         modello_per_ricerca = ""
         categoria_per_ricerca = ""
 
+    # 3. LOG FORENSE: RISULTATI RICERCA SERPER COMPS
+    log.info("🌐 [PASSAGGIO 3] Avvio indagine di mercato tramite Serper API...")
     comps_text = search_comps_serper(brand_per_ricerca, modello_per_ricerca, categoria_per_ricerca)
+    
+    log.info("--- [SERPER COMPS] DATI DI MERCATO RECUPERATI ---")
+    log.info(comps_text)
+    log.info("-------------------------------------------------")
     
     user_text = (
         f"Titolo annuncio: {listing_info.get('title')}\n"
@@ -635,6 +641,14 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
         "Produci ora il verdetto operativo completo, nel formato compatto richiesto."
     )
 
+    # 4. LOG FORENSE: PROMPT COMPLETO DI CLAUDE (System + User)
+    log.info("🧠 [PASSAGGIO 4] Costruzione pacchetto per Claude Sonnet...")
+    log.info("--- [CLAUDE CONFIG] SYSTEM PROMPT ---")
+    log.info(VINTED_FLIP_ORACLE_PRO_SYSTEM_PROMPT)
+    log.info("--- [CLAUDE CONFIG] USER PROMPT INVIATO ---")
+    log.info(user_text)
+    log.info("-------------------------------------------")
+
     payload = {
         "model": CLAUDE_MODEL,
         "max_tokens": 1200,
@@ -646,10 +660,16 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
     resp.raise_for_status()
     
     final_text = "".join(b["text"] for b in resp.json().get("content", []) if b.get("type") == "text")
+    
+    # 5. LOG FORENSE: OUTPUT INTEGRALE DI CLAUDE PRIMA DELLE CORREZIONI
+    log.info("--- [CLAUDE RESPONSE] REPORT GENERATO ---")
+    log.info(final_text)
+    log.info("-----------------------------------------")
+
     verdetto_pos = final_text.find("## Verdetto operativo")
     if verdetto_pos > 0: final_text = final_text[verdetto_pos:]
 
-    # Correzioni automatiche post-elaborazione
+    # Correzioni di sanità automatiche Python post-elaborazione
     decisione_match = re.search(r"\*\*Decisione:\*\*\s*([^\n]+)", final_text)
     decisione_text = decisione_match.group(1) if decisione_match else ""
     if "COMPRA" in decisione_text and re.search(r"sotto\s+soglia", final_text, re.IGNORECASE):
@@ -657,17 +677,19 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
         costo_trattato_valido = bool(costo_trattato_match and costo_trattato_match.group(1).upper() != "N/A")
         nuova_dec = "TRATTA FORTE · HAI TEMPO" if costo_trattato_valido else "NON COMPRARE · N/A"
         final_text = re.sub(r"(\*\*Decisione:\*\*\s*)[^\n]+", r"\1" + nuova_dec + " ⚠️ _(corretto automaticamente: sotto soglia)_", final_text, count=1)
+        log.info("⚠️ Rilevata contraddizione Margine/Decisione: forzata correzione in %s", nuova_dec)
 
     decisione_match_2 = re.search(r"\*\*Decisione:\*\*\s*([^\n]+)", final_text)
     decisione_text_2 = decisione_match_2.group(1) if decisione_match_2 else ""
     if "COMPRA SUBITO" in decisione_text_2 and re.search(r"\*\*Confidenza:\*\*\s*Bassa", final_text, re.IGNORECASE):
         final_text = re.sub(r"(\*\*Decisione:\*\*\s*)[^\n]+", r"\1COMPRA FORTE · HAI QUALCHE ORA ⚠️ _(corretto automaticamente: confidenza Bassa)_", final_text, count=1)
+        log.info("⚠️ Rilevata contraddizione Compra Subito/Confidenza Bassa: declassato a COMPRA FORTE.")
 
     return final_text
 
 
 # ---------------------------------------------------------------------------
-# PIPELINE EARLY EXIT
+# PIPELINE EARLY EXIT & GESTIONE SCARTI
 # ---------------------------------------------------------------------------
 
 def check_skip_pre_claude(gemini_analysis_json):
@@ -676,6 +698,7 @@ def check_skip_pre_claude(gemini_analysis_json):
         l_check = data.get("legit_check", {})
         v_flipper = l_check.get("valutazione_flipper_preliminare", {}) if isinstance(l_check, dict) else {}
         
+        # Early exit se Gemini riconosce un falso palese con alta confidenza
         if (l_check.get("verdetto") or "").strip().lower() == "probabilmente falso" and int(l_check.get("confidenza_pct", 0)) >= 85:
             return True, f"[FALSO CONCLAMATO] {l_check.get('dettagli', {}).get('fake_flags', '')}"
         if v_flipper.get("categoria_a_basso_valore") is True:
@@ -707,6 +730,12 @@ def process_listing(parsed, url, cover_photo_bytes):
     photo_bytes_list = []
     successful_urls = [] 
 
+    log.info("=============================================================")
+    log.info("🚀 INIZIO VALUTAZIONE NUOVO ANNUNCIO")
+    log.info("=============================================================")
+    log.info("Dati grezzi ricevuti da Telegram Tracker:")
+    log.info(json.dumps(listing_info, indent=2, ensure_ascii=False))
+
     if url:
         scraped = scrape_vinted_listing(url)
         listing_info["size"] = scraped.get("size")
@@ -715,43 +744,46 @@ def process_listing(parsed, url, cover_photo_bytes):
         listing_info["age_days"] = scraped.get("age_days")
 
         urls_to_download = scraped.get("photo_urls", [])
-        if urls_to_download: log.info("Inizio download di %d immagini da Vinted...", len(urls_to_download))
+        if urls_to_download: log.info("[PASSAGGIO 1] Download galleria Vinted HD (%d foto)...", len(urls_to_download))
         for photo_url in urls_to_download:
             img = download_image_bytes(photo_url, referer=url)
             if img: 
                 photo_bytes_list.append(img)
                 successful_urls.append(photo_url)
-            time.sleep(0.3)
-        if urls_to_download: log.info("Download completato. Foto riuscite: %d/%d", len(photo_bytes_list), len(urls_to_download))
+            time.sleep(0.4)
+        if urls_to_download: log.info("✅ Download completato. Foto riuscite: %d/%d", len(photo_bytes_list), len(urls_to_download))
 
     if not photo_bytes_list and cover_photo_bytes:
+        log.warning("⚠️ Scraping galleria fallito. Attivazione fallback: copertina Telegram.")
         photo_bytes_list = [cover_photo_bytes]
-        successful_urls = ["[Miniatura di Copertina Telegram - Fallback]"]
+        successful_urls = ["[Miniatura di Copertina prelevata da Telegram - Fallback]"]
 
     if not photo_bytes_list: return
 
-    log.info("================ CHECK IMMAGINI VERSO GEMINI ================")
-    log.info("Sto per inviare a Gemini %d foto ottimizzate via Pillow.", len(photo_bytes_list))
-    for i, img_url in enumerate(successful_urls, start=1): log.info("  [Foto %d] -> %s", i, img_url)
-    log.info("=============================================================")
+    # LOG CHECK VISIVO SULLE FOTO SCARICATE
+    log.info("--- [GALLERIA FOTOGRAFICA INVIATA] ---")
+    for i, img_url in enumerate(successful_urls, start=1): log.info("  Foto %d -> %s", i, img_url)
+    log.info("--------------------------------------")
 
     gemini_analysis_json = call_gemini_vision(photo_bytes_list, listing_info)
-    log.info("RISPOSTA GEMINI (JSON):\n%s", gemini_analysis_json)
 
     e_skip, motivo_skip = check_skip_pre_claude(gemini_analysis_json)
     if e_skip:
-        log.info(f"⚡ CORTOCIRCUITO COMPRA/SCOU: {motivo_skip}")
+        log.info(f"⚡ [EARLY EXIT] Cortocircuito attivato: Claude NON consultato. Motivo: {motivo_skip}")
         final_report = build_skip_report(listing_info, motivo_skip)
     else:
         final_report = call_claude_oracle(listing_info, gemini_analysis_json)
 
     header = f"🆕 *{listing_info.get('title')}*\n🏷️ {listing_info.get('brand') or '?'} · 💰 {listing_info.get('price') or '?'} EUR\n{url or ''}\n{'—'*20}\n"
+    
+    log.info("📤 [PASSAGGIO 5] Spedizione pacchetto finale su Telegram...")
     telegram_send_photo(TELEGRAM_OWNER_CHAT_ID, photo_bytes_list[0], caption=listing_info.get("title"))
     telegram_send_message(TELEGRAM_OWNER_CHAT_ID, header + final_report)
+    log.info("======================= VALUTAZIONE FINE =======================\n")
 
 
 # ---------------------------------------------------------------------------
-# TELETHON CLIENT
+# TELETHON CLIENT E GESTIONE EVENTI (Con Protezione Timeout DC2)
 # ---------------------------------------------------------------------------
 
 client = TelegramClient(StringSession(TELEGRAM_SESSION_STRING), TELEGRAM_API_ID, TELEGRAM_API_HASH)
@@ -783,6 +815,7 @@ async def on_new_message(event):
                         url = button.url
                         break
 
+        # TIMEOUT DI 7 SECONDI per evitare blocchi del server DC2 di Telegram
         cover_photo_bytes = None
         if event.message.photo:
             try:
