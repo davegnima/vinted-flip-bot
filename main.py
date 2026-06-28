@@ -422,8 +422,8 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=3):
         "system_instruction": {"parts": [{"text": GEMINI_VISION_SYSTEM_PROMPT}]},
         "contents": [{"role": "user", "parts": parts}],
         "generationConfig": {
-            "temperature": 0.1,
-            "maxOutputTokens": 400,  # RIGIDO: Tappo all'output per risparmio monetario e prevenzione timeout
+            "temperature": 0.15,
+            "maxOutputTokens": 600,
             "responseMimeType": "application/json",
         },
     }
@@ -431,33 +431,58 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=3):
     backoff_seconds = 2
     for attempt in range(1, max_retries + 1):
         try:
-            resp = requests.post(GEMINI_API_URL, params={"key": GEMINI_API_KEY}, json=payload, timeout=60)
+            log.info("Invio richiesta a Gemini... (Attesa massima impostata a 120s per evitare timeout)")
+            resp = requests.post(GEMINI_API_URL, params={"key": GEMINI_API_KEY}, json=payload, timeout=120)
+            
             if resp.ok:
                 data = resp.json()
                 candidates = data.get("candidates", [])
-                if candidates:
-                    extracted_text = "".join(p.get("text", "") for p in candidates[0]["content"]["parts"])
+                if candidates and isinstance(candidates, list):
+                    # ESTRAZIONE BLINDATA: usiamo .get() a cascata per evitare qualsiasi KeyError 
+                    # se Google blocca la risposta per motivi di safety o filtri interni.
+                    content_node = candidates[0].get("content", {})
+                    parts_list = content_node.get("parts", []) if isinstance(content_node, dict) else []
+                    
+                    extracted_text = "".join(p.get("text", "") for p in parts_list if isinstance(p, dict))
+                    
                     if extracted_text and len(extracted_text.strip()) >= 30:
                         try:
                             json.loads(extracted_text)
                             return extracted_text
                         except ValueError:
                             pass
+            
+            log.warning("Gemini ha risposto con un errore o JSON incompleto (tentativo %d/%d). Ritento...", attempt, max_retries)
             time.sleep(backoff_seconds)
             backoff_seconds *= 2
+            
         except requests.exceptions.RequestException as exc:
-            log.warning("Errore di rete Gemini (tentativo %d/%d): %s - Ritento...", attempt, max_retries, type(exc).__name__)
+            log.warning("Errore di rete o Timeout scaduto su Gemini (tentativo %d/%d): %s - Ritento...", attempt, max_retries, type(exc).__name__)
             if attempt < max_retries:
                 time.sleep(backoff_seconds)
                 backoff_seconds *= 2
             else:
                 break
 
-    return (
-        '{"legit_check": {"brand_modello": "Errore", "verdetto": "Non verificabile", "confidenza_pct": 50, '
-        '"rischio_fake_brand": "Medio", "dettagli": {"ok": "", "fake_flags": "Timeout", "mancanti": ""}, '
-        '"valutazione_flipper_preliminare": {"categoria_a_basso_valore": false, "verdetto_grezzo": "VALUTA", "motivo_verdetto_grezzo": "Timeout"}}}'
-    )
+    # Fallback sicuro se la risposta viene bloccata o fallisce del tutto
+    return json.dumps({
+        "legit_check": {
+            "brand_modello": listing_info.get("brand", "Non specificato"),
+            "verdetto": "Non verificabile",
+            "confidenza_pct": 50,
+            "rischio_fake_brand": "Medio",
+            "dettagli": {
+                "ok": "",
+                "fake_flags": "Blocco o rifiuto strutturale dalle API di Google.",
+                "mancanti": "Analisi visiva fallita."
+            },
+            "valutazione_flipper_preliminare": {
+                "categoria_a_basso_valore": False,
+                "verdetto_grezzo": "VALUTA",
+                "motivo_verdetto_grezzo": "Errore API visiva."
+            }
+        }
+    })
 
 # ---------------------------------------------------------------------------
 # SERPER COMPS SEARCH
