@@ -558,7 +558,8 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=4):
                             pass
             time.sleep(backoff_seconds)
             backoff_seconds *= 2
-        except requests.exceptions.RequestException:
+except requests.exceptions.RequestException as exc:
+            log.warning("Errore di rete Gemini (tentativo %d/%d): %s - Ritento...", attempt, max_retries, type(exc).__name__)
             if attempt < max_retries:
                 time.sleep(backoff_seconds)
                 backoff_seconds *= 2
