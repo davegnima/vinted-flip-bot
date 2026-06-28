@@ -611,7 +611,7 @@ def download_image_bytes(url, referer="https://www.vinted.it/", max_retries=2):
 # GEMINI -- analisi visiva pura
 # ---------------------------------------------------------------------------
 
-def call_gemini_vision(photos_bytes_list, listing_info):
+def call_gemini_vision(photos_bytes_list, listing_info, max_retries=4):
     user_text_for_log = (
         f"Titolo annuncio: {listing_info.get('title')}\n"
         f"Brand dichiarato: {listing_info.get('brand')}\n"
@@ -648,21 +648,76 @@ def call_gemini_vision(photos_bytes_list, listing_info):
         },
     }
 
-    resp = requests.post(
-        GEMINI_API_URL,
-        params={"key": GEMINI_API_KEY},
-        json=payload,
-        timeout=60,
-    )
-    resp.raise_for_status()
-    data = resp.json()
-    candidates = data.get("candidates", [])
-    if not candidates:
-        return "[Analisi visiva Gemini non disponibile: risposta vuota]"
-    return "".join(
-        p.get("text", "") for p in candidates[0]["content"]["parts"]
-    )
+    # Errori transitori (sovraccarico/rate limit lato Google) -> ritentiamo
+    # con backoff esponenziale. Altri errori (4xx diversi da 429, es. API
+    # key invalida o richiesta malformata) non hanno senso da ritentare e
+    # vengono propagati immediatamente.
+    RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+    backoff_seconds = 2  # 2s, 4s, 8s, 16s...
 
+    last_exception = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            resp = requests.post(
+                GEMINI_API_URL,
+                params={"key": GEMINI_API_KEY},
+                json=payload,
+                timeout=60,
+            )
+
+            if resp.ok:
+                data = resp.json()
+                candidates = data.get("candidates", [])
+                if not candidates:
+                    log.warning("Gemini ha risposto 200 ma senza candidates (risposta vuota).")
+                    return "[Analisi visiva Gemini non disponibile: risposta vuota]"
+                return "".join(
+                    p.get("text", "") for p in candidates[0]["content"]["parts"]
+                )
+
+            if resp.status_code in RETRYABLE_STATUS_CODES and attempt < max_retries:
+                log.warning(
+                    "Gemini HTTP %d (tentativo %d/%d) -- ritento in %ds. Body: %s",
+                    resp.status_code, attempt, max_retries, backoff_seconds, resp.text[:300],
+                )
+                time.sleep(backoff_seconds)
+                backoff_seconds *= 2
+                continue
+
+            # Errore non transitorio, o ultimo tentativo esaurito: propaga.
+            resp.raise_for_status()
+
+        except requests.exceptions.HTTPError as exc:
+            last_exception = exc
+            if attempt >= max_retries:
+                break
+        except requests.exceptions.RequestException as exc:
+            # Timeout, connessione persa, ecc. -- trattali come transitori.
+            last_exception = exc
+            log.warning(
+                "Gemini eccezione di rete (tentativo %d/%d): %s -- ritento in %ds",
+                attempt, max_retries, exc, backoff_seconds,
+            )
+            if attempt < max_retries:
+                time.sleep(backoff_seconds)
+                backoff_seconds *= 2
+                continue
+            break
+
+    # Tutti i tentativi esauriti: non far crashare l'intera pipeline.
+    # Logghiamo l'errore e restituiamo un placeholder che Claude può
+    # interpretare correttamente (assenza di analisi visiva = cautela massima).
+    log.error(
+        "Gemini Vision: tutti i %d tentativi falliti. Ultimo errore: %s",
+        max_retries, last_exception,
+    )
+    return (
+        "[ERRORE: analisi visiva Gemini non disponibile dopo "
+        f"{max_retries} tentativi -- ultimo errore: {last_exception}. "
+        "Procedi con MASSIMA cautela: nessun dato visivo affidabile, "
+        "tratta come se le foto non fossero analizzabili e applica la "
+        "regola su assenza totale di prove di brand dove pertinente.]"
+    )
 
 # ---------------------------------------------------------------------------
 # CLAUDE -- prezzi, margine, verdetto finale (con web_search)
