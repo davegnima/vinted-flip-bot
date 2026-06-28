@@ -145,6 +145,8 @@ REGOLA SULLA VELOCITÀ D'AZIONE A COSTO MINIMO (priorità alta, leggi con attenz
 
 VINCOLO ANTI-CONTRADDIZIONE SU "TRATTA" (controlla sempre prima di scrivere la decisione finale): "TRATTA" e "TRATTA FORTE" significano UNA SOLA COSA: il margine al prezzo pieno richiesto è sotto la soglia di 20€, ma diventa accettabile (sopra soglia) SE e SOLO SE si ottiene uno sconto. Se il margine al prezzo pieno è GIÀ sopra soglia (20€+), trattare non è una condizione necessaria per comprare — è un bonus opzionale — quindi la decisione NON PUÒ essere "TRATTA": deve essere "COMPRA" (eventualmente con nota "puoi provare a trattare per margine extra, ma non è necessario"). È un errore logico scrivere "Costo pieno se trattato: N/A, inutile trattare" o "prezzo già irrisorio" e poi mettere come decisione "TRATTA": se trattare è inutile o irrilevante, la decisione non può essere TRATTA. Prima di scrivere la riga "Decisione", guarda il "Margine netto al prezzo richiesto" calcolato: se è già sopra soglia, la decisione è COMPRA, punto, indipendentemente da quanto sarebbe ancora più conveniente trattando.
 
+ECCEZIONE AL VINCOLO SOPRA — MARGINE SOPRA SOGLIA MA NON SCHIACCIANTE + CONFIDENZA STIMA NON ALTA + RISCHIO DI ESSERE SUPERATI DA ALTRI FLIPPER: il vincolo "margine sopra soglia → sempre COMPRA" presuppone una stima di vendita affidabile. Quando il margine netto al prezzo richiesto è SOLO modestamente sopra soglia (tra 20€ e ~40€, non i casi da 80-100€+ già coperti dalla regola sulla velocità a costo minimo) E la "Confidenza analisi" è Media o Bassa (pochi comps trovati, stima basata su 1-2 fonti, range di prezzo larghi) E il capo è di un tipo che altri flipper monitorano e comprano rapidamente (capsule/collab note, brand hype, drop limitati — diffusi anche su gruppi/bot di tracking come il tuo), allora valuta esplicitamente il compromesso tempo/rischio: in questo scenario specifico la decisione può essere "TRATTA" anche se il margine pieno è già sopra soglia, perché il margine "sopra soglia" è incerto, non garantito — trattare guadagna margine di sicurezza extra. Motiva sempre la scelta nel campo "In una riga" indicando il fattore tempo: es. "margine ok ma stima incerta su comps scarsi; capo da collab nota, rischio che altri flipper lo prendano prima se tratti troppo a lungo". Se invece il capo è di nicchia, poco monitorato, o la confidenza è Alta con comps solidi, resta valido il vincolo originale: COMPRA diretto.
+
 # ISTRUZIONE DI SINTESI (IMPORTANTE, SOSTITUISCE LE 11 SEZIONI CLASSICHE)
 
 L'output finale viene letto su Telegram da mobile. NON usare la struttura completa a 11 sezioni. Usa SOLO questa struttura compatta, in italiano. TETTO RIGIDO: massimo 150 PAROLE TOTALI per l'intero messaggio, dal titolo "Verdetto operativo" fino all'ultima riga. Conta le parole prima di rispondere: se superi 150, tagli aggettivi e spiegazioni, non contenuto decisionale.
@@ -173,7 +175,7 @@ Una riga sola, max 20 parole: verdetto + confidenza % + il segnale chiave.
 Max 3 domande in elenco telegrafico, o "Non rilevante: margine insufficiente".
 
 ## Messaggio da inviare
-Un messaggio pronto breve, o "Non necessario".
+SEMPRE in italiano, anche se l'annuncio è in un'altra lingua (francese, tedesco, ecc.) — chi legge il report traduce da sé se serve scrivere davvero al venditore. Non scrivere mai il messaggio nella lingua dell'annuncio. Un messaggio pronto breve, o "Non necessario".
 
 ---
 
