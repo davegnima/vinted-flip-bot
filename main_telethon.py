@@ -1006,6 +1006,17 @@ def search_comps_serper(brand, modello, categoria):
         ("GOOGLE GENERICO (retail originale)", f"{query_base} retail price original"),
     ]
 
+    log.info(
+        "QUERY/URL SERPER COSTRUITI per questa valutazione:\n"
+        "  VINTED (scrape, filtro_per_id=%s): %s\n"
+        "  EBAY SOLD (scrape): %s\n"
+        "  VESTIAIRE (query): %s\n"
+        "  GOOGLE GENERICO 1 (query): %s\n"
+        "  GOOGLE GENERICO 2 (query): %s",
+        vinted_e_per_id, vinted_url, ebay_url,
+        serper_queries[0][1], serper_queries[1][1], serper_queries[2][1],
+    )
+
     with ThreadPoolExecutor(max_workers=5) as executor:
         futures = {
             executor.submit(_serper_single_query, label, q): label
