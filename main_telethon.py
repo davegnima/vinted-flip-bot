@@ -157,7 +157,7 @@ Scrivi "Decisione: [qualità] · [urgenza]", es. "COMPRA SUBITO · AGISCI ORA" o
 3. Sold estero (valuta locale) va scontato per Vinted IT, più price-sensitive — dichiara l'aggiustamento.
 4. Comps scarsi/sporchi → confidenza bassa, non colmare con memoria/retail.
 5. Target vendita 7-14gg: prezzo competitivo con margine trattativa incluso.
-6. PRIMA di proporre prezzi, ricerca web specifica (`"[brand] [modello] sold" ebay`, `"[brand] [modello] vinted/vestiaire`). Mai solo memoria/retail/valore "da collezione". Comps assenti → confidenza BASSA, prudente al ribasso.
+6. PRIMA di proporre prezzi, ricerca web specifica (`"[brand] [modello] sold" ebay`, `"[brand] [modello] vinted/vestiaire`). Mai solo memoria/retail/valore "da collezione". Comps assenti → confidenza BASSA, prudente al ribasso. HAI MASSIMO 3 RICERCHE disponibili per questa valutazione: pianificale bene, non sprecarle su query troppo specifiche che rischiano zero risultati — preferisci 2-3 query ampie e mirate (es. una su eBay sold, una su Vestiaire/ask) piuttosto che tentativi multipli di affinamento.
 
 DIFFUSION LINE (Missoni/Missoni Sport, Prada/Miu Miu, Armani/Emporio-Exchange, Max Mara/Weekend, ecc.): non vale automaticamente come la mainline — dipende dal brand, alcune restano ricercate altre no. Cerca comps SPECIFICI per quella linea esatta. Solo comps mainline trovati → NON usarli come proxy diretto, confidenza bassa, stima al ribasso, dichiaralo.
 
@@ -813,7 +813,14 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
             }
         ],
         "messages": [{"role": "user", "content": content}],
-        "tools": [{"type": "web_search_20250305", "name": "web_search"}],
+        # max_uses limita le ricerche web per singola valutazione: senza
+        # questo limite, Claude puo' fare 2-4+ ricerche per un annuncio
+        # ambiguo, e OGNI ricerca e' una chiamata API separata che
+        # ricarica l'intero contesto accumulato (system prompt + storico
+        # ricerche precedenti), facendo lievitare i costi rapidamente.
+        # 3 ricerche bastano per il caso tipico (es. eBay sold + Vestiaire
+        # ask + eventuale comp specifico per diffusion line).
+        "tools": [{"type": "web_search_20250305", "name": "web_search", "max_uses": 3}],
     }
 
     resp = requests.post(
