@@ -928,6 +928,60 @@ def search_comps_ebay_sold(brand, modello, categoria):
 
 
 
+def _clean_scraped_markdown(content):
+    """Pulizia meccanica (nessuna chiamata AI, costo zero) del markdown
+    grezzo restituito da scrape.serper.dev per pagine Vinted/eBay.
+
+    Motivazione: osservato nei log reali che lo scrape di queste pagine
+    porta con se' molto rumore strutturale che non aggiunge informazione
+    utile per Claude (metadata SEO ripetuti, immagini SVG inline codificate
+    in base64 lunghissime, link di servizio come "Vendi un oggetto simile"),
+    e questo rumore da solo gonfiava il prompt finale a Claude fino a
+    ~3x quanto preventivato, anche quando il risultato utile era solo
+    "nessun risultato trovato" o 2-3 righe di prezzo reale.
+
+    Questa pulizia e' puramente strutturale via regex (non capisce il
+    significato del contenuto, solo riconosce pattern di rumore noti) --
+    e' il primo livello di taglio, a costo zero, prima di valutare se
+    serve anche un riassunto via AI per i casi in cui il contenuto utile
+    resta comunque troppo lungo."""
+    if not content:
+        return content
+
+    # Rimuove blocchi di metadata SEO/HTML (meta-description, meta-og-*,
+    # meta-twitter-*, title, meta-viewport, ecc.) -- spesso appaiono in un
+    # blocco delimitato da "---" all'inizio del markdown estratto.
+    content = re.sub(
+        r"^---\s*\nmeta-[\s\S]*?\n---\s*\n",
+        "",
+        content,
+        flags=re.MULTILINE,
+    )
+    # Rimuove righe singole "meta-qualcosa: ..." anche se non in un blocco ---
+    content = re.sub(r"^meta-[\w-]+:.*$", "", content, flags=re.MULTILINE)
+    content = re.sub(r"^title:.*$", "", content, flags=re.MULTILINE)
+
+    # Rimuove immagini SVG inline codificate in base64 (data:image/svg+xml;base64,...)
+    # -- queste possono essere lunghe centinaia di caratteri per una singola
+    # icona decorativa (es. freccia, lente di ricerca) senza alcun valore
+    # informativo per il pricing.
+    content = re.sub(r"!\[SVG Image\]\(data:image/svg\+xml;base64,[^)]+\)", "", content)
+    content = re.sub(r"\(data:image/svg\+xml;base64,[^)]+\)", "", content)
+
+    # Rimuove link di servizio ricorrenti senza valore informativo
+    content = re.sub(r"\[Vendi un oggetto simile\]\([^)]+\)", "", content)
+    content = re.sub(r"\[Logo di Vinted\]\([^)]+\)", "", content)
+    content = re.sub(r"\[Passa al contenuto!?\[[^\]]*\]\([^)]+\)\]\([^)]+\)", "", content)
+    content = re.sub(r"!\[Catalogo\]\([^)]+\)", "", content)
+
+    # Rimuove righe vuote multiple consecutive (residuo della rimozione
+    # sopra) per non sprecare token su spazio bianco ripetuto.
+    content = re.sub(r"\n{3,}", "\n\n", content)
+    content = content.strip()
+
+    return content
+
+
 def _serper_scrape_page(url, max_chars=2500):
     """Scarica e legge il contenuto di una pagina specifica via
     scrape.serper.dev (endpoint diverso da quello di ricerca: qui l'URL
@@ -956,6 +1010,11 @@ def _serper_scrape_page(url, max_chars=2500):
     content = data.get("markdown") or data.get("text") or ""
     if not content:
         return None
+
+    # PULIZIA PRIMA DEL TRONCAMENTO: importante pulire prima di tagliare
+    # a max_chars, altrimenti rischiamo di tagliare via contenuto utile
+    # mentre teniamo rumore (es. un blocco SVG enorme) nei primi caratteri.
+    content = _clean_scraped_markdown(content)
 
     return content[:max_chars]
 
