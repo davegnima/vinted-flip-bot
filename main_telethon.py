@@ -63,6 +63,7 @@ import asyncio
 import base64
 import logging
 import traceback
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 from telethon import TelegramClient, events
@@ -81,6 +82,7 @@ TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_OWNER_CHAT_ID = os.environ["TELEGRAM_OWNER_CHAT_ID"]
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
+SERPER_API_KEY = os.environ["SERPER_API_KEY"]
 
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 
@@ -95,6 +97,77 @@ MAX_GALLERY_PHOTOS = 10  # tetto massimo foto da inviare ai modelli (costo)
 
 # Adatta questa stringa se il nome/username esatto del bot terzo e' diverso
 VINTED_TRACKER_NAME_HINTS = ("vinted", "tracker")
+
+# Mappa NOME BRAND (lowercase, come confrontato dal codice) -> brand_id
+# Vinted. Questi ID sono presi DIRETTAMENTE dalle URL dei watch reali
+# dell'utente (changedetection.io), non indovinati: Vinted non li indicizza
+# pubblicamente, l'unico modo affidabile per ottenerli e' aprire il sito,
+# filtrare per brand, e leggere il numero dall'URL risultante.
+#
+# Usata per costruire ricerche Vinted filtrate per brand_id (precise, zero
+# rumore da testo libero) al posto di ricerche Serper generiche su Vinted.
+# Se un brand non e' in questa mappa, il codice deve fare fallback su
+# ricerca testuale (search_text=) o saltare la query Vinted dedicata --
+# MAI inventare un brand_id plausibile, un ID sbagliato filtrerebbe
+# risultati del brand sbagliato in modo silenzioso e pericoloso.
+#
+# STATO: parzialmente popolata. Confermati con certezza da URL reali:
+VINTED_BRAND_IDS = {
+    "brunello cucinelli": "103740",
+    "rick owens": "145654",
+    "arc'teryx": "319730",
+    "arcteryx": "319730",  # alias senza apostrofo, per matching piu' robusto
+    "patagonia": "90804",
+    "marni": "12251",
+    "missoni": "4463",
+    "jean paul gaultier": "4129",
+    "jpg": "4129",  # alias comune
+    "emilio pucci": "10831",
+    "pucci": "10831",  # alias comune
+    "issey miyake": "75090",
+    "pleats please": "395642",
+    "pleats please issey miyake": "395642",
+    "claude montana": "121608",
+    "miu miu": "1745",
+    "thierry mugler": "284",
+    "mugler": "284",  # alias comune
+    "courreges": "12639",
+    "courrèges": "12639",  # alias con accento
+    # NOTA: Vivienne Westwood NON ha un brand_id dedicato su Vinted
+    # (verificato dall'URL reale: nessun brand_ids[] presente nonostante
+    # il filtro applicato) -- per questo il fallback su search_text e'
+    # l'unica opzione, non un'omissione. Thierry Mugler e Courreges
+    # ERANO inizialmente segnalati come privi di ID, ma sono stati poi
+    # confermati con un secondo controllo (vedi sopra) -- la nota
+    # originale era quindi imprecisa per questi due.
+
+    # Watch 1 "Visual Icons" -- completato, ultimi 4 confermati:
+    "m missoni": "1702343",
+    "missoni home": "2776470",
+    "missoni mare": "2720679",
+    "vivienne westwood": "14217",
+
+    # Watch 3 "Avant-Garde" -- completato, 5 confermati:
+    "yohji yamamoto": "200474",
+    "dries van noten": "72138",
+    "ann demeulemeester": "51445",
+    "raf simons": "184436",
+    "loewe": "24209",
+
+    # Watch 2 "Cappotti 90s Minimal" -- completato, 5 confermati:
+    "helmut lang": "47829",
+    "jil sander": "17991",
+    "bottega veneta": "86972",
+    "maison margiela": "639289",
+    "margiela": "639289",  # alias comune
+    "max mara": "5483",
+
+    # Watch 4 "Technical Outerwear" -- completato, 4 confermati:
+    "veilance": "3388210",
+    "nanga": "434286",
+    "snow peak": "666350",
+    "acronym": "712647",
+}
 
 logging.basicConfig(
     level=logging.INFO,
@@ -157,7 +230,7 @@ Scrivi "Decisione: [qualità] · [urgenza]", es. "COMPRA SUBITO · AGISCI ORA" o
 3. Sold estero (valuta locale) va scontato per Vinted IT, più price-sensitive — dichiara l'aggiustamento.
 4. Comps scarsi/sporchi → confidenza bassa, non colmare con memoria/retail.
 5. Target vendita 7-14gg: prezzo competitivo con margine trattativa incluso.
-6. PRIMA di proporre prezzi, UNA SOLA ricerca web disponibile per questa valutazione (non puoi affinare con tentativi successivi): costruisci UNA query ampia e ben scelta che massimizzi la probabilità di trovare comps utili in un solo colpo — es. `"[brand] [modello]" sold ebay vestiaire` (più fonti nella stessa query) invece di query strette su una sola fonte. Se la query non torna risultati utili, lavora con quello che hai e dichiara confidenza Bassa — non hai un secondo tentativo. Mai stimare solo da memoria/retail/valore "da collezione". Comps assenti → confidenza BASSA, prudente al ribasso.
+6. PRIMA di proporre prezzi, usa i RISULTATI RICERCA WEB già forniti più sotto nel messaggio: sono stati recuperati per te da una ricerca esterna fatta con una query ampia (più fonti insieme — eBay sold, Vestiaire, Vinted). Non hai un tool di ricerca proprio: questi risultati grezzi sono la tua UNICA fonte di dati di mercato, vanno interpretati con giudizio critico (titoli e snippet possono essere ask non sold, prezzi in valute diverse, articoli non comparabili — scartali se non pertinenti; pagine catalogo generiche senza un prezzo specifico — es. "Buy second-hand MARNI t-shirts" — non sono comps, ignorale). Gli snippet possono contenere rumore testuale (sequenze di caratteri sparsi tipo lettere isolate intervallate, residuo di testo "sponsorizzato" corrotto): ignora quei frammenti illeggibili, non provare a interpretarli come dati. Se la sezione dichiara "nessun risultato" o "ricerca fallita", non hai comps disponibili: dichiara confidenza Bassa e resta prudente al ribasso. Mai stimare solo da memoria/retail/valore "da collezione" quando i risultati ci sono ma non li usi.
 
 DIFFUSION LINE (Missoni/Missoni Sport, Prada/Miu Miu, Armani/Emporio-Exchange, Max Mara/Weekend, ecc.): non vale automaticamente come la mainline — dipende dal brand, alcune restano ricercate altre no. Cerca comps SPECIFICI per quella linea esatta. Solo comps mainline trovati → NON usarli come proxy diretto, confidenza bassa, stima al ribasso, dichiaralo.
 
@@ -184,7 +257,7 @@ STILE: etichetta+valore secco, niente parentesi esplicative, niente "il problema
 
 VINCOLO CRITICO: la risposta finale viene spedita INTERAMENTE e AUTOMATICAMENTE su Telegram senza revisione umana. Qualsiasi testo che scrivi PRIMA di "## Verdetto operativo" finisce spedito comunque, senza eccezioni — questo include non solo "ricerco i prezzi" o note di ragionamento, ma ANCHE un riepilogo dei dati raccolti dalle ricerche (es. "Sintesi dati raccolti prima di scrivere il verdetto:", elenchi di comps trovati, prezzi retail, confidenza). Quel riepilogo è ESATTAMENTE il tipo di testo vietato: non è il formato richiesto, gonfia il messaggio, e se scritto come blocco separato prima del verdetto rischia di finire fuori ordine. Usa le ricerche per RAGIONARE internamente, non per produrre un resoconto scritto a parte: il primo testo che scrivi nella risposta deve essere il carattere "#" di "## Verdetto operativo", senza alcuna riga, titolo in grassetto, o elenco prima di quello — non un riassunto "pulito", zero.
 
-Completa TUTTE le ricerche web PRIMA di scrivere qualsiasi testo (verdetto incluso) — non alternare scrittura e ricerca, perché i blocchi di testo vengono concatenati in sequenza e un'interruzione produce righe fuori ordine. Sequenza corretta: (1) tutte le ricerche, senza scrivere alcun testo nel mezzo, nemmeno un riepilogo; (2) UN SOLO blocco finale scritto tutto insieme da "## Verdetto operativo" a "## Messaggio da inviare", senza interromperlo e senza nulla prima.
+Senza un tool di ricerca proprio (i dati di mercato sono già nel messaggio sopra), non c'è motivo di produrre testo intermedio prima del verdetto: scrivi in UN SOLO blocco, da "## Verdetto operativo" a "## Messaggio da inviare", senza interromperlo e senza nulla prima.
 
 ## Verdetto operativo
 - **Decisione:** [qualità] · [urgenza], es. "COMPRA SUBITO · AGISCI ORA"
@@ -769,6 +842,220 @@ def strip_per_photo_analysis(gemini_analysis_json):
     return json.dumps(data, ensure_ascii=False, indent=2)
 
 
+def _serper_single_query(label, query, num_results=4):
+    """Esegue una singola query Serper e ritorna (label, testo_risultati).
+    Helper interno usato da search_comps_serper per le query parallele."""
+    try:
+        resp = requests.post(
+            "https://google.serper.dev/search",
+            headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
+            json={"q": query, "gl": "it", "hl": "it", "num": num_results},
+            timeout=12,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:
+        log.warning("Ricerca Serper fallita per '%s' (query: '%s'): %s", label, query, e)
+        return label, f"  Ricerca fallita per errore tecnico ({type(e).__name__}). Nessun dato da questa fonte."
+
+    organic = data.get("organic", [])
+    if not organic:
+        return label, "  Nessun risultato trovato per questa fonte/query."
+
+    lines = []
+    for r in organic[:num_results]:
+        title = r.get("title", "")
+        snippet = r.get("snippet", "")
+        link = r.get("link", "")
+        lines.append(f"  - {title}\n    {snippet}\n    [{link}]")
+    return label, "\n".join(lines)
+
+
+def build_vinted_search_url(brand, modello_o_categoria, max_price=None):
+    """Costruisce un URL di ricerca Vinted filtrato per brand_id quando
+    disponibile (preciso, zero rumore da testo libero), con fallback su
+    search_text quando il brand non e' nella mappa VINTED_BRAND_IDS.
+
+    Ritorna (url, e_filtrato_per_id) dove e_filtrato_per_id indica se il
+    filtro e' stato fatto con l'ID esatto (piu' affidabile) o solo per
+    testo libero (puo' includere falsi positivi, es. capi di altri brand
+    che menzionano il brand cercato nel titolo)."""
+    from urllib.parse import quote
+
+    brand_lower = (brand or "").strip().lower()
+    brand_id = VINTED_BRAND_IDS.get(brand_lower)
+
+    query_text = f"{brand} {modello_o_categoria}".strip()
+
+    if brand_id:
+        url = (
+            f"https://www.vinted.it/catalog?brand_ids[]={brand_id}"
+            f"&search_text={quote(modello_o_categoria or '')}"
+            "&order=newest_first&status_ids[]=1&status_ids[]=2&status_ids[]=3"
+        )
+        if max_price:
+            url += f"&price_to={max_price}"
+        return url, True
+    else:
+        url = (
+            f"https://www.vinted.it/catalog?search_text={quote(query_text)}"
+            "&order=newest_first"
+        )
+        return url, False
+
+
+def search_comps_ebay_sold(brand, modello, categoria):
+    """Ricerca diretta su eBay con filtro 'Venduto' (sold) via Serper,
+    usando il parametro di ricerca eBay nativo invece di un site: generico
+    -- piu' preciso perche' restiamo dentro l'interfaccia di ricerca eBay
+    con i suoi stessi filtri, non un URL costruito a mano che potrebbe
+    non rispettare i parametri reali del sito (es. LH_Sold=1 e' il
+    parametro ufficiale eBay per 'solo venduti', verificato dalla
+    documentazione pubblica eBay)."""
+    from urllib.parse import quote
+
+    query_base = f"{brand} {modello} {categoria}".strip()
+    if not query_base:
+        return None
+
+    ebay_search_url = (
+        f"https://www.ebay.it/sch/i.html?_nkw={quote(query_base)}"
+        "&LH_Sold=1&LH_Complete=1&_sop=13"  # LH_Sold+LH_Complete = solo venduti; _sop=13 = piu' recenti
+    )
+    return ebay_search_url
+
+
+
+def _serper_scrape_page(url, max_chars=2500):
+    """Scarica e legge il contenuto di una pagina specifica via
+    scrape.serper.dev (endpoint diverso da quello di ricerca: qui l'URL
+    e' GIA' NOTO, non stiamo cercando, stiamo leggendo). Usato per leggere
+    il contenuto reale delle pagine Vinted/eBay costruite con URL precisi
+    (filtro brand_id su Vinted, filtro LH_Sold su eBay), che danno
+    risultati piu' pertinenti delle query generiche site: passate a
+    Google.
+
+    Pagine come Vinted/eBay possono avere protezioni anti-scraping (lo
+    sappiamo gia' da Vinted stesso, 403 intermittenti) -- il fallimento
+    qui e' previsto e gestito con grazia, non e' un errore di codice."""
+    try:
+        resp = requests.post(
+            "https://scrape.serper.dev",
+            headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
+            json={"url": url, "includeMarkdown": True},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:
+        log.warning("Scrape Serper fallito per URL '%s': %s", url, e)
+        return None
+
+    content = data.get("markdown") or data.get("text") or ""
+    if not content:
+        return None
+
+    return content[:max_chars]
+
+
+
+def search_comps_serper(brand, modello, categoria):
+    """Ricerca comps di prezzo via Serper (Google SERP scraping commerciale,
+    stabile a differenza di DuckDuckGo non ufficiale -- vedi discussione).
+    Sostituisce il tool web_search integrato di Claude: chiamando Claude
+    SENZA server tools, l'intera chiamata torna a beneficiare del caching
+    pieno sul system prompt (niente piu' scritture extra di cache per
+    iterazione del loop agentico, che era la causa del costo elevato
+    osservato in produzione).
+
+    Fa 5 query SEPARATE E MIRATE per fonte specifica (eBay sold, Vestiaire,
+    Vinted, + 2 generiche Google) invece di una sola query ampia: risultati
+    piu' pertinenti per fonte, a fronte di un costo Serper ancora trascura-
+    bile (5x una frazione di centesimo resta una frazione di centesimo) e
+    di un prompt Claude leggermente piu' lungo (piu' token di input, ma
+    senza il problema delle iterazioni multiple di cache che avevamo con
+    il tool web_search integrato).
+
+    Le 5 query sono eseguite IN PARALLELO (non in sequenza) per non
+    moltiplicare la latenza totale per 5.
+
+    Ritorna una stringa di testo pronta da inserire nel prompt Claude,
+    organizzata per fonte, oppure un messaggio che dichiara l'assenza di
+    risultati (mai un 'finto successo' silenzioso: se la ricerca fallisce,
+    Claude deve saperlo per applicare correttamente confidenza Bassa)."""
+    query_base = f"{brand} {modello} {categoria}".strip()
+    if not query_base or query_base.lower() in ("nessuno", "non disponibile", ""):
+        return "RICERCA WEB: non eseguita, brand/modello non identificabile con sufficiente certezza dal JSON visivo."
+
+    results_by_label = {}
+
+    # VINTED ed EBAY: non usiamo query Serper generiche (site:...), ma
+    # costruiamo URL precisi (brand_id quando disponibile per Vinted,
+    # filtro LH_Sold per eBay) e ne leggiamo il contenuto reale via
+    # scrape.serper.dev. Piu' preciso di una ricerca Google indiretta.
+    vinted_url, vinted_e_per_id = build_vinted_search_url(brand, f"{modello} {categoria}".strip())
+    ebay_url = search_comps_ebay_sold(brand, modello, categoria)
+
+    # VESTIAIRE e le 2 ricerche Google generiche restano query Serper
+    # normali (non esiste un filtro-per-ID altrettanto preciso per loro
+    # con i dati che abbiamo, e il sito Vestiaire e' meno aggressivo nel
+    # bloccare lo scraping diretto rispetto a Vinted/eBay).
+    serper_queries = [
+        ("VESTIAIRE COLLECTIVE", f"{query_base} site:vestiairecollective.com"),
+        ("GOOGLE GENERICO (prezzo/valore)", f"{query_base} prezzo valore second hand"),
+        ("GOOGLE GENERICO (retail originale)", f"{query_base} retail price original"),
+    ]
+
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {
+            executor.submit(_serper_single_query, label, q): label
+            for label, q in serper_queries
+        }
+        futures[executor.submit(_serper_scrape_page, vinted_url)] = "VINTED (scrape diretto)"
+        futures[executor.submit(_serper_scrape_page, ebay_url)] = "EBAY SOLD (scrape diretto)"
+
+        for future in as_completed(futures, timeout=20):
+            label = futures[future]
+            try:
+                result = future.result()
+                if isinstance(result, tuple):
+                    # _serper_single_query ritorna (label, text)
+                    _, text = result
+                    results_by_label[label] = text
+                else:
+                    # _serper_scrape_page ritorna direttamente il testo, o None
+                    results_by_label[label] = (
+                        result if result else "  Scrape fallito o pagina vuota/bloccata (anti-bot)."
+                    )
+            except Exception as e:
+                log.warning("Query/scrape Serper '%s' non completata: %s", label, e)
+                results_by_label[label] = "  Query non completata (timeout o errore)."
+
+    if all(
+        any(marker in v for marker in ("Nessun risultato", "fallita", "non completata", "fallito"))
+        for v in results_by_label.values()
+    ):
+        return (
+            "RICERCA WEB: eseguita su 5 fonti (eBay sold, Vestiaire, Vinted, Google generico x2) "
+            "ma NESSUNA ha prodotto risultati utili. Nessun comp disponibile -- applica "
+            "confidenza Bassa e non inventare prezzi a memoria."
+        )
+
+    all_labels = [label for label, _ in serper_queries] + ["VINTED (scrape diretto)", "EBAY SOLD (scrape diretto)"]
+    lines = [f"RICERCA WEB (5 fonti, base: '{query_base}'):"]
+    if not vinted_e_per_id:
+        lines.append(
+            "⚠️ Nota: il brand non è nella mappa brand_id Vinted, la ricerca Vinted "
+            "sotto usa solo testo libero (search_text) -- meno precisa, può includere "
+            "falsi positivi di altri brand che menzionano questo nome nel titolo."
+        )
+    for label in all_labels:
+        lines.append(f"\n📍 FONTE: {label}")
+        lines.append(results_by_label.get(label, "  (risultato mancante)"))
+
+    return "\n".join(lines)
+
+
 def call_claude_oracle(listing_info, gemini_analysis_json):
     age_days = listing_info.get("age_days")
     if age_days is not None:
@@ -777,6 +1064,31 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
         age_text = "non disponibile (probabile fallimento scraping data pubblicazione)"
 
     gemini_analysis_for_claude = strip_per_photo_analysis(gemini_analysis_json)
+
+    # RICERCA WEB ESTERNA (Serper, non tool integrato Claude): estraggo
+    # brand/modello/categoria dal JSON Gemini originale (non filtrato) per
+    # costruire la query di ricerca, poi inietto i risultati come testo nel
+    # messaggio. Questo sostituisce il tool web_search_20250305: niente piu'
+    # server tool = niente piu' scritture extra di cache per iterazione del
+    # loop agentico (causa identificata del costo elevato in produzione).
+    try:
+        gemini_data = json.loads(gemini_analysis_json)
+        ident = gemini_data.get("identificazione", {}) if isinstance(gemini_data, dict) else {}
+        brand_per_ricerca = (
+            ident.get("brand_effettivamente_visibile_sui_loghi")
+            or ident.get("brand_dichiarato_dal_venditore")
+            or listing_info.get("brand")
+            or ""
+        )
+        modello_per_ricerca = ident.get("modello_stimato") or ""
+        categoria_per_ricerca = ident.get("categoria") or ""
+    except (json.JSONDecodeError, ValueError, TypeError):
+        brand_per_ricerca = listing_info.get("brand") or ""
+        modello_per_ricerca = ""
+        categoria_per_ricerca = ""
+
+    comps_text = search_comps_serper(brand_per_ricerca, modello_per_ricerca, categoria_per_ricerca)
+    log.info("RICERCA SERPER:\n%s", comps_text)
 
     user_text = (
         f"Titolo annuncio: {listing_info.get('title')}\n"
@@ -798,10 +1110,14 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
         "ma applica il tuo giudizio critico: se il JSON segnala una incongruenza "
         "(es. un logo non coerente con il brand dichiarato), trattala come un "
         "segnale di rischio serio nel tuo legit check, non ignorarla.\n\n"
+        "--- RISULTATI RICERCA WEB (gia' eseguita per te, non hai un tool di ricerca:\n"
+        "questi sono gli UNICI dati di mercato disponibili, usali per stimare i comps) ---\n"
+        f"{comps_text}\n"
+        "--- FINE RISULTATI RICERCA WEB ---\n\n"
         "Produci ora il verdetto operativo completo, nel formato compatto richiesto."
     )
 
-    log.info("PROMPT TESTUALE -> CLAUDE (nessuna immagine, JSON Gemini filtrato):\n%s", user_text)
+    log.info("PROMPT TESTUALE -> CLAUDE (nessuna immagine, JSON Gemini filtrato + comps Serper):\n%s", user_text)
 
     content = [{"type": "text", "text": user_text}]
 
@@ -815,6 +1131,12 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
     # normale per quei token. Per un bot che riceve notifiche a raffica
     # (piu' annunci nello stesso minuto, come visto nei log reali) questo
     # taglia drasticamente il costo medio per valutazione.
+    #
+    # NESSUN "tools" qui: la ricerca web e' ora fatta da search_comps_serper()
+    # PRIMA di questa chiamata, e i risultati sono gia' dentro user_text.
+    # Senza server tools, questa e' un'unica chiamata Claude (non un loop
+    # agentico), quindi il caching sul system prompt funziona pienamente
+    # senza le scritture extra di cache_creation per iterazione viste prima.
     payload = {
         "model": CLAUDE_MODEL,
         "max_tokens": 1200,
@@ -826,16 +1148,6 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
             }
         ],
         "messages": [{"role": "user", "content": content}],
-        # max_uses=1 forza una SOLA ricerca per valutazione (non 3): ogni
-        # iterazione del loop agentico con web_search scrive automaticamente
-        # una nuova entry di cache (comportamento documentato Anthropic,
-        # indipendente dal nostro caching sul system prompt), quindi piu'
-        # ricerche = piu' scritture cache_creation extra ad ogni round.
-        # Con 1 sola ricerca, il costo aggiuntivo si limita a una singola
-        # scrittura invece di 2-3, riducendo sensibilmente il costo medio
-        # per annuncio. Il prompt istruisce Claude a fare una query ampia
-        # e mirata in un solo colpo invece di affinare progressivamente.
-        "tools": [{"type": "web_search_20250305", "name": "web_search", "max_uses": 1}],
     }
 
     resp = requests.post(
