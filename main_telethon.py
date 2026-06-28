@@ -180,7 +180,9 @@ CONTROLLO FINALE OBBLIGATORIO (ultimo passo, prima di scrivere "Decisione" — n
 
 STILE: etichetta+valore secco, niente parentesi esplicative, niente "il problema è che...". N/A senza spiegare il perché sulla stessa riga. Motivo SOLO in "In una riga" (max15 parole) e Legit check (max20 parole), non ripetuto altrove. Numeri/decisioni prima delle spiegazioni.
 
-VINCOLO CRITICO: la risposta finale viene spedita INTERAMENTE e AUTOMATICAMENTE su Telegram senza revisione umana. Testo PRIMA di "## Verdetto operativo" (note, "ricerco i prezzi", ragionamento) finisce spedito comunque, gonfiando il messaggio e rischiando troncamento. Inoltre: completa TUTTE le ricerche web PRIMA di scrivere qualsiasi riga del verdetto — non alternare scrittura e ricerca, perché i blocchi di testo vengono concatenati in sequenza e un'interruzione produce righe fuori ordine. Sequenza corretta: (1) tutte le ricerche, senza scrivere testo del report nel mezzo; (2) UN SOLO blocco finale scritto tutto insieme da "## Verdetto operativo" a "## Messaggio da inviare", senza interromperlo.
+VINCOLO CRITICO: la risposta finale viene spedita INTERAMENTE e AUTOMATICAMENTE su Telegram senza revisione umana. Qualsiasi testo che scrivi PRIMA di "## Verdetto operativo" finisce spedito comunque, senza eccezioni — questo include non solo "ricerco i prezzi" o note di ragionamento, ma ANCHE un riepilogo dei dati raccolti dalle ricerche (es. "Sintesi dati raccolti prima di scrivere il verdetto:", elenchi di comps trovati, prezzi retail, confidenza). Quel riepilogo è ESATTAMENTE il tipo di testo vietato: non è il formato richiesto, gonfia il messaggio, e se scritto come blocco separato prima del verdetto rischia di finire fuori ordine. Usa le ricerche per RAGIONARE internamente, non per produrre un resoconto scritto a parte: il primo testo che scrivi nella risposta deve essere il carattere "#" di "## Verdetto operativo", senza alcuna riga, titolo in grassetto, o elenco prima di quello — non un riassunto "pulito", zero.
+
+Completa TUTTE le ricerche web PRIMA di scrivere qualsiasi testo (verdetto incluso) — non alternare scrittura e ricerca, perché i blocchi di testo vengono concatenati in sequenza e un'interruzione produce righe fuori ordine. Sequenza corretta: (1) tutte le ricerche, senza scrivere alcun testo nel mezzo, nemmeno un riepilogo; (2) UN SOLO blocco finale scritto tutto insieme da "## Verdetto operativo" a "## Messaggio da inviare", senza interromperlo e senza nulla prima.
 
 ## Verdetto operativo
 - **Decisione:** [qualità] · [urgenza], es. "COMPRA SUBITO · AGISCI ORA"
@@ -856,6 +858,30 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
     # i due peggiorerebbe la leggibilita' anche nel caso "buono".
     text_blocks = [b["text"] for b in data.get("content", []) if b.get("type") == "text"]
     final_text = "".join(text_blocks) if text_blocks else "[Nessun testo restituito da Claude]"
+
+    # FIX ATTIVO (non solo log): se Claude ha scritto testo prima di
+    # "## Verdetto operativo" -- es. un "Sintesi dati raccolti prima di
+    # scrivere il verdetto:" o note di ricerca -- nonostante il vincolo
+    # nel prompt, tagliamo via tutto cio' che precede il marcatore prima
+    # di mandarlo a Telegram. Meglio perdere un'eventuale premessa
+    # innocua che spedire all'utente un report con un riepilogo grezzo
+    # di ricerca prima del formato compatto richiesto.
+    verdetto_pos = final_text.find("## Verdetto operativo")
+    if verdetto_pos > 0:
+        testo_scartato = final_text[:verdetto_pos].strip()
+        log.warning(
+            "Testo PRIMA di '## Verdetto operativo' rilevato e scartato (%d caratteri). "
+            "Il prompt vieta questo, ma Claude lo ha scritto comunque -- testo scartato:\n%s",
+            len(testo_scartato), testo_scartato[:500],
+        )
+        final_text = final_text[verdetto_pos:]
+    elif verdetto_pos == -1:
+        log.error(
+            "Marcatore '## Verdetto operativo' assente dal report Claude -- "
+            "il messaggio verra' inviato cosi' com'e', probabilmente malformato. "
+            "Testo completo:\n%s",
+            final_text,
+        )
 
     # CONTROLLO DI SANITA' SULL'ORDINE: se nonostante il vincolo nel
     # prompt Claude ha comunque alternato scrittura/ricerca, il report
