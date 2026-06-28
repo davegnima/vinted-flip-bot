@@ -79,7 +79,7 @@ TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 GEMINI_API_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
-    "gemini-3-flash:generateContent"
+    "gemini-3.5-flash:generateContent"
 )
 
 CLAUDE_MODEL = "claude-sonnet-4-6"
