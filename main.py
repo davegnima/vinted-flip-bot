@@ -426,8 +426,10 @@ def scrape_vinted_listing(url):
         "photo_urls": [], "size": None, "condition": None, "description": None,
         "created_at": None, "age_days": None,
     }
+    log.info("Avvio scraping pagina annuncio: %s", url)
     try:
-        resp = _vinted_session.get(url, headers=VINTED_HEADERS, timeout=15)
+        # Timeout abbassato a 8 secondi per la pagina principale
+        resp = _vinted_session.get(url, headers=VINTED_HEADERS, timeout=8)
         resp.raise_for_status()
         html = resp.text
 
@@ -449,47 +451,30 @@ def scrape_vinted_listing(url):
         result["photo_urls"] = clean_urls[:MAX_GALLERY_PHOTOS]
 
         size_match = re.search(r'"size_title"\s*:\s*"([^"]+)"', html)
-        if size_match:
-            result["size"] = size_match.group(1)
+        if size_match: result["size"] = size_match.group(1)
 
         condition_match = re.search(r'"status"\s*:\s*"([^"]+)"', html)
-        if condition_match:
-            result["condition"] = condition_match.group(1)
+        if condition_match: result["condition"] = condition_match.group(1)
 
-        desc_match = re.search(r'"description"\s*:\s*"((?:[^"\\]|\\.)*)"', html)
-        if desc_match:
-            result["description"] = desc_match.group(1).encode().decode("unicode_escape")
-
-        created_match = re.search(r'"created_at_ts"\s*:\s*"([^"]+)"', html)
-        if created_match:
-            result["created_at"] = created_match.group(1)
-            try:
-                from datetime import datetime, timezone
-                created_dt = datetime.fromisoformat(created_match.group(1))
-                if created_dt.tzinfo is None:
-                    created_dt = created_dt.replace(tzinfo=timezone.utc)
-                age_days = (datetime.now(timezone.utc) - created_dt).total_seconds() / 86400
-                result["age_days"] = round(age_days, 1)
-            except Exception:
-                pass
+        log.info("Scraping completato: trovate %d foto in alta definizione.", len(result["photo_urls"]))
 
     except Exception as e:
-        log.warning("Scraping Vinted fallito per %s: %s", url, e)
+        log.warning("Scraping Vinted fallito (timeout o blocco) per %s: %s", url, type(e).__name__)
 
     return result
-
-def download_image_bytes(url, referer="[https://www.vinted.it/](https://www.vinted.it/)", max_retries=2):
+  
+def download_image_bytes(url, referer="https://www.vinted.it/", max_retries=1):
     headers = dict(IMAGE_DOWNLOAD_HEADERS)
     headers["Referer"] = referer
 
+    # Timeout AGGRESSIVO: 4 secondi. Se non scarica l'immagine subito, la ignoriamo.
     for attempt in range(1, max_retries + 1):
         try:
-            resp = _vinted_session.get(url, headers=headers, timeout=15)
+            resp = _vinted_session.get(url, headers=headers, timeout=4)
             if resp.ok:
                 return resp.content
         except Exception:
             pass
-        time.sleep(0.6 * attempt)
     return None
 
 # ---------------------------------------------------------------------------
@@ -887,32 +872,39 @@ def process_listing(parsed, url, cover_photo_bytes):
     listing_info = dict(parsed)
     listing_info["url"] = url
     photo_bytes_list = []
-    successful_urls = []  # <--- NUOVO: Tracciamo gli URL scaricati con successo
+    successful_urls = [] 
 
     if url:
         scraped = scrape_vinted_listing(url)
         listing_info["size"] = scraped.get("size")
         listing_info["condition"] = scraped.get("condition")
-        listing_info["description"] = scraped.get("description")
-        listing_info["age_days"] = scraped.get("age_days")
 
-        for photo_url in scraped.get("photo_urls", []):
+        urls_to_download = scraped.get("photo_urls", [])
+        if urls_to_download:
+            log.info("Inizio download di %d immagini da Vinted...", len(urls_to_download))
+            
+        for photo_url in urls_to_download:
             img = download_image_bytes(photo_url, referer=url)
             if img: 
                 photo_bytes_list.append(img)
-                successful_urls.append(photo_url)  # <--- Salviamo l'URL se il download riesce
-            time.sleep(0.4)
+                successful_urls.append(photo_url)
+            time.sleep(0.2)
+            
+        if urls_to_download:
+            log.info("Download immagini completato. Riuscite: %d/%d", len(photo_bytes_list), len(urls_to_download))
 
     if not photo_bytes_list and cover_photo_bytes:
+        log.warning("Nessuna foto scaricata da Vinted. Uso miniatura di fallback da Telegram.")
         photo_bytes_list = [cover_photo_bytes]
-        successful_urls = ["[Miniatura di Copertina prelevata da Telegram - Fallback]"]
+        successful_urls = ["[Miniatura di Copertina Telegram - Fallback]"]
 
     if not photo_bytes_list:
+        log.error("Nessuna foto disponibile in assoluto. Salto annuncio.")
         return
 
-    # ---- NUOVO LOG ESPLICITO PER IL CHECK ----
+    # ---- CHECK VISIVO PER I LOG ----
     log.info("================ CHECK IMMAGINI VERSO GEMINI ================")
-    log.info("Sto per comprimere e inviare a Gemini %d foto.", len(photo_bytes_list))
+    log.info("Sto comprimendo e inviando a Gemini %d foto.", len(photo_bytes_list))
     for i, img_url in enumerate(successful_urls, start=1):
         log.info("  [Invio Foto %d] -> %s", i, img_url)
     log.info("=============================================================")
@@ -921,6 +913,7 @@ def process_listing(parsed, url, cover_photo_bytes):
 
     e_skip, motivo_skip = check_skip_pre_claude(gemini_analysis_json)
     if e_skip:
+        log.info("Filtro Early Exit scattato: %s", motivo_skip)
         final_report = build_skip_report(listing_info, motivo_skip)
     else:
         final_report = call_claude_oracle(listing_info, gemini_analysis_json)
