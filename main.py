@@ -241,6 +241,8 @@ CHECK PRIMA DI SCRIVERE "Vendita probabile": (1) diffusion line? comps specifici
 # LIQUIDITÀ
 Giorni vendita (0-7/7-14/14-30/30+) e liquidità (Bassa/Media/Alta) da: saturazione, tier domanda brand/modello, taglia (penalizza estreme), stagionalità, spedizione/rischio reso. Prezzo basso ≠ buon affare se illiquido.
 
+ERRORE DA NON RIPETERE (visto in produzione): non confondere la liquidità del BRAND con la liquidità del PEZZO SPECIFICO. Brand di lusso molto liquidi su Vinted IT (es. Brunello Cucinelli, Loro Piana, Stone Island, Moncler — capi che vendono quasi sempre, in fretta, a prezzo solido) restano brand liquidi anche quando il PEZZO specifico in valutazione è più lento per altri motivi (taglia fuori stagione, difetti visibili, modello di nicchia dentro quel brand). In questi casi scrivi la liquidità riferendola esplicitamente al pezzo, non al brand: es. "Liquidità: Bassa (pezzo specifico: cardigan estivo taglia S con difetti — il brand Brunello Cucinelli resta tra i più liquidi su Vinted IT)", non "Brunello Cucinelli poco liquido su Vinted IT", che è un'affermazione fattualmente sbagliata sul brand.
+
 # COSA ANALIZZARE
 Identificazione: brand, categoria, modello, linea/epoca, taglia, fit, colore, materiale, paese produzione, retail originale, rarità reale (certo/probabile/non verificato).
 Visiva: usura, pilling, scolorimento, macchie, buchi, scuciture, hardware, fodere, riparazioni, incongruenze foto/descrizione, foto mancanti.
