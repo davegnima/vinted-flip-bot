@@ -16,7 +16,7 @@ Pipeline:
      titolo / prezzo / brand / URL annuncio
   3. Scraping della pagina Vinted per recuperare TUTTE le foto della
      galleria + taglia/condizione/descrizione (se disponibili)
-  4. Gemini 3 Flash: analisi visiva pura (identificazione, autenticita',
+  4. Gemini 3.5 Flash: analisi visiva pura (identificazione, autenticita',
      condizione) -- NESSUN prezzo, NESSUNA ricerca web
   5. Claude Sonnet 4.6: usa l'analisi di Gemini + foto + dati annuncio,
      fa ricerca web (tool web_search) e produce il report Vinted Flip
@@ -47,6 +47,12 @@ Note operative:
   - Con i Topics attivi sul gruppo, ogni messaggio porta anche un
     reply_to_top_id (l'ID del topic): non serve filtrarlo, ascoltiamo
     tutto il gruppo indipendentemente dal topic specifico.
+  - Gemini: dal 28/06/2026 la fatturazione e' attiva sul progetto
+    "Progetto Vinted", quindi i limiti free tier (5 RPM / 20 RPD) non
+    si applicano piu'. La funzione call_gemini_vision() mantiene
+    comunque un retry con backoff esponenziale su errori transitori
+    (503/429/5xx, timeout di rete), utile contro sovraccarichi
+    momentanei lato Google indipendenti dal piano di fatturazione.
 """
 
 import os
@@ -608,10 +614,15 @@ def download_image_bytes(url, referer="https://www.vinted.it/", max_retries=2):
 
 
 # ---------------------------------------------------------------------------
-# GEMINI -- analisi visiva pura
+# GEMINI -- analisi visiva pura (con retry/backoff su errori transitori)
 # ---------------------------------------------------------------------------
 
 def call_gemini_vision(photos_bytes_list, listing_info, max_retries=4):
+    """Chiama Gemini per l'analisi visiva. Con la fatturazione attiva sul
+    progetto i limiti di rate sono molto piu' alti del free tier, ma questo
+    retry resta utile contro sovraccarichi temporanei lato Google (503),
+    rate limit residui (429) o problemi di rete transitori -- nessuno di
+    questi e' un bug nel codice, sono condizioni esterne da assorbire."""
     user_text_for_log = (
         f"Titolo annuncio: {listing_info.get('title')}\n"
         f"Brand dichiarato: {listing_info.get('brand')}\n"
@@ -718,6 +729,7 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=4):
         "tratta come se le foto non fossero analizzabili e applica la "
         "regola su assenza totale di prove di brand dove pertinente.]"
     )
+
 
 # ---------------------------------------------------------------------------
 # CLAUDE -- prezzi, margine, verdetto finale (con web_search)
