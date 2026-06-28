@@ -1509,10 +1509,41 @@ client = TelegramClient(
     TELEGRAM_API_HASH,
 )
 
+# DEDUPLICAZIONE MESSAGGI: osservato in produzione che lo stesso annuncio
+# (stesso message_id) puo' generare DUE eventi NewMessage a distanza di
+# meno di 1 secondo -- causa probabile: il bot "Vinted Tracker" modifica
+# il proprio messaggio dopo l'invio iniziale (es. aggiunge il bottone con
+# l'URL in un secondo momento), e Telethon emette un evento NewMessage
+# anche per quell'edit, oppure ci sono piu' "getUpdates" che si sovrap-
+# pongono. L'effetto e' GRAVE: stesso annuncio elaborato due volte in
+# parallelo, doppio costo Gemini+Serper+Claude, e nei casi osservati
+# persino DUE VERDETTI DIVERSI per lo stesso capo (es. "NON COMPRARE" e
+# "CHIEDI ALTRE FOTO" sullo stesso identico Top Missoni), che e' confuso
+# e potenzialmente dannoso se l'utente agisce sul verdetto sbagliato.
+#
+# Fix: manteniamo un set dei message_id gia' elaborati (con scadenza
+# implicita via dimensione massima, per non crescere all'infinito in un
+# processo long-running) e scartiamo silenziosamente i duplicati.
+_processed_message_ids = set()
+_MAX_PROCESSED_IDS_TRACKED = 500  # tetto per evitare crescita illimitata della memoria
+
 
 @client.on(events.NewMessage(chats=TELEGRAM_GROUP_ID))
 async def on_new_message(event):
     try:
+        message_id = event.message.id
+        if message_id in _processed_message_ids:
+            log.info(
+                "Messaggio %d gia' elaborato (evento duplicato rilevato) -- skip.",
+                message_id,
+            )
+            return
+        _processed_message_ids.add(message_id)
+        if len(_processed_message_ids) > _MAX_PROCESSED_IDS_TRACKED:
+            # Rimuove gli ID piu' vecchi (i message_id di Telegram sono
+            # monotonicamente crescenti, quindi min() trova il piu' vecchio)
+            _processed_message_ids.discard(min(_processed_message_ids))
+
         sender = await event.get_sender()
         sender_name = ((getattr(sender, "username", None) or "") + " " +
                         (getattr(sender, "first_name", None) or "")).lower()
