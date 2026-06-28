@@ -556,44 +556,62 @@ def _serper_scrape_page(url, max_chars=2500):
         return None
 
 def search_comps_serper(brand, modello, categoria):
-    query_base = f"{brand} {modello} {categoria}".strip()
-    if not query_base or query_base.lower() in ("nessuno", "non disponibile", "errore", ""):
-        return "RICERCA WEB: non eseguita per mancanza dati brand chiari."
+    query_specifica = f"{brand} {modello} {categoria}".strip()
+    if not query_specifica:
+        return "RICERCA WEB: non eseguita per mancanza dati."
 
-    results_by_label = {}
-    vinted_url, vinted_e_per_id = build_vinted_search_url(brand, f"{modello} {categoria}".strip())
-    ebay_url = search_comps_ebay_sold(brand, modello, categoria)
+    # FUNZIONE INTERNA PER ESEGUIRE LE QUERY
+    def esegui_ricerca(query_da_cercare):
+        vinted_url, vinted_e_per_id = build_vinted_search_url(brand, f"{modello} {categoria}".strip())
+        ebay_url = search_comps_ebay_sold(brand, modello, categoria)
+        serper_queries = [
+            ("VESTIAIRE COLLECTIVE", f"{query_da_cercare} site:vestiairecollective.com"),
+            ("GOOGLE GENERICO", f"{query_da_cercare} prezzo valore usato"),
+        ]
 
-    serper_queries = [
-        ("VESTIAIRE COLLECTIVE", f"{query_base} site:vestiairecollective.com"),
-        ("GOOGLE GENERICO (prezzo/valore)", f"{query_base} prezzo valore second hand"),
-        ("GOOGLE GENERICO (retail originale)", f"{query_base} retail price original"),
-    ]
+        results_by_label = {}
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            future_batch = executor.submit(_serper_batch_query, serper_queries)
+            future_vinted = executor.submit(_serper_scrape_page, vinted_url)
+            future_ebay = executor.submit(_serper_scrape_page, ebay_url)
+            futures = {future_batch: "__BATCH__", future_vinted: "VINTED", future_ebay: "EBAY SOLD"}
 
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        future_batch = executor.submit(_serper_batch_query, serper_queries)
-        future_vinted = executor.submit(_serper_scrape_page, vinted_url)
-        future_ebay = executor.submit(_serper_scrape_page, ebay_url)
-        futures = {future_batch: "__BATCH__", future_vinted: "VINTED (scrape)", future_ebay: "EBAY SOLD (scrape)"}
+            for future in as_completed(futures, timeout=15):
+                label = futures[future]
+                try:
+                    res = future.result()
+                    if label == "__BATCH__": results_by_label.update(res)
+                    else: results_by_label[label] = res if res else "Nessun risultato"
+                except:
+                    if label == "__BATCH__":
+                        for q_l, _ in serper_queries: results_by_label[q_l] = "Fallita"
+                    else: results_by_label[label] = "Fallita"
+        return results_by_label, vinted_e_per_id
 
-        for future in as_completed(futures, timeout=20):
-            label = futures[future]
-            try:
-                res = future.result()
-                if label == "__BATCH__": results_by_label.update(res)
-                else: results_by_label[label] = res if res else "  Scrape fallito o anti-bot attivo."
-            except:
-                if label == "__BATCH__":
-                    for q_l, _ in serper_queries: results_by_label[q_l] = "  Timeout query."
-                else: results_by_label[label] = "  Timeout query."
+    # 1. TENTATIVO CON QUERY SPECIFICA
+    risultati, vinted_id_usato = esegui_ricerca(query_specifica)
 
-    if all(any(m in v for marker in ("Nessun", "fallita", "Timeout", "fallito", "anti-bot") for m in [marker]) for v in results_by_label.values()):
-        return "RICERCA WEB: eseguita ma nessuna fonte utile. Applica la regola 'VALUTAZIONE IN ASSENZA DI COMPS ESTERNI'."
+    # Controlliamo se è un totale fallimento
+    fallimento_totale = all(any(m in v for m in ("Nessun", "Fallita", "Timeout")) for v in risultati.values())
 
-    all_labels = [l for l, _ in serper_queries] + ["VINTED (scrape)", "EBAY SOLD (scrape)"]
-    lines = [f"RICERCA WEB (base: '{query_base}'):"]
-    for label in all_labels:
-        lines.append(f"\n📍 FONTE: {label}\n{results_by_label.get(label, ' Risultato mancante')}")
+    # 2. SE FALLISCE -> TENTATIVO DI EMERGENZA LARGO (Solo Brand e Categoria)
+    if fallimento_totale and modello:
+        log.info("⚠️ Ricerca specifica fallita. Avvio ricerca WEB di emergenza (Larga)...")
+        query_larga = f"{brand} {categoria}".strip()
+        risultati, _ = esegui_ricerca(query_larga)
+        query_usata = query_larga
+        avviso = "⚠️ NOTA: Ricerca di emergenza larga (il modello specifico non ha dato risultati)."
+    else:
+        query_usata = query_specifica
+        avviso = ""
+
+    # FORMORATTAZIONE RISPOSTA FINALE
+    lines = [f"RICERCA WEB (base: '{query_usata}'):"]
+    if avviso: lines.append(avviso)
+    
+    for label, res in risultati.items():
+        lines.append(f"\n📍 FONTE: {label}\n{res}")
+        
     return "\n".join(lines)
 
 
