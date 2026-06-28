@@ -710,6 +710,23 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=4):
     payload = {
         "system_instruction": {"parts": [{"text": GEMINI_VISION_SYSTEM_PROMPT}]},
         "contents": [{"role": "user", "parts": parts}],
+        # SAFETY SETTINGS: disattiviamo il blocco automatico di Google sui
+        # contenuti delle 4 categorie standard. Motivazione specifica per
+        # questo bot: le foto di abbigliamento second-hand (es. capi con
+        # stampe particolari, intimo/costumi che POSSONO avere mercato
+        # second-hand legittimo come discusso nel prompt) possono talvolta
+        # attivare falsi positivi nei filtri di sicurezza generici di
+        # Gemini, causando una risposta vuota o troncata che il nostro
+        # codice tratterebbe come "analisi non disponibile" anche se il
+        # contenuto era completamente innocuo. BLOCK_NONE rimuove questo
+        # rischio di falsi positivi sul nostro caso d'uso specifico (non
+        # stiamo generando contenuto, solo analizzando foto di vestiti).
+        "safetySettings": [
+            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+        ],
         "generationConfig": {
             "temperature": 0.2,
             "maxOutputTokens": 6000,
