@@ -906,26 +906,66 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
             positions, expected_order, final_text,
         )
 
-    # CONTROLLO DI SANITA' SU MARGINE-SOGLIA vs DECISIONE: se il testo
-    # contiene una frase tipo "sotto soglia" (il modello stesso lo
-    # scrive quando applica correttamente la regola dei 20 euro nel
-    # ragionamento) ma la riga "Decisione" contiene comunque un livello
-    # COMPRA, e' la stessa contraddizione vista nel caso reale "Mission
-    # Minikleid" (margine 10 euro dichiarato sotto soglia, ma decisione
-    # COMPRA). Logghiamo per monitorare se il controllo nel prompt
-    # riduce la frequenza di questo errore nel tempo.
+    # CONTROLLO CORRETTIVO SU MARGINE-SOGLIA vs DECISIONE: se il testo
+    # contiene una frase tipo "sotto soglia" (il modello stesso lo scrive
+    # quando applica correttamente la regola dei 20 euro nel ragionamento)
+    # ma la riga "Decisione" contiene comunque un livello COMPRA, e' la
+    # stessa contraddizione vista nei casi reali "Mission Minikleid" e
+    # "Blouse Marni x Uniqlo" (margine sotto soglia dichiarato esplicita-
+    # mente, ma decisione COMPRA SE CI TIENI). Il solo logging non basta
+    # piu': qui CORREGGIAMO attivamente la riga Decisione prima dell'invio.
+    #
+    # Logica di correzione: se il margine scontato (se disponibile nel
+    # testo) potrebbe ragionevolmente superare la soglia trattando,
+    # forziamo TRATTA FORTE; altrimenti NON COMPRARE. Non potendo fare
+    # un parsing robusto del margine scontato in tutti i formati possibili,
+    # usiamo un'euristica semplice: se il testo menziona "Costo pieno
+    # trattato" con un valore numerico (non "N/A"), assumiamo che trattare
+    # sia ancora un'opzione percorribile -> TRATTA FORTE. Se invece il
+    # costo trattato e' N/A o il margine e' negativo/quasi nullo, forziamo
+    # NON COMPRARE direttamente.
     decisione_match = re.search(r"\*\*Decisione:\*\*\s*([^\n]+)", final_text)
     decisione_text = decisione_match.group(1) if decisione_match else ""
     ha_livello_compra = bool(re.search(r"\bCOMPRA\b", decisione_text))
     margine_sotto_soglia_dichiarato = bool(
         re.search(r"sotto\s+soglia", final_text, re.IGNORECASE)
     )
+
     if ha_livello_compra and margine_sotto_soglia_dichiarato:
+        costo_trattato_match = re.search(
+            r"\*\*Costo pieno trattato:\*\*\s*(N/A|€[\d.,]+)", final_text, re.IGNORECASE
+        )
+        costo_trattato_valido = bool(
+            costo_trattato_match and costo_trattato_match.group(1).upper() != "N/A"
+        )
+
+        nuova_decisione = "TRATTA FORTE" if costo_trattato_valido else "NON COMPRARE"
+
+        # Mantieni l'urgenza originale se presente (es. "· HAI QUALCHE ORA"),
+        # ma se la nuova decisione è NON COMPRARE l'urgenza non ha senso (vedi
+        # regola nel prompt) quindi la sostituiamo con N/A.
+        urgenza_match = re.search(r"·\s*([^\n]+)$", decisione_text.strip())
+        urgenza_originale = urgenza_match.group(1).strip() if urgenza_match else None
+        if nuova_decisione == "NON COMPRARE":
+            decisione_corretta = "NON COMPRARE · N/A"
+        elif urgenza_originale:
+            decisione_corretta = f"{nuova_decisione} · {urgenza_originale}"
+        else:
+            decisione_corretta = nuova_decisione
+
         log.error(
-            "CONTRADDIZIONE MARGINE/DECISIONE: il report dichiara il margine "
-            "sotto soglia ma la Decisione è '%s' (contiene COMPRA). "
-            "Report completo per debug:\n%s",
-            decisione_text.strip(), final_text,
+            "CONTRADDIZIONE MARGINE/DECISIONE corretta automaticamente: "
+            "Decisione originale '%s' -> corretta in '%s' (margine sotto soglia "
+            "dichiarato nel testo, costo trattato %s). Report originale per debug:\n%s",
+            decisione_text.strip(), decisione_corretta,
+            "valido" if costo_trattato_valido else "N/A o assente", final_text,
+        )
+
+        final_text = re.sub(
+            r"(\*\*Decisione:\*\*\s*)[^\n]+",
+            r"\1" + decisione_corretta + " ⚠️ _(corretto automaticamente: margine sotto soglia)_",
+            final_text,
+            count=1,
         )
 
     return final_text
