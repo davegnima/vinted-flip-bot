@@ -141,11 +141,13 @@ ECCEZIONE — margine sopra soglia ma non schiacciante (20-40€) E confidenza M
 5. TRATTA (o TRATTA FORTE) — vedi vincolo/eccezione sopra, o Deal/Margine ≤3 con confidenza non Alta.
 6. NON COMPRARE — margine insufficiente anche scontando, Rischio ALTO, o legit check negativo. Usa CHIEDI ALTRE FOTO invece se il solo problema sono dati mancanti (non rischio economico) e legit check non negativo.
 
-**Asse Urgenza (3 livelli, indipendente — SOLO se la decisione qualità è COMPRA SUBITO/FORTE/COMPRA/SE CI TIENI/TRATTA; se è NON COMPRARE o CHIEDI ALTRE FOTO, scrivi "N/A" — non ha senso valutare l'urgenza di un acquisto che non farai per motivi di rischio/margine):** usa SEMPRE come segnale primario i giorni di pubblicazione (ricevuti nel messaggio utente). Un annuncio online da molti giorni (5+) per un capo altrimenti interessante è un segnale concreto che la domanda reale è più bassa di quanto sembri, o che altri flipper l'hanno già visto e scartato — non significa "tempo libero per trattare con calma", significa "rivedi anche la tua stima di vendita verso il basso". Un annuncio pubblicato da poche ore/1-2 giorni per un brand hype/tracciato è dove la concorrenza è reale.
-- AGISCI ORA — pubblicato di recente (0-2 giorni) E brand/modello hype o molto tracciato.
-- HAI QUALCHE ORA — pubblicato di recente ma capo non particolarmente hype, o pubblicato da qualche giorno (3-5) ma ancora plausibilmente conteso.
-- HAI TEMPO — pubblicato da molti giorni (5+) senza essere stato comprato (segnale di domanda debole, non urgenza), o capo di nicchia poco tracciato indipendentemente dall'età.
-Se l'età non è disponibile (scraping fallito), basati solo su hype/nicchia come prima e dillo implicitamente scegliendo il livello più cauto in caso di dubbio.
+**Asse Urgenza (3 livelli, indipendente — SOLO se la decisione qualità è COMPRA SUBITO/FORTE/COMPRA/SE CI TIENI/TRATTA; se è NON COMPRARE o CHIEDI ALTRE FOTO, scrivi "N/A"):** due segnali da combinare, in questo ordine di priorità:
+(1) SCARTO PREZZO/VALORE (priorità massima): se il prezzo richiesto è una frazione minima del valore di rivendita stimato (es. ROI 150%+, o il prezzo è "palesemente un errore/regalo" — pochi euro per un brand riconoscibile autentico), questo da solo basta per AGISCI ORA, indipendentemente da brand hype o età dell'annuncio. Un prezzo così anomalo è il tipo di cosa che chiunque lo veda — bot di altri flipper, utenti normali, chiunque scrolli — compra all'istante; non serve che il brand sia "tracciato" perché il prezzo stesso è il segnale.
+(2) Età di pubblicazione (segnale secondario, usato per affinare quando lo scarto prezzo/valore non è già estremo): annuncio recente (0-2 giorni) + brand/modello hype → concorrenza reale. Annuncio vecchio (5+ giorni) senza compratori → probabile domanda debole, non "tempo per trattare con calma" (rivedi anche la stima di vendita al ribasso).
+- AGISCI ORA — scarto prezzo/valore estremo (vedi sopra), OPPURE pubblicato di recente (0-2gg) E brand/modello hype.
+- HAI QUALCHE ORA — margine buono ma non estremo, pubblicato di recente ma capo non hype, o pubblicato da 3-5gg ma ancora plausibilmente conteso.
+- HAI TEMPO — pubblicato da molti giorni (5+) senza compratori, o capo di nicchia poco tracciato e prezzo non anomalo.
+Se l'età non è disponibile, basati su scarto prezzo/valore e hype, scegliendo il livello più cauto in caso di dubbio.
 
 Scrivi "Decisione: [qualità] · [urgenza]", es. "COMPRA SUBITO · AGISCI ORA" o "NON COMPRARE · N/A".
 
@@ -177,6 +179,8 @@ Condizione: dichiarata vs visibile vs probabile vs non verificabile; classifica 
 STILE: ogni riga = etichetta + valore secco, niente parentesi esplicative, niente "il problema è che...". N/A senza spiegare il perché nella stessa riga. Il motivo va SOLO in "In una riga" (max15 parole) e Legit check (max20 parole) — non ripeterlo altrove. Numeri/decisioni prima delle spiegazioni.
 
 VINCOLO CRITICO: la tua risposta testuale finale viene spedita INTERAMENTE e AUTOMATICAMENTE su Telegram, senza revisione umana. Qualsiasi testo PRIMA di "## Verdetto operativo" (note, "ricerco i prezzi", ragionamento, spiegazioni sul JSON) finisce spedito comunque, gonfiando il messaggio oltre 150 parole e rischiando troncamento a metà frase. Fai tutto il ragionamento/ricerca con gli strumenti, ma la risposta deve iniziare DIRETTAMENTE con "## Verdetto operativo" — zero testo prima.
+
+VINCOLO SULL'ORDINE DI SCRITTURA (critico, leggi con attenzione): completa TUTTE le ricerche web di cui hai bisogno PRIMA di scrivere anche una sola riga del verdetto. Non alternare "scrivo un pezzo del report → faccio una ricerca → scrivo un altro pezzo": il sistema che riceve la tua risposta concatena in sequenza tutti i blocchi di testo che produci, quindi se interrompi la scrittura del verdetto per fare una ricerca aggiuntiva e poi riprendi, il report finale risulta con le righe fuori ordine e illeggibile (es. "In una riga" prima di "Decisione", una sezione "## Da chiedere" che spunta in mezzo al "Verdetto operativo"). La sequenza corretta è sempre: (1) tutte le ricerche necessarie, una dopo l'altra, senza scrivere testo del report nel mezzo; (2) UN SOLO blocco di testo finale, scritto tutto insieme dall'inizio "## Verdetto operativo" alla fine "## Messaggio da inviare", senza interromperlo per nessun motivo.
 
 ## Verdetto operativo
 - **Decisione:** [qualità] · [urgenza], es. "COMPRA SUBITO · AGISCI ORA"
@@ -802,8 +806,38 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
         usage.get("output_tokens"),
     )
 
+    # text_blocks puo' contenere piu' di un blocco se Claude ha alternato
+    # scrittura e ricerca web: li concateniamo senza separatore aggiuntivo
+    # (join vuoto, non "\n") perche' un blocco potrebbe finire e l'altro
+    # iniziare a meta' della stessa riga markdown -- inserire un \n tra
+    # i due peggiorerebbe la leggibilita' anche nel caso "buono".
     text_blocks = [b["text"] for b in data.get("content", []) if b.get("type") == "text"]
-    return "\n".join(text_blocks) if text_blocks else "[Nessun testo restituito da Claude]"
+    final_text = "".join(text_blocks) if text_blocks else "[Nessun testo restituito da Claude]"
+
+    # CONTROLLO DI SANITA' SULL'ORDINE: se nonostante il vincolo nel
+    # prompt Claude ha comunque alternato scrittura/ricerca, il report
+    # arriva con i campi fuori sequenza (es. "## Da chiedere" prima di
+    # "## Legit check", o "In una riga" prima di "Decisione"). Lo
+    # logghiamo come errore per accorgercene, ma NON blocchiamo l'invio:
+    # un report con ordine sbagliato e' comunque meglio di nessun report.
+    if len(text_blocks) > 1:
+        log.warning(
+            "Claude ha prodotto %d blocchi di testo separati (probabile alternanza "
+            "scrittura/ricerca web) -- rischio report con campi fuori ordine.",
+            len(text_blocks),
+        )
+
+    expected_order = ["## Verdetto operativo", "## Legit check", "## Da chiedere", "## Messaggio da inviare"]
+    positions = [final_text.find(marker) for marker in expected_order]
+    if all(p != -1 for p in positions) and positions != sorted(positions):
+        log.error(
+            "ORDINE SEZIONI ANOMALO nel report Claude (posizioni trovate: %s per %s) "
+            "-- il messaggio inviato a Telegram potrebbe avere campi mischiati. "
+            "Testo completo per debug:\n%s",
+            positions, expected_order, final_text,
+        )
+
+    return final_text
 
 
 # ---------------------------------------------------------------------------
@@ -854,6 +888,30 @@ def process_listing(parsed, url, cover_photo_bytes):
     log.info("RISPOSTA GEMINI (JSON, %d foto inviate):\n%s", len(photo_bytes_list), gemini_analysis_json)
 
     final_report = call_claude_oracle(listing_info, gemini_analysis_json)
+
+    # VERIFICA DIRETTA DEL CONTENUTO IN MEMORIA: stampiamo un hash e la
+    # lunghezza del testo PRIMA di qualsiasi altra cosa, con marcatori
+    # espliciti di inizio/fine. Se Railway interlaccia le righe per
+    # colpa della sua UI di aggregazione log (come sospettato), questa
+    # riga lo confermerebbe comunque, perche' l'hash e la lunghezza sono
+    # calcolati su una stringa Python gia' assemblata in memoria, non su
+    # come il testo viene poi visualizzato. Se invece il problema e' nei
+    # dati (Claude ha davvero scritto i campi fuori ordine), il blocco
+    # "===REPORT VERBATIM START===...END===" mostrera' lo stesso identico
+    # disordine che vedresti su Telegram, perche' e' un singolo argomento
+    # %s passato a log.info -- Railway non puo' "rimescolare" il
+    # contenuto di una stringa che gli arriva gia' completa su una riga
+    # di stdout (puo' al massimo interlacciare RIGHE diverse tra loro,
+    # non il contenuto interno di una singola chiamata di log).
+    import hashlib
+    report_hash = hashlib.md5(final_report.encode()).hexdigest()[:12]
+    log.info(
+        "VERIFICA REPORT -- lunghezza: %d caratteri, hash: %s, righe: %d",
+        len(final_report), report_hash, final_report.count("\n") + 1,
+    )
+    log.info("===REPORT VERBATIM START (hash %s)===\n%s\n===REPORT VERBATIM END (hash %s)===",
+              report_hash, final_report, report_hash)
+
     log.info("RISPOSTA CLAUDE (senza foto, solo JSON Gemini):\n%s", final_report)
 
     header = (
