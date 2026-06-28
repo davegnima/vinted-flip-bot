@@ -371,6 +371,12 @@ VINTED_HEADERS = {
     "Accept-Language": "it-IT,it;q=0.9",
 }
 
+IMAGE_DOWNLOAD_HEADERS = {
+    **VINTED_HEADERS,
+    "Referer": "https://www.vinted.it/",
+    "Accept": "image/webp,image/jpeg,image/png,image/*;q=0.8,*/*;q=0.5",
+}
+
 
 def scrape_vinted_listing(url):
     """Tenta di recuperare tutte le foto della galleria + dati extra
@@ -382,17 +388,23 @@ def scrape_vinted_listing(url):
         resp.raise_for_status()
         html = resp.text
 
-        photo_urls = re.findall(
-            r'https://images\d?\.vinted\.net/[^\s"\'\\]+\.(?:jpe?g|png|webp)',
+        # le immagini della galleria Vinted hanno pattern
+        # .../t/<id_foto>/<risoluzione>/<file>.webp -- lo stesso scatto
+        # appare a piu' risoluzioni (70x100, 150x210, 310x430, f800);
+        # raggruppiamo per id_foto e teniamo solo la versione f800.
+        matches = re.findall(
+            r'https://images\d?\.vinted\.net/t/([a-zA-Z0-9_]+)/((?:f800|\d+x\d+))/[^\s"\'\\]+\.(?:jpe?g|png|webp)',
             html,
         )
-        seen = set()
-        clean_urls = []
-        for u in photo_urls:
-            base = u.split("?")[0]
-            if base not in seen:
-                seen.add(base)
-                clean_urls.append(u)
+        full_matches = re.findall(
+            r'https://images\d?\.vinted\.net/t/[a-zA-Z0-9_]+/(?:f800|\d+x\d+)/[^\s"\'\\]+\.(?:jpe?g|png|webp)',
+            html,
+        )
+        best_url_by_photo_id = {}
+        for (photo_id, resolution), full_url in zip(matches, full_matches):
+            if photo_id not in best_url_by_photo_id or resolution == "f800":
+                best_url_by_photo_id[photo_id] = full_url
+        clean_urls = list(best_url_by_photo_id.values())
         result["photo_urls"] = clean_urls[:MAX_GALLERY_PHOTOS]
 
         log.info(
@@ -424,7 +436,7 @@ def scrape_vinted_listing(url):
 
 def download_image_bytes(url):
     try:
-        resp = requests.get(url, headers=VINTED_HEADERS, timeout=15)
+        resp = requests.get(url, headers=IMAGE_DOWNLOAD_HEADERS, timeout=15)
         resp.raise_for_status()
         return resp.content
     except Exception:
