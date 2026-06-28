@@ -57,6 +57,7 @@ Note operative:
 
 import os
 import re
+import json
 import time
 import asyncio
 import base64
@@ -677,7 +678,7 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=4):
         "contents": [{"role": "user", "parts": parts}],
         "generationConfig": {
             "temperature": 0.2,
-            "maxOutputTokens": 3000,
+            "maxOutputTokens": 6000,
             "responseMimeType": "application/json",
         },
     }
@@ -703,10 +704,63 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=4):
                 data = resp.json()
                 candidates = data.get("candidates", [])
                 if not candidates:
-                    log.warning("Gemini ha risposto 200 ma senza candidates (risposta vuota).")
+                    log.warning(
+                        "Gemini ha risposto 200 ma senza candidates (tentativo %d/%d) -- ritento.",
+                        attempt, max_retries,
+                    )
+                    if attempt < max_retries:
+                        time.sleep(backoff_seconds)
+                        backoff_seconds *= 2
+                        continue
                     return "[Analisi visiva Gemini non disponibile: risposta vuota]"
-                return "".join(
+
+                extracted_text = "".join(
                     p.get("text", "") for p in candidates[0]["content"]["parts"]
+                )
+
+                # VALIDAZIONE CONTENUTO: una risposta HTTP 200 non garantisce
+                # un JSON utile -- Gemini puo' restituire testo vuoto, troncato
+                # a metà (es. per maxOutputTokens insufficiente con molte foto),
+                # o un placeholder degenere come "...". Controlliamo lunghezza
+                # minima e validità JSON prima di accettare la risposta: se
+                # fallisce, trattiamo come errore transitorio e ritentiamo,
+                # invece di passare a Claude un'analisi visiva inutilizzabile
+                # che lo forzerebbe ad applicare "assenza totale di prove"
+                # anche quando le foto in realtà mostravano etichette chiare.
+                content_is_valid = False
+                if extracted_text and len(extracted_text.strip()) >= 50:
+                    try:
+                        json.loads(extracted_text)
+                        content_is_valid = True
+                    except (json.JSONDecodeError, ValueError):
+                        content_is_valid = False
+
+                if content_is_valid:
+                    return extracted_text
+
+                log.warning(
+                    "Gemini ha risposto 200 ma il contenuto e' vuoto/troppo corto/non JSON valido "
+                    "(tentativo %d/%d) -- lunghezza testo: %d, anteprima: %r -- ritento.",
+                    attempt, max_retries, len(extracted_text), extracted_text[:200],
+                )
+                if attempt < max_retries:
+                    time.sleep(backoff_seconds)
+                    backoff_seconds *= 2
+                    continue
+                # Ultimo tentativo esaurito con contenuto invalido: meglio
+                # un placeholder esplicito che un JSON spazzatura passato a
+                # Claude come se fosse analisi visiva valida.
+                log.error(
+                    "Gemini: contenuto invalido/vuoto persistente dopo %d tentativi. "
+                    "Ultima risposta (anteprima): %r",
+                    max_retries, extracted_text[:300],
+                )
+                return (
+                    "[ERRORE: Gemini ha risposto ma il contenuto era vuoto, troncato o "
+                    "non JSON valido dopo tutti i tentativi. Procedi con MASSIMA cautela: "
+                    "nessun dato visivo affidabile, tratta come se le foto non fossero "
+                    "analizzabili e applica la regola su assenza totale di prove di brand "
+                    "dove pertinente.]"
                 )
 
             if resp.status_code in RETRYABLE_STATUS_CODES and attempt < max_retries:
