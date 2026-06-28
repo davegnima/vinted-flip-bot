@@ -51,6 +51,7 @@ Note operative:
 
 import os
 import re
+import time
 import asyncio
 import base64
 import logging
@@ -495,9 +496,14 @@ VINTED_HEADERS = {
 }
 
 IMAGE_DOWNLOAD_HEADERS = {
-    **VINTED_HEADERS,
+    "User-Agent": VINTED_HEADERS["User-Agent"],
+    "Accept-Language": VINTED_HEADERS["Accept-Language"],
     "Referer": "https://www.vinted.it/",
-    "Accept": "image/webp,image/jpeg,image/png,image/*;q=0.8,*/*;q=0.5",
+    "Accept": "image/webp,image/avif,image/jpeg,image/png,image/*,*/*;q=0.8",
+    "Sec-Fetch-Dest": "image",
+    "Sec-Fetch-Mode": "no-cors",
+    "Sec-Fetch-Site": "same-site",
+    "Connection": "keep-alive",
 }
 
 
@@ -507,20 +513,25 @@ def scrape_vinted_listing(url):
     """
     result = {"photo_urls": [], "size": None, "condition": None, "description": None}
     try:
-        resp = requests.get(url, headers=VINTED_HEADERS, timeout=15)
+        resp = _vinted_session.get(url, headers=VINTED_HEADERS, timeout=15)
         resp.raise_for_status()
         html = resp.text
 
         # le immagini della galleria Vinted hanno pattern
-        # .../t/<id_foto>/<risoluzione>/<file>.webp -- lo stesso scatto
-        # appare a piu' risoluzioni (70x100, 150x210, 310x430, f800);
-        # raggruppiamo per id_foto e teniamo solo la versione f800.
+        # .../t/<id_foto>/<risoluzione>/<file>.webp?s=<token_firma>
+        # -- lo stesso scatto appare a piu' risoluzioni (70x100, 150x210,
+        # 310x430, f800); raggruppiamo per id_foto e teniamo solo la
+        # versione f800. IMPORTANTE: il parametro ?s=<token> e' una firma
+        # temporanea richiesta dal CDN -- senza di esso il download
+        # dell'immagine viene rifiutato (403), quindi va sempre incluso.
         matches = re.findall(
-            r'https://images\d?\.vinted\.net/t/([a-zA-Z0-9_]+)/((?:f800|\d+x\d+))/[^\s"\'\\]+\.(?:jpe?g|png|webp)',
+            r'https://images\d?\.vinted\.net/t/([a-zA-Z0-9_]+)/((?:f800|\d+x\d+))/'
+            r'[^\s"\'\\]+?\.(?:jpe?g|png|webp)(?:\?s=[a-f0-9]+)?',
             html,
         )
         full_matches = re.findall(
-            r'https://images\d?\.vinted\.net/t/[a-zA-Z0-9_]+/(?:f800|\d+x\d+)/[^\s"\'\\]+\.(?:jpe?g|png|webp)',
+            r'https://images\d?\.vinted\.net/t/[a-zA-Z0-9_]+/(?:f800|\d+x\d+)/'
+            r'[^\s"\'\\]+?\.(?:jpe?g|png|webp)(?:\?s=[a-f0-9]+)?',
             html,
         )
         best_url_by_photo_id = {}
@@ -557,14 +568,43 @@ def scrape_vinted_listing(url):
     return result
 
 
-def download_image_bytes(url):
-    try:
-        resp = requests.get(url, headers=IMAGE_DOWNLOAD_HEADERS, timeout=15)
-        resp.raise_for_status()
-        return resp.content
-    except Exception:
-        log.warning("Download immagine fallito: %s", url)
-        return None
+# Sessione condivisa: riusa connessione e cookie tra le richieste di
+# scraping pagina e download immagini dello stesso annuncio, il che
+# aiuta con CDN che si aspettano una sessione "coerente" (stessi cookie
+# di tracking della pagina HTML quando poi richiedi le immagini).
+_vinted_session = requests.Session()
+_vinted_session.headers.update(VINTED_HEADERS)
+
+
+def download_image_bytes(url, referer="https://www.vinted.it/", max_retries=2):
+    headers = dict(IMAGE_DOWNLOAD_HEADERS)
+    headers["Referer"] = referer
+
+    last_status = None
+    last_error = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            resp = _vinted_session.get(url, headers=headers, timeout=15)
+            last_status = resp.status_code
+            if resp.ok:
+                return resp.content
+            log.warning(
+                "Download immagine fallito (tentativo %d/%d) -- HTTP %d: %s",
+                attempt, max_retries, resp.status_code, url,
+            )
+        except Exception as exc:
+            last_error = exc
+            log.warning(
+                "Download immagine fallito (tentativo %d/%d) -- eccezione %s: %s",
+                attempt, max_retries, type(exc).__name__, url,
+            )
+        time.sleep(0.6 * attempt)  # piccolo backoff prima del retry
+
+    log.warning(
+        "Download immagine fallito definitivamente dopo %d tentativi (ultimo status=%s, ultimo errore=%s): %s",
+        max_retries, last_status, last_error, url,
+    )
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -701,9 +741,10 @@ def process_listing(parsed, url, cover_photo_bytes):
         listing_info["description"] = scraped.get("description")
 
         for photo_url in scraped.get("photo_urls", []):
-            img = download_image_bytes(photo_url)
+            img = download_image_bytes(photo_url, referer=url)
             if img:
                 photo_bytes_list.append(img)
+            time.sleep(0.4)  # piccola pausa per non sembrare scraping aggressivo
 
     if not photo_bytes_list and cover_photo_bytes:
         photo_bytes_list = [cover_photo_bytes]
