@@ -187,37 +187,48 @@ SEMPRE in italiano anche se annuncio in altra lingua. Messaggio pronto breve, o 
 # GEMINI VISION SYSTEM PROMPT (Nuovo Legit Check - Token-Diet)
 # ---------------------------------------------------------------------------
 GEMINI_VISION_SYSTEM_PROMPT = """
-Sei un autenticatore esperto di streetwear, luxury e second-hand. Il tuo unico scopo è scovare fake analizzando pixel per pixel (cuciture, font, tag, proporzioni).
-NON inventare prezzi, NON fare ricerche web, NON scrivere messaggi al venditore. Sii spietato e telegrafico.
+Sei un analista visivo specializzato in autenticazione e valutazione di capi di abbigliamento e accessori second-hand per il flipping. 
+Il tuo scopo è fare un Legit Check rigoroso (analizzando font, cuciture, etichette) e fare da "buttafuori" scartando capi falsi o in pessime condizioni.
 
-Rispondi ESCLUSIVAMENTE con questo oggetto JSON (zero testo fuori, nessun markdown):
+Rispondi ESCLUSIVAMENTE con un oggetto JSON valido (nessun testo prima o dopo, nessun blocco markdown).
 
 {
-  "legit_check": {
-    "brand_modello": "Nome brand e modello esatto (max 8 parole)",
+  "identificazione": {
+    "brand_visibile": "...",
+    "categoria_capo": "Es. T-shirt, Borsa, Giacca",
+    "modello_specifico": "Se riconoscibile. Altrimenti vuoto.",
+    "taglia_visibile": "..."
+  },
+  "condizione_visibile": {
+    "stato_generale": "Nuovo / Ottimo / Usato / Da riparare",
+    "difetti_rilevati": "Sii specifico su buchi, macchie, usura (max 20 parole). Se perfetto scrivi: Nessun difetto evidente."
+  },
+  "legit_check_dettagliato": {
+    "loghi_e_marchi": "Analisi font, ricami, stampe. Sono coerenti con l'originale? (max 20 parole)",
+    "etichette_e_cuciture": "Analisi wash tag, etichetta collo, precisione cuciture. (max 20 parole)",
+    "hardware_e_dettagli": "Zip, bottoni, codici seriali se visibili. (max 20 parole)",
+    "fake_flags_o_incongruenze": "Segnala qui ogni sbavatura, errore di font o discrepanza. Se non ci sono loghi scrivi TASSATIVAMENTE: 'ASSENZA TOTALE DI PROVE'.",
+    "foto_mancanti": "Cosa manca per l'autenticazione certa? (es. retro wash tag, close-up zip)"
+  },
+  "legit_check_sintesi": {
     "verdetto": "Probabilmente autentico / Sospetto, servono altre foto / Probabilmente falso / Non verificabile",
     "confidenza_pct": 0,
-    "rischio_fake_brand": "Basso / Medio / Alto / Molto alto",
-    "dettagli": {
-      "ok": "Cosa è coerente con l'originale (max 12 parole. Es: 'Font wash tag corretto, cuciture dritte')",
-      "fake_flags": "Discrepanze o red flags visibili (max 15 parole. Se perfetto lascia vuoto)",
-      "mancanti": "Cosa manca per la certezza assoluta (max 10 parole. Es: 'Foto retro wash tag')"
-    },
-    "valutazione_flipper_preliminare": {
-      "categoria_a_basso_valore": false,
-      "verdetto_grezzo": "NON COMPRARE / VALUTA / COMPRA",
-      "motivo_verdetto_grezzo": "Max 10 parole (es. 'fake evidente', 'calzini')"
-    }
+    "rischio_fake_brand": "Basso / Medio / Alto / Molto alto"
+  },
+  "valutazione_flipper_preliminare": {
+    "categoria_a_basso_valore": false,
+    "verdetto_grezzo": "NON COMPRARE / VALUTA / COMPRA",
+    "motivo": "Max 10 parole"
   }
 }
 
 REGOLE CRITICHE:
-1. NON trascrivere le etichette di lavaggio parola per parola. Estrai solo brand e taglia.
-2. Niente liste, niente spiegazioni prolisse. Taglia gli aggettivi.
-3. Se non c'è traccia del brand (solo pattern generici e nessun logo), SCRIVI TASSATIVAMENTE: 'ASSENZA TOTALE DI PROVE'.
-4. Rispettare i limiti di parole è TASSATIVO per ragioni di sistema.
+1. NON trascrivere le etichette parola per parola. Sintetizza la loro correttezza nel campo 'etichette_e_cuciture'.
+2. Se un logo non corrisponde al brand dichiarato o ha font palesemente errati, segnalalo subito in 'fake_flags'.
+3. Un pattern generico (es. check Burberry) senza etichette NON prova l'autenticità: usa 'ASSENZA TOTALE DI PROVE'.
+4. "verdetto_grezzo" DEVE ESSERE 'NON COMPRARE' se rilevi buchi, macchie gravi, o se il legit check è 'Probabilmente falso'.
+5. Rispettare i limiti di parole è TASSATIVO per ragioni di sistema.
 """.strip()
-
 
 # ---------------------------------------------------------------------------
 # TELEGRAM BOT API HELPERS
@@ -420,7 +431,7 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=3):
         "contents": [{"role": "user", "parts": parts}],
         "generationConfig": {
             "temperature": 0.15,
-            "maxOutputTokens": 600,  # Concesso spazio per analisi ma senza sbrodolare
+            "maxOutputTokens": 1000,  # Concesso spazio per analisi ma senza sbrodolare
             "responseMimeType": "application/json",
         },
     }
@@ -695,17 +706,25 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
 def check_skip_pre_claude(gemini_analysis_json):
     try:
         data = json.loads(gemini_analysis_json)
-        l_check = data.get("legit_check", {})
-        v_flipper = l_check.get("valutazione_flipper_preliminare", {}) if isinstance(l_check, dict) else {}
         
-        # Early exit se Gemini riconosce un falso palese con alta confidenza
-        if (l_check.get("verdetto") or "").strip().lower() == "probabilmente falso" and int(l_check.get("confidenza_pct", 0)) >= 85:
-            return True, f"[FALSO CONCLAMATO] {l_check.get('dettagli', {}).get('fake_flags', '')}"
+        # Nuove chiavi del prompt strutturato
+        l_check_sintesi = data.get("legit_check_sintesi", {})
+        l_check_dettagli = data.get("legit_check_dettagliato", {})
+        v_flipper = data.get("valutazione_flipper_preliminare", {}) 
+        
+        # 1. Early exit se Gemini riconosce un falso palese con alta confidenza
+        if (l_check_sintesi.get("verdetto") or "").strip().lower() == "probabilmente falso" and int(l_check_sintesi.get("confidenza_pct", 0)) >= 85:
+            return True, f"[FALSO CONCLAMATO] {l_check_dettagli.get('fake_flags_o_incongruenze', '')}"
+            
+        # 2. Early exit se è robaccia di scarso valore (calzini ecc.)
         if v_flipper.get("categoria_a_basso_valore") is True:
-            return True, "[CATEGORIA BASSO VALORE] Calzini o simili."
+            return True, "[CATEGORIA BASSO VALORE] Calzini o articoli fuori target."
+            
+        # 3. Early exit se il buttafuori dice No (buchi, macchie, etc.)
         if (v_flipper.get("verdetto_grezzo") or "").strip().upper() == "NON COMPRARE":
-            return True, f"[VERDETTO GREZZO GEMINI] {v_flipper.get('motivo_verdetto_grezzo', '')}"
-    except:
+            return True, f"[VERDETTO GREZZO GEMINI] {v_flipper.get('motivo', '')}"
+            
+    except Exception:
         pass
     return False, None
 
