@@ -157,7 +157,7 @@ Scrivi "Decisione: [qualità] · [urgenza]", es. "COMPRA SUBITO · AGISCI ORA" o
 3. Sold estero (valuta locale) va scontato per Vinted IT, più price-sensitive — dichiara l'aggiustamento.
 4. Comps scarsi/sporchi → confidenza bassa, non colmare con memoria/retail.
 5. Target vendita 7-14gg: prezzo competitivo con margine trattativa incluso.
-6. PRIMA di proporre prezzi, ricerca web specifica (`"[brand] [modello] sold" ebay`, `"[brand] [modello] vinted/vestiaire`). Mai solo memoria/retail/valore "da collezione". Comps assenti → confidenza BASSA, prudente al ribasso. HAI MASSIMO 3 RICERCHE disponibili per questa valutazione: pianificale bene, non sprecarle su query troppo specifiche che rischiano zero risultati — preferisci 2-3 query ampie e mirate (es. una su eBay sold, una su Vestiaire/ask) piuttosto che tentativi multipli di affinamento.
+6. PRIMA di proporre prezzi, UNA SOLA ricerca web disponibile per questa valutazione (non puoi affinare con tentativi successivi): costruisci UNA query ampia e ben scelta che massimizzi la probabilità di trovare comps utili in un solo colpo — es. `"[brand] [modello]" sold ebay vestiaire` (più fonti nella stessa query) invece di query strette su una sola fonte. Se la query non torna risultati utili, lavora con quello che hai e dichiara confidenza Bassa — non hai un secondo tentativo. Mai stimare solo da memoria/retail/valore "da collezione". Comps assenti → confidenza BASSA, prudente al ribasso.
 
 DIFFUSION LINE (Missoni/Missoni Sport, Prada/Miu Miu, Armani/Emporio-Exchange, Max Mara/Weekend, ecc.): non vale automaticamente come la mainline — dipende dal brand, alcune restano ricercate altre no. Cerca comps SPECIFICI per quella linea esatta. Solo comps mainline trovati → NON usarli come proxy diretto, confidenza bassa, stima al ribasso, dichiaralo.
 
@@ -817,14 +817,16 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
             }
         ],
         "messages": [{"role": "user", "content": content}],
-        # max_uses limita le ricerche web per singola valutazione: senza
-        # questo limite, Claude puo' fare 2-4+ ricerche per un annuncio
-        # ambiguo, e OGNI ricerca e' una chiamata API separata che
-        # ricarica l'intero contesto accumulato (system prompt + storico
-        # ricerche precedenti), facendo lievitare i costi rapidamente.
-        # 3 ricerche bastano per il caso tipico (es. eBay sold + Vestiaire
-        # ask + eventuale comp specifico per diffusion line).
-        "tools": [{"type": "web_search_20250305", "name": "web_search", "max_uses": 3}],
+        # max_uses=1 forza una SOLA ricerca per valutazione (non 3): ogni
+        # iterazione del loop agentico con web_search scrive automaticamente
+        # una nuova entry di cache (comportamento documentato Anthropic,
+        # indipendente dal nostro caching sul system prompt), quindi piu'
+        # ricerche = piu' scritture cache_creation extra ad ogni round.
+        # Con 1 sola ricerca, il costo aggiuntivo si limita a una singola
+        # scrittura invece di 2-3, riducendo sensibilmente il costo medio
+        # per annuncio. Il prompt istruisce Claude a fare una query ampia
+        # e mirata in un solo colpo invece di affinare progressivamente.
+        "tools": [{"type": "web_search_20250305", "name": "web_search", "max_uses": 1}],
     }
 
     resp = requests.post(
@@ -977,6 +979,83 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
 # PIPELINE PRINCIPALE PER UN SINGOLO ANNUNCIO
 # ---------------------------------------------------------------------------
 
+def check_falso_evidente(gemini_analysis_json):
+    """Controllo a COSTO ZERO (nessuna chiamata API) sul JSON gia' ottenuto
+    da Gemini: se il legit check preliminare segnala un falso con
+    confidenza alta, possiamo skippare del tutto la chiamata Claude (che
+    e' la voce di costo piu' alta della pipeline) e rispondere subito con
+    NON COMPRARE. Questo NON sostituisce il giudizio di Claude sui casi
+    dubbi -- e' deliberatamente conservativo: scatta solo sui casi dove
+    Gemini stesso e' già sicuro al 90%+ che sia un falso, per minimizzare
+    il rischio di scartare per errore un deal valido (un falso negativo
+    qui costa solo la chiamata Claude risparmiata; un falso positivo
+    costerebbe un deal buono perso, molto piu' caro).
+
+    Ritorna (True, motivo) se va skippato, (False, None) altrimenti."""
+    try:
+        data = json.loads(gemini_analysis_json)
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return False, None
+
+    if not isinstance(data, dict):
+        return False, None
+
+    legit = data.get("legit_check_preliminare", {})
+    if not isinstance(legit, dict):
+        return False, None
+
+    verdetto = (legit.get("verdetto") or "").strip().lower()
+    confidenza_raw = str(legit.get("confidenza_percentuale") or "0")
+    # confidenza_percentuale puo' arrivare come "99", "99%", o numero
+    confidenza_match = re.search(r"(\d+)", confidenza_raw)
+    confidenza = int(confidenza_match.group(1)) if confidenza_match else 0
+
+    rischio = (legit.get("rischio_fake_qualitativo") or "").strip().lower()
+
+    # Soglia volutamente alta: solo "probabilmente falso" (non "sospetto")
+    # E confidenza dichiarata >= 90% E rischio qualitativo "molto alto".
+    # Tutti e tre insieme, non uno solo -- riduce drasticamente il rischio
+    # di falsi positivi su casi che in realta' meriterebbero il giudizio
+    # piu' nuanced di Claude (es. "sospetto, servono altre foto" con
+    # margine enorme potrebbe comunque giustificare CHIEDI ALTRE FOTO).
+    e_falso_evidente = (
+        verdetto == "probabilmente falso"
+        and confidenza >= 90
+        and rischio == "molto alto"
+    )
+
+    if e_falso_evidente:
+        motivo = legit.get("cosa_non_torna_o_e_dubbio") or "Falso conclamato dall'analisi visiva."
+        return True, motivo
+
+    return False, None
+
+
+def build_skip_report(listing_info, motivo_falso):
+    """Costruisce un report NON COMPRARE nello stesso formato compatto
+    usato da Claude, senza fare alcuna chiamata API. Usato quando
+    check_falso_evidente() rileva un caso chiaro."""
+    return (
+        "## Verdetto operativo\n"
+        "- **Decisione:** NON COMPRARE · N/A\n"
+        "- **Costo pieno richiesto:** N/A — rischio autenticità blocca la valutazione\n"
+        "- **Costo pieno trattato:** N/A\n"
+        "- **Vendita probabile:** N/A\n"
+        "- **Margine netto:** N/A\n"
+        "- **Deal:** 0/10 · **Margine:** 0/10 · **Liquidità:** Bassa · "
+        "**Rischio:** ALTO — falso conclamato (filtro automatico, Claude non consultato) · "
+        "**Confidenza:** Alta\n"
+        f"- **In una riga:** {motivo_falso[:120]}\n\n"
+        "## Legit check\n"
+        f"Probabilmente falso — rilevato da Gemini con confidenza ≥90%, "
+        "filtro automatico pre-Claude attivato per risparmio costi.\n\n"
+        "## Da chiedere\n"
+        "Non rilevante: falso conclamato.\n\n"
+        "## Messaggio da inviare\n"
+        "Non necessario."
+    )
+
+
 def process_listing(parsed, url, cover_photo_bytes):
     """Funzione sincrona (bloccante): viene lanciata in un thread separato
     dall'event handler asincrono di Telethon, per non bloccare il loop
@@ -1020,7 +1099,19 @@ def process_listing(parsed, url, cover_photo_bytes):
     gemini_analysis_json = call_gemini_vision(photo_bytes_list, listing_info)
     log.info("RISPOSTA GEMINI (JSON, %d foto inviate):\n%s", len(photo_bytes_list), gemini_analysis_json)
 
-    final_report = call_claude_oracle(listing_info, gemini_analysis_json)
+    # FILTRO PRE-CLAUDE A COSTO ZERO: se Gemini ha gia' rilevato un falso
+    # conclamato con alta confidenza, skippiamo la chiamata Claude (la
+    # voce di costo piu' alta della pipeline) e rispondiamo direttamente.
+    e_falso, motivo_falso = check_falso_evidente(gemini_analysis_json)
+    if e_falso:
+        log.info(
+            "FILTRO PRE-CLAUDE ATTIVATO: falso evidente rilevato da Gemini, "
+            "Claude NON consultato per questo annuncio. Motivo: %s",
+            motivo_falso,
+        )
+        final_report = build_skip_report(listing_info, motivo_falso)
+    else:
+        final_report = call_claude_oracle(listing_info, gemini_analysis_json)
 
     # VERIFICA DIRETTA DEL CONTENUTO IN MEMORIA: stampiamo un hash e la
     # lunghezza del testo PRIMA di qualsiasi altra cosa, con marcatori
