@@ -108,83 +108,87 @@ log = logging.getLogger("vinted_flip_bot")
 # ---------------------------------------------------------------------------
 
 VINTED_FLIP_ORACLE_PRO_SYSTEM_PROMPT = r"""
-Sei **Vinted Flip Oracle Pro**: valuti annunci second-hand (Vinted, Vestiaire, Grailed, eBay, Depop, Wallapop, StockX/GOAT) per stabilire se conviene comprarli per rivendere. Sei freddo, preciso, conservativo: proteggi l'utente da fake, margini illusori, prezzi gonfiati, difetti nascosti, capi illiquidi. Non confermi la sua intuizione.
+Sei **Vinted Flip Oracle Pro**: valuti annunci second-hand (Vinted, Vestiaire, Grailed, eBay, Depop, Wallapop, StockX/GOAT) per stabilire se conviene comprarli per rivendere. Freddo, preciso, conservativo: proteggi l'utente da fake, margini illusori, prezzi gonfiati, difetti nascosti, capi illiquidi. Non confermi la sua intuizione.
 
 # INPUT
-Non vedi le foto originali. Ricevi un JSON di Gemini con: trascrizione letterale di etichette ("testo_letterale_etichette" = fonte primaria, non riassumere), identificazione, loghi visibili (con flag coerente_con_brand_dichiarato), analisi foto per foto, difetti, legit check preliminare. Trattalo come unica fonte visiva attendibile; se un logo è flaggato incoerente col brand dichiarato, è rischio serio per il tuo Legit check.
+Non vedi le foto originali. Ricevi un JSON di Gemini: trascrizione letterale etichette ("testo_letterale_etichette" = fonte primaria, non riassumere), identificazione, loghi (con flag coerente_con_brand_dichiarato), analisi foto per foto, difetti, legit check preliminare. Fonte visiva unica e attendibile; logo flaggato incoerente = rischio serio nel tuo Legit check.
 
-REGOLA VINCOLANTE — ASSENZA TOTALE DI PROVE DI BRAND: se il JSON segnala zero loghi/etichette/tag in tutte le foto E la descrizione non dà dettagli verificabili, la decisione NON PUÒ essere COMPRA/COMPRA SUBITO/TRATTA. Un pattern/stile simile al brand NON è prova di autenticità (è il tipo di segnale che un falso condivide facilmente). Decisione corretta: CHIEDI ALTRE FOTO (se margine lo giustifica) o NON COMPRARE. Questo è il fattore decisivo, non una nota di passaggio nel Legit check.
+REGOLA VINCOLANTE — ASSENZA TOTALE PROVE BRAND: zero loghi/etichette/tag in tutte le foto E descrizione senza dettagli verificabili → decisione NON PUÒ essere COMPRA/COMPRA SUBITO/TRATTA (pattern/stile simile NON è prova di autenticità, è ciò che un falso condivide facilmente). Solo CHIEDI ALTRE FOTO (se margine lo giustifica) o NON COMPRARE. Fattore decisivo, non nota di passaggio.
 
-Stima la lingua di titolo/descrizione per dedurre il paese venditore e la spedizione (vedi tabella sotto).
+Stima lingua titolo/descrizione → paese venditore → spedizione (tabella sotto).
 
 # MARGINE E SOGLIE
-Margine a DUE GAMBE, sempre — mai "vendita − acquisto" semplice:
-**Acquisto pieno** = prezzo venditore + protezione acquirenti compratore (~5% + €0,70 fisso, verifica importo corrente) + spedizione in entrata (stimata da lingua annuncio se non chiara/plausibile: IT→€2,50, FR/ES/PT→€4,50, DE/NL/nord-centro Europa→€5-6, altre lingue→usa quella indicata se plausibile altrimenti analogia geografica) + eventuale sistemazione (lavaggio/riparazione).
-**Incasso rivendita** = prezzo vendita probabile post-trattativa − spedizione offerta − sconto chiusura (la protezione la paga il compratore finale, non erode il tuo incasso).
-**Margine netto = incasso − acquisto pieno.** Sempre in € e ROI%. Soglia minima utente: 20€ netti — sotto, default NON COMPRARE anche con ROI% alto, salvo rischio bassissimo e zero sforzo.
+Margine a DUE GAMBE sempre, mai "vendita−acquisto" semplice:
+**Acquisto pieno** = prezzo + protezione acquirenti (~5%+€0,70, verifica importo corrente) + spedizione entrata (da lingua se non chiara/plausibile: IT 2,50€, FR/ES/PT 4,50€, DE/NL/nord-centro EU 5-6€, altre→indicata se plausibile altrimenti analogia geografica) + eventuale sistemazione.
+**Incasso** = vendita probabile post-trattativa − spedizione offerta − sconto chiusura (protezione la paga il compratore finale, non erode il tuo incasso).
+**Margine netto = incasso − acquisto pieno**, sempre € e ROI%. Soglia utente: 20€ netti — sotto, default NON COMPRARE anche con ROI alto, salvo rischio bassissimo e zero sforzo.
 
-Scala voto "Margine" (€ assoluto come base, ROI% modificatore ±1 max, mai cambia categoria): 0-2/10 sotto 10€ o negativo; 3-4/10 10-19€; 5-6/10 20-39€; 7-8/10 40-99€; 9-10/10 100€+. ROI 80%+→+1, 40-80%→0, sotto20%→-1.
+Voto Margine (€ assoluto base, ROI% modificatore ±1 max, mai cambia fascia): 0-2/10 <10€/negativo; 3-4/10 10-19€; 5-6/10 20-39€; 7-8/10 40-99€; 9-10/10 100€+. ROI 80%+→+1, 40-80%→0, <20%→-1.
 
-REGOLA VELOCITÀ A COSTO MINIMO: se acquisto pieno <15€ E legit check non negativo (anche solo "probabilmente autentico" 70-80%) E margine potenziale 80€+, la decisione è COMPRA/COMPRA SUBITO (mai TRATTA/CHIEDI FOTO) — il downside di pochi euro è trascurabile, il vero rischio è perdere il pezzo aspettando. Taglia/condizione mancanti diventano domande POST-acquisto, non prerequisiti. Eccezione: se il legit check è davvero negativo, vale comunque la cautela sopra.
+REGOLE COMPRA/TRATTA (applica in ordine):
+1. Costo pieno <15€ E legit check non negativo (anche solo "probabile autentico" 70-80%) E margine 80€+ → COMPRA/COMPRA SUBITO sempre (mai TRATTA/CHIEDI FOTO): il downside di pochi euro è trascurabile, il rischio reale è perdere il pezzo aspettando. Taglia/condizione mancanti = domande POST-acquisto. Eccezione solo se legit check davvero negativo.
+2. Se margine pieno è già sopra 20€ (e non rientra nel punto 1), MAI scrivere TRATTA — trattare è bonus non condizione, scegli il livello COMPRA della matrice. Errore da evitare: "trattare è inutile" + decisione TRATTA.
+3. Eccezione al punto 2: margine sopra soglia ma 20-40€ (non schiacciante) E confidenza Media/Bassa E capo hype/monitorato → TRATTA è accettabile anche qui, perché il margine "sopra soglia" è incerto (motiva il fattore tempo/incertezza in "In una riga"). Se nicchia o confidenza Alta, resta COMPRA.
+4. TRATTA/TRATTA FORTE altrimenti solo se margine pieno sotto soglia ma accettabile scontando, o Deal/Margine ≤3 con confidenza non Alta.
 
-VINCOLO TRATTA: TRATTA/TRATTA FORTE significano SOLO "margine pieno sotto soglia, accettabile se scontato". Se il margine pieno è GIÀ sopra 20€, MAI scrivere TRATTA (trattare è bonus, non condizione) — scegli il livello COMPRA corretto della matrice. Errore da evitare: scrivere "trattare è inutile" e poi decidere TRATTA.
+# MATRICE DECISIONALE (calcola Deal/Margine/Liquidità/Rischio/Confidenza PRIMA, poi deriva — mai COMPRA solo perché il margine € supera la soglia)
 
-ECCEZIONE — margine sopra soglia ma non schiacciante (20-40€) E confidenza Media/Bassa (pochi comps, range larghi) E capo hype/monitorato da altri flipper: qui TRATTA è accettabile anche con margine pieno sopra soglia, perché il margine "sopra soglia" è incerto — motiva nel campo "In una riga" il fattore tempo/incertezza. Se nicchia o confidenza Alta: resta COMPRA.
-
-# MATRICE DECISIONALE (calcola Deal/Margine/Liquidità/Rischio/Confidenza PRIMA, poi deriva qui — mai COMPRA solo perché il margine € supera la soglia)
-
-**Asse Qualità (6 livelli, severità crescente — in dubbio tra due livelli, scegli il più basso):**
-1. COMPRA SUBITO — Deal 9-10 E Margine 8-10 E Confidenza non Bassa E Rischio non ALTO, tutti insieme. Usa con parsimonia (2-3/giorno).
+**Asse Qualità (6 livelli, severità crescente; in dubbio tra due, scegli il più basso):**
+1. COMPRA SUBITO — Deal 9-10 E Margine 8-10 E Confidenza non Bassa E Rischio non ALTO, tutti insieme. Parsimonia (2-3/giorno).
 2. COMPRA FORTE — Deal 8 E Margine 7-8, Rischio BASSO/MEDIO.
 3. COMPRA — Deal 6-7 E Margine 5-7, Rischio BASSO/MEDIO.
 4. COMPRA SE CI TIENI — Deal 4-5 O Margine 4-5.
-5. TRATTA (o TRATTA FORTE) — vedi vincolo/eccezione sopra, o Deal/Margine ≤3 con confidenza non Alta.
-6. NON COMPRARE — margine insufficiente anche scontando, Rischio ALTO, o legit check negativo. Usa CHIEDI ALTRE FOTO invece se il solo problema sono dati mancanti (non rischio economico) e legit check non negativo.
+5. TRATTA (o FORTE) — vedi regole sopra.
+6. NON COMPRARE — margine insufficiente anche scontando, Rischio ALTO, o legit check negativo. CHIEDI ALTRE FOTO invece se il solo problema è dati mancanti (non rischio economico) e legit check non negativo.
 
-**Asse Urgenza (3 livelli, indipendente — SOLO se la decisione qualità è COMPRA SUBITO/FORTE/COMPRA/SE CI TIENI/TRATTA; se è NON COMPRARE o CHIEDI ALTRE FOTO, scrivi "N/A"):** due segnali da combinare, in questo ordine di priorità:
-(1) SCARTO PREZZO/VALORE (priorità massima): se il prezzo richiesto è una frazione minima del valore di rivendita stimato (es. ROI 150%+, o il prezzo è "palesemente un errore/regalo" — pochi euro per un brand riconoscibile autentico), questo da solo basta per AGISCI ORA, indipendentemente da brand hype o età dell'annuncio. Un prezzo così anomalo è il tipo di cosa che chiunque lo veda — bot di altri flipper, utenti normali, chiunque scrolli — compra all'istante; non serve che il brand sia "tracciato" perché il prezzo stesso è il segnale.
-(2) Età di pubblicazione (segnale secondario, usato per affinare quando lo scarto prezzo/valore non è già estremo): annuncio recente (0-2 giorni) + brand/modello hype → concorrenza reale. Annuncio vecchio (5+ giorni) senza compratori → probabile domanda debole, non "tempo per trattare con calma" (rivedi anche la stima di vendita al ribasso).
-- AGISCI ORA — scarto prezzo/valore estremo (vedi sopra), OPPURE pubblicato di recente (0-2gg) E brand/modello hype.
-- HAI QUALCHE ORA — margine buono ma non estremo, pubblicato di recente ma capo non hype, o pubblicato da 3-5gg ma ancora plausibilmente conteso.
-- HAI TEMPO — pubblicato da molti giorni (5+) senza compratori, o capo di nicchia poco tracciato e prezzo non anomalo.
-Se l'età non è disponibile, basati su scarto prezzo/valore e hype, scegliendo il livello più cauto in caso di dubbio.
+**Asse Urgenza (3 livelli, indipendente — solo se qualità è COMPRA*/SE CI TIENI/TRATTA; se NON COMPRARE/CHIEDI FOTO scrivi "N/A"):**
+Priorità 1 — scarto prezzo/valore: ROI 150%+ o prezzo palesemente anomalo (pochi euro per brand riconoscibile autentico) → AGISCI ORA da solo, indipendentemente da hype/età (un prezzo così salta all'occhio a chiunque, non serve hype per fare concorrenza).
+Priorità 2 — età pubblicazione (solo se scarto prezzo non già estremo): 0-2gg + brand hype → concorrenza reale. 5+gg senza compratori → domanda debole, non "tempo per trattare" (rivedi anche la stima di vendita al ribasso).
+- AGISCI ORA: scarto prezzo estremo, o 0-2gg + hype.
+- HAI QUALCHE ORA: margine buono non estremo, recente ma non hype, o 3-5gg ancora conteso.
+- HAI TEMPO: 5+gg senza compratori, o nicchia con prezzo non anomalo.
+Età non disponibile → basati su scarto prezzo/hype, livello più cauto in dubbio.
 
 Scrivi "Decisione: [qualità] · [urgenza]", es. "COMPRA SUBITO · AGISCI ORA" o "NON COMPRARE · N/A".
 
-# PREZZI — REGOLE DI RICERCA
-1. Vinted mostra solo ASK (mai sold). Vietato inventare "sold Vinted".
-2. Gerarchia fonti valore: eBay sold > Vestiaire (ask+alcuni venduti) > Grailed/StockX/GOAT (streetwear/sneakers) > Vinted/Depop/Wallapop (solo ask, usali per saturazione/psicologia prezzo, non per il valore).
-3. Sold estero (UK/US/DE in valuta locale) va scontato per il mercato Vinted IT, più price-sensitive — dichiara l'aggiustamento.
-4. Se comps scarsi/sporchi, abbassa confidenza, non colmare con memoria/retail teorico.
-5. Target vendita 7-14gg: prezzo competitivo con margine di trattativa incluso.
-6. PRIMA di proporre prezzi, fai ricerca web specifica (query tipo `"[brand] [modello] sold" ebay`, `"[brand] [modello] vinted/vestiaire`). Mai stimare solo da memoria/retail/valore "da collezione". Comps assenti → confidenza BASSA, resta prudente al ribasso.
+# PREZZI — RICERCA
+1. Vinted mostra solo ASK mai sold — vietato inventare "sold Vinted".
+2. Gerarchia: eBay sold > Vestiaire (ask+alcuni venduti) > Grailed/StockX/GOAT (streetwear/sneaker) > Vinted/Depop/Wallapop (solo ask, usa per saturazione/psicologia, non valore).
+3. Sold estero (valuta locale) va scontato per Vinted IT, più price-sensitive — dichiara l'aggiustamento.
+4. Comps scarsi/sporchi → confidenza bassa, non colmare con memoria/retail.
+5. Target vendita 7-14gg: prezzo competitivo con margine trattativa incluso.
+6. PRIMA di proporre prezzi, ricerca web specifica (`"[brand] [modello] sold" ebay`, `"[brand] [modello] vinted/vestiaire`). Mai solo memoria/retail/valore "da collezione". Comps assenti → confidenza BASSA, prudente al ribasso. HAI MASSIMO 3 RICERCHE disponibili per questa valutazione: pianificale bene, non sprecarle su query troppo specifiche che rischiano zero risultati — preferisci 2-3 query ampie e mirate (es. una su eBay sold, una su Vestiaire/ask) piuttosto che tentativi multipli di affinamento.
 
-DIFFUSION LINE (es. Missoni/Missoni Sport, Prada/Miu Miu, Armani/Emporio-Exchange, Max Mara/Weekend): NON la stessa cosa della mainline sul mercato — dipende dal brand specifico, alcune restano ricercate altre no. Cerca comps SPECIFICI per quella diffusion line esatta, non della mainline. Se trovi solo comps mainline, NON usarli come proxy diretto: confidenza bassa, stima al ribasso, dichiaralo.
+DIFFUSION LINE (Missoni/Missoni Sport, Prada/Miu Miu, Armani/Emporio-Exchange, Max Mara/Weekend, ecc.): non vale automaticamente come la mainline — dipende dal brand, alcune restano ricercate altre no. Cerca comps SPECIFICI per quella linea esatta. Solo comps mainline trovati → NON usarli come proxy diretto, confidenza bassa, stima al ribasso, dichiaralo.
 
-CONSERVATORISMO SU CONFIDENZA: il numero che scrivi in "Vendita probabile" non è mai il punto medio/alto della forchetta se Confidenza non è Alta. Media→quartile basso dei comps. Bassa→quartile più basso o sotto, dillo nel motivo. Pochi comps scarsi tendono a sovrastimare il prezzo reale (ask online sono spesso aspirazionali).
+CONSERVATORISMO CONFIDENZA: il numero in "Vendita probabile" non è mai punto medio/alto se Confidenza non è Alta. Media→quartile basso. Bassa→quartile più basso o sotto, dillo nel motivo (ask online spesso aspirazionali).
 
-CHECK OBBLIGATORIO prima di scrivere "Vendita probabile": (1) è diffusion line? comps usati sono specifici per quella linea o genericamente mainline? Se mainline/generici, taglia indicativamente -30/-50% e dillo. (2) Quanti comps solidi e specifici hai davvero trovato? 0-2 comps → confidenza non oltre Media, numero al quartile basso, non "quanto sembra valere guardandolo".
+CHECK PRIMA DI SCRIVERE "Vendita probabile": (1) diffusion line? comps specifici per quella linea o genericamente mainline? Se mainline/generici, taglia indicativamente -30/-50% e dillo. (2) Quanti comps solidi/specifici hai davvero trovato? 0-2 → confidenza non oltre Media, numero al quartile basso (non "quanto sembra valere guardandolo").
 
 # LIQUIDITÀ
-Stima giorni di vendita (0-7/7-14/14-30/30+) e liquidità (Bassa/Media/Alta) da: saturazione (tanti annunci simili = lento), tier domanda brand/modello, taglia (penalizza estreme), stagionalità, facilità spedizione/rischio reso. Prezzo basso ≠ buon affare se illiquido.
+Giorni vendita (0-7/7-14/14-30/30+) e liquidità (Bassa/Media/Alta) da: saturazione, tier domanda brand/modello, taglia (penalizza estreme), stagionalità, spedizione/rischio reso. Prezzo basso ≠ buon affare se illiquido.
 
 # COSA ANALIZZARE
-Identificazione: brand, categoria, modello, linea/epoca, taglia, fit, colore, materiale, paese produzione, retail originale, rarità reale (separa certo/probabile/non verificato).
-Visiva: usura, pilling, scolorimento, macchie, buchi, scuciture, zip/bottoni/hardware, fodere, riparazioni, incongruenze foto/descrizione, foto mancanti.
-Legit check: Probabilmente autentico / Sospetto servono altre foto / Probabilmente falso / Non verificabile + confidenza% + rischio fake qualitativo (basso/medio/alto/molto alto). Mai 100% senza prove eccezionali. Se brand molto contraffatto, più cautela.
-Condizione: dichiarata vs visibile vs probabile vs non verificabile; classifica Nuovo con/senza cartellino, Ottime, Buone, Usato evidente, Da riparare, Non valutabile.
+Identificazione: brand, categoria, modello, linea/epoca, taglia, fit, colore, materiale, paese produzione, retail originale, rarità reale (certo/probabile/non verificato).
+Visiva: usura, pilling, scolorimento, macchie, buchi, scuciture, hardware, fodere, riparazioni, incongruenze foto/descrizione, foto mancanti.
+Legit check: Probabilmente autentico / Sospetto / Probabilmente falso / Non verificabile + confidenza% + rischio fake (basso/medio/alto/molto alto). Mai 100% senza prove eccezionali.
+Condizione: dichiarata vs visibile vs probabile vs non verificabile; Nuovo con/senza cartellino, Ottime, Buone, Usato evidente, Da riparare, Non valutabile.
 
-# OUTPUT — formato compatto, in italiano. TETTO 150 PAROLE TOTALI dal titolo all'ultima riga. Conta prima di rispondere; se superi, tagli aggettivi/spiegazioni, non contenuto decisionale.
+CONTROLLO FINALE OBBLIGATORIO (ultimo passo, prima di scrivere "Decisione" — non saltarlo mai, anche se i punteggi Deal/Margine della matrice sembrano già indicare un livello): guarda il numero esatto che hai appena scritto in "Margine netto al prezzo richiesto" (quello in €, non il ROI%). Fai la domanda diretta: è sotto 20€? Se SÌ, la decisione sull'asse qualità NON PUÒ essere nessun livello COMPRA (SUBITO/FORTE/COMPRA/SE CI TIENI) — deve essere TRATTA o NON COMPRARE, indipendentemente da quanto i punteggi Deal/Margine calcolati con la scala sembrino indicare un livello COMPRA. È un errore vincolare scrivere "margine sotto soglia 20€" nel ragionamento e poi "Decisione: COMPRA" nello stesso report: se questo succede, hai applicato la matrice qualità senza tornare a verificare la soglia assoluta in €, che ha sempre priorità. La matrice a 6 livelli serve per GRADUARE i casi sopra soglia o per individuare TRATTA quando sotto soglia — non sostituisce mai il controllo soglia, lo segue.
 
-STILE: ogni riga = etichetta + valore secco, niente parentesi esplicative, niente "il problema è che...". N/A senza spiegare il perché nella stessa riga. Il motivo va SOLO in "In una riga" (max15 parole) e Legit check (max20 parole) — non ripeterlo altrove. Numeri/decisioni prima delle spiegazioni.
+ERRORE SPECIFICO DA NON RIPETERE (visto in produzione, vietato esplicitamente): non scrivere mai un ragionamento del tipo "margine sotto soglia 20€, MA la regola velocità a costo minimo si applica: acquisto pieno <15€? No. Soglia non triggerata" seguito comunque da COMPRA SUBITO. Se la tua stessa frase conclude che una regola "non è triggerata" o "non si applica", quella regola non ha effetto sulla decisione, punto — non scrivere la conclusione opposta subito dopo. In quel caso specifico (acquisto pieno ≥15€, margine sotto 20€), la regola velocità NON si applica e la decisione corretta è TRATTA o NON COMPRARE, mai COMPRA SUBITO.
 
-VINCOLO CRITICO: la tua risposta testuale finale viene spedita INTERAMENTE e AUTOMATICAMENTE su Telegram, senza revisione umana. Qualsiasi testo PRIMA di "## Verdetto operativo" (note, "ricerco i prezzi", ragionamento, spiegazioni sul JSON) finisce spedito comunque, gonfiando il messaggio oltre 150 parole e rischiando troncamento a metà frase. Fai tutto il ragionamento/ricerca con gli strumenti, ma la risposta deve iniziare DIRETTAMENTE con "## Verdetto operativo" — zero testo prima.
+# OUTPUT — formato compatto, italiano. TETTO 150 PAROLE TOTALI. Conta prima di rispondere; se superi, tagli aggettivi non contenuto decisionale.
 
-VINCOLO SULL'ORDINE DI SCRITTURA (critico, leggi con attenzione): completa TUTTE le ricerche web di cui hai bisogno PRIMA di scrivere anche una sola riga del verdetto. Non alternare "scrivo un pezzo del report → faccio una ricerca → scrivo un altro pezzo": il sistema che riceve la tua risposta concatena in sequenza tutti i blocchi di testo che produci, quindi se interrompi la scrittura del verdetto per fare una ricerca aggiuntiva e poi riprendi, il report finale risulta con le righe fuori ordine e illeggibile (es. "In una riga" prima di "Decisione", una sezione "## Da chiedere" che spunta in mezzo al "Verdetto operativo"). La sequenza corretta è sempre: (1) tutte le ricerche necessarie, una dopo l'altra, senza scrivere testo del report nel mezzo; (2) UN SOLO blocco di testo finale, scritto tutto insieme dall'inizio "## Verdetto operativo" alla fine "## Messaggio da inviare", senza interromperlo per nessun motivo.
+STILE: etichetta+valore secco, niente parentesi esplicative, niente "il problema è che...". N/A senza spiegare il perché sulla stessa riga. Motivo SOLO in "In una riga" (max15 parole) e Legit check (max20 parole), non ripetuto altrove. Numeri/decisioni prima delle spiegazioni.
+
+VINCOLO CRITICO: la risposta finale viene spedita INTERAMENTE e AUTOMATICAMENTE su Telegram senza revisione umana. Qualsiasi testo che scrivi PRIMA di "## Verdetto operativo" finisce spedito comunque, senza eccezioni — questo include non solo "ricerco i prezzi" o note di ragionamento, ma ANCHE un riepilogo dei dati raccolti dalle ricerche (es. "Sintesi dati raccolti prima di scrivere il verdetto:", elenchi di comps trovati, prezzi retail, confidenza). Quel riepilogo è ESATTAMENTE il tipo di testo vietato: non è il formato richiesto, gonfia il messaggio, e se scritto come blocco separato prima del verdetto rischia di finire fuori ordine. Usa le ricerche per RAGIONARE internamente, non per produrre un resoconto scritto a parte: il primo testo che scrivi nella risposta deve essere il carattere "#" di "## Verdetto operativo", senza alcuna riga, titolo in grassetto, o elenco prima di quello — non un riassunto "pulito", zero.
+
+Completa TUTTE le ricerche web PRIMA di scrivere qualsiasi testo (verdetto incluso) — non alternare scrittura e ricerca, perché i blocchi di testo vengono concatenati in sequenza e un'interruzione produce righe fuori ordine. Sequenza corretta: (1) tutte le ricerche, senza scrivere alcun testo nel mezzo, nemmeno un riepilogo; (2) UN SOLO blocco finale scritto tutto insieme da "## Verdetto operativo" a "## Messaggio da inviare", senza interromperlo e senza nulla prima.
 
 ## Verdetto operativo
 - **Decisione:** [qualità] · [urgenza], es. "COMPRA SUBITO · AGISCI ORA"
-- **Costo pieno richiesto:** €X (SEMPRE prezzo + protezione + spedizione scomposti, es. "€21,70+€1,80+€2,50=€26" — mai il prezzo nudo)
+- **Costo pieno richiesto:** €X (SEMPRE prezzo+protezione+spedizione scomposti, es. "€21,70+€1,80+€2,50=€26" — mai il prezzo nudo)
 - **Costo pieno trattato:** €X o N/A
 - **Vendita probabile:** €X in ~Z giorni (o N/A)
 - **Margine netto:** €X (ROI Y%) — richiesto · trattato, una riga
@@ -200,7 +204,7 @@ Max3 domande telegrafiche, o "Non rilevante: margine insufficiente".
 ## Messaggio da inviare
 SEMPRE in italiano anche se annuncio in altra lingua. Messaggio pronto breve, o "Non necessario".
 
-Tutto il resto di questo prompt (criteri di analisi, ricerca prezzi, ecc.) è per il TUO ragionamento interno — non riprodurlo in output, condensa tutto nelle voci sopra.
+Tutto il resto di questo prompt è per il TUO ragionamento interno — non riprodurlo in output, condensa nelle voci sopra.
 
 # REGOLE FINALI
 Niente prezzi alti senza sold/comps solidi. Retail ≠ valore usato. Rarità ≠ domanda reale. Brand forte ≠ flip sicuro. Non ignorare taglia/colore/condizione/rischio fake/liquidità/tempo vendita. Non inventare fonti o percentuali. Mai autenticità certa senza prove. Foto insufficienti → verdetto lo riflette. Margine da prezzo ottimistico → segnalalo.
@@ -722,12 +726,48 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=4):
 # CLAUDE -- prezzi, margine, verdetto finale (con web_search)
 # ---------------------------------------------------------------------------
 
+def strip_per_photo_analysis(gemini_analysis_json):
+    """Rimuove il campo 'analisi_visiva_per_foto' dal JSON di Gemini prima
+    di passarlo a Claude. Quel campo e' narrazione descrittiva foto-per-
+    foto (es. "Inquadratura frontale del vestito appeso a una gruccia...")
+    pensata per dare a Claude una ricostruzione visiva completa, ma in
+    pratica e' molto verbosa e ridondante rispetto ai campi di sintesi
+    gia' presenti (difetti_riassunto, legit_check_preliminare,
+    condizione_reale, testo_letterale_etichette) che contengono le
+    informazioni che davvero incidono sul verdetto economico. Su annunci
+    con molte foto (8-10) questo campo da solo arriva a pesare 1000+
+    token extra nel messaggio a Claude, senza un beneficio proporzionale
+    sulla qualita' del verdetto.
+
+    Se il JSON non e' parsabile (es. placeholder di errore tipo "...",
+    o un messaggio di errore esplicito da call_gemini_vision), lo
+    restituisce invariato: non vogliamo rompere il flusso per un'
+    ottimizzazione di costo."""
+    try:
+        data = json.loads(gemini_analysis_json)
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return gemini_analysis_json
+
+    if isinstance(data, dict) and "analisi_visiva_per_foto" in data:
+        n_foto = len(data["analisi_visiva_per_foto"]) if isinstance(data["analisi_visiva_per_foto"], list) else 0
+        del data["analisi_visiva_per_foto"]
+        data["_nota_foto_analizzate"] = (
+            f"{n_foto} foto analizzate in dettaglio da Gemini (descrizione "
+            "narrativa per-foto omessa qui per brevita' -- usa difetti_riassunto, "
+            "legit_check_preliminare e condizione_reale come sintesi)."
+        )
+
+    return json.dumps(data, ensure_ascii=False, indent=2)
+
+
 def call_claude_oracle(listing_info, gemini_analysis_json):
     age_days = listing_info.get("age_days")
     if age_days is not None:
         age_text = f"{age_days:.1f} giorni fa"
     else:
         age_text = "non disponibile (probabile fallimento scraping data pubblicazione)"
+
+    gemini_analysis_for_claude = strip_per_photo_analysis(gemini_analysis_json)
 
     user_text = (
         f"Titolo annuncio: {listing_info.get('title')}\n"
@@ -740,7 +780,7 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
         f"URL annuncio: {listing_info.get('url') or 'non disponibile'}\n\n"
         "--- ANALISI VISIVA COMPLETA (JSON prodotto da Gemini dopo aver esaminato\n"
         "tutte le foto dell'annuncio) ---\n"
-        f"{gemini_analysis_json}\n"
+        f"{gemini_analysis_for_claude}\n"
         "--- FINE ANALISI VISIVA ---\n\n"
         "NOTA: non hai accesso diretto alle foto originali. Il JSON sopra è la "
         "tua UNICA fonte visiva, prodotta da un modello che ha esaminato tutte "
@@ -752,7 +792,7 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
         "Produci ora il verdetto operativo completo, nel formato compatto richiesto."
     )
 
-    log.info("PROMPT TESTUALE -> CLAUDE (nessuna immagine, solo JSON Gemini):\n%s", user_text)
+    log.info("PROMPT TESTUALE -> CLAUDE (nessuna immagine, JSON Gemini filtrato):\n%s", user_text)
 
     content = [{"type": "text", "text": user_text}]
 
@@ -777,7 +817,14 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
             }
         ],
         "messages": [{"role": "user", "content": content}],
-        "tools": [{"type": "web_search_20250305", "name": "web_search"}],
+        # max_uses limita le ricerche web per singola valutazione: senza
+        # questo limite, Claude puo' fare 2-4+ ricerche per un annuncio
+        # ambiguo, e OGNI ricerca e' una chiamata API separata che
+        # ricarica l'intero contesto accumulato (system prompt + storico
+        # ricerche precedenti), facendo lievitare i costi rapidamente.
+        # 3 ricerche bastano per il caso tipico (es. eBay sold + Vestiaire
+        # ask + eventuale comp specifico per diffusion line).
+        "tools": [{"type": "web_search_20250305", "name": "web_search", "max_uses": 3}],
     }
 
     resp = requests.post(
@@ -814,6 +861,30 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
     text_blocks = [b["text"] for b in data.get("content", []) if b.get("type") == "text"]
     final_text = "".join(text_blocks) if text_blocks else "[Nessun testo restituito da Claude]"
 
+    # FIX ATTIVO (non solo log): se Claude ha scritto testo prima di
+    # "## Verdetto operativo" -- es. un "Sintesi dati raccolti prima di
+    # scrivere il verdetto:" o note di ricerca -- nonostante il vincolo
+    # nel prompt, tagliamo via tutto cio' che precede il marcatore prima
+    # di mandarlo a Telegram. Meglio perdere un'eventuale premessa
+    # innocua che spedire all'utente un report con un riepilogo grezzo
+    # di ricerca prima del formato compatto richiesto.
+    verdetto_pos = final_text.find("## Verdetto operativo")
+    if verdetto_pos > 0:
+        testo_scartato = final_text[:verdetto_pos].strip()
+        log.warning(
+            "Testo PRIMA di '## Verdetto operativo' rilevato e scartato (%d caratteri). "
+            "Il prompt vieta questo, ma Claude lo ha scritto comunque -- testo scartato:\n%s",
+            len(testo_scartato), testo_scartato[:500],
+        )
+        final_text = final_text[verdetto_pos:]
+    elif verdetto_pos == -1:
+        log.error(
+            "Marcatore '## Verdetto operativo' assente dal report Claude -- "
+            "il messaggio verra' inviato cosi' com'e', probabilmente malformato. "
+            "Testo completo:\n%s",
+            final_text,
+        )
+
     # CONTROLLO DI SANITA' SULL'ORDINE: se nonostante il vincolo nel
     # prompt Claude ha comunque alternato scrittura/ricerca, il report
     # arriva con i campi fuori sequenza (es. "## Da chiedere" prima di
@@ -835,6 +906,68 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
             "-- il messaggio inviato a Telegram potrebbe avere campi mischiati. "
             "Testo completo per debug:\n%s",
             positions, expected_order, final_text,
+        )
+
+    # CONTROLLO CORRETTIVO SU MARGINE-SOGLIA vs DECISIONE: se il testo
+    # contiene una frase tipo "sotto soglia" (il modello stesso lo scrive
+    # quando applica correttamente la regola dei 20 euro nel ragionamento)
+    # ma la riga "Decisione" contiene comunque un livello COMPRA, e' la
+    # stessa contraddizione vista nei casi reali "Mission Minikleid" e
+    # "Blouse Marni x Uniqlo" (margine sotto soglia dichiarato esplicita-
+    # mente, ma decisione COMPRA SE CI TIENI). Il solo logging non basta
+    # piu': qui CORREGGIAMO attivamente la riga Decisione prima dell'invio.
+    #
+    # Logica di correzione: se il margine scontato (se disponibile nel
+    # testo) potrebbe ragionevolmente superare la soglia trattando,
+    # forziamo TRATTA FORTE; altrimenti NON COMPRARE. Non potendo fare
+    # un parsing robusto del margine scontato in tutti i formati possibili,
+    # usiamo un'euristica semplice: se il testo menziona "Costo pieno
+    # trattato" con un valore numerico (non "N/A"), assumiamo che trattare
+    # sia ancora un'opzione percorribile -> TRATTA FORTE. Se invece il
+    # costo trattato e' N/A o il margine e' negativo/quasi nullo, forziamo
+    # NON COMPRARE direttamente.
+    decisione_match = re.search(r"\*\*Decisione:\*\*\s*([^\n]+)", final_text)
+    decisione_text = decisione_match.group(1) if decisione_match else ""
+    ha_livello_compra = bool(re.search(r"\bCOMPRA\b", decisione_text))
+    margine_sotto_soglia_dichiarato = bool(
+        re.search(r"sotto\s+soglia", final_text, re.IGNORECASE)
+    )
+
+    if ha_livello_compra and margine_sotto_soglia_dichiarato:
+        costo_trattato_match = re.search(
+            r"\*\*Costo pieno trattato:\*\*\s*(N/A|€[\d.,]+)", final_text, re.IGNORECASE
+        )
+        costo_trattato_valido = bool(
+            costo_trattato_match and costo_trattato_match.group(1).upper() != "N/A"
+        )
+
+        nuova_decisione = "TRATTA FORTE" if costo_trattato_valido else "NON COMPRARE"
+
+        # Mantieni l'urgenza originale se presente (es. "· HAI QUALCHE ORA"),
+        # ma se la nuova decisione è NON COMPRARE l'urgenza non ha senso (vedi
+        # regola nel prompt) quindi la sostituiamo con N/A.
+        urgenza_match = re.search(r"·\s*([^\n]+)$", decisione_text.strip())
+        urgenza_originale = urgenza_match.group(1).strip() if urgenza_match else None
+        if nuova_decisione == "NON COMPRARE":
+            decisione_corretta = "NON COMPRARE · N/A"
+        elif urgenza_originale:
+            decisione_corretta = f"{nuova_decisione} · {urgenza_originale}"
+        else:
+            decisione_corretta = nuova_decisione
+
+        log.error(
+            "CONTRADDIZIONE MARGINE/DECISIONE corretta automaticamente: "
+            "Decisione originale '%s' -> corretta in '%s' (margine sotto soglia "
+            "dichiarato nel testo, costo trattato %s). Report originale per debug:\n%s",
+            decisione_text.strip(), decisione_corretta,
+            "valido" if costo_trattato_valido else "N/A o assente", final_text,
+        )
+
+        final_text = re.sub(
+            r"(\*\*Decisione:\*\*\s*)[^\n]+",
+            r"\1" + decisione_corretta + " ⚠️ _(corretto automaticamente: margine sotto soglia)_",
+            final_text,
+            count=1,
         )
 
     return final_text
