@@ -415,31 +415,12 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=3):
     log.info(GEMINI_VISION_SYSTEM_PROMPT)
     log.info("--------------------------------------------")
 
-payload = {
+    payload = {
         "system_instruction": {"parts": [{"text": GEMINI_VISION_SYSTEM_PROMPT}]},
         "contents": [{"role": "user", "parts": parts}],
-        # ---> AGGIUNGI QUESTO BLOCCO PER DISATTIVARE I FILTRI <---
-        "safetySettings": [
-            {
-                "category": "HARM_CATEGORY_HARASSMENT",
-                "threshold": "BLOCK_NONE"
-            },
-            {
-                "category": "HARM_CATEGORY_HATE_SPEECH",
-                "threshold": "BLOCK_NONE"
-            },
-            {
-                "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                "threshold": "BLOCK_NONE"
-            },
-            {
-                "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-                "threshold": "BLOCK_NONE"
-            }
-        ],
         "generationConfig": {
             "temperature": 0.15,
-            "maxOutputTokens": 600,
+            "maxOutputTokens": 600,  # Concesso spazio per analisi ma senza sbrodolare
             "responseMimeType": "application/json",
         },
     }
