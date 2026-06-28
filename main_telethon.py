@@ -256,7 +256,7 @@ def telegram_send_message(chat_id, text):
                 "parse_mode": "Markdown",
                 "disable_web_page_preview": True,
             },
-            timeout=20,
+            timeout=30,
         )
         if not resp.ok:
             log.warning("sendMessage con Markdown fallita. Ritento senza parse_mode.")
@@ -423,7 +423,7 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=3):
         "contents": [{"role": "user", "parts": parts}],
         "generationConfig": {
             "temperature": 0.1,
-            "maxOutputTokens": 400,  # RIGIDO: Tappo all'output per risparmio monetario e prevenzione timeout
+            "maxOutputTokens": 600,  # RIGIDO: Tappo all'output per risparmio monetario e prevenzione timeout
             "responseMimeType": "application/json",
         },
     }
@@ -431,7 +431,7 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=3):
     backoff_seconds = 2
     for attempt in range(1, max_retries + 1):
         try:
-            resp = requests.post(GEMINI_API_URL, params={"key": GEMINI_API_KEY}, json=payload, timeout=60)
+            resp = requests.post(GEMINI_API_URL, params={"key": GEMINI_API_KEY}, json=payload, timeout=120)
             if resp.ok:
                 data = resp.json()
                 candidates = data.get("candidates", [])
