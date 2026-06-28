@@ -1416,6 +1416,45 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
             count=1,
         )
 
+    # CONTROLLO CORRETTIVO SU "COMPRA SUBITO" + CONFIDENZA BASSA: la
+    # regola della matrice qualita' richiede esplicitamente "Confidenza
+    # non Bassa" per il livello COMPRA SUBITO (insieme a Deal 9-10,
+    # Margine 8-10, Rischio non ALTO) -- visto in produzione un caso
+    # reale (giacca Gaultier Jean's, margine 92-122EUR stimato da un
+    # singolo comp ask non-sold) dove Claude scrive "Confidenza: Bassa"
+    # nella stessa riga Deal/Margine/Liquidita'/Rischio/Confidenza e
+    # comunque assegna COMPRA SUBITO -- la stessa famiglia di errore
+    # del controllo sopra (decisione che contraddice un valore scritto
+    # nello stesso report), ma su un asse diverso (confidenza, non
+    # margine). Qui retrocediamo a COMPRA FORTE, il livello immediata-
+    # mente sotto nella matrice, che non ha il vincolo di confidenza.
+    decisione_match_2 = re.search(r"\*\*Decisione:\*\*\s*([^\n]+)", final_text)
+    decisione_text_2 = decisione_match_2.group(1) if decisione_match_2 else ""
+    e_compra_subito = "COMPRA SUBITO" in decisione_text_2
+    confidenza_bassa_dichiarata = bool(
+        re.search(r"\*\*Confidenza:\*\*\s*Bassa", final_text, re.IGNORECASE)
+    )
+
+    if e_compra_subito and confidenza_bassa_dichiarata:
+        urgenza_match_2 = re.search(r"·\s*([^\n⚠️]+)", decisione_text_2.strip())
+        urgenza_originale_2 = urgenza_match_2.group(1).strip() if urgenza_match_2 else "HAI QUALCHE ORA"
+        decisione_corretta_2 = f"COMPRA FORTE · {urgenza_originale_2}"
+
+        log.error(
+            "CONTRADDIZIONE COMPRA SUBITO/CONFIDENZA BASSA corretta automaticamente: "
+            "Decisione originale '%s' -> corretta in '%s' (la regola COMPRA SUBITO "
+            "richiede Confidenza non Bassa, qui dichiarata Bassa). Report originale "
+            "per debug:\n%s",
+            decisione_text_2.strip(), decisione_corretta_2, final_text,
+        )
+
+        final_text = re.sub(
+            r"(\*\*Decisione:\*\*\s*)[^\n]+",
+            r"\1" + decisione_corretta_2 + " ⚠️ _(corretto automaticamente: COMPRA SUBITO richiede confidenza non Bassa)_",
+            final_text,
+            count=1,
+        )
+
     return final_text
 
 
