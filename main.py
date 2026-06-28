@@ -140,7 +140,7 @@ Rispondi ESCLUSIVAMENTE con un oggetto JSON valido (nessun testo prima o dopo, n
     "brand_visibile": "...",
     "categoria_capo": "Es. T-shirt, Borsa, Giacca",
     "modello_specifico": "Se riconoscibile. Altrimenti vuoto.",
-    "taglia_visibile": "..."
+    "query_di_ricerca_ideale": "Stringa PERFETTA (max 6 parole) per cercare questo pezzo esatto online. Elimina parole inutili (es. 'cute', 'jogging'). Es: 'Marni abito floreale', 'Miu Miu borsa matelasse'."
   },
   "condizione_visibile": {
     "stato_generale": "Nuovo / Ottimo / Usato / Da riparare",
@@ -166,10 +166,10 @@ Rispondi ESCLUSIVAMENTE con un oggetto JSON valido (nessun testo prima o dopo, n
 }
 
 REGOLE CRITICHE:
-1. NON trascrivere le etichette parola per parola. Sintetizza la loro correttezza nel campo 'etichette_e_cuciture'.
-2. Se un logo non corrisponde al brand dichiarato o ha font palesemente errati, segnalalo subito in 'fake_flags_o_incongruenze'.
+1. NON trascrivere le etichette parola per parola. Sintetizza la correttezza nel campo 'etichette_e_cuciture'.
+2. Se un logo non corrisponde al brand o ha font errati, segnalalo in 'fake_flags_o_incongruenze'.
 3. Un pattern generico senza etichette NON prova l'autenticità: usa 'ASSENZA TOTALE DI PROVE'.
-4. "verdetto_grezzo" DEVE ESSERE 'NON COMPRARE' se rilevi buchi, macchie gravi, o se il legit check è 'Probabilmente falso'.
+4. "verdetto_grezzo" = NON COMPRARE se rilevi buchi, macchie gravi, o se è 'Probabilmente falso'.
 5. Rispettare i limiti di parole è TASSATIVO per ragioni di sistema.
 """.strip()
 
@@ -498,18 +498,34 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
         gemini_data = json.loads(gemini_analysis_json)
         ident = gemini_data.get("identificazione", {})
         
-        # Estrazione logica strutturata per la ricerca perfetta
         brand_per_ricerca = ident.get("brand_visibile") or listing_info.get("brand") or ""
-        categoria_per_ricerca = ident.get("categoria_capo") or ""
-        modello_per_ricerca = ident.get("modello_specifico") or ""
         
-        if not modello_per_ricerca and listing_info.get("size"):
-            modello_per_ricerca = f"taglia {listing_info.get('size')}"
+        # USA LA MENTE DI GEMINI: prendiamo la sua stringa perfetta!
+        query_ideale = ident.get("query_di_ricerca_ideale", "").strip()
+        
+        if query_ideale:
+            # Se Gemini ci ha fornito la stringa magica, usiamo quella
+            modello_per_ricerca = query_ideale
+            categoria_per_ricerca = ""  # Svuotiamo la categoria perché è già inclusa nella query_ideale
+        else:
+            # Fallback se Gemini non ha generato la query
+            categoria_per_ricerca = ident.get("categoria_capo") or ""
+            modello_per_ricerca = ident.get("modello_specifico") or ""
             
     except Exception:
         brand_per_ricerca = listing_info.get("brand") or ""
         modello_per_ricerca = ""
         categoria_per_ricerca = ""
+
+    # FALLBACK INTELLIGENTE: Se Gemini non ha estratto nulla, usiamo il titolo dell'annuncio
+    if not categoria_per_ricerca and not modello_per_ricerca:
+        titolo_annuncio = listing_info.get("title", "")
+        # Togliamo il brand dal titolo per evitare ripetizioni
+        if brand_per_ricerca:
+            pattern_brand = re.compile(re.escape(brand_per_ricerca), re.IGNORECASE)
+            titolo_annuncio = pattern_brand.sub("", titolo_annuncio).strip()
+        
+        modello_per_ricerca = titolo_annuncio
 
     log.info("🌐 [PASSAGGIO 3] Avvio indagine di mercato tramite Serper API...")
     comps_text = search_comps_serper(brand_per_ricerca, modello_per_ricerca, categoria_per_ricerca)
