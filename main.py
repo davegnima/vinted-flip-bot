@@ -844,33 +844,70 @@ def strip_per_photo_analysis(gemini_analysis_json):
     return json.dumps(data, ensure_ascii=False, indent=2)
 
 
-def _serper_single_query(label, query, num_results=4):
-    """Esegue una singola query Serper e ritorna (label, testo_risultati).
-    Helper interno usato da search_comps_serper per le query parallele."""
+def _serper_batch_query(labeled_queries, num_results=4):
+    """Esegue PIU' query Serper in UNA SOLA richiesta HTTP, usando il
+    formato batch documentato da Serper: un array JSON di oggetti
+    {"q": ..., "gl": ...} nel body della stessa POST verso /search.
+
+    Prima facevamo 1 richiesta HTTP per query (3 connessioni separate per
+    Vestiaire + 2 Google generiche); con il batch e' una sola connessione,
+    che risponde con un array di risultati nello stesso ordine delle
+    query inviate. Riduce l'overhead di rete (non i token verso Claude,
+    che dipendono dal contenuto dei risultati, non da come li richiediamo).
+
+    Nota: il batch funziona solo per l'endpoint di RICERCA (/search), non
+    per lo SCRAPE di pagina (scrape.serper.dev) -- Vinted ed eBay restano
+    quindi chiamate separate, gestite altrove.
+
+    labeled_queries: lista di tuple (label, query_string).
+    Ritorna un dict {label: testo_risultati}, nello stesso formato che
+    serve a search_comps_serper per assemblare il prompt finale."""
+    labels = [label for label, _ in labeled_queries]
+    queries = [query for _, query in labeled_queries]
+
     try:
         resp = requests.post(
             "https://google.serper.dev/search",
             headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
-            json={"q": query, "gl": "it", "hl": "it", "num": num_results},
-            timeout=12,
+            json=[{"q": q, "gl": "it", "hl": "it", "num": num_results} for q in queries],
+            timeout=15,
         )
         resp.raise_for_status()
-        data = resp.json()
+        batch_results = resp.json()
     except Exception as e:
-        log.warning("Ricerca Serper fallita per '%s' (query: '%s'): %s", label, query, e)
-        return label, f"  Ricerca fallita per errore tecnico ({type(e).__name__}). Nessun dato da questa fonte."
+        log.warning("Ricerca batch Serper fallita per %d query: %s", len(queries), e)
+        # Fallback: tutte le label ricevono lo stesso messaggio di fallimento,
+        # cosi' il prompt finale a Claude resta coerente anche in caso di errore.
+        return {
+            label: f"  Ricerca fallita per errore tecnico ({type(e).__name__}). Nessun dato da questa fonte."
+            for label in labels
+        }
 
-    organic = data.get("organic", [])
-    if not organic:
-        return label, "  Nessun risultato trovato per questa fonte/query."
+    # La risposta batch e' un array nello stesso ordine delle query inviate.
+    if not isinstance(batch_results, list) or len(batch_results) != len(labels):
+        log.warning(
+            "Risposta batch Serper inattesa (tipo=%s, lunghezza=%s, atteso=%d) -- fallback.",
+            type(batch_results).__name__,
+            len(batch_results) if isinstance(batch_results, list) else "n/a",
+            len(labels),
+        )
+        return {label: "  Risposta batch inattesa, nessun dato da questa fonte." for label in labels}
 
-    lines = []
-    for r in organic[:num_results]:
-        title = r.get("title", "")
-        snippet = r.get("snippet", "")
-        link = r.get("link", "")
-        lines.append(f"  - {title}\n    {snippet}\n    [{link}]")
-    return label, "\n".join(lines)
+    results_by_label = {}
+    for label, data in zip(labels, batch_results):
+        organic = data.get("organic", []) if isinstance(data, dict) else []
+        if not organic:
+            results_by_label[label] = "  Nessun risultato trovato per questa fonte/query."
+            continue
+        lines = []
+        for r in organic[:num_results]:
+            title = r.get("title", "")
+            snippet = r.get("snippet", "")
+            link = r.get("link", "")
+            lines.append(f"  - {title}\n    {snippet}\n    [{link}]")
+        results_by_label[label] = "\n".join(lines)
+
+    return results_by_label
 
 
 def build_vinted_search_url(brand, modello_o_categoria, max_price=None):
@@ -1078,30 +1115,44 @@ def search_comps_serper(brand, modello, categoria):
         serper_queries[0][1], serper_queries[1][1], serper_queries[2][1],
     )
 
-    with ThreadPoolExecutor(max_workers=5) as executor:
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        # Le 3 query di ricerca (Vestiaire + 2 Google generiche) vanno in
+        # UNA SOLA chiamata batch (1 connessione HTTP invece di 3) -- vedi
+        # _serper_batch_query. I 2 scrape (Vinted, eBay) restano separati
+        # perche' usano un endpoint diverso (scrape.serper.dev) che non
+        # supporta il formato batch.
+        future_batch = executor.submit(_serper_batch_query, serper_queries)
+        future_vinted = executor.submit(_serper_scrape_page, vinted_url)
+        future_ebay = executor.submit(_serper_scrape_page, ebay_url)
+
         futures = {
-            executor.submit(_serper_single_query, label, q): label
-            for label, q in serper_queries
+            future_batch: "__BATCH__",  # placeholder, gestito separatamente sotto
+            future_vinted: "VINTED (scrape diretto)",
+            future_ebay: "EBAY SOLD (scrape diretto)",
         }
-        futures[executor.submit(_serper_scrape_page, vinted_url)] = "VINTED (scrape diretto)"
-        futures[executor.submit(_serper_scrape_page, ebay_url)] = "EBAY SOLD (scrape diretto)"
 
         for future in as_completed(futures, timeout=20):
             label = futures[future]
             try:
                 result = future.result()
-                if isinstance(result, tuple):
-                    # _serper_single_query ritorna (label, text)
-                    _, text = result
-                    results_by_label[label] = text
+                if label == "__BATCH__":
+                    # _serper_batch_query ritorna un dict {label: testo}
+                    # con le 3 label delle query di ricerca già pronte.
+                    results_by_label.update(result)
                 else:
                     # _serper_scrape_page ritorna direttamente il testo, o None
                     results_by_label[label] = (
                         result if result else "  Scrape fallito o pagina vuota/bloccata (anti-bot)."
                     )
             except Exception as e:
-                log.warning("Query/scrape Serper '%s' non completata: %s", label, e)
-                results_by_label[label] = "  Query non completata (timeout o errore)."
+                if label == "__BATCH__":
+                    log.warning("Batch ricerca Serper non completato: %s", e)
+                    for q_label, _ in serper_queries:
+                        results_by_label[q_label] = "  Query non completata (timeout o errore)."
+                else:
+                    log.warning("Scrape Serper '%s' non completato: %s", label, e)
+                    results_by_label[label] = "  Query non completata (timeout o errore)."
+
 
     if all(
         any(marker in v for marker in ("Nessun risultato", "fallita", "non completata", "fallito"))
