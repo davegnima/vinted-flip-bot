@@ -238,6 +238,8 @@ DIFFUSION LINE (Missoni/Missoni Sport, Prada/Miu Miu, Armani/Emporio-Exchange, M
 
 CONSERVATORISMO CONFIDENZA: il numero in "Vendita probabile" non è mai punto medio/alto se Confidenza non è Alta. Media→quartile basso. Bassa→quartile più basso o sotto, dillo nel motivo (ask online spesso aspirazionali).
 
+ESEMPIO PRATICO "Costo pieno trattato" con decisione CHIEDI ALTRE FOTO: costo richiesto €28 (prezzo €21,70 + protezione + spedizione), capo probabilmente autentico ma servono altre foto per la taglia/composizione → NON scrivere "Costo pieno trattato: N/A". Stima invece un'offerta ragionevole comunque proponibile mentre aspetti le foto, es. "Costo pieno trattato: €24-25 (offerta €18-19)" — la trattativa e la richiesta di foto non sono alternative, puoi fare entrambe nello stesso messaggio.
+
 CHECK PRIMA DI SCRIVERE "Vendita probabile": (1) diffusion line? comps specifici per quella linea o genericamente mainline? Se mainline/generici, taglia indicativamente -30/-50% e dillo. (2) Quanti comps solidi/specifici hai davvero trovato? 0-2 → confidenza non oltre Media, numero al quartile basso (non "quanto sembra valere guardandolo").
 
 # LIQUIDITÀ
@@ -266,8 +268,8 @@ Senza un tool di ricerca proprio (i dati di mercato sono già nel messaggio sopr
 ## Verdetto operativo
 - **Decisione:** [qualità] · [urgenza], es. "COMPRA SUBITO · AGISCI ORA"
 - **Costo pieno richiesto:** €X (SEMPRE prezzo+protezione+spedizione scomposti, es. "€21,70+€1,80+€2,50=€26" — mai il prezzo nudo)
-- **Costo pieno trattato:** €X o N/A
-- **Vendita probabile:** €X in ~Z giorni (o N/A)
+- **Costo pieno trattato:** SEMPRE una stima numerica €X (anche approssimativa, es. "€18-20" se l'offerta esatta non è ancora chiara), MAI N/A — stima un'offerta ragionevole (in genere 10-20% sotto il richiesto, aggiustata per margine di trattativa del capo) anche quando la decisione è CHIEDI ALTRE FOTO o quando servono ancora informazioni: la trattativa è quasi sempre un'opzione concreta, indipendentemente da cosa manca per la decisione finale. L'UNICA eccezione legittima per N/A è quando il legit check ha già bloccato l'intera valutazione (capo probabilmente falso, prezzo non più rilevante) — in quel caso scrivi N/A e basta, senza stimare un'offerta per un capo che non comprerai comunque.
+- **Vendita probabile:** €X in ~Z giorni (SEMPRE una stima numerica, anche a Confidenza Bassa — vedi sezione PREZZI sotto, MAI N/A)
 - **Margine netto:** €X (ROI Y%) — richiesto · trattato, una riga
 - **Deal:** X/10 · **Margine:** X/10 · **Liquidità:** Bassa/Media/Alta · **Rischio:** BASSO/MEDIO/ALTO (tipo in 3 parole) · **Confidenza:** Alta/Media/Bassa
 - **In una riga:** [max15 parole]
@@ -898,7 +900,7 @@ def strip_per_photo_analysis(gemini_analysis_json):
     return json.dumps(data, ensure_ascii=False, indent=2)
 
 
-def _serper_batch_query(labeled_queries, num_results=4):
+def _serper_batch_query(labeled_queries, num_results=3, max_snippet_chars=150):
     """Esegue PIU' query Serper in UNA SOLA richiesta HTTP, usando il
     formato batch documentato da Serper: un array JSON di oggetti
     {"q": ..., "gl": ...} nel body della stessa POST verso /search.
@@ -908,6 +910,18 @@ def _serper_batch_query(labeled_queries, num_results=4):
     che risponde con un array di risultati nello stesso ordine delle
     query inviate. Riduce l'overhead di rete (non i token verso Claude,
     che dipendono dal contenuto dei risultati, non da come li richiediamo).
+
+    RISPARMIO TOKEN (aggiunto dopo richiesta esplicita): rispetto alla
+    versione precedente, qui (1) NON includiamo piu' il link nella riga
+    di output -- Claude non lo usa mai per stimare prezzi, e i link reali
+    osservati in produzione sono spesso lunghi 80-150+ caratteri per via
+    di parametri di tracking (es. "?srsltid=AfmBOop..."), puro spreco di
+    token; (2) gli snippet vengono troncati a max_snippet_chars (default
+    150) -- il prezzo/dato utile e' quasi sempre nelle prime parole dello
+    snippet, il resto e' spesso testo descrittivo generico; (3) num_results
+    di default sceso da 4 a 3 -- un risultato in meno per fonte, accettabile
+    visto che le 3 query batch sono comunque integrate dai 2 scrape diretti
+    (Vinted, eBay) per i comps piu' specifici.
 
     Nota: il batch funziona solo per l'endpoint di RICERCA (/search), non
     per lo SCRAPE di pagina (scrape.serper.dev) -- Vinted ed eBay restano
@@ -957,11 +971,15 @@ def _serper_batch_query(labeled_queries, num_results=4):
         for r in organic[:num_results]:
             title = r.get("title", "")
             snippet = r.get("snippet", "")
-            link = r.get("link", "")
-            lines.append(f"  - {title}\n    {snippet}\n    [{link}]")
+            if len(snippet) > max_snippet_chars:
+                snippet = snippet[:max_snippet_chars].rstrip() + "..."
+            # Link OMESSO deliberatamente -- vedi nota sopra: non e' mai
+            # usato da Claude per il pricing, e' puro overhead di token.
+            lines.append(f"  - {title}\n    {snippet}")
         results_by_label[label] = "\n".join(lines)
 
     return results_by_label
+
 
 
 def build_vinted_search_url(brand, categoria, modello_o_categoria, max_price=None):
@@ -1093,7 +1111,7 @@ def _clean_scraped_markdown(content):
     return content
 
 
-def _serper_scrape_page(url, max_chars=2500):
+def _serper_scrape_page(url, max_chars=1300):
     """Scarica e legge il contenuto di una pagina specifica via
     scrape.serper.dev (endpoint diverso da quello di ricerca: qui l'URL
     e' GIA' NOTO, non stiamo cercando, stiamo leggendo). Usato per leggere
@@ -1101,6 +1119,15 @@ def _serper_scrape_page(url, max_chars=2500):
     (filtro brand_id su Vinted, filtro LH_Sold su eBay), che danno
     risultati piu' pertinenti delle query generiche site: passate a
     Google.
+
+    RISPARMIO TOKEN (max_chars sceso da 2500 a 1300): osservato nei log
+    reali che il contenuto davvero utile (titolo annuncio, prezzo, data di
+    vendita) e' quasi sempre nei primi 800-1000 caratteri del markdown
+    pulito -- il resto e' tipicamente paginazione, filtri laterali
+    ripetitivi ("Prezzo + spedizione: piu' economici", "Distanza: prima i
+    piu' vicini", ecc.) che non aiutano il pricing. 1300 lascia un buon
+    margine sopra quella soglia osservata senza sprecare token su rumore
+    di navigazione.
 
     Pagine come Vinted/eBay possono avere protezioni anti-scraping (lo
     sappiamo gia' da Vinted stesso, 403 intermittenti) -- il fallimento
@@ -1311,8 +1338,32 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
             # resto (es. "top lurex") come modello_per_ricerca.
             modello_per_ricerca = query_ideale
             if brand_per_ricerca:
-                pattern_brand = re.compile(re.escape(brand_per_ricerca), re.IGNORECASE)
-                modello_per_ricerca = pattern_brand.sub("", modello_per_ricerca).strip()
+                # RIMOZIONE ROBUSTA PAROLA-PER-PAROLA: un confronto esatto
+                # della stringa brand (es. re.escape + sub) fallisce quando
+                # Gemini scrive il brand in modo leggermente diverso tra
+                # "identificazione.brand_effettivamente_visibile_sui_loghi"
+                # e dentro "query_di_ricerca_ideale" -- visto in produzione
+                # un caso reale dove il primo era "Jean's Paul Gaultier" e
+                # il secondo "Jeans Paul Gaultier" (apostrofo presente vs
+                # assente): il match esatto non scattava, la rimozione non
+                # avveniva, e la query finale duplicava il brand per intero
+                # ("Jean's Paul Gaultier Jeans Paul Gaultier gonna righe").
+                # Qui normalizziamo togliendo punteggiatura (apostrofi,
+                # trattini) da ENTRAMBE le stringhe prima di confrontare
+                # parola per parola, cosi' "Jean's" e "Jeans" vengono
+                # riconosciuti come la stessa parola e rimossi correttamente.
+                def _normalizza_parola(w):
+                    return re.sub(r"[''\-.,]", "", w).lower()
+
+                parole_brand_normalizzate = {
+                    _normalizza_parola(w) for w in brand_per_ricerca.split()
+                }
+                parole_query = modello_per_ricerca.split()
+                parole_residue = [
+                    w for w in parole_query
+                    if _normalizza_parola(w) not in parole_brand_normalizzate
+                ]
+                modello_per_ricerca = " ".join(parole_residue).strip()
             categoria_per_ricerca = ""  # già incluso nella query ideale, evita duplicazione
             log.info(
                 "Uso query_di_ricerca_ideale da Gemini: '%s' (brand rimosso, resto: '%s')",
@@ -1361,7 +1412,15 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
         "Produci ora il verdetto operativo completo, nel formato compatto richiesto."
     )
 
-    log.info("PROMPT TESTUALE -> CLAUDE (nessuna immagine, JSON Gemini filtrato + comps Serper):\n%s", user_text)
+    log.info(
+        "PROMPT TESTUALE -> CLAUDE (nessuna immagine, JSON Gemini filtrato + comps Serper) -- "
+        "lunghezza totale: %d caratteri (contenuto completo già visibile separatamente in "
+        "RISPOSTA GEMINI e RICERCA SERPER sopra; qui solo anteprima per evitare di superare "
+        "il rate limit di log di Railway):\n%s%s",
+        len(user_text),
+        user_text[:600],
+        "... [troncato]" if len(user_text) > 600 else "",
+    )
 
     content = [{"type": "text", "text": user_text}]
 
@@ -1755,8 +1814,6 @@ def process_listing(parsed, url, cover_photo_bytes):
     )
     log.info("===REPORT VERBATIM START (hash %s)===\n%s\n===REPORT VERBATIM END (hash %s)===",
               report_hash, final_report, report_hash)
-
-    log.info("RISPOSTA CLAUDE (senza foto, solo JSON Gemini):\n%s", final_report)
 
     header = (
         f"🆕 *{listing_info.get('title')}*\n"
