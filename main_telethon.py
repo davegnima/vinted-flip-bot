@@ -29,12 +29,9 @@ Variabili d'ambiente richieste (mai scritte nel codice):
   TELEGRAM_API_ID        - da my.telegram.org (vedi DEPLOY_RAILWAY.md)
   TELEGRAM_API_HASH      - da my.telegram.org
   TELEGRAM_PHONE         - il tuo numero con prefisso internazionale (+39...)
-  TELEGRAM_SESSION_STRING - generata una tantum con generate_session.py,
-                            permette il login senza richiedere il codice
-                            SMS ad ogni riavvio del bot
+  TELEGRAM_SESSION_STRING - generata una tantum con generate_session.py
   TELEGRAM_GROUP_ID      - id del gruppo/forum da ascoltare (-100...)
-  TELEGRAM_BOT_TOKEN     - token del bot "Vinted Notification" (per INVIARE
-                           i report finali in chat privata)
+  TELEGRAM_BOT_TOKEN     - token del bot "Vinted Notification" (per INVIARE i report)
   TELEGRAM_OWNER_CHAT_ID - il tuo chat id personale (dove ricevere i report)
   ANTHROPIC_API_KEY      - chiave API Claude
   GEMINI_API_KEY         - chiave API Gemini
@@ -81,7 +78,7 @@ GEMINI_API_URL = (
 )
 
 CLAUDE_MODEL = "claude-sonnet-4-6"
-MAX_GALLERY_PHOTOS = 10  
+MAX_GALLERY_PHOTOS = 6  # Ridotto per risparmiare token input su Gemini
 
 VINTED_TRACKER_NAME_HINTS = ("vinted", "tracker")
 
@@ -142,81 +139,64 @@ VINTED_FLIP_ORACLE_PRO_SYSTEM_PROMPT = r"""
 Sei **Vinted Flip Oracle Pro**: valuti annunci second-hand (Vinted, Vestiaire, Grailed, eBay, Depop, Wallapop, StockX/GOAT) per stabilire se conviene comprarli per rivendere. Freddo, preciso, conservativo: proteggi l'utente da fake, margini illusori, prezzi gonfiati, difetti nascosti, capi illiquidi. Non confermi la sua intuizione.
 
 # INPUT
-Non vedi le foto originali. Ricevi un JSON di Gemini: trascrizione letterale etichette ("testo_letterale_etichette" = fonte primaria, non riassumere), identificazione, loghi (con flag coerente_con_brand_dichiarato), analisi foto per foto, difetti, legit check preliminare. Fonte visiva unica e attendibile; logo flaggato incoerente = rischio serio nel tuo Legit check.
+Non vedi le foto originali. Ricevi un JSON di Gemini: identificazione, loghi, analisi difetti, legit check preliminare. Fonte visiva unica e attendibile; se il JSON segnala incoerenze sui loghi = rischio serio nel tuo Legit check.
 
-REGOLA VINCOLANTE — ASSENZA TOTALE PROVE BRAND: zero loghi/etichette/tag in tutte le foto E descrizione senza dettagli verificabili → decisione NON PUÒ essere COMPRA/COMPRA SUBITO/TRATTA (pattern/stile simile NON è prova di autenticità, è ciò che un falso condivide facilmente). Solo CHIEDI ALTRE FOTO (se margine lo giustifica) o NON COMPRARE. Fattore decisivo, non nota di passaggio.
+REGOLA VINCOLANTE — ASSENZA TOTALE PROVE BRAND: se Gemini segnala "ASSENZA TOTALE DI PROVE" nei loghi/etichette → decisione NON PUÒ essere COMPRA/COMPRA SUBITO/TRATTA. Solo CHIEDI ALTRE FOTO o NON COMPRARE.
 
-Stima lingua titolo/descrizione → paese venditore → spedizione (tabella sotto).
+Stima lingua titolo/descrizione → paese venditore → spedizione.
 
 # MARGINE E SOGLIE
-Margine a DUE GAMBE sempre, mai "vendita−acquisto" semplice:
-**Acquisto pieno** = prezzo + protezione acquirenti (~5%+€0,70, verifica importo corrente) + spedizione entrata (da lingua se non chiara/plausibile: IT 2,50€, FR/ES/PT 4,50€, DE/NL/nord-centro EU 5-6€, altre→indicata se plausibile altrimenti analogia geografica) + eventuale sistemazione.
-**Incasso** = vendita probabile post-trattativa − spedizione offerta − sconto chiusura (protezione la paga il compratore finale, non erode il tuo incasso).
-**Margine netto = incasso − acquisto pieno**, sempre € e ROI%. Soglia utente: 20€ netti — sotto, default NON COMPRARE anche con ROI alto, salvo rischio bassissimo e zero sforzo.
+Margine a DUE GAMBE sempre:
+**Acquisto pieno** = prezzo + protezione acquirenti (~5%+€0,70) + spedizione entrata (IT 2,50€, FR/ES/PT 4,50€, nord EU 5-6€).
+**Incasso** = vendita probabile post-trattativa − spedizione offerta − sconto chiusura.
+**Margine netto = incasso − acquisto pieno**, sempre € e ROI%. Soglia utente: 20€ netti — sotto, default NON COMPRARE anche con ROI alto.
 
-Voto Margine (€ assoluto base, ROI% modificatore ±1 max, mai cambia fascia): 0-2/10 <10€/negativo; 3-4/10 10-19€; 5-6/10 20-39€; 7-8/10 40-99€; 9-10/10 100€+. ROI 80%+→+1, 40-80%→0, <20%→-1.
+Voto Margine: 0-2/10 <10€/negativo; 3-4/10 10-19€; 5-6/10 20-39€; 7-8/10 40-99€; 9-10/10 100€+. ROI 80%+→+1, 40-80%→0, <20%→-1.
 
-REGOLE COMPRA/TRATTA (applica in ordine):
-1. Costo pieno <15€ E legit check non negativo (anche solo "probabile autentico" 70-80%) E margine 80€+ → COMPRA/COMPRA SUBITO sempre (mai TRATTA/CHIEDI FOTO): il downside di pochi euro è trascurabile, il rischio reale è perdere il pezzo aspettando. Taglia/condizione mancanti = domande POST-acquisto. Eccezione solo se legit check davvero negativo.
-2. Se margine pieno è già sopra 20€ (e non rientra nel punto 1), MAI scrivere TRATTA — trattare è bonus non condizione, scegli il livello COMPRA della matrice. Errore da evitare: "trattare è inutile" + decisione TRATTA.
-3. Eccezione al punto 2: margine sopra soglia ma 20-40€ (non schiacciante) E confidenza Media/Bassa E capo hype/monitorato → TRATTA è accettabile anche qui, perché il margine "sopra soglia" è incerto (motiva il fattore tempo/incertezza in "In una riga"). Se nicchia o confidenza Alta, resta COMPRA.
-4. TRATTA/TRATTA FORTE altrimenti solo se margine pieno sotto soglia ma accettabile scontando, o Deal/Margine ≤3 con confidenza non Alta.
-5. ECCEZIONE "Y2K / HYPE IMPULSE BUY": Se il costo d'acquisto pieno è molto basso (< 25€), il brand ha un forte hype attuale (es. Mugler, Diesel vintage, Missoni, Carhartt Y2K) e il design è iconico/trendy, la liquidità batte la condizione e l'assenza di comps. In questi casi, anche senza comps o con difetti lavabili (macchie evidenti ma trattabili), il capo verrà venduto per acquisto d'impulso. Non scartarlo con "NON COMPRARE", ma usa "COMPRA" o "COMPRA SE CI TIENI", assegna Liquidità: Alta e spiega in "In una riga" che è un flip da hype/volume veloce.
+REGOLE COMPRA/TRATTA:
+1. Costo pieno <15€ E legit check non negativo E margine 80€+ → COMPRA SUBITO.
+2. Se margine pieno è già sopra 20€, MAI scrivere TRATTA. Scegli COMPRA.
+3. Eccezione: margine sopra soglia ma 20-40€ E confidenza Media/Bassa E capo hype → TRATTA.
+4. TRATTA/TRATTA FORTE altrimenti solo se margine pieno sotto soglia ma accettabile scontando.
+5. ECCEZIONE "Y2K / HYPE IMPULSE BUY": Se il costo d'acquisto pieno è molto basso (< 25€), il brand ha un forte hype attuale (es. Mugler, Diesel, Missoni, Carhartt Y2K) e il design è iconico/trendy, la liquidità batte la condizione e l'assenza di comps. In questi casi, anche senza comps o con difetti lavabili (macchie), il capo verrà venduto per acquisto d'impulso. Usa "COMPRA" o "COMPRA SE CI TIENI", assegna Liquidità: Alta.
 
-# MATRICE DECISIONALE (calcola Deal/Margine/Liquidità/Rischio/Confidenza PRIMA, poi deriva — mai COMPRA solo perché il margine € supera la soglia)
-
-**Asse Qualità (6 livelli, severità crescente; in dubbio tra due, scegli il più basso):**
-1. COMPRA SUBITO — Deal 9-10 E Margine 8-10 E Confidenza non Bassa E Rischio non ALTO, tutti insieme. Parsimonia (2-3/giorno).
+# MATRICE DECISIONALE
+1. COMPRA SUBITO — Deal 9-10 E Margine 8-10 E Confidenza non Bassa E Rischio non ALTO.
 2. COMPRA FORTE — Deal 8 E Margine 7-8, Rischio BASSO/MEDIO.
 3. COMPRA — Deal 6-7 E Margine 5-7, Rischio BASSO/MEDIO.
 4. COMPRA SE CI TIENI — Deal 4-5 O Margine 4-5.
-5. TRATTA (o FORTE) — vedi regole sopra.
-6. NON COMPRARE — margine insufficiente anche scontando, Rischio ALTO, o legit check negativo. CHIEDI ALTRE FOTO invece se il solo problema è dati mancanti (non rischio economico) e legit check non negativo.
+5. TRATTA (o FORTE) — vedi regole.
+6. NON COMPRARE — margine insufficiente, Rischio ALTO, o legit check negativo.
 
-**Asse Urgenza (3 livelli, indipendente — solo se qualità è COMPRA*/SE CI TIENI/TRATTA; se NON COMPRARE/CHIEDI FOTO scrivi "N/A"):**
-Priorità 1 — scarto prezzo/valore: ROI 150%+ o prezzo palesemente anomalo (pochi euro per brand riconoscibile autentico) → AGISCI ORA da solo, indipendentemente da hype/età (un prezzo così salta all'occhio a chiunque, non serve hype per fare concorrenza).
-Priorità 2 — età pubblicazione (solo se scarto prezzo non già estremo): 0-2gg + brand hype → concorrenza reale. 5+gg senza compratori → domanda debole, non "tempo per trattare" (rivedi anche la stima di vendita al ribasso).
+Urgenza:
 - AGISCI ORA: scarto prezzo estremo, o 0-2gg + hype.
-- HAI QUALCHE ORA: margine buono non estremo, recente ma non hype, o 3-5gg ancora conteso.
-- HAI TEMPO: 5+gg senza compratori, o nicchia con prezzo non anomalo.
-Età non disponibile → basati su scarto prezzo/hype, livello più cauto in dubbio.
-
-Scrivi "Decisione: [qualità] · [urgenza]", es. "COMPRA SUBITO · AGISCI ORA" o "NON COMPRARE · N/A".
+- HAI QUALCHE ORA: margine buono non estremo, recente ma non hype.
+- HAI TEMPO: 5+gg senza compratori.
+Scrivi "Decisione: [qualità] · [urgenza]".
 
 # PREZZI — RICERCA E VALUTAZIONE
-1. Vinted mostra solo ASK mai sold — vietato inventare "sold Vinted".
-2. Gerarchia: eBay sold > Vestiaire (ask+alcuni venduti) > Grailed/StockX/GOAT (streetwear/sneaker) > Vinted/Depop/Wallapop (solo ask, usa per saturazione/psicologia, non valore).
-3. Sold estero (valuta locale) va scontato per Vinted IT, più price-sensitive — dichiara l'aggiustamento.
-4. Target vendita 7-14gg: prezzo competitivo con margine trattativa incluso.
-5. COME USARE I COMPS: I RISULTATI RICERCA WEB forniti sotto sono la tua fonte primaria. Interpretali con giudizio critico (ignora snippet con rumore testuale incomprensibile, pagine catalogo generiche senza prezzi specifici, ask irrealistiche o articoli non comparabili).
-6. VALUTAZIONE IN ASSENZA DI COMPS ESTERNI (VIETATO USARE N/A): Se la sezione ricerca dichiara "nessun risultato", "ricerca fallita", o se i comps forniti sono inutilizzabili/fuori scala, **NON USARE MAI "N/A"**. Devi obbligatoriamente stimare il prezzo di "Vendita probabile" basandoti sulla tua profonda conoscenza del mercato second-hand, del posizionamento del brand, del materiale e della categoria.
-7. Se stimi basandoti sulla tua conoscenza interna (per mancanza di comps validi), mantieni un approccio realistico e conservativo (quartile basso), dichiara "Confidenza: Bassa" o "Media" e scrivi "Stima basata su storico brand" in "In una riga". MAI lasciare "N/A" sulla vendita probabile o sul margine netto (salvo casi estremi in cui mancano del tutto brand, categoria e foto).
+1. Vinted mostra solo ASK mai sold.
+2. Gerarchia: eBay sold > Vestiaire > Vinted/Depop. Sold estero va scontato per Vinted IT.
+3. Target vendita 7-14gg.
+4. I RISULTATI RICERCA WEB forniti sotto sono la tua fonte primaria. Interpretali con giudizio critico.
+5. VALUTAZIONE IN ASSENZA DI COMPS ESTERNI (VIETATO USARE N/A): Se la sezione ricerca dichiara "nessun risultato" o "ricerca fallita", **NON USARE MAI "N/A"**. Devi obbligatoriamente stimare il prezzo di "Vendita probabile" basandoti sulla tua profonda conoscenza del mercato second-hand e del brand. Dichiara "Confidenza: Bassa" o "Media" e scrivi "Stima basata su storico brand" in "In una riga".
 
-DIFFUSION LINE (Missoni/Missoni Sport, Prada/Miu Miu, Armani/Emporio-Exchange, Max Mara/Weekend, ecc.): non vale automaticamente come la mainline — dipende dal brand. Solo comps mainline trovati → NON usarli come proxy diretto, confidenza bassa, stima al ribasso, dichiaralo.
+DIFFUSION LINE: non vale automaticamente come la mainline.
 
-# LIQUIDITÀ
-Giorni vendita (0-7/7-14/14-30/30+) e liquidità (Bassa/Media/Alta) da: saturazione, tier domanda brand/modello, taglia (penalizza estreme), stagionalità, spedizione/rischio reso. Prezzo basso ≠ buon affare se illiquido.
-ERRORE DA NON RIPETERE: non confondere la liquidità del BRAND con la liquidità del PEZZO SPECIFICO (es. "Liquidità: Bassa (pezzo di nicchia, anche se il brand è molto liquido)").
+# LIQUIDITÀ E CONTROLLI
+Non confondere la liquidità del BRAND con quella del PEZZO SPECIFICO.
+CONTROLLO FINALE: Margine sotto 20€? Se SÌ, la decisione NON PUÒ essere nessun livello COMPRA — deve essere TRATTA o NON COMPRARE. Unica eccezione ammissibile è la regola #5 (Y2K / HYPE IMPULSE BUY).
 
-# COSA ANALIZZARE
-Identificazione: brand, categoria, modello, linea/epoca, taglia, fit, colore, materiale, paese produzione, retail originale, rarità reale (certo/probabile/non verificato).
-Visiva: usura, pilling, scolorimento, macchie, buchi, scuciture, hardware, fodere, riparazioni, incongruenze foto/descrizione, foto mancanti.
-Legit check: Probabilmente autentico / Sospetto / Probabilmente falso / Non verificabile + confidenza% + rischio fake (basso/medio/alto/molto alto). Mai 100% senza prove eccezionali.
-Condizione: dichiarata vs visibile vs probabile vs non verificabile.
-
-CONTROLLO FINALE OBBLIGATORIO: guarda il numero esatto che hai appena scritto in "Margine netto al prezzo richiesto" (quello in €, non il ROI%). È sotto 20€? Se SÌ, la decisione NON PUÒ essere nessun livello COMPRA (SUBITO/FORTE/COMPRA/SE CI TIENI) — deve essere TRATTA o NON COMPRARE. Unica eccezione ammissibile è la regola #5 (Y2K / HYPE IMPULSE BUY).
-
-# OUTPUT — formato compatto, italiano. TETTO 150 PAROLE TOTALI.
-
-Senza un tool di ricerca proprio (i dati di mercato sono già nel messaggio), non c'è motivo di produrre testo intermedio prima del verdetto: scrivi in UN SOLO blocco, da "## Verdetto operativo" a "## Messaggio da inviare", senza interromperlo e senza nulla prima.
+# OUTPUT
+Stile telegrafico. Massimo 150 parole. NESSUN testo prima o dopo le sezioni indicate.
 
 ## Verdetto operativo
-- **Decisione:** [qualità] · [urgenza], es. "COMPRA SUBITO · AGISCI ORA"
+- **Decisione:** [qualità] · [urgenza]
 - **Costo pieno richiesto:** €X (SEMPRE prezzo+protezione+spedizione scomposti)
 - **Costo pieno trattato:** €X o N/A
 - **Vendita probabile:** €X in ~Z giorni
-- **Margine netto:** €X (ROI Y%) — richiesto · trattato, una riga
-- **Deal:** X/10 · **Margine:** X/10 · **Liquidità:** Bassa/Media/Alta · **Rischio:** BASSO/MEDIO/ALTO (tipo in 3 parole) · **Confidenza:** Alta/Media/Bassa
+- **Margine netto:** €X (ROI Y%) — richiesto · trattato
+- **Deal:** X/10 · **Margine:** X/10 · **Liquidità:** Bassa/Media/Alta · **Rischio:** BASSO/MEDIO/ALTO · **Confidenza:** Alta/Media/Bassa
 - **In una riga:** [max15 parole]
 
 ## Legit check
@@ -226,7 +206,7 @@ Una riga, max20 parole: verdetto + confidenza% + segnale chiave.
 Max3 domande telegrafiche, o "Non rilevante".
 
 ## Messaggio da inviare
-SEMPRE in italiano anche se annuncio in altra lingua. Messaggio pronto breve, o "Non necessario".
+Messaggio pronto breve in italiano, o "Non necessario".
 """.strip()
 
 GEMINI_VISION_SYSTEM_PROMPT = """
@@ -258,7 +238,6 @@ REGOLE CRITICHE:
 1. NON trascrivere le etichette di lavaggio parola per parola. Estrai solo brand e taglia.
 2. Niente liste, niente spiegazioni prolisse. Taglia gli aggettivi.
 3. Se non c'è traccia del brand (solo pattern generici), il verdetto è "Non verificabile" o "Sospetto".
-"""
 """.strip()
 
 # ---------------------------------------------------------------------------
@@ -349,7 +328,7 @@ VINTED_HEADERS = {
 IMAGE_DOWNLOAD_HEADERS = {
     "User-Agent": VINTED_HEADERS["User-Agent"],
     "Accept-Language": VINTED_HEADERS["Accept-Language"],
-    "Referer": "[https://www.vinted.it/](https://www.vinted.it/)",
+    "Referer": "https://www.vinted.it/",
     "Accept": "image/webp,image/avif,image/jpeg,image/png,image/*,*/*;q=0.8",
     "Sec-Fetch-Dest": "image",
     "Sec-Fetch-Mode": "no-cors",
@@ -366,7 +345,8 @@ def scrape_vinted_listing(url):
         "created_at": None, "age_days": None,
     }
     try:
-        resp = _vinted_session.get(url, headers=VINTED_HEADERS, timeout=15)
+        # Timeout a 8 secondi per non bloccarsi
+        resp = _vinted_session.get(url, headers=VINTED_HEADERS, timeout=8)
         resp.raise_for_status()
         html = resp.text
 
@@ -417,13 +397,14 @@ def scrape_vinted_listing(url):
 
     return result
 
-def download_image_bytes(url, referer="[https://www.vinted.it/](https://www.vinted.it/)", max_retries=2):
+def download_image_bytes(url, referer="https://www.vinted.it/", max_retries=1):
     headers = dict(IMAGE_DOWNLOAD_HEADERS)
     headers["Referer"] = referer
 
+    # Timeout aggressivo a 4 secondi per immagine
     for attempt in range(1, max_retries + 1):
         try:
-            resp = _vinted_session.get(url, headers=headers, timeout=15)
+            resp = _vinted_session.get(url, headers=headers, timeout=4)
             if resp.ok:
                 return resp.content
         except Exception:
@@ -436,7 +417,6 @@ def download_image_bytes(url, referer="[https://www.vinted.it/](https://www.vint
 # ---------------------------------------------------------------------------
 
 def optimize_image_bytes(img_bytes, max_size=512):
-    # Ridimensiona l'immagine per farla rientrare nella fascia di costo minima
     try:
         img = Image.open(BytesIO(img_bytes))
         img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
@@ -448,8 +428,8 @@ def optimize_image_bytes(img_bytes, max_size=512):
     except Exception as e:
         log.warning("Ottimizzazione (Pillow) fallita, uso byte originali: %s", e)
         return img_bytes
-        
-def call_gemini_vision(photos_bytes_list, listing_info, max_retries=4):
+
+def call_gemini_vision(photos_bytes_list, listing_info, max_retries=3):
     user_text_for_log = (
         f"Titolo annuncio: {listing_info.get('title')}\n"
         f"Brand dichiarato: {listing_info.get('brand')}\n"
@@ -473,8 +453,8 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=4):
         "system_instruction": {"parts": [{"text": GEMINI_VISION_SYSTEM_PROMPT}]},
         "contents": [{"role": "user", "parts": parts}],
         "generationConfig": {
-            "temperature": 0.2,
-            "maxOutputTokens": 2000, 
+            "temperature": 0.1,
+            "maxOutputTokens": 400,  # CRITICO per evitare timeout e risparmiare costi
             "responseMimeType": "application/json",
         },
     }
@@ -488,7 +468,7 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=4):
                 candidates = data.get("candidates", [])
                 if candidates:
                     extracted_text = "".join(p.get("text", "") for p in candidates[0]["content"]["parts"])
-                    if extracted_text and len(extracted_text.strip()) >= 50:
+                    if extracted_text and len(extracted_text.strip()) >= 30:
                         try:
                             json.loads(extracted_text)
                             return extracted_text
@@ -496,18 +476,17 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=4):
                             pass
             time.sleep(backoff_seconds)
             backoff_seconds *= 2
-except requests.exceptions.RequestException as exc:
+        except requests.exceptions.RequestException as exc:
             log.warning("Errore di rete Gemini (tentativo %d/%d): %s - Ritento...", attempt, max_retries, type(exc).__name__)
             if attempt < max_retries:
                 time.sleep(backoff_seconds)
                 backoff_seconds *= 2
             else:
                 break
+
     return (
-        "[ERRORE: analisi visiva Gemini non disponibile dopo tentativi. "
-        "Procedi con MASSIMA cautela: nessun dato visivo affidabile, tratta "
-        "come se le foto non fossero analizzabili e applica la regola su assenza "
-        "totale di prove di brand dove pertinente.]"
+        '{"valutazione_flipper_preliminare": {"verdetto_grezzo": "VALUTA"}, '
+        '"legit_check_preliminare": {"verdetto": "Non verificabile", "cosa_non_torna_o_e_dubbio": "Timeout Gemini."}}'
     )
 
 # ---------------------------------------------------------------------------
@@ -520,7 +499,7 @@ def _serper_batch_query(labeled_queries, num_results=4):
 
     try:
         resp = requests.post(
-            "[https://google.serper.dev/search](https://google.serper.dev/search)",
+            "https://google.serper.dev/search",
             headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
             json=[{"q": q, "gl": "it", "hl": "it", "num": num_results} for q in queries],
             timeout=15,
@@ -557,19 +536,19 @@ def build_vinted_search_url(brand, modello_o_categoria, max_price=None):
     query_text = f"{brand} {modello_o_categoria}".strip()
 
     if brand_id:
-        url = f"[https://www.vinted.it/catalog?brand_ids](https://www.vinted.it/catalog?brand_ids)[]={brand_id}&search_text={quote(modello_o_categoria or '')}&order=newest_first&status_ids[]=1&status_ids[]=2&status_ids[]=3"
+        url = f"https://www.vinted.it/catalog?brand_ids[]={brand_id}&search_text={quote(modello_o_categoria or '')}&order=newest_first&status_ids[]=1&status_ids[]=2&status_ids[]=3"
         if max_price:
             url += f"&price_to={max_price}"
         return url, True
     else:
-        url = f"[https://www.vinted.it/catalog?search_text=](https://www.vinted.it/catalog?search_text=){quote(query_text)}&order=newest_first"
+        url = f"https://www.vinted.it/catalog?search_text={quote(query_text)}&order=newest_first"
         return url, False
 
 def search_comps_ebay_sold(brand, modello, categoria):
     from urllib.parse import quote
     query_base = f"{brand} {modello} {categoria}".strip()
     if not query_base: return None
-    return f"[https://www.ebay.it/sch/i.html?_nkw=](https://www.ebay.it/sch/i.html?_nkw=){quote(query_base)}&LH_Sold=1&LH_Complete=1&_sop=13"
+    return f"https://www.ebay.it/sch/i.html?_nkw={quote(query_base)}&LH_Sold=1&LH_Complete=1&_sop=13"
 
 def _clean_scraped_markdown(content):
     if not content: return content
@@ -588,7 +567,7 @@ def _clean_scraped_markdown(content):
 def _serper_scrape_page(url, max_chars=2500):
     try:
         resp = requests.post(
-            "[https://scrape.serper.dev](https://scrape.serper.dev)",
+            "https://scrape.serper.dev",
             headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
             json={"url": url, "includeMarkdown": True},
             timeout=15,
@@ -665,30 +644,16 @@ def search_comps_serper(brand, modello, categoria):
 # CLAUDE ORACLE
 # ---------------------------------------------------------------------------
 
-def strip_per_photo_analysis(gemini_analysis_json):
-    try:
-        data = json.loads(gemini_analysis_json)
-    except Exception:
-        return gemini_analysis_json
-
-    if isinstance(data, dict) and "analisi_visiva_per_foto" in data:
-        n_foto = len(data["analisi_visiva_per_foto"]) if isinstance(data["analisi_visiva_per_foto"], list) else 0
-        del data["analisi_visiva_per_foto"]
-        data["_nota_foto_analizzate"] = f"{n_foto} foto analizzate (descrizione per-foto omessa)."
-    return json.dumps(data, ensure_ascii=False, indent=2)
-
 def call_claude_oracle(listing_info, gemini_analysis_json):
     age_days = listing_info.get("age_days")
     age_text = f"{age_days:.1f} giorni fa" if age_days is not None else "non disponibile"
 
-    gemini_analysis_for_claude = strip_per_photo_analysis(gemini_analysis_json)
-
     try:
         gemini_data = json.loads(gemini_analysis_json)
         ident = gemini_data.get("identificazione", {}) if isinstance(gemini_data, dict) else {}
-        brand_per_ricerca = ident.get("brand_effettivamente_visibile_sui_loghi") or ident.get("brand_dichiarato_dal_venditore") or listing_info.get("brand") or ""
-        modello_per_ricerca = ident.get("modello_stimato") or ""
-        categoria_per_ricerca = ident.get("categoria") or ""
+        brand_per_ricerca = ident.get("brand_visibile") or listing_info.get("brand") or ""
+        modello_per_ricerca = ident.get("modello_e_categoria") or ""
+        categoria_per_ricerca = ""
     except Exception:
         brand_per_ricerca = listing_info.get("brand") or ""
         modello_per_ricerca = ""
@@ -706,7 +671,7 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
         f"Annuncio pubblicato: {age_text}\n"
         f"URL annuncio: {listing_info.get('url') or 'non disponibile'}\n\n"
         "--- ANALISI VISIVA COMPLETA (JSON prodotto da Gemini) ---\n"
-        f"{gemini_analysis_for_claude}\n"
+        f"{gemini_analysis_json}\n"
         "--- FINE ANALISI VISIVA ---\n\n"
         "NOTA: non hai accesso diretto alle foto originali. Il JSON sopra è la "
         "tua UNICA fonte visiva. Fidati di questo JSON per identificazione, condizione e legit check visivo.\n\n"
@@ -826,7 +791,7 @@ def process_listing(parsed, url, cover_photo_bytes):
     listing_info = dict(parsed)
     listing_info["url"] = url
     photo_bytes_list = []
-    successful_urls = []  # <--- NUOVO: Tracciamo gli URL scaricati con successo
+    successful_urls = [] 
 
     if url:
         scraped = scrape_vinted_listing(url)
@@ -839,7 +804,7 @@ def process_listing(parsed, url, cover_photo_bytes):
             img = download_image_bytes(photo_url, referer=url)
             if img: 
                 photo_bytes_list.append(img)
-                successful_urls.append(photo_url)  # <--- Salviamo l'URL se il download riesce
+                successful_urls.append(photo_url) 
             time.sleep(0.4)
 
     if not photo_bytes_list and cover_photo_bytes:
@@ -849,7 +814,6 @@ def process_listing(parsed, url, cover_photo_bytes):
     if not photo_bytes_list:
         return
 
-    # ---- NUOVO LOG ESPLICITO PER IL CHECK ----
     log.info("================ CHECK IMMAGINI VERSO GEMINI ================")
     log.info("Sto per comprimere e inviare a Gemini %d foto.", len(photo_bytes_list))
     for i, img_url in enumerate(successful_urls, start=1):
@@ -857,6 +821,7 @@ def process_listing(parsed, url, cover_photo_bytes):
     log.info("=============================================================")
 
     gemini_analysis_json = call_gemini_vision(photo_bytes_list, listing_info)
+    log.info("RISPOSTA GEMINI (JSON, %d foto inviate):\n%s", len(photo_bytes_list), gemini_analysis_json)
 
     e_skip, motivo_skip = check_skip_pre_claude(gemini_analysis_json)
     if e_skip:
@@ -875,7 +840,7 @@ def process_listing(parsed, url, cover_photo_bytes):
     telegram_send_message(TELEGRAM_OWNER_CHAT_ID, header + final_report)
 
 # ---------------------------------------------------------------------------
-# TELETHON CLIENT E GESTIONE EVENTI (Con Protezione Timeout)
+# TELETHON CLIENT E GESTIONE EVENTI
 # ---------------------------------------------------------------------------
 
 client = TelegramClient(StringSession(TELEGRAM_SESSION_STRING), TELEGRAM_API_ID, TELEGRAM_API_HASH)
@@ -911,8 +876,6 @@ async def on_new_message(event):
                         url = btn_url
                         break
 
-        # TIMEOUT DI 7 SECONDI per evitare blocchi del server DC2 di Telegram
-        # Se Telegram è lento, saltiamo la copertina e andiamo diretti allo scrape di Vinted.
         cover_photo_bytes = None
         if event.message.photo:
             try:
