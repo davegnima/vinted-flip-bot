@@ -1403,76 +1403,46 @@ def search_comps_ebay_sold(brand, modello, categoria):
 
 
 def _clean_scraped_markdown(content):
-    """Pulizia meccanica (nessuna chiamata AI, costo zero) del markdown
-    grezzo restituito da scrape.serper.dev per pagine Vinted/eBay.
+    if not content: return content
 
-    Motivazione: osservato nei log reali che lo scrape di queste pagine
-    porta con se' molto rumore strutturale che non aggiunge informazione
-    utile per Claude (metadata SEO ripetuti, immagini SVG inline codificate
-    in base64 lunghissime, link di servizio come "Vendi un oggetto simile"),
-    e questo rumore da solo gonfiava il prompt finale a Claude fino a
-    ~3x quanto preventivato, anche quando il risultato utile era solo
-    "nessun risultato trovato" o 2-3 righe di prezzo reale.
+    # 1. TRASFORMA LE IMMAGINI IN TESTO UTILE (Tua intuizione)
+    # Estrae l'alt-text dalle immagini markdown scartando l'URL.
+    # Serve perché Vinted a volte nasconde "Brand: X, Prezzo: Y" proprio qui!
+    content = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"- \1", content)
 
-    Questa pulizia e' puramente strutturale via regex (non capisce il
-    significato del contenuto, solo riconosce pattern di rumore noti) --
-    e' il primo livello di taglio, a costo zero, prima di valutare se
-    serve anche un riassunto via AI per i casi in cui il contenuto utile
-    resta comunque troppo lungo."""
-    if not content:
-        return content
+    # 2. ESTRATTORE CHIRURGICO PER VINTED (Ghigliottina a 15 item)
+    vinted_items = []
+    for line in content.split('\n'):
+        line_lower = line.lower()
+        # Se la riga contiene il brand e l'euro, è sicuramente un annuncio!
+        if "brand:" in line_lower and ("&#x20ac;" in line_lower or "€" in line_lower):
+            # Rimuove link ipertestuali mantenendo solo il testo: [Testo](url) -> Testo
+            clean_line = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', line)
+            # Converte il codice HTML dell'euro nel simbolo reale e pulisce l'inizio
+            clean_line = clean_line.replace('&#x20AC;', '€').replace('&#x20ac;', '€').strip('- *')
+            vinted_items.append(f"- {clean_line}")
+            
+            # Limite massimo per non consumare troppi token
+            if len(vinted_items) >= 15:
+                break
+                
+    # Se ha trovato annunci Vinted, ignora TUTTO il resto della pagina (menu, footer)
+    if vinted_items:
+        return "\n".join(vinted_items)
 
-    # Rimuove blocchi di metadata SEO/HTML (meta-description, meta-og-*,
-    # meta-twitter-*, title, meta-viewport, ecc.) -- spesso appaiono in un
-    # blocco delimitato da "---" all'inizio del markdown estratto.
-    content = re.sub(
-        r"^---\s*\nmeta-[\s\S]*?\n---\s*\n",
-        "",
-        content,
-        flags=re.MULTILINE,
-    )
-    # Rimuove righe singole "meta-qualcosa: ..." anche se non in un blocco ---
+    # 3. FALLBACK PER EBAY E ALTRI SITI (Pulizia generica)
+    content = re.sub(r"^---\s*\nmeta-[\s\S]*?\n---\s*\n", "", content, flags=re.MULTILINE)
     content = re.sub(r"^meta-[\w-]+:.*$", "", content, flags=re.MULTILINE)
     content = re.sub(r"^title:.*$", "", content, flags=re.MULTILINE)
-
-    # Rimuove immagini SVG inline codificate in base64 (data:image/svg+xml;base64,...)
-    # -- queste possono essere lunghe centinaia di caratteri per una singola
-    # icona decorativa (es. freccia, lente di ricerca) senza alcun valore
-    # informativo per il pricing.
-    content = re.sub(r"!\[SVG Image\]\(data:image/svg\+xml;base64,[^)]+\)", "", content)
-    content = re.sub(r"\(data:image/svg\+xml;base64,[^)]+\)", "", content)
-
-    # Rimuove link di servizio ricorrenti senza valore informativo
     content = re.sub(r"\[Vendi un oggetto simile\]\([^)]+\)", "", content)
     content = re.sub(r"\[Logo di Vinted\]\([^)]+\)", "", content)
     content = re.sub(r"\[Passa al contenuto!?\[[^\]]*\]\([^)]+\)\]\([^)]+\)", "", content)
     content = re.sub(r"!\[Catalogo\]\([^)]+\)", "", content)
-
-    # Estrae l'alt-text dalle immagini prodotto markdown (scartando SOLO
-    # l'URL dell'immagine, che e' sempre inutile per il pricing), es.
-    # "![T-shirt Marni, brand: Marni, condizioni: Buone, taglia: S, €25.00,
-    # €26.95 include la Protezione acquisti](https://images1.vinted.net/...)"
-    # -> "- T-shirt Marni, brand: Marni, condizioni: Buone, taglia: S,
-    # €25.00, €26.95 include la Protezione acquisti".
-    #
-    # CORREZIONE IMPORTANTE rispetto a un primo tentativo: NON rimuovere
-    # l'intera riga immagine -- verificato su un campione reale (29/06/2026)
-    # che il prezzo/titolo/condizione di un risultato Vinted a volte vive
-    # SOLO dentro l'alt-text dell'immagine, senza essere ripetuto altrove
-    # nel testo circostante. Rimuovere l'intera riga (come fatto per le
-    # icone SVG decorative sopra, dove l'alt-text non porta mai dato utile)
-    # perderebbe quei prezzi. L'URL invece e' sempre scartabile: anche se
-    # contiene un id foto, non e' mai usato da Claude per il pricing, e
-    # pesa molto piu' dell'alt-text (spesso 80-150+ caratteri di path/token
-    # CDN). Solo l'URL viene tagliato qui, l'informazione testuale resta.
-    content = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"- \1", content)
-
-    # Rimuove righe vuote multiple consecutive (residuo della rimozione
-    # sopra) per non sprecare token su spazio bianco ripetuto.
+    
+    # Rimuove righe vuote multiple
     content = re.sub(r"\n{3,}", "\n\n", content)
-    content = content.strip()
-
-    return content
+    
+    return content.strip()
 
 
 def _serper_scrape_page(url, max_chars=1300):
