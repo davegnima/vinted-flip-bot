@@ -666,34 +666,56 @@ def scrape_vinted_listing(url):
             except Exception:
                 log.warning("Impossibile calcolare l'eta' dell'annuncio da created_at_ts=%s", created_match.group(1))
 
-        # CATALOG + MATERIALE PREGIATO: per ricerche comp piu' raffinate.
-        # VERIFICATO sul sito reale (29/06/2026): Materiale e Colore NON
-        # hanno piu' un ID numerico filtrabile (le vecchie API/wrapper che
-        # esponevano material_id/color_id sono legacy/deprecate) -- esistono
-        # solo come stringa nel payload "request_options" della pagina
-        # annuncio. catalog_id invece e' ancora un ID numerico valido.
-        catalog_match = re.search(r'"catalog_id"\s*:\s*(\d+)', html)
-        if catalog_match:
-            result["catalog_id"] = catalog_match.group(1)
-
-        # Pattern visto nel payload request_options reale:
-        # {"type":"text","code":"material","data":{"title":"Materiale","value":"Cotone, Denim, Velluto"}}
-        # Pattern permissivo ([^}]*?) per tollerare campi extra tra "data":{
-        # e "value" (es. un eventuale "id":null prima di "title").
-        material_match = re.search(
-            r'"code"\s*:\s*"material"\s*,\s*"data"\s*:\s*\{[^}]*?"value"\s*:\s*"([^"]+)"',
+        # CATALOG + MATERIALE/COLORE: per ricerche comp piu' raffinate.
+        # CORREZIONE (29/06/2026, dopo verifica diretta sull'HTML reale via
+        # DevTools): il pattern precedente cercava un payload JSON
+        # "request_options" con {"code":"material","data":{"value":...}}
+        # -- VERIFICATO non essere presente nell'HTML scaricato da requests
+        # (i log diagnostici mostravano solo testo libero in descrizione o
+        # il dizionario di traduzioni i18n {"item.details.color":"Colore"},
+        # mai il dato del prodotto specifico). Il dato REALE e' invece
+        # marcato con microdata schema.org standard: itemprop="color",
+        # itemprop="status", itemprop="size" -- attributi HTML, non un
+        # payload JS interno, quindi molto piu' stabili nel tempo. Pattern
+        # verificato sul vero HTML di un annuncio (maglione Missoni):
+        # <div itemprop="color"><span ...>Marrone, Azzurro</span></div>
+        # CATALOG_ID: estratto dalla breadcrumb di navigazione in cima alla
+        # pagina annuncio, verificata sul vero HTML il 29/06/2026. La
+        # breadcrumb elenca le categorie dalla piu' generica alla piu'
+        # specifica come link /catalog/<id>-<slug>, es. "Donna" (1904) ->
+        # "Vestiti" (4) -> "Maglioni e pullover" (13) -> "Cardigan" (194),
+        # seguita da un ultimo link RIDONDANTE che combina la stessa
+        # categoria col brand (es. /catalog/194-cardigans/brand/4463-...) --
+        # quel link va escluso (il pattern qui sotto matcha solo link che
+        # terminano con "?referrer=item-crumbs", quindi SENZA un "/brand/"
+        # nel mezzo). Prendiamo l'ULTIMO link valido = la categoria piu'
+        # specifica, esattamente il livello di granularita' voluto per
+        # filtrare i comp (es. "Cardigan", non il generico "Vestiti").
+        catalog_matches = re.findall(
+            r'/catalog/(\d+)-[a-z0-9-]+?\?referrer=item-crumbs"',
             html,
+        )
+        if catalog_matches:
+            result["catalog_id"] = catalog_matches[-1]
+
+        # Pattern: trova itemprop="X", poi il testo del primo <span> annidato
+        # successivo (il valore reale) -- si ferma al primo tag che segue il
+        # testo (es. un <button> di info annidato, visto nel caso "status"),
+        # quindi NON cattura testo di elementi figli accidentali.
+        material_match = re.search(
+            r'itemprop="material"[^>]*>.*?<span[^>]*>([^<]+)',
+            html, re.DOTALL,
         )
         if material_match:
-            result["material_raw"] = material_match.group(1)
-            result["material_per_ricerca"] = scegli_materiale_per_ricerca(material_match.group(1))
+            result["material_raw"] = material_match.group(1).strip()
+            result["material_per_ricerca"] = scegli_materiale_per_ricerca(material_match.group(1).strip())
 
         color_match = re.search(
-            r'"code"\s*:\s*"color"\s*,\s*"data"\s*:\s*\{[^}]*?"value"\s*:\s*"([^"]+)"',
-            html,
+            r'itemprop="color"[^>]*>.*?<span[^>]*>([^<]+)',
+            html, re.DOTALL,
         )
         if color_match:
-            result["color_raw"] = color_match.group(1)
+            result["color_raw"] = color_match.group(1).strip()
 
         log.info(
             "CATALOG/MATERIALE/COLORE estratti -- catalog_id=%s, "
@@ -703,36 +725,30 @@ def scrape_vinted_listing(url):
         )
 
         # DIAGNOSTICA TEMPORANEA: se NESSUNO dei tre campi e' stato trovato
-        # (catalog_id, material_raw, color_raw tutti None), il pattern regex
-        # esistente -- costruito su UN campione HTML catturato il 29/06/2026
-        # via DevTools -- potrebbe non corrispondere piu' al markup reale
-        # (Vinted serve piu' varianti della stessa pagina, e questo bot usa
-        # uno User-Agent mobile diverso da quello con cui il pattern era
-        # stato verificato). Invece di continuare a indovinare un altro
-        # pattern a scatola chiusa, logghiamo qui una porzione di HTML
-        # grezzo intorno alla prima occorrenza testuale di "Colore" (la UI
-        # mostra sempre questa parola in pagina quando il colore e'
-        # disponibile, vedi screenshot reali) -- cosi' il prossimo annuncio
-        # che arriva con questo problema mostra DIRETTAMENTE nei log
-        # Railway come e' strutturato oggi il markup reale, senza bisogno
-        # di un nuovo giro manuale DevTools. Rimuovere questo blocco una
-        # volta che il pattern regex sara' stato aggiornato e verificato.
+        # (catalog_id, material_raw, color_raw tutti None), logghiamo una
+        # porzione di HTML grezzo intorno alla prima occorrenza di
+        # 'itemprop="color"' (l'ancoraggio verificato il 29/06/2026 sul
+        # vero markup -- la versione precedente cercava la stringa
+        # "Colore", che pero' matchava anche il dizionario di traduzioni
+        # i18n {"item.details.color":"Colore"} e dava falsi indizi). Se
+        # anche questo nuovo pattern smette di funzionare in futuro, il
+        # log qui sotto mostra direttamente la struttura reale aggiornata.
         if not result["catalog_id"] and not result["material_raw"] and not result["color_raw"]:
-            indice_colore = html.find("Colore")
-            if indice_colore != -1:
-                inizio = max(0, indice_colore - 100)
-                fine = min(len(html), indice_colore + 400)
+            indice_color = html.find('itemprop="color"')
+            if indice_color != -1:
+                inizio = max(0, indice_color - 100)
+                fine = min(len(html), indice_color + 400)
                 log.warning(
                     "DIAGNOSTICA PATTERN MATERIAL/COLOR: nessun campo estratto per %s -- "
-                    "porzione HTML grezzo intorno alla parola 'Colore' (offset %d-%d):\n%s",
+                    "porzione HTML grezzo intorno a 'itemprop=\"color\"' (offset %d-%d):\n%s",
                     url, inizio, fine, html[inizio:fine],
                 )
             else:
                 log.warning(
                     "DIAGNOSTICA PATTERN MATERIAL/COLOR: nessun campo estratto per %s -- "
-                    "la parola 'Colore' non e' nemmeno presente nell'HTML scaricato "
+                    "'itemprop=\"color\"' non e' nemmeno presente nell'HTML scaricato "
                     "(lunghezza totale HTML: %d caratteri). Possibile pagina bloccata, "
-                    "vuota, o struttura completamente diversa da quella attesa.",
+                    "vuota, o annuncio senza il campo Colore compilato dal venditore.",
                     url, len(html),
                 )
 
