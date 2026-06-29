@@ -1995,6 +1995,95 @@ _processed_message_ids = set()
 _MAX_PROCESSED_IDS_TRACKED = 500  # tetto per evitare crescita illimitata della memoria
 
 
+# DEDUPLICAZIONE PER CONTENUTO (stesso oggetto, taglie diverse): un secondo
+# problema distinto da quello sopra -- osservato in produzione che lo
+# stesso venditore pubblica spesso lo STESSO capo in piu' annunci separati,
+# uno per taglia disponibile (es. "Miu Miu short sleeves Talle S/M/L/XL/
+# XXL"), ognuno con message_id LEGITTIMAMENTE diverso (sono annunci Vinted
+# reali e distinti), stesso titolo/brand/prezzo tranne l'ultima parola
+# (la taglia). Il dedup sopra (per message_id) non li intercetta, e il
+# bot finisce per valutare 5 volte lo stesso identico capo nel giro di
+# pochi secondi -- 5x costo Gemini+Serper+Claude per un'informazione che
+# la prima valutazione gia' dava (stesso brand, stesso prezzo, stesso
+# margine: la taglia diversa non cambia la decisione economica).
+#
+# Fix: una seconda chiave di dedup basata sul CONTENUTO (titolo con la
+# taglia finale rimossa + brand + prezzo), con finestra temporale di 5
+# minuti -- entro quella finestra, una chiave gia' vista viene scartata
+# in silenzio (nessun messaggio di errore, e' un comportamento atteso,
+# non un fallimento). Dopo 5 minuti la stessa chiave puo' tornare a
+# passare (es. il venditore ripubblica lo stesso capo in un secondo
+# momento, caso raro ma non impossibile, meglio non bloccarlo per sempre).
+DEDUP_CONTENUTO_WINDOW_SECONDS = 300  # 5 minuti
+_recent_listings_seen = {}  # chiave_normalizzata (tupla) -> timestamp ultimo avvistamento
+
+
+def _normalizza_titolo_per_dedup(title):
+    """Rimuove dal titolo la parte finale che identifica la taglia, per
+    ottenere una chiave di confronto stabile tra varianti taglia dello
+    stesso identico annuncio.
+
+    Gestisce due pattern osservati in produzione, in ordine di priorita':
+    1. Taglia tra virgolette/apici a fine titolo, es. "Talle L", "Taglia
+       42" -- il bot Vinted Tracker riporta il campo as-is da Vinted nella
+       lingua scelta dal venditore (visto sia 'Talle' spagnolo che
+       'Taglia' italiano), quindi NON proviamo a riconoscere la parola
+       taglia in ogni lingua possibile (fragile, lista incompleta):
+       rimuoviamo l'intero blocco tra virgolette a fine stringa, a
+       prescindere dalla lingua.
+    2. Fallback se non ci sono virgolette: rimuove solo l'ultima parola
+       spazio-separata (spesso la taglia anche senza virgolette, es. un
+       numero "32"/"42" o sigla "XL" a fine titolo).
+
+    Il confronto finale e' case-insensitive e con spazi multipli
+    normalizzati, per tollerare piccole variazioni di spaziatura viste
+    nei messaggi reali (es. doppio spazio tra parole)."""
+    if not title:
+        return ""
+    t = title.strip()
+    t_senza_virgolette_finali = re.sub(r"['\"][^'\"]*['\"]\s*$", "", t).strip()
+    if t_senza_virgolette_finali != t:
+        base = t_senza_virgolette_finali
+    else:
+        parole = t.split()
+        base = " ".join(parole[:-1]) if len(parole) > 1 else t
+    return re.sub(r"\s+", " ", base).strip().lower()
+
+
+def e_variante_recente_dello_stesso_oggetto(parsed):
+    """True se un annuncio con lo stesso titolo normalizzato (taglia
+    esclusa) + brand + prezzo e' gia' stato visto negli ultimi
+    DEDUP_CONTENUTO_WINDOW_SECONDS. In quel caso, NON registra una nuova
+    occorrenza (la finestra resta ancorata al primo avvistamento, non si
+    rinnova ad ogni variante taglia che arriva -- altrimenti una serie di
+    10 taglie che arrivano a raffica entro 5 minuti l'una dall'altra
+    estenderebbe la finestra all'infinito).
+
+    Se non e' un duplicato, registra il nuovo avvistamento e ritorna
+    False. Pulisce anche le voci scadute ad ogni chiamata -- manutenzione
+    a costo trascurabile, evita crescita illimitata del dizionario in un
+    processo long-running su Railway."""
+    chiave = (
+        _normalizza_titolo_per_dedup(parsed.get("title")),
+        (parsed.get("brand") or "").strip().lower(),
+        (parsed.get("price") or "").strip(),
+    )
+
+    now = time.time()
+    scadute = [
+        k for k, ts in _recent_listings_seen.items()
+        if now - ts > DEDUP_CONTENUTO_WINDOW_SECONDS
+    ]
+    for k in scadute:
+        del _recent_listings_seen[k]
+
+    if chiave in _recent_listings_seen:
+        return True
+
+    _recent_listings_seen[chiave] = now
+    return False
+
+
 @client.on(events.NewMessage(chats=TELEGRAM_GROUP_ID))
 async def on_new_message(event):
     try:
@@ -2024,6 +2113,20 @@ async def on_new_message(event):
             return
 
         parsed = parse_vinted_tracker_message(text)
+
+        # DEDUP PER CONTENUTO (vedi note sopra): se e' una variante taglia
+        # di un annuncio gia' valutato negli ultimi 5 minuti, skip silenzioso
+        # PRIMA di qualsiasi lavoro costoso (scraping, foto, Gemini, Claude).
+        # Nessun messaggio di errore o avviso all'utente -- e' il
+        # comportamento desiderato, non un fallimento.
+        if e_variante_recente_dello_stesso_oggetto(parsed):
+            log.info(
+                "Variante taglia di un annuncio gia' valutato di recente -- skip silenzioso. "
+                "Titolo: %s",
+                parsed.get("title"),
+            )
+            return
+
         url = extract_url_from_text(text)
 
         # se l'URL non e' nel testo, alcuni bot lo mettono in un bottone
