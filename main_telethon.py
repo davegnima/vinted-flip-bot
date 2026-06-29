@@ -421,7 +421,8 @@ Rispondi SOLO con un oggetto JSON valido (nessun testo prima o dopo, nessun bloc
     "categoria_a_basso_valore": true/false,
     "motivo_se_basso_valore": "es. 'calzini, categoria a basso valore di rivendita indipendentemente dal brand' -- vuoto se categoria_a_basso_valore e' false",
     "verdetto_grezzo": "NON COMPRARE / VALUTA / COMPRA",
-    "motivo_verdetto_grezzo": "max 20 parole, il motivo principale del verdetto grezzo"
+    "motivo_verdetto_grezzo": "max 20 parole, il motivo principale del verdetto grezzo",
+    "prezzo_vendita_massimo_plausibile_eur": "numero intero in euro, SENZA simbolo di valuta -- la tua stima dell'ASSOLUTO MIGLIOR CASO per il prezzo di rivendita di questo capo specifico (con questa condizione, questa taglia, questo brand/modello), basata sulla tua conoscenza generale del mercato second-hand. Deve essere deliberatamente OTTIMISTICA, non una media realistica: e' lo scenario piu' favorevole possibile, usato solo per scartare i casi in cui anche l'ipotesi migliore non basta. Se non hai alcuna base per stimarlo (brand non riconosciuto, categoria troppo generica), scrivi null invece di inventare un numero."
   }
 }
 
@@ -431,10 +432,11 @@ REGOLE IMPORTANTI:
 - Il campo "loghi_e_marchi_visibili" è critico: se vedi anche un solo logo/marchio/scritta che non corrisponde al brand dichiarato dal venditore, DEVE apparire come elemento separato con "coerente_con_brand_dichiarato": false — non ometterlo, non minimizzarlo, non assumere che sia comunque lo stesso brand.
 - CASO CRITICO -- ASSENZA TOTALE DI PROVE: se in NESSUNA delle foto fornite è visibile un logo, etichetta, tag, marchio o qualsiasi elemento che confermi il brand dichiarato (es. solo un pattern/colore/forma generico, senza alcun elemento testuale o grafico brand-specifico), questo NON è un dettaglio minore da annotare di passaggio: è un campanello d'allarme di primo livello. In questo caso, nel campo "legit_check_preliminare", il "verdetto" deve essere "Sospetto, servono altre foto" o "Non verificabile" (mai "Probabilmente autentico"), la "confidenza_percentuale" non deve superare il 40%, e "cosa_non_torna_o_e_dubbio" deve dichiarare esplicitamente e in modo evidente "ASSENZA TOTALE DI ETICHETTA/LOGO/TAG IN TUTTE LE FOTO FORNITE — nessuna prova visiva di brand oltre al pattern/aspetto generico". Un pattern o uno stile visivamente simile al brand dichiarato NON è una prova di autenticità: stili, colori e pattern geometrici sono tra gli elementi più facili da replicare senza replicare etichette o costruzione interna (es. il motivo check di Burberry o il monogram di Louis Vuitton sono entrambi ampiamente replicati su falsi; da soli, senza hardware/etichettatura coerente, non provano nulla).
 - "analisi_visiva_per_foto" deve avere una voce per OGNI foto allegata, anche se il contenuto si ripete: se ricevi 6 foto, devono esserci esattamente 6 oggetti distinti (numero_foto da 1 a 6), MAI accorpati in meno voci anche se due foto mostrano dettagli simili.
-- NON stimare alcun prezzo specifico in euro, NON parlare di mercato, margini o strategia di rivendita dettagliata: questo verrà fatto da un altro modello a valle con accesso a ricerca web, che non vedrà le foto e si baserà SOLO su questo JSON. L'UNICA eccezione è il campo "valutazione_flipper_preliminare", descritto sotto, che è un giudizio grezzo e intenzionalmente approssimativo, non una stima di prezzo.
+- NON stimare alcun prezzo specifico in euro, NON parlare di mercato, margini o strategia di rivendita dettagliata: questo verrà fatto da un altro modello a valle con accesso a ricerca web, che non vedrà le foto e si baserà SOLO su questo JSON. L'UNICA eccezione è il campo "valutazione_flipper_preliminare", descritto sotto, che è un giudizio grezzo e intenzionalmente approssimativo (incluso il suo sotto-campo "prezzo_vendita_massimo_plausibile_eur", che è deliberatamente uno scenario ottimistico estremo per uso come soglia di scarto, non una stima di mercato realistica).
 - CAMPO "valutazione_flipper_preliminare" -- serve a filtrare i casi più ovvi PRIMA che arrivino al modello di pricing, per risparmiare una chiamata costosa quando è già chiaro che non vale la pena procedere. Compilalo così:
   - "categoria_a_basso_valore": true SOLO se il capo è un PAIO DI CALZINI (o calze/collant in stile sportivo da pochi euro, non lingerie/intimo firmato) — questa è l'UNICA categoria che marchi true, indipendentemente dal brand. NON marcare true per nessun'altra categoria, nemmeno se sembra economica o di poco valore a colpo d'occhio: intimo, costumi da bagno, biancheria, bigiotteria, accessori generici POSSONO valere molto in base al brand specifico (es. La Perla, Eres, Agent Provocateur su intimo/costumi hanno mercato second-hand reale) — il pricing lo fa il modello a valle con ricerca web, non tu. In caso di dubbio su qualsiasi categoria diversa dai calzini, false.
   - "verdetto_grezzo": la tua stima approssimativa, basata SOLO su quello che vedi (non sai il prezzo richiesto né hai accesso a comps di mercato). "NON COMPRARE" solo se hai un motivo visivo forte (categoria a basso valore, OPPURE il legit check è già "Probabilmente falso" con alta confidenza, OPPURE condizione "Da riparare" con danni che probabilmente azzerano la rivendibilità). "COMPRA" solo se il capo sembra chiaramente di valore (brand riconoscibile, condizione ottima, autenticità non in dubbio) E non hai motivi di dubbio. In TUTTI gli altri casi (la maggioranza), scrivi "VALUTA" — il default deve essere VALUTA, non un'estremità: il tuo giudizio è grezzo apposta, lascia il lavoro fine al modello con ricerca prezzi reali. Non avere paura di scrivere VALUTA spesso, è la risposta corretta quando non hai elementi forti in una direzione.
+  - "prezzo_vendita_massimo_plausibile_eur": stima SOLO il miglior caso possibile, non una media. Esempio: per una t-shirt Vivienne Westwood in buone condizioni, se la tua conoscenza generale del mercato second-hand suggerisce che capi simili raramente superano i 45€ anche nei casi più favorevoli, scrivi 45 — non un numero "medio" più basso, non un numero aspirazionale più alto. Questo numero viene usato SOLO per scartare i casi in cui il margine non ci sarebbe nemmeno nello scenario migliore (per questo deve essere generoso, non realistico) — non viene mai usato per confermare un acquisto, quindi un errore per eccesso qui è meno dannoso di un errore per difetto. Se il brand/modello non ti è familiare a sufficienza per avere una base di stima ragionevole, scrivi null: meglio nessuna stima che una inventata senza criterio.
 - NON dichiarare mai autenticità al 100% senza prove eccezionali.
 - Se le foto sono insufficienti per una valutazione solida, dillo esplicitamente nei campi pertinenti.
 - Scrivi tutti i valori testuali in italiano.
@@ -1779,13 +1781,49 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
 # PIPELINE PRINCIPALE PER UN SINGOLO ANNUNCIO
 # ---------------------------------------------------------------------------
 
-def check_skip_pre_claude(gemini_analysis_json):
+def _stima_costo_pieno_da_prezzo_e_lingua(prezzo_richiesto_str, titolo, descrizione):
+    """Stima il costo pieno d'acquisto (prezzo + protezione acquirenti +
+    spedizione) usando la stessa euristica di lingua->spedizione che il
+    prompt Claude applica normalmente (IT 2,50€, FR/ES/PT 4,50€, DE/NL/
+    nord-centro EU 5-6€), qui replicata in Python per il filtro pre-Claude
+    a costo zero. Una stima volutamente approssimativa -- usata solo per
+    decidere se skippare, non per il verdetto finale (quello lo fa sempre
+    Claude con piu' contesto, quando arriva a vederlo).
+
+    Rileva la lingua in modo grezzo (poche parole-chiave comuni nei titoli
+    Vinted di quei paesi) -- non e' un rilevatore linguistico serio, e non
+    deve esserlo: se sbaglia paese, la spedizione stimata e' comunque nello
+    stesso ordine di grandezza (2,50-6€), l'errore massimo e' ~3,50€ sul
+    costo pieno, che non sposta in modo decisivo la soglia di 20€ netti.
+
+    Ritorna None se il prezzo richiesto non e' un numero valido (non
+    possiamo stimare nulla senza un prezzo di partenza)."""
+    try:
+        prezzo = float(str(prezzo_richiesto_str).replace(",", "."))
+    except (TypeError, ValueError):
+        return None
+
+    testo = f"{titolo or ''} {descrizione or ''}".lower()
+    spedizione_stimata = 2.50  # default IT, la lingua piu' comune nel tuo caso d'uso
+    indicatori_non_it = (
+        " la ", " et ", " avec ", " une ", " talle ", " size ", " größe ",
+        " und ", " met ", " con la ", " der ", " die ", " das ",
+    )
+    if any(ind in testo for ind in indicatori_non_it):
+        spedizione_stimata = 4.50  # FR/ES/PT/altre EU come approssimazione unica
+
+    protezione_acquirenti = round(prezzo * 0.05 + 0.70, 2)
+    costo_pieno = round(prezzo + protezione_acquirenti + spedizione_stimata, 2)
+    return costo_pieno
+
+
+def check_skip_pre_claude(gemini_analysis_json, listing_info=None):
     """Controllo a COSTO ZERO (nessuna chiamata API) sul JSON gia' ottenuto
-    da Gemini: se uno di TRE segnali distinti indica chiaramente che non
+    da Gemini: se uno di QUATTRO segnali distinti indica chiaramente che non
     vale la pena procedere, skippiamo la chiamata Claude (la voce di
     costo piu' alta della pipeline) e rispondiamo subito con NON COMPRARE.
 
-    I tre segnali, controllati in ordine:
+    I quattro segnali, controllati in ordine:
     1. Falso conclamato: legit check "Probabilmente falso" + confidenza
        >=90% + rischio "molto alto".
     2. Categoria a basso valore strutturale (es. calzini, intimo) --
@@ -1793,14 +1831,40 @@ def check_skip_pre_claude(gemini_analysis_json):
     3. Verdetto grezzo di Gemini "NON COMPRARE" -- un giudizio preliminare
        intenzionalmente approssimativo che Gemini fa basandosi solo sulla
        foto, senza ricerca prezzi.
+    4. Margine insufficiente ANCHE nello scenario migliore: Gemini stima
+       un prezzo_vendita_massimo_plausibile_eur (deliberatamente generoso,
+       il MIGLIOR caso possibile secondo la sua conoscenza generale, non
+       una media) -- se anche quel numero, confrontato col costo pieno
+       d'acquisto stimato, non supera la soglia di margine, allora nessuna
+       ricerca comp potrebbe salvare il deal: Claude con dati reali
+       arriverebbe quasi certamente alla stessa identica conclusione di
+       NON COMPRARE, partendo da un'ipotesi gia' piu' favorevole di
+       qualsiasi comp reale.
+
+    ASIMMETRIA DELIBERATA SUL SEGNALE 4 (importante, NON rimuovere questa
+    nota se si modifica la logica): Gemini e' sistematicamente PIU'
+    GENEROSO di Claude nelle stime di prezzo (osservato dall'utente sui
+    report reali) -- per questo il segnale 4 e' usato SOLO per SCARTARE
+    (quando anche la stima generosa dice "non basta"), mai per CONFERMARE.
+    Il bias di Gemini verso l'alto gioca A FAVORE della sicurezza qui: se
+    anche essendo generoso il margine non c'e', e' un segnale quasi certo.
+    Il contrario (usare la stima di Gemini per dire "compra") sarebbe
+    invece pericoloso, perche' il bias lavorerebbe contro la sicurezza --
+    e' per questo che questo segnale NON esiste nella direzione opposta,
+    e non va aggiunto in futuro senza ripensare l'intera asimmetria.
+
+    listing_info: necessario SOLO per il segnale 4 (serve il prezzo
+    richiesto dal venditore, non presente nel JSON di Gemini). Se None o
+    senza prezzo valido, il segnale 4 viene semplicemente saltato -- gli
+    altri tre restano validi e indipendenti.
 
     Questo NON sostituisce il giudizio di Claude sui casi dubbi -- e'
     deliberatamente conservativo su ciascun segnale: un falso negativo
     (non skippare un caso ovvio) costa solo la chiamata Claude risparmiata;
     un falso positivo (skippare un deal valido) costerebbe un margine
     perso, molto piu' caro. Per questo i criteri di ciascun segnale sono
-    stretti (AND di piu' condizioni, non OR), anche se i tre segnali tra
-    loro sono in OR (basta che scatti uno per skippare).
+    stretti, anche se i quattro segnali tra loro sono in OR (basta che
+    scatti uno per skippare).
 
     Ritorna (True, motivo) se va skippato, (False, None) altrimenti."""
     try:
@@ -1843,29 +1907,77 @@ def check_skip_pre_claude(gemini_analysis_json):
             motivo = valutazione.get("motivo_verdetto_grezzo") or "Verdetto preliminare negativo da Gemini."
             return True, f"[VERDETTO GREZZO GEMINI] {motivo}"
 
+        # SEGNALE 4: margine insufficiente anche nel miglior caso secondo Gemini.
+        prezzo_massimo_raw = valutazione.get("prezzo_vendita_massimo_plausibile_eur")
+        if prezzo_massimo_raw is not None and listing_info is not None:
+            try:
+                prezzo_massimo_gemini = float(str(prezzo_massimo_raw).replace(",", "."))
+            except (TypeError, ValueError):
+                prezzo_massimo_gemini = None
+
+            if prezzo_massimo_gemini is not None:
+                costo_pieno = _stima_costo_pieno_da_prezzo_e_lingua(
+                    listing_info.get("price"),
+                    listing_info.get("title"),
+                    listing_info.get("description"),
+                )
+                if costo_pieno is not None:
+                    margine_nello_scenario_migliore = prezzo_massimo_gemini - costo_pieno
+                    SOGLIA_MARGINE_EUR = 20  # stessa soglia usata da Claude nel prompt
+                    if margine_nello_scenario_migliore < SOGLIA_MARGINE_EUR:
+                        motivo = (
+                            f"Anche nello scenario di rivendita più favorevole "
+                            f"(~€{prezzo_massimo_gemini:.0f}, stima generosa Gemini), "
+                            f"margine netto stimato €{margine_nello_scenario_migliore:.0f} "
+                            f"sotto soglia €{SOGLIA_MARGINE_EUR} (costo pieno ~€{costo_pieno:.2f})."
+                        )
+                        return True, f"[MARGINE INSUFFICIENTE ANCHE NEL MIGLIOR CASO] {motivo}"
+
     return False, None
 
 
-def build_skip_report(listing_info, motivo_falso):
+def build_skip_report(listing_info, motivo_skip):
     """Costruisce un report NON COMPRARE nello stesso formato compatto
     usato da Claude, senza fare alcuna chiamata API. Usato quando
-    check_skip_pre_claude() rileva un caso chiaro."""
+    check_skip_pre_claude() rileva un caso chiaro.
+
+    Il testo della sezione "Legit check" si adatta al TIPO di segnale che
+    ha attivato lo skip (riconosciuto dal prefisso tra parentesi quadre in
+    motivo_skip, impostato da check_skip_pre_claude) -- un margine
+    insufficiente non è un problema di autenticità, e il report non deve
+    suggerire il contrario."""
+    e_segnale_margine = motivo_skip.startswith("[MARGINE INSUFFICIENTE")
+
+    if e_segnale_margine:
+        riga_legit_check = (
+            "Non valutato — filtro pre-Claude attivato su margine insufficiente "
+            "(non un problema di autenticità), risparmio costi."
+        )
+        riga_rischio = "BASSO — margine insufficiente anche nel miglior caso (filtro automatico, Claude non consultato)"
+    else:
+        riga_legit_check = (
+            "Probabilmente falso — rilevato da Gemini con confidenza ≥90%, "
+            "filtro automatico pre-Claude attivato per risparmio costi."
+        )
+        riga_rischio = "ALTO — falso conclamato (filtro automatico, Claude non consultato)"
+
+    motivo_breve = motivo_skip[:117].rsplit(" ", 1)[0] + "..." if len(motivo_skip) > 120 else motivo_skip
+
     return (
         "## Verdetto operativo\n"
         "- **Decisione:** NON COMPRARE · N/A\n"
-        "- **Costo pieno richiesto:** N/A — rischio autenticità blocca la valutazione\n"
+        "- **Costo pieno richiesto:** N/A — filtro automatico pre-Claude\n"
         "- **Costo pieno trattato:** N/A\n"
         "- **Vendita probabile:** N/A\n"
         "- **Margine netto:** N/A\n"
         "- **Deal:** 0/10 · **Margine:** 0/10 · **Liquidità:** Bassa · "
-        "**Rischio:** ALTO — falso conclamato (filtro automatico, Claude non consultato) · "
+        f"**Rischio:** {riga_rischio} · "
         "**Confidenza:** Alta\n"
-        f"- **In una riga:** {motivo_falso[:120]}\n\n"
+        f"- **In una riga:** {motivo_breve}\n\n"
         "## Legit check\n"
-        f"Probabilmente falso — rilevato da Gemini con confidenza ≥90%, "
-        "filtro automatico pre-Claude attivato per risparmio costi.\n\n"
+        f"{riga_legit_check}\n\n"
         "## Da chiedere\n"
-        "Non rilevante: falso conclamato.\n\n"
+        "Non rilevante: filtro automatico pre-Claude attivato.\n\n"
         "## Messaggio da inviare\n"
         "Non necessario."
     )
@@ -1922,7 +2034,7 @@ def process_listing(parsed, url, cover_photo_bytes):
     # chiaro (falso conclamato, categoria a basso valore, o verdetto grezzo
     # negativo), skippiamo la chiamata Claude (la voce di costo piu' alta
     # della pipeline) e rispondiamo direttamente.
-    e_skip, motivo_skip = check_skip_pre_claude(gemini_analysis_json)
+    e_skip, motivo_skip = check_skip_pre_claude(gemini_analysis_json, listing_info=listing_info)
     if e_skip:
         log.info(
             "FILTRO PRE-CLAUDE ATTIVATO: Claude NON consultato per questo "
