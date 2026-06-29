@@ -1220,8 +1220,7 @@ def strip_per_photo_analysis(gemini_analysis_json):
 
     return json.dumps(data, ensure_ascii=False, indent=2)
 
-
-def _serper_batch_query(labeled_queries, num_results=3, max_snippet_chars=150):
+def _serper_batch_query(labeled_queries, num_results=3, max_snippet_chars=80):
     """Esegue PIU' query Serper in UNA SOLA richiesta HTTP, usando il
     formato batch documentato da Serper: un array JSON di oggetti
     {"q": ..., "gl": ...} nel body della stessa POST verso /search.
@@ -1232,25 +1231,12 @@ def _serper_batch_query(labeled_queries, num_results=3, max_snippet_chars=150):
     query inviate. Riduce l'overhead di rete (non i token verso Claude,
     che dipendono dal contenuto dei risultati, non da come li richiediamo).
 
-    RISPARMIO TOKEN (aggiunto dopo richiesta esplicita): rispetto alla
-    versione precedente, qui (1) NON includiamo piu' il link nella riga
-    di output -- Claude non lo usa mai per stimare prezzi, e i link reali
-    osservati in produzione sono spesso lunghi 80-150+ caratteri per via
-    di parametri di tracking (es. "?srsltid=AfmBOop..."), puro spreco di
-    token; (2) gli snippet vengono troncati a max_snippet_chars (default
-    150) -- il prezzo/dato utile e' quasi sempre nelle prime parole dello
-    snippet, il resto e' spesso testo descrittivo generico; (3) num_results
-    di default sceso da 4 a 3 -- un risultato in meno per fonte, accettabile
-    visto che le 3 query batch sono comunque integrate dai 2 scrape diretti
-    (Vinted, eBay) per i comps piu' specifici.
-
-    Nota: il batch funziona solo per l'endpoint di RICERCA (/search), non
-    per lo SCRAPE di pagina (scrape.serper.dev) -- Vinted ed eBay restano
-    quindi chiamate separate, gestite altrove.
-
-    labeled_queries: lista di tuple (label, query_string).
-    Ritorna un dict {label: testo_risultati}, nello stesso formato che
-    serve a search_comps_serper per assemblare il prompt finale."""
+    RISPARMIO TOKEN E SALVA-PREZZO: 
+    1) NON includiamo piu' il link nella riga di output.
+    2) Gli snippet vengono troncati a max_snippet_chars (default 80).
+    3) Regex "Salva-Prezzo" intercetta i prezzi prima del taglio e li
+       appende alla fine, garantendo che Claude non perda mai il dato.
+    """
     labels = [label for label, _ in labeled_queries]
     queries = [query for _, query in labeled_queries]
 
@@ -1265,14 +1251,11 @@ def _serper_batch_query(labeled_queries, num_results=3, max_snippet_chars=150):
         batch_results = resp.json()
     except Exception as e:
         log.warning("Ricerca batch Serper fallita per %d query: %s", len(queries), e)
-        # Fallback: tutte le label ricevono lo stesso messaggio di fallimento,
-        # cosi' il prompt finale a Claude resta coerente anche in caso di errore.
         return {
             label: f"  Ricerca fallita per errore tecnico ({type(e).__name__}). Nessun dato da questa fonte."
             for label in labels
         }
 
-    # La risposta batch e' un array nello stesso ordine delle query inviate.
     if not isinstance(batch_results, list) or len(batch_results) != len(labels):
         log.warning(
             "Risposta batch Serper inattesa (tipo=%s, lunghezza=%s, atteso=%d) -- fallback.",
@@ -1292,10 +1275,20 @@ def _serper_batch_query(labeled_queries, num_results=3, max_snippet_chars=150):
         for r in organic[:num_results]:
             title = r.get("title", "")
             snippet = r.get("snippet", "")
+            
+            # MAGIA SALVA-PREZZO: Estrae i prezzi prima di tagliare lo snippet
+            prezzi = re.findall(r'(?:€|EUR)\s*\d+(?:[.,]\d+)?|\d+(?:[.,]\d+)?\s*(?:€|EUR)', snippet, re.IGNORECASE)
+            prezzi_unici = list(dict.fromkeys(prezzi))
+            
+            # Taglio brutale dello snippet per risparmiare token
             if len(snippet) > max_snippet_chars:
                 snippet = snippet[:max_snippet_chars].rstrip() + "..."
-            # Link OMESSO deliberatamente -- vedi nota sopra: non e' mai
-            # usato da Claude per il pricing, e' puro overhead di token.
+            
+            # Se ha trovato dei prezzi, li "scolpisce" alla fine per non perderli
+            if prezzi_unici:
+                snippet += f" [PREZZI TROVATI: {', '.join(prezzi_unici)}]"
+                
+            # Link OMESSO deliberatamente
             lines.append(f"  - {title}\n    {snippet}")
         results_by_label[label] = "\n".join(lines)
 
@@ -1303,59 +1296,16 @@ def _serper_batch_query(labeled_queries, num_results=3, max_snippet_chars=150):
 
 
 def build_vinted_search_url(brand, categoria, modello_o_categoria, max_price=None,
-                             catalog_id=None, material_per_ricerca=None):
+                            catalog_id=None, material_per_ricerca=None):
     """Costruisce un URL di ricerca Vinted filtrato per brand_id quando
     disponibile, con fallback su search_text quando il brand non e' nella
-    mappa VINTED_BRAND_IDS.
-
-    AGGIUNTE (verificate sul sito reale il 29/06/2026):
-    - catalog_id: se disponibile (estratto dalla pagina annuncio target via
-      scrape_vinted_listing), applicato come catalog[]=<id> -- filtro
-      categoria preciso, riduce rumore tra sottocategorie diverse dello
-      stesso brand.
-    - material_per_ricerca: una singola parola materiale (es. "velluto",
-      "cashmere"), scelta da scegli_materiale_per_ricerca() col criterio
-      di priorita' sul materiale piu' pregiato tra quelli elencati
-      nell'annuncio. Aggiunta dentro search_text (non un parametro URL a
-      parte, perche' material_ids[] numerico NON esiste piu' sul sito
-      attuale -- verificato: Materiale e' solo una stringa nel payload
-      della pagina, senza ID associato). Test reale: Marni + catalog
-      "Abiti" (id=10) + search_text="velluto" -> 13 risultati pertinenti,
-      range prezzo 25-850 EUR, NESSUNO necessariamente con "velluto" nel
-      titolo scritto dal venditore -- conferma che search_text indicizza
-      anche l'attributo strutturato Materiale, non solo il titolo libero.
-
-    NOTA SU COLORE: deliberatamente non incluso nel search_text di
-    default -- i colori sono piu' granulari del materiale (es. "blu
-    marino" vs "blu" come valori distinti) e il rischio di azzerare i
-    risultati combinando brand+categoria+materiale+colore tutti insieme
-    e' piu' alto. Resta disponibile come informazione testuale per
-    Claude (color_raw in listing_info), non come filtro di ricerca.
-
-    NOTA SU STATUS: NON modificato qui per scelta esplicita dell'utente --
-    i comp restano sempre confrontati contro status_ids[]=1,2,3 (Nuovo con
-    cartellino, Nuovo senza cartellino, Ottime) indipendentemente dalla
-    condizione reale dell'annuncio target. Questo da' il prezzo di
-    riferimento "in buone condizioni": se l'annuncio target e' in
-    condizione peggiore, il comp funge da tetto massimo da scontare nel
-    ragionamento (gia' gestito nel prompt Claude esistente), non va
-    restretto ulteriormente per status.
-
-    Ritorna (url, e_filtrato_per_id) dove e_filtrato_per_id indica se il
-    filtro brand e' stato fatto con l'ID esatto (piu' affidabile) o solo
-    per testo libero."""
+    mappa VINTED_BRAND_IDS."""
     brand_lower = (brand or "").strip().lower()
     brand_id = VINTED_BRAND_IDS.get(brand_lower)
 
     catalog_str = f"&catalog[]={catalog_id}" if catalog_id else ""
 
     if brand_id:
-        # Solo categoria breve + materiale pregiato (se disponibile) come
-        # search_text -- il brand_id e il catalog[] (se presente) gia'
-        # fanno il lavoro pesante di restringere correttamente, quindi
-        # search_text resta intenzionalmente corto (1-3 parole), MAI il
-        # modello stimato per intero (un venditore reale raramente scrive
-        # un titolo cosi' dettagliato).
         categoria_breve = (categoria or "").strip()
         parti_search_text = [p for p in (categoria_breve, material_per_ricerca) if p]
         search_text_finale = " ".join(parti_search_text)
@@ -1370,10 +1320,6 @@ def build_vinted_search_url(brand, categoria, modello_o_categoria, max_price=Non
             url += f"&price_to={max_price}"
         return url, True
     else:
-        # Senza brand_id, serve tutto il contesto possibile per compensare
-        # l'assenza del filtro preciso -- qui la query piu' ricca aiuta,
-        # non danneggia, perche' non c'e' un filtro a monte da affiancare.
-        # Aggiungiamo comunque il materiale pregiato se disponibile.
         query_text = f"{brand} {modello_o_categoria} {material_per_ricerca or ''}".strip()
         url = (
             f"https://www.vinted.it/catalog?search_text={quote(query_text)}"
@@ -1385,19 +1331,14 @@ def build_vinted_search_url(brand, categoria, modello_o_categoria, max_price=Non
 
 def search_comps_ebay_sold(brand, modello, categoria):
     """Ricerca diretta su eBay con filtro 'Venduto' (sold) via Serper,
-    usando il parametro di ricerca eBay nativo invece di un site: generico
-    -- piu' preciso perche' restiamo dentro l'interfaccia di ricerca eBay
-    con i suoi stessi filtri, non un URL costruito a mano che potrebbe
-    non rispettare i parametri reali del sito (es. LH_Sold=1 e' il
-    parametro ufficiale eBay per 'solo venduti', verificato dalla
-    documentazione pubblica eBay)."""
+    usando parametri ufficiali e ottimizzati (_sacat=0, _from=R40, rt=nc)."""
     query_base = f"{brand} {modello} {categoria}".strip()
     if not query_base:
         return None
 
     ebay_search_url = (
         f"https://www.ebay.it/sch/i.html?_nkw={quote(query_base)}"
-        "&LH_Sold=1&LH_Complete=1&_sop=13"  # LH_Sold+LH_Complete = solo venduti; _sop=13 = piu' recenti
+        "&_sacat=0&_from=R40&rt=nc&LH_Sold=1&LH_Complete=1&_sop=13"
     )
     return ebay_search_url
 
@@ -1405,28 +1346,21 @@ def search_comps_ebay_sold(brand, modello, categoria):
 def _clean_scraped_markdown(content):
     if not content: return content
 
-    # 1. TRASFORMA LE IMMAGINI IN TESTO UTILE (Tua intuizione)
-    # Estrae l'alt-text dalle immagini markdown scartando l'URL.
-    # Serve perché Vinted a volte nasconde "Brand: X, Prezzo: Y" proprio qui!
+    # 1. TRASFORMA LE IMMAGINI IN TESTO UTILE
     content = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"- \1", content)
 
     # 2. ESTRATTORE CHIRURGICO PER VINTED (Ghigliottina a 15 item)
     vinted_items = []
     for line in content.split('\n'):
         line_lower = line.lower()
-        # Se la riga contiene il brand e l'euro, è sicuramente un annuncio!
         if "brand:" in line_lower and ("&#x20ac;" in line_lower or "€" in line_lower):
-            # Rimuove link ipertestuali mantenendo solo il testo: [Testo](url) -> Testo
             clean_line = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', line)
-            # Converte il codice HTML dell'euro nel simbolo reale e pulisce l'inizio
             clean_line = clean_line.replace('&#x20AC;', '€').replace('&#x20ac;', '€').strip('- *')
             vinted_items.append(f"- {clean_line}")
             
-            # Limite massimo per non consumare troppi token
             if len(vinted_items) >= 15:
                 break
                 
-    # Se ha trovato annunci Vinted, ignora TUTTO il resto della pagina (menu, footer)
     if vinted_items:
         return "\n".join(vinted_items)
 
@@ -1439,6 +1373,9 @@ def _clean_scraped_markdown(content):
     content = re.sub(r"\[Passa al contenuto!?\[[^\]]*\]\([^)]+\)\]\([^)]+\)", "", content)
     content = re.sub(r"!\[Catalogo\]\([^)]+\)", "", content)
     
+    # OTTIMIZZAZIONE EBAY: Rimuove TUTTI i link markdown rimasti tenendo solo il testo utile
+    content = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', content)
+    
     # Rimuove righe vuote multiple
     content = re.sub(r"\n{3,}", "\n\n", content)
     
@@ -1446,26 +1383,7 @@ def _clean_scraped_markdown(content):
 
 
 def _serper_scrape_page(url, max_chars=1300):
-    """Scarica e legge il contenuto di una pagina specifica via
-    scrape.serper.dev (endpoint diverso da quello di ricerca: qui l'URL
-    e' GIA' NOTO, non stiamo cercando, stiamo leggendo). Usato per leggere
-    il contenuto reale delle pagine Vinted/eBay costruite con URL precisi
-    (filtro brand_id su Vinted, filtro LH_Sold su eBay), che danno
-    risultati piu' pertinenti delle query generiche site: passate a
-    Google.
-
-    RISPARMIO TOKEN (max_chars sceso da 2500 a 1300): osservato nei log
-    reali che il contenuto davvero utile (titolo annuncio, prezzo, data di
-    vendita) e' quasi sempre nei primi 800-1000 caratteri del markdown
-    pulito -- il resto e' tipicamente paginazione, filtri laterali
-    ripetitivi ("Prezzo + spedizione: piu' economici", "Distanza: prima i
-    piu' vicini", ecc.) che non aiutano il pricing. 1300 lascia un buon
-    margine sopra quella soglia osservata senza sprecare token su rumore
-    di navigazione.
-
-    Pagine come Vinted/eBay possono avere protezioni anti-scraping (lo
-    sappiamo gia' da Vinted stesso, 403 intermittenti) -- il fallimento
-    qui e' previsto e gestito con grazia, non e' un errore di codice."""
+    """Scarica e legge il contenuto di una pagina specifica via scrape.serper.dev."""
     try:
         resp = requests.post(
             "https://scrape.serper.dev",
@@ -1483,26 +1401,13 @@ def _serper_scrape_page(url, max_chars=1300):
     if not content:
         return None
 
-    # PULIZIA PRIMA DEL TRONCAMENTO: importante pulire prima di tagliare
-    # a max_chars, altrimenti rischiamo di tagliare via contenuto utile
-    # mentre teniamo rumore (es. un blocco SVG enorme) nei primi caratteri.
     content = _clean_scraped_markdown(content)
-
     return content[:max_chars]
 
 
 def _esegui_ricerca_serper_completa(brand, modello, categoria, query_base,
                                      catalog_id=None, material_per_ricerca=None):
-    """Esegue le 5 ricerche (Vinted scrape, eBay scrape, Vestiaire+2 Google
-    in batch) per una data combinazione brand/modello/categoria. Funzione
-    interna estratta da search_comps_serper per poter essere richiamata
-    DUE VOLTE con parametri diversi (query specifica, poi query larga in
-    fallback) senza duplicare tutta la logica di orchestrazione.
-
-    catalog_id/material_per_ricerca: passati a build_vinted_search_url
-    per la ricerca comp raffinata su Vinted (vedi note in quella funzione).
-
-    Ritorna (results_by_label, vinted_e_per_id)."""
+    """Esegue le 5 ricerche in parallelo."""
     results_by_label = {}
 
     vinted_url, vinted_e_per_id = build_vinted_search_url(
@@ -1562,21 +1467,7 @@ def _esegui_ricerca_serper_completa(brand, modello, categoria, query_base,
 
 
 def search_comps_serper(brand, modello, categoria, catalog_id=None, material_per_ricerca=None):
-    """Ricerca comps di prezzo via Serper. Sostituisce il tool web_search
-    integrato di Claude per beneficiare del caching pieno sul system prompt.
-
-    FALLBACK SPECIFICA -> LARGA (aggiunto dopo osservazione in produzione):
-    una query troppo specifica (l'intero modello stimato da Gemini, spesso
-    5-7 parole esatte) fa fallire quasi sempre lo scrape Vinted/eBay, anche
-    quando il brand ha sicuramente capi in vendita -- un venditore reale
-    raramente scrive un titolo cosi' dettagliato. Se la query specifica
-    fallisce TOTALMENTE su tutte le 5 fonti, ritentiamo automaticamente
-    con una query piu' larga (solo brand+categoria, senza il modello
-    specifico) prima di arrenderci e dichiarare l'assenza di comps.
-
-    catalog_id/material_per_ricerca: propagati dall'annuncio target
-    (estratti in scrape_vinted_listing) fino a build_vinted_search_url,
-    per la ricerca comp Vinted raffinata su categoria+materiale."""
+    """Ricerca comps di prezzo via Serper. Orchestrazione e fallback."""
     query_base = f"{brand} {modello} {categoria}".strip()
     if not query_base or query_base.lower() in ("nessuno", "non disponibile", ""):
         return "RICERCA WEB: non eseguita, brand/modello non identificabile con sufficiente certezza dal JSON visivo."
@@ -1638,7 +1529,6 @@ def search_comps_serper(brand, modello, categoria, catalog_id=None, material_per
         lines.append(results_by_label.get(label, "  (risultato mancante)"))
 
     return "\n".join(lines)
-
 
 def call_claude_oracle(listing_info, gemini_analysis_json):
     age_days = listing_info.get("age_days")
