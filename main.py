@@ -252,6 +252,8 @@ Margine a DUE GAMBE sempre, mai "vendita−acquisto" semplice:
 **Incasso** = vendita probabile post-trattativa − spedizione offerta − sconto chiusura (protezione la paga il compratore finale, non erode il tuo incasso).
 **Margine netto = incasso − acquisto pieno**, sempre € e ROI%. Soglia utente: 20€ netti — sotto, default NON COMPRARE anche con ROI alto, salvo rischio bassissimo e zero sforzo.
 
+SOGLIA ROI MINIMO — SECONDO GATE INDIPENDENTE (non sostituisce la soglia 20€ sopra, si applica IN AGGIUNTA): ROI minimo 100% sul costo pieno richiesto per qualsiasi livello COMPRA (SUBITO/FORTE/COMPRA/SE CI TIENI). Questo vale ANCHE quando il margine € supera abbondantemente i 20€ — un margine assoluto alto con ROI basso (es. €22-27 di margine su un costo pieno di €48, ROI ~46-56%) NON è un COMPRA: è capitale impegnato con rendimento insufficiente rispetto ad altre occasioni che soddisfano entrambe le soglie. I due gate (€ assoluto e ROI%) sono entrambi vincolanti e indipendenti: serve superarli TUTTI E DUE, non basta superarne uno. Sotto soglia ROI ma sopra soglia €: TRATTA (se il margine trattato può plausibilmente portare il ROI sopra 100%, ricalcolando sul costo pieno trattato più basso) o NON COMPRARE (se anche trattando il ROI resterebbe sotto 100%).
+
 Voto Margine (€ assoluto base, ROI% modificatore ±1 max, mai cambia fascia): 0-2/10 <10€/negativo; 3-4/10 10-19€; 5-6/10 20-39€; 7-8/10 40-99€; 9-10/10 100€+. ROI 80%+→+1, 40-80%→0, <20%→-1.
 
 REGOLE COMPRA/TRATTA (applica in ordine):
@@ -308,6 +310,8 @@ Legit check: Probabilmente autentico / Sospetto / Probabilmente falso / Non veri
 Condizione: dichiarata vs visibile vs probabile vs non verificabile; Nuovo con/senza cartellino, Ottime, Buone, Usato evidente, Da riparare, Non valutabile.
 
 CONTROLLO FINALE OBBLIGATORIO (ultimo passo, prima di scrivere "Decisione" — non saltarlo mai, anche se i punteggi Deal/Margine della matrice sembrano già indicare un livello): guarda il numero esatto che hai appena scritto in "Margine netto al prezzo richiesto" (quello in €, non il ROI%). Fai la domanda diretta: è sotto 20€? Se SÌ, la decisione sull'asse qualità NON PUÒ essere nessun livello COMPRA (SUBITO/FORTE/COMPRA/SE CI TIENI) — deve essere TRATTA o NON COMPRARE, indipendentemente da quanto i punteggi Deal/Margine calcolati con la scala sembrino indicare un livello COMPRA. È un errore vincolare scrivere "margine sotto soglia 20€" nel ragionamento e poi "Decisione: COMPRA" nello stesso report: se questo succede, hai applicato la matrice qualità senza tornare a verificare la soglia assoluta in €, che ha sempre priorità. La matrice a 6 livelli serve per GRADUARE i casi sopra soglia o per individuare TRATTA quando sotto soglia — non sostituisce mai il controllo soglia, lo segue.
+
+SECONDO CONTROLLO FINALE OBBLIGATORIO, STESSO IMPORTANZA DEL PRIMO (entrambi vanno fatti, in qualsiasi ordine, prima di scrivere "Decisione" — non sono alternativi): guarda il numero esatto di ROI% al prezzo richiesto. Fai la domanda diretta: è sotto 100%? Se SÌ, la decisione sull'asse qualità NON PUÒ essere nessun livello COMPRA (SUBITO/FORTE/COMPRA/SE CI TIENI), ANCHE SE il margine in € supera abbondantemente 20€ — deve essere TRATTA (se il ROI trattato può plausibilmente superare 100%) o NON COMPRARE. Caso reale visto in produzione da non ripetere: margine netto €22-27 su costo pieno €48,04 (ROI ~46-56%), Deal 6/10, Margine 5/10, Rischio BASSO — la matrice qualità a 6 livelli aveva indicato COMPRA perché guarda solo Deal/Margine in punti, non il ROI% in modo vincolante; la decisione corretta era invece TRATTA (margine € sopra soglia ma ROI sotto la soglia 100%, quindi la trattativa serve a far scendere il costo pieno e salire il ROI, non a confermare un COMPRA che il ROI da solo già esclude). Il punteggio "Margine: X/10" della matrice misura solo l'ampiezza assoluta in €, MAI il ROI%: i due controlli finali (soglia € e soglia ROI%) restano sempre da fare entrambi sul numero effettivo, indipendentemente da quanto i punteggi della matrice sembrino già decisi.
 
 ERRORE SPECIFICO DA NON RIPETERE (visto in produzione, vietato esplicitamente): non scrivere mai un ragionamento del tipo "margine sotto soglia 20€, MA la regola velocità a costo minimo si applica: acquisto pieno <15€? No. Soglia non triggerata" seguito comunque da COMPRA SUBITO. Se la tua stessa frase conclude che una regola "non è triggerata" o "non si applica", quella regola non ha effetto sulla decisione, punto — non scrivere la conclusione opposta subito dopo. In quel caso specifico (acquisto pieno ≥15€, margine sotto 20€), la regola velocità NON si applica e la decisione corretta è TRATTA o NON COMPRARE, mai COMPRA SUBITO.
 
@@ -1770,6 +1774,71 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
         final_text = re.sub(
             r"(\*\*Decisione:\*\*\s*)[^\n]+",
             r"\1" + decisione_corretta_2 + " ⚠️ _(corretto automaticamente: COMPRA SUBITO richiede confidenza non Bassa)_",
+            final_text,
+            count=1,
+        )
+
+    # CONTROLLO CORRETTIVO SU ROI SOTTO SOGLIA 100% + DECISIONE COMPRA: la
+    # soglia ROI minimo 100% (vedi prompt) e' un secondo gate INDIPENDENTE
+    # dalla soglia margine assoluto 20€ -- un margine € alto con ROI basso
+    # non e' un COMPRA, anche se il primo controllo correttivo sopra (sulla
+    # soglia 20€) non si attiva perche' il margine assoluto e' comunque
+    # sopra soglia. Visto in produzione un caso reale (blazer Max Mara,
+    # margine €22-27 su costo pieno €48,04, ROI ~46-56%, Deal 6/10, Margine
+    # 5/10, Rischio BASSO) dove Claude assegna COMPRA perche' la matrice
+    # qualita' guarda solo Deal/Margine in punti (che misurano l'ampiezza
+    # assoluta in €), mai il ROI% in modo vincolante.
+    #
+    # Estrazione ROI: cerchiamo il primo "ROI ~NN%" o "ROI NN%" nella riga
+    # "Margine netto" (formato atteso: "€X (ROI Y%) — richiesto · trattato").
+    # Se il testo riporta un range (es. "ROI ~46-56%"), prendiamo il valore
+    # PIU' ALTO del range per dare a Claude il beneficio del dubbio --
+    # vogliamo correggere solo i casi in cui anche l'estremo piu' favorevole
+    # resta sotto soglia, non i casi limite dove il range attraversa 100%.
+    decisione_match_3 = re.search(r"\*\*Decisione:\*\*\s*([^\n]+)", final_text)
+    decisione_text_3 = decisione_match_3.group(1) if decisione_match_3 else ""
+    ha_livello_compra_3 = bool(re.search(r"\bCOMPRA\b", decisione_text_3))
+
+    roi_match = re.search(r"ROI\s*~?\s*(\d+)(?:[-–](\d+))?\s*%", final_text, re.IGNORECASE)
+    roi_massimo_dichiarato = None
+    if roi_match:
+        valori_roi = [int(roi_match.group(1))]
+        if roi_match.group(2):
+            valori_roi.append(int(roi_match.group(2)))
+        roi_massimo_dichiarato = max(valori_roi)
+
+    SOGLIA_ROI_MINIMO = 100
+
+    if ha_livello_compra_3 and roi_massimo_dichiarato is not None and roi_massimo_dichiarato < SOGLIA_ROI_MINIMO:
+        costo_trattato_match_3 = re.search(
+            r"\*\*Costo pieno trattato:\*\*\s*(N/A|€[\d.,]+)", final_text, re.IGNORECASE
+        )
+        costo_trattato_valido_3 = bool(
+            costo_trattato_match_3 and costo_trattato_match_3.group(1).upper() != "N/A"
+        )
+        nuova_decisione_3 = "TRATTA FORTE" if costo_trattato_valido_3 else "NON COMPRARE"
+
+        urgenza_match_3 = re.search(r"·\s*([^\n⚠️]+)", decisione_text_3.strip())
+        urgenza_originale_3 = urgenza_match_3.group(1).strip() if urgenza_match_3 else None
+        if nuova_decisione_3 == "NON COMPRARE":
+            decisione_corretta_3 = "NON COMPRARE · N/A"
+        elif urgenza_originale_3:
+            decisione_corretta_3 = f"{nuova_decisione_3} · {urgenza_originale_3}"
+        else:
+            decisione_corretta_3 = nuova_decisione_3
+
+        log.error(
+            "CONTRADDIZIONE ROI/DECISIONE corretta automaticamente: "
+            "Decisione originale '%s' -> corretta in '%s' (ROI massimo dichiarato "
+            "%d%% sotto soglia %d%%, costo trattato %s). Report originale per debug:\n%s",
+            decisione_text_3.strip(), decisione_corretta_3, roi_massimo_dichiarato,
+            SOGLIA_ROI_MINIMO,
+            "valido" if costo_trattato_valido_3 else "N/A o assente", final_text,
+        )
+
+        final_text = re.sub(
+            r"(\*\*Decisione:\*\*\s*)[^\n]+",
+            r"\1" + decisione_corretta_3 + " ⚠️ _(corretto automaticamente: ROI sotto soglia 100%)_",
             final_text,
             count=1,
         )
