@@ -15,12 +15,13 @@ Pipeline:
   2. Quando arriva un messaggio da "Vinted Tracker", estrae
      titolo / prezzo / brand / URL annuncio
   3. Scraping della pagina Vinted per recuperare TUTTE le foto della
-     galleria + taglia/condizione/descrizione (se disponibili)
+     galleria + taglia/condizione/descrizione/catalog/materiale (se
+     disponibili)
   4. Gemini 3.5 Flash: analisi visiva pura (identificazione, autenticita',
      condizione) -- NESSUN prezzo, NESSUNA ricerca web
   5. Claude Sonnet 4.6: usa l'analisi di Gemini + foto + dati annuncio,
-     fa ricerca web (tool web_search) e produce il report Vinted Flip
-     Oracle Pro completo (11 sezioni, sintetico)
+     fa ricerca web (Serper) e produce il report Vinted Flip Oracle Pro
+     completo (compatto)
   6. L'invio del report avviene con la Bot API normale (il bot PUO'
      sempre scrivere a una chat privata dove tu gli hai scritto prima
      -- l'invio non e' soggetto al limite "bot non vede altri bot")
@@ -38,6 +39,7 @@ Variabili d'ambiente richieste (mai scritte nel codice):
   TELEGRAM_OWNER_CHAT_ID - il tuo chat id personale (dove ricevere i report)
   ANTHROPIC_API_KEY      - chiave API Claude
   GEMINI_API_KEY         - chiave API Gemini
+  SERPER_API_KEY         - chiave API Serper (ricerca + scrape)
 
 Note operative:
   - Lo scraping Vinted e' il punto piu' fragile: se Vinted cambia markup
@@ -53,6 +55,25 @@ Note operative:
     comunque un retry con backoff esponenziale su errori transitori
     (503/429/5xx, timeout di rete), utile contro sovraccarichi
     momentanei lato Google indipendenti dal piano di fatturazione.
+  - RICERCA COMP VINTED RAFFINATA (29/06/2026): verificato empiricamente
+    che material_ids[]/color_ids[] numerici NON esistono piu' come filtro
+    URL sul sito attuale (le vecchie API/wrapper che li esponevano sono
+    legacy/deprecate -- Materiale e Colore sono oggi solo stringhe nel
+    payload "request_options" della pagina annuncio, senza ID associato).
+    catalog_id invece e' ancora un ID numerico valido e filtrabile.
+    Strategia adottata, testata a mano sul sito reale (Marni + catalog
+    "Abiti" id=10 + search_text="velluto" -> 13 risultati pertinenti,
+    range prezzo 25-850 EUR, materiale indicizzato anche se assente dal
+    titolo del venditore): brand_ids[] (da mappa) + catalog[] (se
+    disponibile) + search_text = categoria breve + UN SOLO materiale,
+    quello piu' pregiato tra quelli elencati nell'annuncio (non il primo
+    della lista, spesso il piu' economico). Il colore resta solo
+    informativo per Claude, non un filtro URL (troppo granulare, rischio
+    di azzerare i risultati). Lo status_ids[] resta fisso a 1,2,3 (Nuovo
+    con cartellino/Nuovo senza cartellino/Ottime) per scelta esplicita
+    dell'utente: serve da benchmark "prezzo in buone condizioni" anche
+    quando l'annuncio target e' in condizione peggiore, da scontare nel
+    ragionamento di Claude (non da restringere ulteriormente nel filtro).
 """
 
 import os
@@ -63,7 +84,9 @@ import asyncio
 import base64
 import logging
 import traceback
+import hashlib
 from io import BytesIO
+from urllib.parse import quote
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
@@ -171,11 +194,42 @@ VINTED_BRAND_IDS = {
     "acronym": "712647",
 }
 
+# Priorita' materiali: quando un annuncio elenca piu' materiali (es. "Cotone,
+# Denim, Velluto"), scegliamo per il search_text quello piu' indicativo di
+# valore/pregio, non il primo della lista (spesso il piu' generico/economico).
+# Ordine = priorita' decrescente: il primo materiale annuncio che matcha
+# qualsiasi voce qui sotto viene scelto. Se nessun materiale dell'annuncio
+# e' in questa lista, non sceglie nulla (meglio nessun filtro extra che uno
+# scelto a caso/primo-della-lista senza criterio).
+MATERIALI_PREGIATI_PRIORITA = [
+    "cashmere", "vicuna", "vigogna", "seta", "velluto", "pelle", "shearling",
+    "montone", "renna", "alpaca", "mohair", "lana", "lino", "viscosa", "lurex",
+    "denim", "cotone",
+]
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
 )
 log = logging.getLogger("vinted_flip_bot")
+
+
+def scegli_materiale_per_ricerca(material_value_raw):
+    """material_value_raw: stringa grezza vista in pagina, es.
+    'Cotone, Denim, Velluto'. Ritorna il materiale con priorita' piu' alta
+    tra quelli elencati (lowercase, pronto per search_text), o None se
+    nessuno dei materiali elencati e' nella lista di priorita'.
+
+    Definita qui (prima di scrape_vinted_listing, che la usa, e prima di
+    build_vinted_search_url) per evitare problemi di ordine di definizione
+    in un singolo file eseguito top-to-bottom."""
+    if not material_value_raw:
+        return None
+    materiali_annuncio = [m.strip().lower() for m in material_value_raw.split(",")]
+    for materiale_prioritario in MATERIALI_PREGIATI_PRIORITA:
+        if materiale_prioritario in materiali_annuncio:
+            return materiale_prioritario
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -519,14 +573,24 @@ IMAGE_DOWNLOAD_HEADERS = {
     "Connection": "keep-alive",
 }
 
+# Sessione condivisa: riusa connessione e cookie tra le richieste di
+# scraping pagina e download immagini dello stesso annuncio, il che
+# aiuta con CDN che si aspettano una sessione "coerente" (stessi cookie
+# di tracking della pagina HTML quando poi richiedi le immagini).
+_vinted_session = requests.Session()
+_vinted_session.headers.update(VINTED_HEADERS)
+
 
 def scrape_vinted_listing(url):
     """Tenta di recuperare tutte le foto della galleria + dati extra
-    (taglia, condizione, descrizione) dalla pagina pubblica Vinted.
+    (taglia, condizione, descrizione, catalog_id, materiale) dalla
+    pagina pubblica Vinted.
     """
     result = {
         "photo_urls": [], "size": None, "condition": None, "description": None,
         "created_at": None, "age_days": None,
+        "catalog_id": None, "material_raw": None,
+        "material_per_ricerca": None, "color_raw": None,
     }
     try:
         resp = _vinted_session.get(url, headers=VINTED_HEADERS, timeout=15)
@@ -596,18 +660,46 @@ def scrape_vinted_listing(url):
             except Exception:
                 log.warning("Impossibile calcolare l'eta' dell'annuncio da created_at_ts=%s", created_match.group(1))
 
+        # CATALOG + MATERIALE PREGIATO: per ricerche comp piu' raffinate.
+        # VERIFICATO sul sito reale (29/06/2026): Materiale e Colore NON
+        # hanno piu' un ID numerico filtrabile (le vecchie API/wrapper che
+        # esponevano material_id/color_id sono legacy/deprecate) -- esistono
+        # solo come stringa nel payload "request_options" della pagina
+        # annuncio. catalog_id invece e' ancora un ID numerico valido.
+        catalog_match = re.search(r'"catalog_id"\s*:\s*(\d+)', html)
+        if catalog_match:
+            result["catalog_id"] = catalog_match.group(1)
+
+        # Pattern visto nel payload request_options reale:
+        # {"type":"text","code":"material","data":{"title":"Materiale","value":"Cotone, Denim, Velluto"}}
+        # Pattern permissivo ([^}]*?) per tollerare campi extra tra "data":{
+        # e "value" (es. un eventuale "id":null prima di "title").
+        material_match = re.search(
+            r'"code"\s*:\s*"material"\s*,\s*"data"\s*:\s*\{[^}]*?"value"\s*:\s*"([^"]+)"',
+            html,
+        )
+        if material_match:
+            result["material_raw"] = material_match.group(1)
+            result["material_per_ricerca"] = scegli_materiale_per_ricerca(material_match.group(1))
+
+        color_match = re.search(
+            r'"code"\s*:\s*"color"\s*,\s*"data"\s*:\s*\{[^}]*?"value"\s*:\s*"([^"]+)"',
+            html,
+        )
+        if color_match:
+            result["color_raw"] = color_match.group(1)
+
+        log.info(
+            "CATALOG/MATERIALE/COLORE estratti -- catalog_id=%s, "
+            "material_raw='%s' -> scelto per ricerca='%s', color_raw='%s'",
+            result["catalog_id"], result["material_raw"],
+            result["material_per_ricerca"], result["color_raw"],
+        )
+
     except Exception:
         log.warning("Scraping Vinted fallito per %s:\n%s", url, traceback.format_exc())
 
     return result
-
-
-# Sessione condivisa: riusa connessione e cookie tra le richieste di
-# scraping pagina e download immagini dello stesso annuncio, il che
-# aiuta con CDN che si aspettano una sessione "coerente" (stessi cookie
-# di tracking della pagina HTML quando poi richiedi le immagini).
-_vinted_session = requests.Session()
-_vinted_session.headers.update(VINTED_HEADERS)
 
 
 def download_image_bytes(url, referer="https://www.vinted.it/", max_retries=2):
@@ -981,43 +1073,68 @@ def _serper_batch_query(labeled_queries, num_results=3, max_snippet_chars=150):
     return results_by_label
 
 
-
-def build_vinted_search_url(brand, categoria, modello_o_categoria, max_price=None):
+def build_vinted_search_url(brand, categoria, modello_o_categoria, max_price=None,
+                             catalog_id=None, material_per_ricerca=None):
     """Costruisce un URL di ricerca Vinted filtrato per brand_id quando
-    disponibile (preciso, zero rumore da testo libero), con fallback su
-    search_text quando il brand non e' nella mappa VINTED_BRAND_IDS.
+    disponibile, con fallback su search_text quando il brand non e' nella
+    mappa VINTED_BRAND_IDS.
 
-    IMPORTANTE (fix applicato dopo osservazione in produzione): quando il
-    brand_id E' disponibile, il search_text usa SOLO la categoria generica
-    (es. "Top", non "Top smanicato in maglia metallica lurex Top") -- il
-    filtro per brand_id gia' fa il lavoro pesante di restringere ai capi
-    del brand corretto, quindi un search_text troppo specifico (l'intero
-    modello stimato da Gemini, spesso 5-7 parole) e' controproducente:
-    richiede che TUTTE quelle parole esatte appaiano nel titolo/descrizione
-    dell'annuncio, e un venditore reale quasi mai scrive un titolo cosi'
-    dettagliato -- il risultato osservato era quasi sempre "Nessun articolo
-    trovato" anche quando il brand aveva sicuramente capi in vendita.
-    Quando il brand_id NON e' disponibile (fallback), serve invece tutto
-    il contesto possibile (brand+modello+categoria) per compensare
-    l'assenza del filtro preciso.
+    AGGIUNTE (verificate sul sito reale il 29/06/2026):
+    - catalog_id: se disponibile (estratto dalla pagina annuncio target via
+      scrape_vinted_listing), applicato come catalog[]=<id> -- filtro
+      categoria preciso, riduce rumore tra sottocategorie diverse dello
+      stesso brand.
+    - material_per_ricerca: una singola parola materiale (es. "velluto",
+      "cashmere"), scelta da scegli_materiale_per_ricerca() col criterio
+      di priorita' sul materiale piu' pregiato tra quelli elencati
+      nell'annuncio. Aggiunta dentro search_text (non un parametro URL a
+      parte, perche' material_ids[] numerico NON esiste piu' sul sito
+      attuale -- verificato: Materiale e' solo una stringa nel payload
+      della pagina, senza ID associato). Test reale: Marni + catalog
+      "Abiti" (id=10) + search_text="velluto" -> 13 risultati pertinenti,
+      range prezzo 25-850 EUR, NESSUNO necessariamente con "velluto" nel
+      titolo scritto dal venditore -- conferma che search_text indicizza
+      anche l'attributo strutturato Materiale, non solo il titolo libero.
+
+    NOTA SU COLORE: deliberatamente non incluso nel search_text di
+    default -- i colori sono piu' granulari del materiale (es. "blu
+    marino" vs "blu" come valori distinti) e il rischio di azzerare i
+    risultati combinando brand+categoria+materiale+colore tutti insieme
+    e' piu' alto. Resta disponibile come informazione testuale per
+    Claude (color_raw in listing_info), non come filtro di ricerca.
+
+    NOTA SU STATUS: NON modificato qui per scelta esplicita dell'utente --
+    i comp restano sempre confrontati contro status_ids[]=1,2,3 (Nuovo con
+    cartellino, Nuovo senza cartellino, Ottime) indipendentemente dalla
+    condizione reale dell'annuncio target. Questo da' il prezzo di
+    riferimento "in buone condizioni": se l'annuncio target e' in
+    condizione peggiore, il comp funge da tetto massimo da scontare nel
+    ragionamento (gia' gestito nel prompt Claude esistente), non va
+    restretto ulteriormente per status.
 
     Ritorna (url, e_filtrato_per_id) dove e_filtrato_per_id indica se il
-    filtro e' stato fatto con l'ID esatto (piu' affidabile) o solo per
-    testo libero (puo' includere falsi positivi, es. capi di altri brand
-    che menzionano il brand cercato nel titolo)."""
-    from urllib.parse import quote
-
+    filtro brand e' stato fatto con l'ID esatto (piu' affidabile) o solo
+    per testo libero."""
     brand_lower = (brand or "").strip().lower()
     brand_id = VINTED_BRAND_IDS.get(brand_lower)
 
+    catalog_str = f"&catalog[]={catalog_id}" if catalog_id else ""
+
     if brand_id:
-        # Solo la categoria (1-2 parole generiche, es. "Top", "Pantaloni")
-        # come search_text -- il brand_id gia' filtra per brand, non serve
-        # ripetere modello/dettagli che restringerebbero troppo la ricerca.
+        # Solo categoria breve + materiale pregiato (se disponibile) come
+        # search_text -- il brand_id e il catalog[] (se presente) gia'
+        # fanno il lavoro pesante di restringere correttamente, quindi
+        # search_text resta intenzionalmente corto (1-3 parole), MAI il
+        # modello stimato per intero (un venditore reale raramente scrive
+        # un titolo cosi' dettagliato).
         categoria_breve = (categoria or "").strip()
+        parti_search_text = [p for p in (categoria_breve, material_per_ricerca) if p]
+        search_text_finale = " ".join(parti_search_text)
+
         url = (
             f"https://www.vinted.it/catalog?brand_ids[]={brand_id}"
-            f"&search_text={quote(categoria_breve)}"
+            f"{catalog_str}"
+            f"&search_text={quote(search_text_finale)}"
             "&order=newest_first&status_ids[]=1&status_ids[]=2&status_ids[]=3"
         )
         if max_price:
@@ -1025,11 +1142,13 @@ def build_vinted_search_url(brand, categoria, modello_o_categoria, max_price=Non
         return url, True
     else:
         # Senza brand_id, serve tutto il contesto possibile per compensare
-        # l'assenza del filtro preciso (qui la query piu' ricca aiuta,
-        # non danneggia, perche' non c'e' un filtro a monte da affiancare).
-        query_text = f"{brand} {modello_o_categoria}".strip()
+        # l'assenza del filtro preciso -- qui la query piu' ricca aiuta,
+        # non danneggia, perche' non c'e' un filtro a monte da affiancare.
+        # Aggiungiamo comunque il materiale pregiato se disponibile.
+        query_text = f"{brand} {modello_o_categoria} {material_per_ricerca or ''}".strip()
         url = (
             f"https://www.vinted.it/catalog?search_text={quote(query_text)}"
+            f"{catalog_str}"
             "&order=newest_first"
         )
         return url, False
@@ -1043,8 +1162,6 @@ def search_comps_ebay_sold(brand, modello, categoria):
     non rispettare i parametri reali del sito (es. LH_Sold=1 e' il
     parametro ufficiale eBay per 'solo venduti', verificato dalla
     documentazione pubblica eBay)."""
-    from urllib.parse import quote
-
     query_base = f"{brand} {modello} {categoria}".strip()
     if not query_base:
         return None
@@ -1054,7 +1171,6 @@ def search_comps_ebay_sold(brand, modello, categoria):
         "&LH_Sold=1&LH_Complete=1&_sop=13"  # LH_Sold+LH_Complete = solo venduti; _sop=13 = piu' recenti
     )
     return ebay_search_url
-
 
 
 def _clean_scraped_markdown(content):
@@ -1157,18 +1273,24 @@ def _serper_scrape_page(url, max_chars=1300):
     return content[:max_chars]
 
 
-
-def _esegui_ricerca_serper_completa(brand, modello, categoria, query_base):
+def _esegui_ricerca_serper_completa(brand, modello, categoria, query_base,
+                                     catalog_id=None, material_per_ricerca=None):
     """Esegue le 5 ricerche (Vinted scrape, eBay scrape, Vestiaire+2 Google
     in batch) per una data combinazione brand/modello/categoria. Funzione
     interna estratta da search_comps_serper per poter essere richiamata
     DUE VOLTE con parametri diversi (query specifica, poi query larga in
     fallback) senza duplicare tutta la logica di orchestrazione.
 
+    catalog_id/material_per_ricerca: passati a build_vinted_search_url
+    per la ricerca comp raffinata su Vinted (vedi note in quella funzione).
+
     Ritorna (results_by_label, vinted_e_per_id)."""
     results_by_label = {}
 
-    vinted_url, vinted_e_per_id = build_vinted_search_url(brand, categoria, f"{modello} {categoria}".strip())
+    vinted_url, vinted_e_per_id = build_vinted_search_url(
+        brand, categoria, f"{modello} {categoria}".strip(),
+        catalog_id=catalog_id, material_per_ricerca=material_per_ricerca,
+    )
     ebay_url = search_comps_ebay_sold(brand, modello, categoria)
 
     serper_queries = [
@@ -1221,7 +1343,7 @@ def _esegui_ricerca_serper_completa(brand, modello, categoria, query_base):
     return results_by_label, vinted_e_per_id
 
 
-def search_comps_serper(brand, modello, categoria):
+def search_comps_serper(brand, modello, categoria, catalog_id=None, material_per_ricerca=None):
     """Ricerca comps di prezzo via Serper. Sostituisce il tool web_search
     integrato di Claude per beneficiare del caching pieno sul system prompt.
 
@@ -1232,12 +1354,19 @@ def search_comps_serper(brand, modello, categoria):
     raramente scrive un titolo cosi' dettagliato. Se la query specifica
     fallisce TOTALMENTE su tutte le 5 fonti, ritentiamo automaticamente
     con una query piu' larga (solo brand+categoria, senza il modello
-    specifico) prima di arrenderci e dichiarare l'assenza di comps."""
+    specifico) prima di arrenderci e dichiarare l'assenza di comps.
+
+    catalog_id/material_per_ricerca: propagati dall'annuncio target
+    (estratti in scrape_vinted_listing) fino a build_vinted_search_url,
+    per la ricerca comp Vinted raffinata su categoria+materiale."""
     query_base = f"{brand} {modello} {categoria}".strip()
     if not query_base or query_base.lower() in ("nessuno", "non disponibile", ""):
         return "RICERCA WEB: non eseguita, brand/modello non identificabile con sufficiente certezza dal JSON visivo."
 
-    results_by_label, vinted_e_per_id = _esegui_ricerca_serper_completa(brand, modello, categoria, query_base)
+    results_by_label, vinted_e_per_id = _esegui_ricerca_serper_completa(
+        brand, modello, categoria, query_base,
+        catalog_id=catalog_id, material_per_ricerca=material_per_ricerca,
+    )
 
     fallimento_totale = all(
         any(marker in v for marker in ("Nessun risultato", "fallita", "non completata", "fallito"))
@@ -1251,7 +1380,10 @@ def search_comps_serper(brand, modello, categoria):
             "Ricerca specifica '%s' fallita su TUTTE le fonti -- ritento con query larga '%s'.",
             query_base, query_larga,
         )
-        results_by_label, vinted_e_per_id = _esegui_ricerca_serper_completa(brand, "", categoria, query_larga)
+        results_by_label, vinted_e_per_id = _esegui_ricerca_serper_completa(
+            brand, "", categoria, query_larga,
+            catalog_id=catalog_id, material_per_ricerca=material_per_ricerca,
+        )
         query_base = query_larga
         nota_fallback = (
             "⚠️ Nota: la ricerca specifica (con modello dettagliato) non ha dato risultati su nessuna "
@@ -1288,7 +1420,6 @@ def search_comps_serper(brand, modello, categoria):
         lines.append(results_by_label.get(label, "  (risultato mancante)"))
 
     return "\n".join(lines)
-
 
 
 def call_claude_oracle(listing_info, gemini_analysis_json):
@@ -1382,7 +1513,11 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
         modello_per_ricerca = ""
         categoria_per_ricerca = ""
 
-    comps_text = search_comps_serper(brand_per_ricerca, modello_per_ricerca, categoria_per_ricerca)
+    comps_text = search_comps_serper(
+        brand_per_ricerca, modello_per_ricerca, categoria_per_ricerca,
+        catalog_id=listing_info.get("catalog_id"),
+        material_per_ricerca=listing_info.get("material_per_ricerca"),
+    )
     log.info("RICERCA SERPER:\n%s", comps_text)
 
     user_text = (
@@ -1391,6 +1526,8 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
         f"Prezzo richiesto dal venditore: {listing_info.get('price')} EUR\n"
         f"Taglia: {listing_info.get('size') or 'non disponibile'}\n"
         f"Condizione dichiarata: {listing_info.get('condition') or 'non disponibile'}\n"
+        f"Materiale (da pagina annuncio): {listing_info.get('material_raw') or 'non disponibile'}\n"
+        f"Colore (da pagina annuncio): {listing_info.get('color_raw') or 'non disponibile'}\n"
         f"Descrizione venditore: {listing_info.get('description') or 'non disponibile'}\n"
         f"Annuncio pubblicato: {age_text}\n"
         f"URL annuncio: {listing_info.get('url') or 'non disponibile'}\n\n"
@@ -1750,6 +1887,10 @@ def process_listing(parsed, url, cover_photo_bytes):
         listing_info["condition"] = scraped.get("condition")
         listing_info["description"] = scraped.get("description")
         listing_info["age_days"] = scraped.get("age_days")
+        listing_info["catalog_id"] = scraped.get("catalog_id")
+        listing_info["material_raw"] = scraped.get("material_raw")
+        listing_info["material_per_ricerca"] = scraped.get("material_per_ricerca")
+        listing_info["color_raw"] = scraped.get("color_raw")
 
         for photo_url in scraped.get("photo_urls", []):
             img = download_image_bytes(photo_url, referer=url)
@@ -1806,7 +1947,6 @@ def process_listing(parsed, url, cover_photo_bytes):
     # contenuto di una stringa che gli arriva gia' completa su una riga
     # di stdout (puo' al massimo interlacciare RIGHE diverse tra loro,
     # non il contenuto interno di una singola chiamata di log).
-    import hashlib
     report_hash = hashlib.md5(final_report.encode()).hexdigest()[:12]
     log.info(
         "VERIFICA REPORT -- lunghezza: %d caratteri, hash: %s, righe: %d",
@@ -1887,7 +2027,7 @@ async def on_new_message(event):
         url = extract_url_from_text(text)
 
         # se l'URL non e' nel testo, alcuni bot lo mettono in un bottone
-        # inline -- Telethon lo esp one nei bottoni del messaggio (event.message.buttons)
+        # inline -- Telethon lo espone nei bottoni del messaggio (event.message.buttons)
         if not url and event.message.buttons:
             for row in event.message.buttons:
                 for button in row:
