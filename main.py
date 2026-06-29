@@ -92,6 +92,13 @@ Note operative:
     imprecise), il valore di GEMINI_MODEL_NAME va riportato a
     "gemini-3.5-flash" -- e' un cambio di una singola riga, non serve
     altro codice.
+  - FIX URL MARKDOWN-CORROTTI (29/06/2026): un editor/passaggio di copia-
+    incolla aveva trasformato TUTTI gli URL letterali del file nel
+    pattern "https://..." (auto-link markdown) -- questo
+    e' sintatticamente una stringa Python valida ma il CONTENUTO non e'
+    piu' un URL valido, causando "No connection adapters were found"
+    su ogni chiamata requests.post/get verso Serper, Vinted ed eBay.
+    Tutti gli URL sono stati ripuliti rimuovendo il wrapping markdown.
 """
 
 import os
@@ -533,7 +540,7 @@ VINTED_HEADERS = {
 IMAGE_DOWNLOAD_HEADERS = {
     "User-Agent": VINTED_HEADERS["User-Agent"],
     "Accept-Language": VINTED_HEADERS["Accept-Language"],
-    "Referer": "[https://www.vinted.it/](https://www.vinted.it/)",
+    "Referer": "https://www.vinted.it/",
     "Accept": "image/webp,image/avif,image/jpeg,image/png,image/*,*/*;q=0.8",
     "Sec-Fetch-Dest": "image",
     "Sec-Fetch-Mode": "no-cors",
@@ -662,7 +669,7 @@ def scrape_vinted_listing(url):
     return result
 
 
-def download_image_bytes(url, referer="[https://www.vinted.it/](https://www.vinted.it/)", max_retries=2):
+def download_image_bytes(url, referer="https://www.vinted.it/", max_retries=2):
     headers = dict(IMAGE_DOWNLOAD_HEADERS)
     headers["Referer"] = referer
 
@@ -958,7 +965,7 @@ def _serper_batch_query(labeled_queries, num_results=3, max_snippet_chars=80):
 
     try:
         resp = requests.post(
-            "[https://google.serper.dev/search](https://google.serper.dev/search)",
+            "https://google.serper.dev/search",
             headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
             json=[{"q": q, "gl": "it", "hl": "it", "num": num_results} for q in queries],
             timeout=15,
@@ -992,7 +999,6 @@ def _serper_batch_query(labeled_queries, num_results=3, max_snippet_chars=80):
             title = r.get("title", "")
             snippet = r.get("snippet", "")
             
-            # MAGIA SALVA-PREZZO: Estrae i prezzi prima di tagliare lo snippet
             prezzi = re.findall(r'(?:€|EUR)\s*\d+(?:[.,]\d+)?|\d+(?:[.,]\d+)?\s*(?:€|EUR)', snippet, re.IGNORECASE)
             prezzi_unici = list(dict.fromkeys(prezzi))
             
@@ -1021,7 +1027,7 @@ def build_vinted_search_url(brand, categoria, modello_o_categoria, max_price=Non
         search_text_finale = " ".join(parti_search_text)
 
         url = (
-            f"[https://www.vinted.it/catalog?brand_ids](https://www.vinted.it/catalog?brand_ids)[]={brand_id}"
+            f"https://www.vinted.it/catalog?brand_ids[]={brand_id}"
             f"{catalog_str}"
             f"&search_text={quote(search_text_finale)}"
             "&order=newest_first&status_ids[]=1&status_ids[]=2&status_ids[]=3"
@@ -1032,7 +1038,7 @@ def build_vinted_search_url(brand, categoria, modello_o_categoria, max_price=Non
     else:
         query_text = f"{brand} {modello_o_categoria} {material_per_ricerca or ''}".strip()
         url = (
-            f"[https://www.vinted.it/catalog?search_text=](https://www.vinted.it/catalog?search_text=){quote(query_text)}"
+            f"https://www.vinted.it/catalog?search_text={quote(query_text)}"
             f"{catalog_str}"
             "&order=newest_first"
         )
@@ -1047,7 +1053,7 @@ def search_comps_ebay_sold(brand, modello, categoria):
         return None
 
     ebay_search_url = (
-        f"[https://www.ebay.it/sch/i.html?_nkw=](https://www.ebay.it/sch/i.html?_nkw=){quote(query_base)}"
+        f"https://www.ebay.it/sch/i.html?_nkw={quote(query_base)}"
         "&LH_Sold=1&LH_Complete=1&rt=nc&LH_PrefLoc=2"
     )
     return ebay_search_url
@@ -1080,7 +1086,6 @@ def _clean_scraped_markdown(content):
     content = re.sub(r"\[Passa al contenuto!?\[[^\]]*\]\([^)]+\)\]\([^)]+\)", "", content)
     content = re.sub(r"!\[Catalogo\]\([^)]+\)", "", content)
     
-    # OTTIMIZZAZIONE EBAY: Rimuove TUTTI i link markdown rimasti tenendo solo il testo utile
     content = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', content)
     
     content = re.sub(r"\n{3,}", "\n\n", content)
@@ -1091,7 +1096,7 @@ def _clean_scraped_markdown(content):
 def _serper_scrape_page(url, max_chars=1300):
     try:
         resp = requests.post(
-            "[https://scrape.serper.dev](https://scrape.serper.dev)",
+            "https://scrape.serper.dev",
             headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
             json={"url": url, "includeMarkdown": True},
             timeout=15,
