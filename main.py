@@ -74,6 +74,24 @@ Note operative:
     dell'utente: serve da benchmark "prezzo in buone condizioni" anche
     quando l'annuncio target e' in condizione peggiore, da scontare nel
     ragionamento di Claude (non da restringere ulteriormente nel filtro).
+  - MODELLO GEMINI (29/06/2026): passato da gemini-3.5-flash a
+    gemini-3.1-flash-lite (modello GA stabile, non la preview gia'
+    discontinuata) -- ~6x piu' economico sia su input che su output
+    ($0.25/$1.50 per 1M token contro $1.50/$9.00), validato con un test
+    A/B manuale su un annuncio reale (Patagonia con macchie visibili,
+    quindi un caso che richiede un giudizio di condizione non banale):
+    identificazione, autenticita', trascrizione etichetta e descrizione
+    difetti sostanzialmente equivalenti tra i due modelli; la sola
+    differenza osservata era di un gradino sulla scala di classificazione
+    condizione ("Usato evidente" vs "Da riparare" sullo stesso identico
+    difetto descritto in egual dettaglio da entrambi) -- non un errore di
+    percezione visiva, solo una calibrazione leggermente diversa del
+    giudizio finale. Risparmio osservato sulla singola chiamata: 83.6%.
+    Se in produzione si osservano scostamenti piu' marcati su altri casi
+    (es. falsi negativi sull'autenticita', trascrizioni etichetta
+    imprecise), il valore di GEMINI_MODEL_NAME va riportato a
+    "gemini-3.5-flash" -- e' un cambio di una singola riga, non serve
+    altro codice.
 """
 
 import os
@@ -112,7 +130,7 @@ SERPER_API_KEY = os.environ["SERPER_API_KEY"]
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
-GEMINI_MODEL_NAME = "gemini-3.5-flash"
+GEMINI_MODEL_NAME = "gemini-3.1-flash-lite"
 GEMINI_API_URL = (
     f"https://generativelanguage.googleapis.com/v1beta/models/"
     f"{GEMINI_MODEL_NAME}:generateContent"
@@ -2201,7 +2219,20 @@ def check_skip_pre_claude(gemini_analysis_json, listing_info=None):
             return True, f"[VERDETTO GREZZO GEMINI] {motivo}"
 
         # SEGNALE 4: margine insufficiente anche nel miglior caso secondo Gemini.
-        prezzo_massimo_raw = valutazione.get("prezzo_vendita_massimo_plausibile_eur")
+        # LETTURA TOLLERANTE AL NOME CAMPO: osservato empiricamente (test A/B
+        # 29/06/2026) che il modello a volte scrive il nome del campo come
+        # "prezzo_sale_massimo_plausibile_eur" invece di quello richiesto nel
+        # prompt ("prezzo_vendita_massimo_plausibile_eur") -- probabilmente
+        # una piccola variazione interna di interpretazione dello schema.
+        # Proviamo entrambe le chiavi, in ordine, per non perdere il segnale
+        # silenziosamente se capita ancora: un segnale perso qui costa solo
+        # una chiamata Claude in piu' (non grave), ma vale la pena non
+        # sprecarlo quando il dato c'e' davvero, solo sotto un nome diverso.
+        prezzo_massimo_raw = (
+            valutazione.get("prezzo_vendita_massimo_plausibile_eur")
+            if valutazione.get("prezzo_vendita_massimo_plausibile_eur") is not None
+            else valutazione.get("prezzo_sale_massimo_plausibile_eur")
+        )
         if prezzo_massimo_raw is not None and listing_info is not None:
             try:
                 prezzo_massimo_gemini = float(str(prezzo_massimo_raw).replace(",", "."))
