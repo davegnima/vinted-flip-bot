@@ -1113,7 +1113,7 @@ def _serper_scrape_page(url, max_chars=1300):
 def _esegui_ricerca_serper_completa(brand, modello, categoria, query_base,
                                      catalog_id=None, material_per_ricerca=None):
     from urllib.parse import quote
-    """Esegue le 5 ricerche in parallelo (3 scrape diretti + 2 Google batch)."""
+    """Esegue le ricerche in parallelo (2 scrape diretti Vinted/eBay + 3 Google batch)."""
     results_by_label = {}
 
     vinted_url, vinted_e_per_id = build_vinted_search_url(
@@ -1121,11 +1121,9 @@ def _esegui_ricerca_serper_completa(brand, modello, categoria, query_base,
         catalog_id=catalog_id, material_per_ricerca=material_per_ricerca,
     )
     ebay_url = search_comps_ebay_sold(brand, modello, categoria)
-    
-    # ASSALTO DIRETTO A VESTIAIRE COLLECTIVE
-    vestiaire_url = f"https://www.vestiairecollective.com/search/?q={quote(query_base)}"
 
     serper_queries = [
+        ("VESTIAIRE COLLECTIVE", f"{query_base} site:vestiairecollective.com"),
         ("GOOGLE GENERICO (prezzo/valore)", f"{query_base} prezzo valore second hand"),
         ("GOOGLE GENERICO (retail originale)", f"{query_base} retail price original"),
     ]
@@ -1134,24 +1132,22 @@ def _esegui_ricerca_serper_completa(brand, modello, categoria, query_base,
         "QUERY/URL SERPER COSTRUITI (base: '%s'):\n"
         "  VINTED (scrape, filtro_per_id=%s): %s\n"
         "  EBAY SOLD (scrape): %s\n"
-        "  VESTIAIRE (scrape diretto): %s\n"
+        "  VESTIAIRE (query): %s\n"
         "  GOOGLE GENERICO 1 (query): %s\n"
         "  GOOGLE GENERICO 2 (query): %s",
-        query_base, vinted_e_per_id, vinted_url, ebay_url, vestiaire_url,
-        serper_queries[0][1], serper_queries[1][1],
+        query_base, vinted_e_per_id, vinted_url, ebay_url,
+        serper_queries[0][1], serper_queries[1][1], serper_queries[2][1],
     )
 
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    with ThreadPoolExecutor(max_workers=3) as executor:
         future_batch = executor.submit(_serper_batch_query, serper_queries)
         future_vinted = executor.submit(_serper_scrape_page, vinted_url)
         future_ebay = executor.submit(_serper_scrape_page, ebay_url)
-        future_vestiaire = executor.submit(_serper_scrape_page, vestiaire_url)
 
         futures = {
             future_batch: "__BATCH__",
             future_vinted: "VINTED (scrape diretto)",
             future_ebay: "EBAY SOLD (scrape diretto)",
-            future_vestiaire: "VESTIAIRE COLLECTIVE (scrape diretto)"
         }
 
         for future in as_completed(futures, timeout=20):
@@ -1222,9 +1218,9 @@ def search_comps_serper(brand, modello, categoria, catalog_id=None, material_per
         )
 
     serper_queries_labels = [
-        "GOOGLE GENERICO (prezzo/valore)", "GOOGLE GENERICO (retail originale)",
+        "VESTIAIRE COLLECTIVE", "GOOGLE GENERICO (prezzo/valore)", "GOOGLE GENERICO (retail originale)",
     ]
-    all_labels = ["VESTIAIRE COLLECTIVE (scrape diretto)", "VINTED (scrape diretto)", "EBAY SOLD (scrape diretto)"] + serper_queries_labels
+    all_labels = serper_queries_labels + ["VINTED (scrape diretto)", "EBAY SOLD (scrape diretto)"]
     
     lines = [f"RICERCA WEB (5 fonti, base: '{query_base}'):"]
     if nota_fallback:
@@ -1240,8 +1236,6 @@ def search_comps_serper(brand, modello, categoria, catalog_id=None, material_per
         lines.append(results_by_label.get(label, "  (risultato mancante)"))
 
     return "\n".join(lines)
-
-
 def call_claude_oracle(listing_info, gemini_analysis_json):
     age_days = listing_info.get("age_days")
     if age_days is not None:
