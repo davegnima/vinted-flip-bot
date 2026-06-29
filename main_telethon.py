@@ -1439,10 +1439,6 @@ def _clean_scraped_markdown(content):
     content = re.sub(r"\[Passa al contenuto!?\[[^\]]*\]\([^)]+\)\]\([^)]+\)", "", content)
     content = re.sub(r"!\[Catalogo\]\([^)]+\)", "", content)
     
-    # ---> ECCO LA MAGIA AGGIUNTA PER EBAY <---
-    # Rimuove TUTTI i link markdown rimasti tenendo solo il testo utile (es. "[Compralo Subito](http...)" -> "Compralo Subito")
-    content = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', content)
-    
     # Rimuove righe vuote multiple
     content = re.sub(r"\n{3,}", "\n\n", content)
     
