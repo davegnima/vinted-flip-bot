@@ -1384,20 +1384,16 @@ def build_vinted_search_url(brand, categoria, modello_o_categoria, max_price=Non
 
 
 def search_comps_ebay_sold(brand, modello, categoria):
-    """Ricerca diretta su eBay con filtro 'Venduto' (sold) via Serper,
-    usando il parametro di ricerca eBay nativo invece di un site: generico
-    -- piu' preciso perche' restiamo dentro l'interfaccia di ricerca eBay
-    con i suoi stessi filtri, non un URL costruito a mano che potrebbe
-    non rispettare i parametri reali del sito (es. LH_Sold=1 e' il
-    parametro ufficiale eBay per 'solo venduti', verificato dalla
-    documentazione pubblica eBay)."""
-    query_base = f"{brand} {modello} {categoria}".strip()
-    if not query_base:
-        return None
-
+    from urllib.parse import quote
+    q = f"{brand} {modello} {categoria}".strip()
+    if not q: return None
+    
+    # OTTIMIZZAZIONE EBAY: Aggiunto &LH_PrefLoc=2 (Provenienza: Tutto il mondo)
+    # Questo impedisce a eBay di nascondere gli annunci al bot di Serper 
+    # (che ha un IP americano) se i venditori non spediscono negli USA.
     ebay_search_url = (
-        f"https://www.ebay.it/sch/i.html?_nkw={quote(query_base)}"
-        "&LH_Sold=1&LH_Complete=1&_sop=13"  # LH_Sold+LH_Complete = solo venduti; _sop=13 = piu' recenti
+        f"https://www.ebay.it/sch/i.html?_nkw={quote(q)}"
+        "&_sacat=0&_from=R40&rt=nc&LH_Sold=1&LH_Complete=1&_sop=13&LH_PrefLoc=2"
     )
     return ebay_search_url
 
