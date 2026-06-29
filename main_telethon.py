@@ -702,6 +702,40 @@ def scrape_vinted_listing(url):
             result["material_per_ricerca"], result["color_raw"],
         )
 
+        # DIAGNOSTICA TEMPORANEA: se NESSUNO dei tre campi e' stato trovato
+        # (catalog_id, material_raw, color_raw tutti None), il pattern regex
+        # esistente -- costruito su UN campione HTML catturato il 29/06/2026
+        # via DevTools -- potrebbe non corrispondere piu' al markup reale
+        # (Vinted serve piu' varianti della stessa pagina, e questo bot usa
+        # uno User-Agent mobile diverso da quello con cui il pattern era
+        # stato verificato). Invece di continuare a indovinare un altro
+        # pattern a scatola chiusa, logghiamo qui una porzione di HTML
+        # grezzo intorno alla prima occorrenza testuale di "Colore" (la UI
+        # mostra sempre questa parola in pagina quando il colore e'
+        # disponibile, vedi screenshot reali) -- cosi' il prossimo annuncio
+        # che arriva con questo problema mostra DIRETTAMENTE nei log
+        # Railway come e' strutturato oggi il markup reale, senza bisogno
+        # di un nuovo giro manuale DevTools. Rimuovere questo blocco una
+        # volta che il pattern regex sara' stato aggiornato e verificato.
+        if not result["catalog_id"] and not result["material_raw"] and not result["color_raw"]:
+            indice_colore = html.find("Colore")
+            if indice_colore != -1:
+                inizio = max(0, indice_colore - 100)
+                fine = min(len(html), indice_colore + 400)
+                log.warning(
+                    "DIAGNOSTICA PATTERN MATERIAL/COLOR: nessun campo estratto per %s -- "
+                    "porzione HTML grezzo intorno alla parola 'Colore' (offset %d-%d):\n%s",
+                    url, inizio, fine, html[inizio:fine],
+                )
+            else:
+                log.warning(
+                    "DIAGNOSTICA PATTERN MATERIAL/COLOR: nessun campo estratto per %s -- "
+                    "la parola 'Colore' non e' nemmeno presente nell'HTML scaricato "
+                    "(lunghezza totale HTML: %d caratteri). Possibile pagina bloccata, "
+                    "vuota, o struttura completamente diversa da quella attesa.",
+                    url, len(html),
+                )
+
     except Exception:
         log.warning("Scraping Vinted fallito per %s:\n%s", url, traceback.format_exc())
 
