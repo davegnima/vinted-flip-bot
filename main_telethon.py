@@ -112,10 +112,35 @@ SERPER_API_KEY = os.environ["SERPER_API_KEY"]
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
+GEMINI_MODEL_NAME = "gemini-3.5-flash"
 GEMINI_API_URL = (
-    "https://generativelanguage.googleapis.com/v1beta/models/"
-    "gemini-3.5-flash:generateContent"
+    f"https://generativelanguage.googleapis.com/v1beta/models/"
+    f"{GEMINI_MODEL_NAME}:generateContent"
 )
+GEMINI_CACHED_CONTENTS_URL = "https://generativelanguage.googleapis.com/v1beta/cachedContents"
+
+# EXPLICIT CACHING GEMINI (aggiunto 29/06/2026 dopo verifica spesa reale:
+# €4,18 in un giorno, €0,00 di risparmio cache -- il caching IMPLICITO di
+# Gemini ("no cost saving guarantee" per documentazione ufficiale) non
+# stava scattando in modo affidabile su gemini-3.5-flash, modello molto
+# recente (uscito 19/05/2026) potenzialmente non ancora coperto a pieno
+# dall'implicit caching. L'EXPLICIT caching (client.caches.create, qui
+# replicato via REST puro per restare coerenti con lo stile requests
+# del resto del file) garantisce lo sconto 90% sui token cachati,
+# indipendentemente da soglie/euristiche interne di Google.
+#
+# Il GEMINI_VISION_SYSTEM_PROMPT e' enorme e identico ad OGNI chiamata
+# (e' il candidato ideale per il caching, esattamente come il system
+# prompt di Claude) -- viene cachato UNA VOLTA all'avvio del bot (TTL
+# lungo, ricreato automaticamente se scaduto/invalido), poi ogni
+# chiamata Gemini lo referenzia con "cachedContent" invece di rimandarlo
+# per intero. Le foto restano SEMPRE nel messaggio utente non cachato
+# (cambiano ad ogni annuncio, non sono mai cachabili), quindi il
+# risparmio si applica solo alla porzione di system prompt, non alle
+# foto -- ma su un prompt di migliaia di token ripetuto a ogni chiamata,
+# anche questo da solo vale la pena.
+GEMINI_CACHE_TTL_SECONDS = 3600 * 6  # 6 ore: ampio margine, costo storage trascurabile vs risparmio
+_gemini_cache_name = None  # popolato da assicura_gemini_cache(), None se non ancora creata/fallita
 
 CLAUDE_MODEL = "claude-sonnet-4-6"
 MAX_GALLERY_PHOTOS = 10  # tetto massimo foto da inviare ai modelli (costo)
@@ -824,6 +849,64 @@ def optimize_image_bytes(img_bytes, max_size=768):
         return img_bytes
 
 
+def assicura_gemini_cache():
+    """Crea la cache esplicita per GEMINI_VISION_SYSTEM_PROMPT se non
+    esiste ancora (prima chiamata del processo) o se la precedente e'
+    scaduta/invalida. Ritorna il nome della cache (stringa, da passare
+    come "cachedContent" nelle chiamate generateContent) o None se la
+    creazione fallisce -- in quel caso il chiamante deve fare fallback
+    al comportamento precedente (system_instruction per intero ad ogni
+    chiamata), MAI bloccare la pipeline per un problema di caching.
+
+    Usa una variabile globale di modulo (_gemini_cache_name) come cache
+    in-process: valida per tutta la durata del processo Railway, fino al
+    prossimo restart o alla scadenza del TTL (6 ore, vedi
+    GEMINI_CACHE_TTL_SECONDS) -- in quel caso la prossima chiamata che
+    fallisce con "cache non trovata" la ricrea automaticamente (vedi
+    gestione errori in call_gemini_vision)."""
+    global _gemini_cache_name
+
+    if _gemini_cache_name is not None:
+        return _gemini_cache_name
+
+    try:
+        resp = requests.post(
+            GEMINI_CACHED_CONTENTS_URL,
+            params={"key": GEMINI_API_KEY},
+            json={
+                "model": f"models/{GEMINI_MODEL_NAME}",
+                "systemInstruction": {"parts": [{"text": GEMINI_VISION_SYSTEM_PROMPT}]},
+                "ttl": f"{GEMINI_CACHE_TTL_SECONDS}s",
+                "displayName": "vinted-flip-oracle-system-prompt",
+            },
+            timeout=30,
+        )
+        if resp.ok:
+            cache_data = resp.json()
+            _gemini_cache_name = cache_data.get("name")
+            log.info(
+                "Gemini explicit cache CREATA con successo: %s (TTL %ds, scade %s)",
+                _gemini_cache_name, GEMINI_CACHE_TTL_SECONDS,
+                cache_data.get("expireTime"),
+            )
+            return _gemini_cache_name
+        else:
+            log.warning(
+                "Creazione Gemini explicit cache fallita (HTTP %d) -- "
+                "fallback su system_instruction non cachato per questa "
+                "chiamata. Body: %s",
+                resp.status_code, resp.text[:300],
+            )
+            return None
+    except Exception as e:
+        log.warning(
+            "Creazione Gemini explicit cache fallita (eccezione %s: %s) -- "
+            "fallback su system_instruction non cachato per questa chiamata.",
+            type(e).__name__, e,
+        )
+        return None
+
+
 def call_gemini_vision(photos_bytes_list, listing_info, max_retries=4):
     """Chiama Gemini per l'analisi visiva. Con la fatturazione attiva sul
     progetto i limiti di rate sono molto piu' alti del free tier, ma questo
@@ -857,8 +940,15 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=4):
             }
         })
 
+    # EXPLICIT CACHING: proviamo a usare la cache del system prompt se
+    # disponibile. Se "cache_name" e' None (creazione cache fallita, o
+    # primo avvio in corso), il payload include comunque system_instruction
+    # per intero come fallback -- la chiamata Gemini funziona in entrambi
+    # i casi, cambia solo se il system prompt viene rimandato per intero
+    # (pagato a prezzo pieno) o referenziato dalla cache (scontato 90%).
+    cache_name = assicura_gemini_cache()
+
     payload = {
-        "system_instruction": {"parts": [{"text": GEMINI_VISION_SYSTEM_PROMPT}]},
         "contents": [{"role": "user", "parts": parts}],
         # SAFETY SETTINGS: disattiviamo il blocco automatico di Google sui
         # contenuti delle 4 categorie standard. Motivazione specifica per
@@ -881,8 +971,48 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=4):
             "temperature": 0.2,
             "maxOutputTokens": 6000,
             "responseMimeType": "application/json",
+            # THINKING LEVEL (aggiunto 29/06/2026, dopo analisi costi reali):
+            # gemini-3.5-flash usa di default thinking_level="medium" (il
+            # default e' sceso da "high" a "medium" rispetto al precedente
+            # gemini-3-flash-preview, ma resta comunque attivo -- per
+            # tutti i modelli Gemini 3.x il thinking NON puo' essere
+            # disattivato del tutto, a differenza dei modelli 2.5 dove
+            # thinking_budget=0 lo azzerava). Osservato su una chiamata
+            # reale in log: thoughtsTokenCount=1957, PIU' del JSON di
+            # risposta visibile stesso (candidatesTokenCount=1553) --
+            # dato che l'output (incluso il thinking, sempre fatturato)
+            # costa 6x l'input ($9 vs $1.50 per milione di token), questo
+            # singolo numero pesava piu' dell'intero costo di input
+            # (testo+immagini) della stessa chiamata.
+            #
+            # "low" scelto (non "minimal"): il compito di Gemini qui non
+            # e' banale -- richiede giudizio reale (coerenza logo/brand,
+            # legit check con valutazione di rischio, non solo estrazione
+            # meccanica), e la documentazione Google segnala "minimal" come
+            # adatto solo a "task a bassa complessita' che non
+            # beneficerebbero di un ragionamento estensivo". "low" e' la
+            # via di mezzo piu' sicura: riduce sensibilmente il thinking
+            # rispetto al default "medium" senza il rischio di "minimal"
+            # sui campi piu' delicati del JSON (testo_letterale_etichette,
+            # legit_check_preliminare). Se in produzione si osserva un calo
+            # di qualita' (es. coerenza_con_brand_dichiarato sbagliata piu'
+            # spesso, trascrizioni etichette meno accurate), il valore qui
+            # va riportato a "medium" -- e' una scelta riducibile a una
+            # singola riga, non serve altro codice.
+            "thinkingConfig": {"thinkingLevel": "low"},
         },
     }
+
+    if cache_name:
+        # "cachedContent" e "system_instruction" sono MUTUAMENTE ESCLUSIVI
+        # nell'API Gemini -- il system prompt e' gia' dentro la cache
+        # (creato in assicura_gemini_cache), quindi qui va SOLO il
+        # riferimento al nome della cache, mai entrambi insieme.
+        payload["cachedContent"] = cache_name
+    else:
+        # Fallback: nessuna cache disponibile, mandiamo il system prompt
+        # per intero come si faceva prima di questa modifica.
+        payload["system_instruction"] = {"parts": [{"text": GEMINI_VISION_SYSTEM_PROMPT}]}
 
     # Errori transitori (sovraccarico/rate limit lato Google) -> ritentiamo
     # con backoff esponenziale. Altri errori (4xx diversi da 429, es. API
@@ -964,6 +1094,31 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=4):
                     "analizzabili e applica la regola su assenza totale di prove di brand "
                     "dove pertinente.]"
                 )
+
+            # CACHE INVALIDA/SCADUTA: Gemini risponde HTTP 400/404 se il
+            # "cachedContent" referenziato non esiste piu' (es. scaduto
+            # prima del previsto, o il processo Railway ha avuto un cold
+            # restart che ha invalidato la variabile globale _gemini_cache_name
+            # in un altro worker). Invalidiamo la cache locale e ritentiamo:
+            # il prossimo tentativo chiamera' assicura_gemini_cache(), che
+            # la trovera' None e ne creera' una nuova automaticamente.
+            if (
+                cache_name
+                and resp.status_code in (400, 404)
+                and "cachedContent" in (resp.text or "")
+                and attempt < max_retries
+            ):
+                log.warning(
+                    "Gemini cache '%s' non valida/scaduta (HTTP %d) -- "
+                    "invalido la cache locale e ritento (verra' ricreata "
+                    "automaticamente). Body: %s",
+                    cache_name, resp.status_code, resp.text[:300],
+                )
+                globals()["_gemini_cache_name"] = None
+                payload.pop("cachedContent", None)
+                payload["system_instruction"] = {"parts": [{"text": GEMINI_VISION_SYSTEM_PROMPT}]}
+                time.sleep(1)
+                continue
 
             if resp.status_code in RETRYABLE_STATUS_CODES and attempt < max_retries:
                 log.warning(
