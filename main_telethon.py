@@ -1112,6 +1112,8 @@ def _serper_scrape_page(url, max_chars=1300):
 
 def _esegui_ricerca_serper_completa(brand, modello, categoria, query_base,
                                      catalog_id=None, material_per_ricerca=None):
+    from urllib.parse import quote
+    """Esegue le 5 ricerche in parallelo (3 scrape diretti + 2 Google batch)."""
     results_by_label = {}
 
     vinted_url, vinted_e_per_id = build_vinted_search_url(
@@ -1119,7 +1121,9 @@ def _esegui_ricerca_serper_completa(brand, modello, categoria, query_base,
         catalog_id=catalog_id, material_per_ricerca=material_per_ricerca,
     )
     ebay_url = search_comps_ebay_sold(brand, modello, categoria)
-    vestiaire_url = f"[https://www.vestiairecollective.com/search/?q=](https://www.vestiairecollective.com/search/?q=){quote(query_base)}"
+    
+    # ASSALTO DIRETTO A VESTIAIRE COLLECTIVE
+    vestiaire_url = f"https://www.vestiairecollective.com/search/?q={quote(query_base)}"
 
     serper_queries = [
         ("GOOGLE GENERICO (prezzo/valore)", f"{query_base} prezzo valore second hand"),
@@ -1173,6 +1177,7 @@ def _esegui_ricerca_serper_completa(brand, modello, categoria, query_base,
 
 
 def search_comps_serper(brand, modello, categoria, catalog_id=None, material_per_ricerca=None):
+    """Ricerca comps di prezzo via Serper. Orchestrazione e fallback."""
     query_base = f"{brand} {modello} {categoria}".strip()
     if not query_base or query_base.lower() in ("nessuno", "non disponibile", ""):
         return "RICERCA WEB: non eseguita, brand/modello non identificabile con sufficiente certezza dal JSON visivo."
