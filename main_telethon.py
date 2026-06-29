@@ -1275,6 +1275,25 @@ def _clean_scraped_markdown(content):
     content = re.sub(r"\[Passa al contenuto!?\[[^\]]*\]\([^)]+\)\]\([^)]+\)", "", content)
     content = re.sub(r"!\[Catalogo\]\([^)]+\)", "", content)
 
+    # Estrae l'alt-text dalle immagini prodotto markdown (scartando SOLO
+    # l'URL dell'immagine, che e' sempre inutile per il pricing), es.
+    # "![T-shirt Marni, brand: Marni, condizioni: Buone, taglia: S, €25.00,
+    # €26.95 include la Protezione acquisti](https://images1.vinted.net/...)"
+    # -> "- T-shirt Marni, brand: Marni, condizioni: Buone, taglia: S,
+    # €25.00, €26.95 include la Protezione acquisti".
+    #
+    # CORREZIONE IMPORTANTE rispetto a un primo tentativo: NON rimuovere
+    # l'intera riga immagine -- verificato su un campione reale (29/06/2026)
+    # che il prezzo/titolo/condizione di un risultato Vinted a volte vive
+    # SOLO dentro l'alt-text dell'immagine, senza essere ripetuto altrove
+    # nel testo circostante. Rimuovere l'intera riga (come fatto per le
+    # icone SVG decorative sopra, dove l'alt-text non porta mai dato utile)
+    # perderebbe quei prezzi. L'URL invece e' sempre scartabile: anche se
+    # contiene un id foto, non e' mai usato da Claude per il pricing, e
+    # pesa molto piu' dell'alt-text (spesso 80-150+ caratteri di path/token
+    # CDN). Solo l'URL viene tagliato qui, l'informazione testuale resta.
+    content = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"- \1", content)
+
     # Rimuove righe vuote multiple consecutive (residuo della rimozione
     # sopra) per non sprecare token su spazio bianco ripetuto.
     content = re.sub(r"\n{3,}", "\n\n", content)
