@@ -137,113 +137,57 @@ GEMINI_API_URL = (
 )
 GEMINI_CACHED_CONTENTS_URL = "https://generativelanguage.googleapis.com/v1beta/cachedContents"
 
-# EXPLICIT CACHING GEMINI (aggiunto 29/06/2026 dopo verifica spesa reale:
-# €4,18 in un giorno, €0,00 di risparmio cache -- il caching IMPLICITO di
-# Gemini ("no cost saving guarantee" per documentazione ufficiale) non
-# stava scattando in modo affidabile su gemini-3.5-flash, modello molto
-# recente (uscito 19/05/2026) potenzialmente non ancora coperto a pieno
-# dall'implicit caching. L'EXPLICIT caching (client.caches.create, qui
-# replicato via REST puro per restare coerenti con lo stile requests
-# del resto del file) garantisce lo sconto 90% sui token cachati,
-# indipendentemente da soglie/euristiche interne di Google.
-#
-# Il GEMINI_VISION_SYSTEM_PROMPT e' enorme e identico ad OGNI chiamata
-# (e' il candidato ideale per il caching, esattamente come il system
-# prompt di Claude) -- viene cachato UNA VOLTA all'avvio del bot (TTL
-# lungo, ricreato automaticamente se scaduto/invalido), poi ogni
-# chiamata Gemini lo referenzia con "cachedContent" invece di rimandarlo
-# per intero. Le foto restano SEMPRE nel messaggio utente non cachato
-# (cambiano ad ogni annuncio, non sono mai cachabili), quindi il
-# risparmio si applica solo alla porzione di system prompt, non alle
-# foto -- ma su un prompt di migliaia di token ripetuto a ogni chiamata,
-# anche questo da solo vale la pena.
-GEMINI_CACHE_TTL_SECONDS = 3600 * 6  # 6 ore: ampio margine, costo storage trascurabile vs risparmio
-_gemini_cache_name = None  # popolato da assicura_gemini_cache(), None se non ancora creata/fallita
+# EXPLICIT CACHING GEMINI
+GEMINI_CACHE_TTL_SECONDS = 3600 * 6
+_gemini_cache_name = None
 
 CLAUDE_MODEL = "claude-sonnet-4-6"
-MAX_GALLERY_PHOTOS = 10  # tetto massimo foto da inviare ai modelli (costo)
+MAX_GALLERY_PHOTOS = 10
 
-# Adatta questa stringa se il nome/username esatto del bot terzo e' diverso
 VINTED_TRACKER_NAME_HINTS = ("vinted", "tracker")
 
-# Mappa NOME BRAND (lowercase, come confrontato dal codice) -> brand_id
-# Vinted. Questi ID sono presi DIRETTAMENTE dalle URL dei watch reali
-# dell'utente (changedetection.io), non indovinati: Vinted non li indicizza
-# pubblicamente, l'unico modo affidabile per ottenerli e' aprire il sito,
-# filtrare per brand, e leggere il numero dall'URL risultante.
-#
-# Usata per costruire ricerche Vinted filtrate per brand_id (precise, zero
-# rumore da testo libero) al posto di ricerche Serper generiche su Vinted.
-# Se un brand non e' in questa mappa, il codice deve fare fallback su
-# ricerca testuale (search_text=) o saltare la query Vinted dedicata --
-# MAI inventare un brand_id plausibile, un ID sbagliato filtrerebbe
-# risultati del brand sbagliato in modo silenzioso e pericoloso.
-#
-# STATO: parzialmente popolata. Confermati con certezza da URL reali:
 VINTED_BRAND_IDS = {
     "brunello cucinelli": "103740",
     "rick owens": "145654",
     "arc'teryx": "319730",
-    "arcteryx": "319730",  # alias senza apostrofo, per matching piu' robusto
+    "arcteryx": "319730",
     "patagonia": "90804",
     "marni": "12251",
     "missoni": "4463",
     "jean paul gaultier": "4129",
-    "jpg": "4129",  # alias comune
+    "jpg": "4129",
     "emilio pucci": "10831",
-    "pucci": "10831",  # alias comune
+    "pucci": "10831",
     "issey miyake": "75090",
     "pleats please": "395642",
     "pleats please issey miyake": "395642",
     "claude montana": "121608",
     "miu miu": "1745",
     "thierry mugler": "284",
-    "mugler": "284",  # alias comune
+    "mugler": "284",
     "courreges": "12639",
-    "courrèges": "12639",  # alias con accento
-    # NOTA: Vivienne Westwood NON ha un brand_id dedicato su Vinted
-    # (verificato dall'URL reale: nessun brand_ids[] presente nonostante
-    # il filtro applicato) -- per questo il fallback su search_text e'
-    # l'unica opzione, non un'omissione. Thierry Mugler e Courreges
-    # ERANO inizialmente segnalati come privi di ID, ma sono stati poi
-    # confermati con un secondo controllo (vedi sopra) -- la nota
-    # originale era quindi imprecisa per questi due.
-
-    # Watch 1 "Visual Icons" -- completato, ultimi 4 confermati:
+    "courrèges": "12639",
     "m missoni": "1702343",
     "missoni home": "2776470",
     "missoni mare": "2720679",
     "vivienne westwood": "14217",
-
-    # Watch 3 "Avant-Garde" -- completato, 5 confermati:
     "yohji yamamoto": "200474",
     "dries van noten": "72138",
     "ann demeulemeester": "51445",
     "raf simons": "184436",
     "loewe": "24209",
-
-    # Watch 2 "Cappotti 90s Minimal" -- completato, 5 confermati:
     "helmut lang": "47829",
     "jil sander": "17991",
     "bottega veneta": "86972",
     "maison margiela": "639289",
-    "margiela": "639289",  # alias comune
+    "margiela": "639289",
     "max mara": "5483",
-
-    # Watch 4 "Technical Outerwear" -- completato, 4 confermati:
     "veilance": "3388210",
     "nanga": "434286",
     "snow peak": "666350",
     "acronym": "712647",
 }
 
-# Priorita' materiali: quando un annuncio elenca piu' materiali (es. "Cotone,
-# Denim, Velluto"), scegliamo per il search_text quello piu' indicativo di
-# valore/pregio, non il primo della lista (spesso il piu' generico/economico).
-# Ordine = priorita' decrescente: il primo materiale annuncio che matcha
-# qualsiasi voce qui sotto viene scelto. Se nessun materiale dell'annuncio
-# e' in questa lista, non sceglie nulla (meglio nessun filtro extra che uno
-# scelto a caso/primo-della-lista senza criterio).
 MATERIALI_PREGIATI_PRIORITA = [
     "cashmere", "vicuna", "vigogna", "seta", "velluto", "pelle", "shearling",
     "montone", "renna", "alpaca", "mohair", "lana", "lino", "viscosa", "lurex",
@@ -258,14 +202,6 @@ log = logging.getLogger("vinted_flip_bot")
 
 
 def scegli_materiale_per_ricerca(material_value_raw):
-    """material_value_raw: stringa grezza vista in pagina, es.
-    'Cotone, Denim, Velluto'. Ritorna il materiale con priorita' piu' alta
-    tra quelli elencati (lowercase, pronto per search_text), o None se
-    nessuno dei materiali elencati e' nella lista di priorita'.
-
-    Definita qui (prima di scrape_vinted_listing, che la usa, e prima di
-    build_vinted_search_url) per evitare problemi di ordine di definizione
-    in un singolo file eseguito top-to-bottom."""
     if not material_value_raw:
         return None
     materiali_annuncio = [m.strip().lower() for m in material_value_raw.split(",")]
@@ -274,9 +210,8 @@ def scegli_materiale_per_ricerca(material_value_raw):
             return materiale_prioritario
     return None
 
-
 # ---------------------------------------------------------------------------
-# VINTED FLIP ORACLE PRO -- system prompt (identico alla versione precedente)
+# VINTED FLIP ORACLE PRO -- system prompt
 # ---------------------------------------------------------------------------
 
 VINTED_FLIP_ORACLE_PRO_SYSTEM_PROMPT = r"""
@@ -411,7 +346,7 @@ Rispondi SOLO con un oggetto JSON valido (nessun testo prima o dopo, nessun bloc
     "brand_effettivamente_visibile_sui_loghi": "...",
     "categoria": "...",
     "modello_stimato": "...",
-    "query_di_ricerca_ideale": "Stringa BREVE e PRECISA (max 5-6 parole) ottimizzata per cercare comps di questo capo esatto su Google/eBay/Vinted. Usa SOLO brand + 2-4 parole chiave davvero distintive (es. 'M Missoni top lurex', 'Patagonia pile Retro-X', 'JPG giacca denim archivio'). NON includere parole generiche di riempimento (es. 'con', 'in', 'di colore', materiali ovvi) e NON ripetere la categoria due volte. Una query troppo lunga o troppo specifica fa fallire la ricerca (un venditore reale raramente scrive titoli cosi' dettagliati) -- meglio una query un po' piu' generica che zero risultati.",
+    "query_di_ricerca_ideale": "Crea una stringa di ricerca BREVISSIMA e letale per eBay (max 3 parole: Brand + Modello/Categoria). NON inserire mai colori, generi (uomo/donna) o materiali, perché azzerano i risultati di eBay.",
     "linea_o_epoca": "es. vintage anni '90, collezione recente, main line, diffusion line (es. M Missoni vs Missoni, Weekend Max Mara vs Max Mara) -- specifica se riconoscibile",
     "taglia": "...",
     "fit": "...",
@@ -492,18 +427,10 @@ REGOLE IMPORTANTI:
 
 
 # ---------------------------------------------------------------------------
-# TELEGRAM BOT API HELPERS (solo per INVIARE i report finali)
+# TELEGRAM BOT API HELPERS
 # ---------------------------------------------------------------------------
 
 def telegram_send_message(chat_id, text):
-    """Invia un messaggio, spezzandolo automaticamente se supera 4096 caratteri.
-
-    Note di robustezza: lo split prova prima a tagliare su un doppio
-    a-capo (separazione tra sezioni), poi su un singolo a-capo, e solo
-    come ultima risorsa taglia a metà testo. Se l'invio con Markdown
-    fallisce (es. asterischi/blockquote non bilanciati per via del
-    taglio), ritenta SENZA parse_mode: in quel caso il testo arriva
-    comunque per intero, solo senza la formattazione."""
     MAX_LEN = 3500
     chunks = []
     remaining = text
@@ -567,14 +494,6 @@ BRAND_REGEX = re.compile(r"Brand\s*:\s*(.+)", re.IGNORECASE)
 
 
 def parse_vinted_tracker_message(text):
-    """Estrae titolo, prezzo, brand dal testo del messaggio del bot terzo.
-
-    Formato osservato:
-        📌 <titolo>
-        💰 Price : <prezzo> EUR
-        🏷️ Brand : <brand>
-        <hashtags>
-    """
     lines = [l.strip() for l in text.splitlines() if l.strip()]
     title = None
     for line in lines:
@@ -600,7 +519,7 @@ def extract_url_from_text(text):
 
 
 # ---------------------------------------------------------------------------
-# SCRAPING VINTED (punto fragile - vedi note in testa al file)
+# SCRAPING VINTED
 # ---------------------------------------------------------------------------
 
 VINTED_HEADERS = {
@@ -614,7 +533,7 @@ VINTED_HEADERS = {
 IMAGE_DOWNLOAD_HEADERS = {
     "User-Agent": VINTED_HEADERS["User-Agent"],
     "Accept-Language": VINTED_HEADERS["Accept-Language"],
-    "Referer": "https://www.vinted.it/",
+    "Referer": "[https://www.vinted.it/](https://www.vinted.it/)",
     "Accept": "image/webp,image/avif,image/jpeg,image/png,image/*,*/*;q=0.8",
     "Sec-Fetch-Dest": "image",
     "Sec-Fetch-Mode": "no-cors",
@@ -622,19 +541,11 @@ IMAGE_DOWNLOAD_HEADERS = {
     "Connection": "keep-alive",
 }
 
-# Sessione condivisa: riusa connessione e cookie tra le richieste di
-# scraping pagina e download immagini dello stesso annuncio, il che
-# aiuta con CDN che si aspettano una sessione "coerente" (stessi cookie
-# di tracking della pagina HTML quando poi richiedi le immagini).
 _vinted_session = requests.Session()
 _vinted_session.headers.update(VINTED_HEADERS)
 
 
 def scrape_vinted_listing(url):
-    """Tenta di recuperare tutte le foto della galleria + dati extra
-    (taglia, condizione, descrizione, catalog_id, materiale) dalla
-    pagina pubblica Vinted.
-    """
     result = {
         "photo_urls": [], "size": None, "condition": None, "description": None,
         "created_at": None, "age_days": None,
@@ -646,13 +557,6 @@ def scrape_vinted_listing(url):
         resp.raise_for_status()
         html = resp.text
 
-        # le immagini della galleria Vinted hanno pattern
-        # .../t/<id_foto>/<risoluzione>/<file>.webp?s=<token_firma>
-        # -- lo stesso scatto appare a piu' risoluzioni (70x100, 150x210,
-        # 310x430, f800); raggruppiamo per id_foto e teniamo solo la
-        # versione f800. IMPORTANTE: il parametro ?s=<token> e' una firma
-        # temporanea richiesta dal CDN -- senza di esso il download
-        # dell'immagine viene rifiutato (403), quindi va sempre incluso.
         matches = re.findall(
             r'https://images\d?\.vinted\.net/t/([a-zA-Z0-9_]+)/((?:f800|\d+x\d+))/'
             r'[^\s"\'\\]+?\.(?:jpe?g|png|webp)(?:\?s=[a-f0-9]+)?',
@@ -691,11 +595,6 @@ def scrape_vinted_listing(url):
         if desc_match:
             result["description"] = desc_match.group(1).encode().decode("unicode_escape")
 
-        # Data di pubblicazione: serve per valutare l'urgenza reale (un
-        # annuncio online da giorni senza essere stato comprato e' un
-        # segnale che altri flipper potrebbero gia' averlo scartato o
-        # che la domanda e' piu' bassa di quanto sembri -- molto diverso
-        # da un annuncio appena pubblicato dove la corsa e' reale).
         created_match = re.search(r'"created_at_ts"\s*:\s*"([^"]+)"', html)
         if created_match:
             result["created_at"] = created_match.group(1)
@@ -709,31 +608,6 @@ def scrape_vinted_listing(url):
             except Exception:
                 log.warning("Impossibile calcolare l'eta' dell'annuncio da created_at_ts=%s", created_match.group(1))
 
-        # CATALOG + MATERIALE/COLORE: per ricerche comp piu' raffinate.
-        # CORREZIONE (29/06/2026, dopo verifica diretta sull'HTML reale via
-        # DevTools): il pattern precedente cercava un payload JSON
-        # "request_options" con {"code":"material","data":{"value":...}}
-        # -- VERIFICATO non essere presente nell'HTML scaricato da requests
-        # (i log diagnostici mostravano solo testo libero in descrizione o
-        # il dizionario di traduzioni i18n {"item.details.color":"Colore"},
-        # mai il dato del prodotto specifico). Il dato REALE e' invece
-        # marcato con microdata schema.org standard: itemprop="color",
-        # itemprop="status", itemprop="size" -- attributi HTML, non un
-        # payload JS interno, quindi molto piu' stabili nel tempo. Pattern
-        # verificato sul vero HTML di un annuncio (maglione Missoni):
-        # <div itemprop="color"><span ...>Marrone, Azzurro</span></div>
-        # CATALOG_ID: estratto dalla breadcrumb di navigazione in cima alla
-        # pagina annuncio, verificata sul vero HTML il 29/06/2026. La
-        # breadcrumb elenca le categorie dalla piu' generica alla piu'
-        # specifica come link /catalog/<id>-<slug>, es. "Donna" (1904) ->
-        # "Vestiti" (4) -> "Maglioni e pullover" (13) -> "Cardigan" (194),
-        # seguita da un ultimo link RIDONDANTE che combina la stessa
-        # categoria col brand (es. /catalog/194-cardigans/brand/4463-...) --
-        # quel link va escluso (il pattern qui sotto matcha solo link che
-        # terminano con "?referrer=item-crumbs", quindi SENZA un "/brand/"
-        # nel mezzo). Prendiamo l'ULTIMO link valido = la categoria piu'
-        # specifica, esattamente il livello di granularita' voluto per
-        # filtrare i comp (es. "Cardigan", non il generico "Vestiti").
         catalog_matches = re.findall(
             r'/catalog/(\d+)-[a-z0-9-]+?\?referrer=item-crumbs"',
             html,
@@ -741,10 +615,6 @@ def scrape_vinted_listing(url):
         if catalog_matches:
             result["catalog_id"] = catalog_matches[-1]
 
-        # Pattern: trova itemprop="X", poi il testo del primo <span> annidato
-        # successivo (il valore reale) -- si ferma al primo tag che segue il
-        # testo (es. un <button> di info annidato, visto nel caso "status"),
-        # quindi NON cattura testo di elementi figli accidentali.
         material_match = re.search(
             r'itemprop="material"[^>]*>.*?<span[^>]*>([^<]+)',
             html, re.DOTALL,
@@ -767,15 +637,6 @@ def scrape_vinted_listing(url):
             result["material_per_ricerca"], result["color_raw"],
         )
 
-        # DIAGNOSTICA TEMPORANEA: se NESSUNO dei tre campi e' stato trovato
-        # (catalog_id, material_raw, color_raw tutti None), logghiamo una
-        # porzione di HTML grezzo intorno alla prima occorrenza di
-        # 'itemprop="color"' (l'ancoraggio verificato il 29/06/2026 sul
-        # vero markup -- la versione precedente cercava la stringa
-        # "Colore", che pero' matchava anche il dizionario di traduzioni
-        # i18n {"item.details.color":"Colore"} e dava falsi indizi). Se
-        # anche questo nuovo pattern smette di funzionare in futuro, il
-        # log qui sotto mostra direttamente la struttura reale aggiornata.
         if not result["catalog_id"] and not result["material_raw"] and not result["color_raw"]:
             indice_color = html.find('itemprop="color"')
             if indice_color != -1:
@@ -801,7 +662,7 @@ def scrape_vinted_listing(url):
     return result
 
 
-def download_image_bytes(url, referer="https://www.vinted.it/", max_retries=2):
+def download_image_bytes(url, referer="[https://www.vinted.it/](https://www.vinted.it/)", max_retries=2):
     headers = dict(IMAGE_DOWNLOAD_HEADERS)
     headers["Referer"] = referer
 
@@ -823,7 +684,7 @@ def download_image_bytes(url, referer="https://www.vinted.it/", max_retries=2):
                 "Download immagine fallito (tentativo %d/%d) -- eccezione %s: %s",
                 attempt, max_retries, type(exc).__name__, url,
             )
-        time.sleep(0.6 * attempt)  # piccolo backoff prima del retry
+        time.sleep(0.6 * attempt)
 
     log.warning(
         "Download immagine fallito definitivamente dopo %d tentativi (ultimo status=%s, ultimo errore=%s): %s",
@@ -833,27 +694,10 @@ def download_image_bytes(url, referer="https://www.vinted.it/", max_retries=2):
 
 
 # ---------------------------------------------------------------------------
-# GEMINI -- analisi visiva pura (con retry/backoff su errori transitori)
+# GEMINI
 # ---------------------------------------------------------------------------
 
 def optimize_image_bytes(img_bytes, max_size=768):
-    """Ridimensiona e ricomprime l'immagine prima di inviarla a Gemini,
-    per ridurre i byte trasferiti (e quindi il costo, dato che Gemini
-    fattura anche in base alla dimensione dell'immagine input).
-
-    max_size=768 (non 512 come in altre versioni viste): un compromesso
-    deliberato -- 512px rischia di rendere illeggibili etichette piccole,
-    codici di produzione o testo fine sulle wash tag, che sono spesso
-    decisivi per il legit check (es. il caso reale "M Missoni" dove la
-    wash tag conteneva un blocco di testo lungo e denso, leggibile solo
-    se l'immagine non e' compressa troppo aggressivamente). 768px tiene
-    comunque un risparmio di banda/costo significativo rispetto alle foto
-    originali (spesso 1200px+) senza sacrificare la leggibilita'.
-
-    Se l'ottimizzazione fallisce per qualsiasi motivo (formato non
-    supportato, immagine corrotta), ritorna i byte originali invariati --
-    non vogliamo che un problema di compressione blocchi l'intera
-    valutazione."""
     try:
         img = Image.open(BytesIO(img_bytes))
         img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
@@ -868,20 +712,6 @@ def optimize_image_bytes(img_bytes, max_size=768):
 
 
 def assicura_gemini_cache():
-    """Crea la cache esplicita per GEMINI_VISION_SYSTEM_PROMPT se non
-    esiste ancora (prima chiamata del processo) o se la precedente e'
-    scaduta/invalida. Ritorna il nome della cache (stringa, da passare
-    come "cachedContent" nelle chiamate generateContent) o None se la
-    creazione fallisce -- in quel caso il chiamante deve fare fallback
-    al comportamento precedente (system_instruction per intero ad ogni
-    chiamata), MAI bloccare la pipeline per un problema di caching.
-
-    Usa una variabile globale di modulo (_gemini_cache_name) come cache
-    in-process: valida per tutta la durata del processo Railway, fino al
-    prossimo restart o alla scadenza del TTL (6 ore, vedi
-    GEMINI_CACHE_TTL_SECONDS) -- in quel caso la prossima chiamata che
-    fallisce con "cache non trovata" la ricrea automaticamente (vedi
-    gestione errori in call_gemini_vision)."""
     global _gemini_cache_name
 
     if _gemini_cache_name is not None:
@@ -926,11 +756,6 @@ def assicura_gemini_cache():
 
 
 def call_gemini_vision(photos_bytes_list, listing_info, max_retries=4):
-    """Chiama Gemini per l'analisi visiva. Con la fatturazione attiva sul
-    progetto i limiti di rate sono molto piu' alti del free tier, ma questo
-    retry resta utile contro sovraccarichi temporanei lato Google (503),
-    rate limit residui (429) o problemi di rete transitori -- nessuno di
-    questi e' un bug nel codice, sono condizioni esterne da assorbire."""
     user_text_for_log = (
         f"Titolo annuncio: {listing_info.get('title')}\n"
         f"Brand dichiarato: {listing_info.get('brand')}\n"
@@ -958,27 +783,10 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=4):
             }
         })
 
-    # EXPLICIT CACHING: proviamo a usare la cache del system prompt se
-    # disponibile. Se "cache_name" e' None (creazione cache fallita, o
-    # primo avvio in corso), il payload include comunque system_instruction
-    # per intero come fallback -- la chiamata Gemini funziona in entrambi
-    # i casi, cambia solo se il system prompt viene rimandato per intero
-    # (pagato a prezzo pieno) o referenziato dalla cache (scontato 90%).
     cache_name = assicura_gemini_cache()
 
     payload = {
         "contents": [{"role": "user", "parts": parts}],
-        # SAFETY SETTINGS: disattiviamo il blocco automatico di Google sui
-        # contenuti delle 4 categorie standard. Motivazione specifica per
-        # questo bot: le foto di abbigliamento second-hand (es. capi con
-        # stampe particolari, intimo/costumi che POSSONO avere mercato
-        # second-hand legittimo come discusso nel prompt) possono talvolta
-        # attivare falsi positivi nei filtri di sicurezza generici di
-        # Gemini, causando una risposta vuota o troncata che il nostro
-        # codice tratterebbe come "analisi non disponibile" anche se il
-        # contenuto era completamente innocuo. BLOCK_NONE rimuove questo
-        # rischio di falsi positivi sul nostro caso d'uso specifico (non
-        # stiamo generando contenuto, solo analizzando foto di vestiti).
         "safetySettings": [
             {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
             {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
@@ -989,55 +797,17 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=4):
             "temperature": 0.2,
             "maxOutputTokens": 6000,
             "responseMimeType": "application/json",
-            # THINKING LEVEL (aggiunto 29/06/2026, dopo analisi costi reali):
-            # gemini-3.5-flash usa di default thinking_level="medium" (il
-            # default e' sceso da "high" a "medium" rispetto al precedente
-            # gemini-3-flash-preview, ma resta comunque attivo -- per
-            # tutti i modelli Gemini 3.x il thinking NON puo' essere
-            # disattivato del tutto, a differenza dei modelli 2.5 dove
-            # thinking_budget=0 lo azzerava). Osservato su una chiamata
-            # reale in log: thoughtsTokenCount=1957, PIU' del JSON di
-            # risposta visibile stesso (candidatesTokenCount=1553) --
-            # dato che l'output (incluso il thinking, sempre fatturato)
-            # costa 6x l'input ($9 vs $1.50 per milione di token), questo
-            # singolo numero pesava piu' dell'intero costo di input
-            # (testo+immagini) della stessa chiamata.
-            #
-            # "low" scelto (non "minimal"): il compito di Gemini qui non
-            # e' banale -- richiede giudizio reale (coerenza logo/brand,
-            # legit check con valutazione di rischio, non solo estrazione
-            # meccanica), e la documentazione Google segnala "minimal" come
-            # adatto solo a "task a bassa complessita' che non
-            # beneficerebbero di un ragionamento estensivo". "low" e' la
-            # via di mezzo piu' sicura: riduce sensibilmente il thinking
-            # rispetto al default "medium" senza il rischio di "minimal"
-            # sui campi piu' delicati del JSON (testo_letterale_etichette,
-            # legit_check_preliminare). Se in produzione si osserva un calo
-            # di qualita' (es. coerenza_con_brand_dichiarato sbagliata piu'
-            # spesso, trascrizioni etichette meno accurate), il valore qui
-            # va riportato a "medium" -- e' una scelta riducibile a una
-            # singola riga, non serve altro codice.
             "thinkingConfig": {"thinkingLevel": "low"},
         },
     }
 
     if cache_name:
-        # "cachedContent" e "system_instruction" sono MUTUAMENTE ESCLUSIVI
-        # nell'API Gemini -- il system prompt e' gia' dentro la cache
-        # (creato in assicura_gemini_cache), quindi qui va SOLO il
-        # riferimento al nome della cache, mai entrambi insieme.
         payload["cachedContent"] = cache_name
     else:
-        # Fallback: nessuna cache disponibile, mandiamo il system prompt
-        # per intero come si faceva prima di questa modifica.
         payload["system_instruction"] = {"parts": [{"text": GEMINI_VISION_SYSTEM_PROMPT}]}
 
-    # Errori transitori (sovraccarico/rate limit lato Google) -> ritentiamo
-    # con backoff esponenziale. Altri errori (4xx diversi da 429, es. API
-    # key invalida o richiesta malformata) non hanno senso da ritentare e
-    # vengono propagati immediatamente.
     RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
-    backoff_seconds = 2  # 2s, 4s, 8s, 16s...
+    backoff_seconds = 2
 
     last_exception = None
     for attempt in range(1, max_retries + 1):
@@ -1068,15 +838,6 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=4):
                     for p in (candidates[0].get("content", {}) or {}).get("parts", []) or []
                 )
 
-                # VALIDAZIONE CONTENUTO: una risposta HTTP 200 non garantisce
-                # un JSON utile -- Gemini puo' restituire testo vuoto, troncato
-                # a metà (es. per maxOutputTokens insufficiente con molte foto),
-                # o un placeholder degenere come "...". Controlliamo lunghezza
-                # minima e validità JSON prima di accettare la risposta: se
-                # fallisce, trattiamo come errore transitorio e ritentiamo,
-                # invece di passare a Claude un'analisi visiva inutilizzabile
-                # che lo forzerebbe ad applicare "assenza totale di prove"
-                # anche quando le foto in realtà mostravano etichette chiare.
                 content_is_valid = False
                 if extracted_text and len(extracted_text.strip()) >= 50:
                     try:
@@ -1097,9 +858,7 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=4):
                     time.sleep(backoff_seconds)
                     backoff_seconds *= 2
                     continue
-                # Ultimo tentativo esaurito con contenuto invalido: meglio
-                # un placeholder esplicito che un JSON spazzatura passato a
-                # Claude come se fosse analisi visiva valida.
+                
                 log.error(
                     "Gemini: contenuto invalido/vuoto persistente dopo %d tentativi. "
                     "Ultima risposta (anteprima): %r",
@@ -1113,13 +872,6 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=4):
                     "dove pertinente.]"
                 )
 
-            # CACHE INVALIDA/SCADUTA: Gemini risponde HTTP 400/404 se il
-            # "cachedContent" referenziato non esiste piu' (es. scaduto
-            # prima del previsto, o il processo Railway ha avuto un cold
-            # restart che ha invalidato la variabile globale _gemini_cache_name
-            # in un altro worker). Invalidiamo la cache locale e ritentiamo:
-            # il prossimo tentativo chiamera' assicura_gemini_cache(), che
-            # la trovera' None e ne creera' una nuova automaticamente.
             if (
                 cache_name
                 and resp.status_code in (400, 404)
@@ -1147,7 +899,6 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=4):
                 backoff_seconds *= 2
                 continue
 
-            # Errore non transitorio, o ultimo tentativo esaurito: propaga.
             resp.raise_for_status()
 
         except requests.exceptions.HTTPError as exc:
@@ -1155,7 +906,6 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=4):
             if attempt >= max_retries:
                 break
         except requests.exceptions.RequestException as exc:
-            # Timeout, connessione persa, ecc. -- trattali come transitori.
             last_exception = exc
             log.warning(
                 "Gemini eccezione di rete (tentativo %d/%d): %s -- ritento in %ds",
@@ -1167,9 +917,6 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=4):
                 continue
             break
 
-    # Tutti i tentativi esauriti: non far crashare l'intera pipeline.
-    # Logghiamo l'errore e restituiamo un placeholder che Claude può
-    # interpretare correttamente (assenza di analisi visiva = cautela massima).
     log.error(
         "Gemini Vision: tutti i %d tentativi falliti. Ultimo errore: %s",
         max_retries, last_exception,
@@ -1184,26 +931,10 @@ def call_gemini_vision(photos_bytes_list, listing_info, max_retries=4):
 
 
 # ---------------------------------------------------------------------------
-# CLAUDE -- prezzi, margine, verdetto finale (con web_search)
+# CLAUDE -- prezzi, margine, verdetto finale
 # ---------------------------------------------------------------------------
 
 def strip_per_photo_analysis(gemini_analysis_json):
-    """Rimuove il campo 'analisi_visiva_per_foto' dal JSON di Gemini prima
-    di passarlo a Claude. Quel campo e' narrazione descrittiva foto-per-
-    foto (es. "Inquadratura frontale del vestito appeso a una gruccia...")
-    pensata per dare a Claude una ricostruzione visiva completa, ma in
-    pratica e' molto verbosa e ridondante rispetto ai campi di sintesi
-    gia' presenti (difetti_riassunto, legit_check_preliminare,
-    condizione_reale, testo_letterale_etichette) che contengono le
-    informazioni che davvero incidono sul verdetto economico. Su annunci
-    con molte foto (8-10) questo campo da solo arriva a pesare 1000+
-    token extra nel messaggio a Claude, senza un beneficio proporzionale
-    sulla qualita' del verdetto.
-
-    Se il JSON non e' parsabile (es. placeholder di errore tipo "...",
-    o un messaggio di errore esplicito da call_gemini_vision), lo
-    restituisce invariato: non vogliamo rompere il flusso per un'
-    ottimizzazione di costo."""
     try:
         data = json.loads(gemini_analysis_json)
     except (json.JSONDecodeError, ValueError, TypeError):
@@ -1220,29 +951,14 @@ def strip_per_photo_analysis(gemini_analysis_json):
 
     return json.dumps(data, ensure_ascii=False, indent=2)
 
+
 def _serper_batch_query(labeled_queries, num_results=3, max_snippet_chars=80):
-    """Esegue PIU' query Serper in UNA SOLA richiesta HTTP, usando il
-    formato batch documentato da Serper: un array JSON di oggetti
-    {"q": ..., "gl": ...} nel body della stessa POST verso /search.
-
-    Prima facevamo 1 richiesta HTTP per query (3 connessioni separate per
-    Vestiaire + 2 Google generiche); con il batch e' una sola connessione,
-    che risponde con un array di risultati nello stesso ordine delle
-    query inviate. Riduce l'overhead di rete (non i token verso Claude,
-    che dipendono dal contenuto dei risultati, non da come li richiediamo).
-
-    RISPARMIO TOKEN E SALVA-PREZZO: 
-    1) NON includiamo piu' il link nella riga di output.
-    2) Gli snippet vengono troncati a max_snippet_chars (default 80).
-    3) Regex "Salva-Prezzo" intercetta i prezzi prima del taglio e li
-       appende alla fine, garantendo che Claude non perda mai il dato.
-    """
     labels = [label for label, _ in labeled_queries]
     queries = [query for _, query in labeled_queries]
 
     try:
         resp = requests.post(
-            "https://google.serper.dev/search",
+            "[https://google.serper.dev/search](https://google.serper.dev/search)",
             headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
             json=[{"q": q, "gl": "it", "hl": "it", "num": num_results} for q in queries],
             timeout=15,
@@ -1280,15 +996,12 @@ def _serper_batch_query(labeled_queries, num_results=3, max_snippet_chars=80):
             prezzi = re.findall(r'(?:€|EUR)\s*\d+(?:[.,]\d+)?|\d+(?:[.,]\d+)?\s*(?:€|EUR)', snippet, re.IGNORECASE)
             prezzi_unici = list(dict.fromkeys(prezzi))
             
-            # Taglio brutale dello snippet per risparmiare token
             if len(snippet) > max_snippet_chars:
                 snippet = snippet[:max_snippet_chars].rstrip() + "..."
             
-            # Se ha trovato dei prezzi, li "scolpisce" alla fine per non perderli
             if prezzi_unici:
                 snippet += f" [PREZZI TROVATI: {', '.join(prezzi_unici)}]"
                 
-            # Link OMESSO deliberatamente
             lines.append(f"  - {title}\n    {snippet}")
         results_by_label[label] = "\n".join(lines)
 
@@ -1297,9 +1010,6 @@ def _serper_batch_query(labeled_queries, num_results=3, max_snippet_chars=80):
 
 def build_vinted_search_url(brand, categoria, modello_o_categoria, max_price=None,
                             catalog_id=None, material_per_ricerca=None):
-    """Costruisce un URL di ricerca Vinted filtrato per brand_id quando
-    disponibile, con fallback su search_text quando il brand non e' nella
-    mappa VINTED_BRAND_IDS."""
     brand_lower = (brand or "").strip().lower()
     brand_id = VINTED_BRAND_IDS.get(brand_lower)
 
@@ -1311,7 +1021,7 @@ def build_vinted_search_url(brand, categoria, modello_o_categoria, max_price=Non
         search_text_finale = " ".join(parti_search_text)
 
         url = (
-            f"https://www.vinted.it/catalog?brand_ids[]={brand_id}"
+            f"[https://www.vinted.it/catalog?brand_ids](https://www.vinted.it/catalog?brand_ids)[]={brand_id}"
             f"{catalog_str}"
             f"&search_text={quote(search_text_finale)}"
             "&order=newest_first&status_ids[]=1&status_ids[]=2&status_ids[]=3"
@@ -1322,7 +1032,7 @@ def build_vinted_search_url(brand, categoria, modello_o_categoria, max_price=Non
     else:
         query_text = f"{brand} {modello_o_categoria} {material_per_ricerca or ''}".strip()
         url = (
-            f"https://www.vinted.it/catalog?search_text={quote(query_text)}"
+            f"[https://www.vinted.it/catalog?search_text=](https://www.vinted.it/catalog?search_text=){quote(query_text)}"
             f"{catalog_str}"
             "&order=newest_first"
         )
@@ -1330,15 +1040,15 @@ def build_vinted_search_url(brand, categoria, modello_o_categoria, max_price=Non
 
 
 def search_comps_ebay_sold(brand, modello, categoria):
-    """Ricerca diretta su eBay con filtro 'Venduto' (sold) via Serper,
-    usando parametri ufficiali e ottimizzati (_sacat=0, _from=R40, rt=nc)."""
+    """Ricerca diretta su eBay con filtro 'Venduto' (sold) via Serper.
+    Ottimizzato con LH_PrefLoc=2 per aggirare il blocco IP americano di Serper."""
     query_base = f"{brand} {modello} {categoria}".strip()
     if not query_base:
         return None
 
     ebay_search_url = (
-        f"https://www.ebay.it/sch/i.html?_nkw={quote(query_base)}"
-        "&_sacat=0&_from=R40&rt=nc&LH_Sold=1&LH_Complete=1&_sop=13"
+        f"[https://www.ebay.it/sch/i.html?_nkw=](https://www.ebay.it/sch/i.html?_nkw=){quote(query_base)}"
+        "&LH_Sold=1&LH_Complete=1&rt=nc&LH_PrefLoc=2"
     )
     return ebay_search_url
 
@@ -1346,10 +1056,8 @@ def search_comps_ebay_sold(brand, modello, categoria):
 def _clean_scraped_markdown(content):
     if not content: return content
 
-    # 1. TRASFORMA LE IMMAGINI IN TESTO UTILE
     content = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"- \1", content)
 
-    # 2. ESTRATTORE CHIRURGICO PER VINTED (Ghigliottina a 15 item)
     vinted_items = []
     for line in content.split('\n'):
         line_lower = line.lower()
@@ -1364,7 +1072,6 @@ def _clean_scraped_markdown(content):
     if vinted_items:
         return "\n".join(vinted_items)
 
-    # 3. FALLBACK PER EBAY E ALTRI SITI (Pulizia generica)
     content = re.sub(r"^---\s*\nmeta-[\s\S]*?\n---\s*\n", "", content, flags=re.MULTILINE)
     content = re.sub(r"^meta-[\w-]+:.*$", "", content, flags=re.MULTILINE)
     content = re.sub(r"^title:.*$", "", content, flags=re.MULTILINE)
@@ -1376,17 +1083,15 @@ def _clean_scraped_markdown(content):
     # OTTIMIZZAZIONE EBAY: Rimuove TUTTI i link markdown rimasti tenendo solo il testo utile
     content = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', content)
     
-    # Rimuove righe vuote multiple
     content = re.sub(r"\n{3,}", "\n\n", content)
     
     return content.strip()
 
 
 def _serper_scrape_page(url, max_chars=1300):
-    """Scarica e legge il contenuto di una pagina specifica via scrape.serper.dev."""
     try:
         resp = requests.post(
-            "https://scrape.serper.dev",
+            "[https://scrape.serper.dev](https://scrape.serper.dev)",
             headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
             json={"url": url, "includeMarkdown": True},
             timeout=15,
@@ -1407,7 +1112,6 @@ def _serper_scrape_page(url, max_chars=1300):
 
 def _esegui_ricerca_serper_completa(brand, modello, categoria, query_base,
                                      catalog_id=None, material_per_ricerca=None):
-    """Esegue le 5 ricerche in parallelo."""
     results_by_label = {}
 
     vinted_url, vinted_e_per_id = build_vinted_search_url(
@@ -1415,9 +1119,9 @@ def _esegui_ricerca_serper_completa(brand, modello, categoria, query_base,
         catalog_id=catalog_id, material_per_ricerca=material_per_ricerca,
     )
     ebay_url = search_comps_ebay_sold(brand, modello, categoria)
+    vestiaire_url = f"[https://www.vestiairecollective.com/search/?q=](https://www.vestiairecollective.com/search/?q=){quote(query_base)}"
 
     serper_queries = [
-        ("VESTIAIRE COLLECTIVE", f"{query_base} site:vestiairecollective.com"),
         ("GOOGLE GENERICO (prezzo/valore)", f"{query_base} prezzo valore second hand"),
         ("GOOGLE GENERICO (retail originale)", f"{query_base} retail price original"),
     ]
@@ -1426,22 +1130,24 @@ def _esegui_ricerca_serper_completa(brand, modello, categoria, query_base,
         "QUERY/URL SERPER COSTRUITI (base: '%s'):\n"
         "  VINTED (scrape, filtro_per_id=%s): %s\n"
         "  EBAY SOLD (scrape): %s\n"
-        "  VESTIAIRE (query): %s\n"
+        "  VESTIAIRE (scrape diretto): %s\n"
         "  GOOGLE GENERICO 1 (query): %s\n"
         "  GOOGLE GENERICO 2 (query): %s",
-        query_base, vinted_e_per_id, vinted_url, ebay_url,
-        serper_queries[0][1], serper_queries[1][1], serper_queries[2][1],
+        query_base, vinted_e_per_id, vinted_url, ebay_url, vestiaire_url,
+        serper_queries[0][1], serper_queries[1][1],
     )
 
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    with ThreadPoolExecutor(max_workers=4) as executor:
         future_batch = executor.submit(_serper_batch_query, serper_queries)
         future_vinted = executor.submit(_serper_scrape_page, vinted_url)
         future_ebay = executor.submit(_serper_scrape_page, ebay_url)
+        future_vestiaire = executor.submit(_serper_scrape_page, vestiaire_url)
 
         futures = {
             future_batch: "__BATCH__",
             future_vinted: "VINTED (scrape diretto)",
             future_ebay: "EBAY SOLD (scrape diretto)",
+            future_vestiaire: "VESTIAIRE COLLECTIVE (scrape diretto)"
         }
 
         for future in as_completed(futures, timeout=20):
@@ -1467,7 +1173,6 @@ def _esegui_ricerca_serper_completa(brand, modello, categoria, query_base,
 
 
 def search_comps_serper(brand, modello, categoria, catalog_id=None, material_per_ricerca=None):
-    """Ricerca comps di prezzo via Serper. Orchestrazione e fallback."""
     query_base = f"{brand} {modello} {categoria}".strip()
     if not query_base or query_base.lower() in ("nessuno", "non disponibile", ""):
         return "RICERCA WEB: non eseguita, brand/modello non identificabile con sufficiente certezza dal JSON visivo."
@@ -1478,7 +1183,7 @@ def search_comps_serper(brand, modello, categoria, catalog_id=None, material_per
     )
 
     fallimento_totale = all(
-        any(marker in v for marker in ("Nessun risultato", "fallita", "non completata", "fallito"))
+        any(marker in v for marker in ("Nessun risultato", "fallita", "non completata", "fallito", "vuota/bloccata"))
         for v in results_by_label.values()
     )
 
@@ -1500,7 +1205,7 @@ def search_comps_serper(brand, modello, categoria, catalog_id=None, material_per
             "meno specifici per il modello esatto: usa confidenza Bassa per qualsiasi comp da qui."
         )
         fallimento_totale = all(
-            any(marker in v for marker in ("Nessun risultato", "fallita", "non completata", "fallito"))
+            any(marker in v for marker in ("Nessun risultato", "fallita", "non completata", "fallito", "vuota/bloccata"))
             for v in results_by_label.values()
         )
 
@@ -1512,9 +1217,10 @@ def search_comps_serper(brand, modello, categoria, catalog_id=None, material_per
         )
 
     serper_queries_labels = [
-        "VESTIAIRE COLLECTIVE", "GOOGLE GENERICO (prezzo/valore)", "GOOGLE GENERICO (retail originale)",
+        "GOOGLE GENERICO (prezzo/valore)", "GOOGLE GENERICO (retail originale)",
     ]
-    all_labels = serper_queries_labels + ["VINTED (scrape diretto)", "EBAY SOLD (scrape diretto)"]
+    all_labels = ["VESTIAIRE COLLECTIVE (scrape diretto)", "VINTED (scrape diretto)", "EBAY SOLD (scrape diretto)"] + serper_queries_labels
+    
     lines = [f"RICERCA WEB (5 fonti, base: '{query_base}'):"]
     if nota_fallback:
         lines.append(nota_fallback)
@@ -1530,6 +1236,7 @@ def search_comps_serper(brand, modello, categoria, catalog_id=None, material_per
 
     return "\n".join(lines)
 
+
 def call_claude_oracle(listing_info, gemini_analysis_json):
     age_days = listing_info.get("age_days")
     if age_days is not None:
@@ -1539,12 +1246,6 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
 
     gemini_analysis_for_claude = strip_per_photo_analysis(gemini_analysis_json)
 
-    # RICERCA WEB ESTERNA (Serper, non tool integrato Claude): estraggo
-    # brand/modello/categoria dal JSON Gemini originale (non filtrato) per
-    # costruire la query di ricerca, poi inietto i risultati come testo nel
-    # messaggio. Questo sostituisce il tool web_search_20250305: niente piu'
-    # server tool = niente piu' scritture extra di cache per iterazione del
-    # loop agentico (causa identificata del costo elevato in produzione).
     try:
         gemini_data = json.loads(gemini_analysis_json)
         ident = gemini_data.get("identificazione", {}) if isinstance(gemini_data, dict) else {}
@@ -1555,42 +1256,10 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
             or ""
         )
 
-        # QUERY IDEALE: se Gemini ha fornito una query di ricerca gia'
-        # ottimizzata (breve, con le parole che un venditore reale
-        # userebbe), la usiamo al posto della concatenazione grezza
-        # modello+categoria -- piu' probabile che produca risultati
-        # utili su Google/eBay/Vinted (vedi note nel prompt Gemini).
-        # SAFETY CHECK: ignoriamo la query ideale se e' sospettosamente
-        # lunga (oltre 8 parole) -- segno che Gemini non ha rispettato
-        # il vincolo "max 5-6 parole" nonostante l'istruzione, nel qual
-        # caso il fallback alla logica precedente e' piu' sicuro.
         query_ideale = (ident.get("query_di_ricerca_ideale") or "").strip()
         if query_ideale and len(query_ideale.split()) <= 8:
-            # EVITA DUPLICAZIONE BRAND: query_di_ricerca_ideale spesso
-            # include già il brand al suo interno (es. "M Missoni top
-            # lurex"), ma brand_per_ricerca viene ri-concatenato davanti
-            # in search_comps_serper (per il lookup brand_id di Vinted,
-            # che richiede il brand come parametro separato) -- senza
-            # questa pulizia la query finale duplicherebbe il brand
-            # (es. "M Missoni M Missoni top lurex"). Rimuoviamo qui le
-            # parole del brand dalla query ideale, lasciando solo il
-            # resto (es. "top lurex") come modello_per_ricerca.
             modello_per_ricerca = query_ideale
             if brand_per_ricerca:
-                # RIMOZIONE ROBUSTA PAROLA-PER-PAROLA: un confronto esatto
-                # della stringa brand (es. re.escape + sub) fallisce quando
-                # Gemini scrive il brand in modo leggermente diverso tra
-                # "identificazione.brand_effettivamente_visibile_sui_loghi"
-                # e dentro "query_di_ricerca_ideale" -- visto in produzione
-                # un caso reale dove il primo era "Jean's Paul Gaultier" e
-                # il secondo "Jeans Paul Gaultier" (apostrofo presente vs
-                # assente): il match esatto non scattava, la rimozione non
-                # avveniva, e la query finale duplicava il brand per intero
-                # ("Jean's Paul Gaultier Jeans Paul Gaultier gonna righe").
-                # Qui normalizziamo togliendo punteggiatura (apostrofi,
-                # trattini) da ENTRAMBE le stringhe prima di confrontare
-                # parola per parola, cosi' "Jean's" e "Jeans" vengono
-                # riconosciuti come la stessa parola e rimossi correttamente.
                 def _normalizza_parola(w):
                     return re.sub(r"[''\-.,]", "", w).lower()
 
@@ -1603,7 +1272,7 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
                     if _normalizza_parola(w) not in parole_brand_normalizzate
                 ]
                 modello_per_ricerca = " ".join(parole_residue).strip()
-            categoria_per_ricerca = ""  # già incluso nella query ideale, evita duplicazione
+            categoria_per_ricerca = ""
             log.info(
                 "Uso query_di_ricerca_ideale da Gemini: '%s' (brand rimosso, resto: '%s')",
                 query_ideale, modello_per_ricerca,
@@ -1669,22 +1338,6 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
 
     content = [{"type": "text", "text": user_text}]
 
-    # PROMPT CACHING: il system prompt (VINTED_FLIP_ORACLE_PRO_SYSTEM_PROMPT)
-    # e' enorme e identico ad ogni chiamata -- senza caching, ogni singola
-    # valutazione paga per intero la lettura di tutte le regole (matrice
-    # decisionale, regole su diffusion line, ecc). Con cache_control,
-    # Anthropic salva il prompt per ~5 minuti: la prima chiamata in quella
-    # finestra paga il prezzo "cache write" (poco piu' caro del normale),
-    # le chiamate successive entro 5 minuti pagano solo ~10% del costo
-    # normale per quei token. Per un bot che riceve notifiche a raffica
-    # (piu' annunci nello stesso minuto, come visto nei log reali) questo
-    # taglia drasticamente il costo medio per valutazione.
-    #
-    # NESSUN "tools" qui: la ricerca web e' ora fatta da search_comps_serper()
-    # PRIMA di questa chiamata, e i risultati sono gia' dentro user_text.
-    # Senza server tools, questa e' un'unica chiamata Claude (non un loop
-    # agentico), quindi il caching sul system prompt funziona pienamente
-    # senza le scritture extra di cache_creation per iterazione viste prima.
     payload = {
         "model": CLAUDE_MODEL,
         "max_tokens": 1200,
@@ -1711,10 +1364,6 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
     resp.raise_for_status()
     data = resp.json()
 
-    # Log delle statistiche di cache per monitorare l'efficacia nel tempo:
-    # cache_read_input_tokens alto = stiamo risparmiando; cache_creation
-    # alto e cache_read basso = la finestra di 5 minuti scade troppo spesso
-    # tra una notifica e l'altra (bot poco attivo) e il caching aiuta meno.
     usage = data.get("usage", {})
     log.info(
         "CLAUDE usage -- input: %s, cache_read: %s, cache_creation: %s, output: %s",
@@ -1724,21 +1373,9 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
         usage.get("output_tokens"),
     )
 
-    # text_blocks puo' contenere piu' di un blocco se Claude ha alternato
-    # scrittura e ricerca web: li concateniamo senza separatore aggiuntivo
-    # (join vuoto, non "\n") perche' un blocco potrebbe finire e l'altro
-    # iniziare a meta' della stessa riga markdown -- inserire un \n tra
-    # i due peggiorerebbe la leggibilita' anche nel caso "buono".
     text_blocks = [b["text"] for b in data.get("content", []) if b.get("type") == "text"]
     final_text = "".join(text_blocks) if text_blocks else "[Nessun testo restituito da Claude]"
 
-    # FIX ATTIVO (non solo log): se Claude ha scritto testo prima di
-    # "## Verdetto operativo" -- es. un "Sintesi dati raccolti prima di
-    # scrivere il verdetto:" o note di ricerca -- nonostante il vincolo
-    # nel prompt, tagliamo via tutto cio' che precede il marcatore prima
-    # di mandarlo a Telegram. Meglio perdere un'eventuale premessa
-    # innocua che spedire all'utente un report con un riepilogo grezzo
-    # di ricerca prima del formato compatto richiesto.
     verdetto_pos = final_text.find("## Verdetto operativo")
     if verdetto_pos > 0:
         testo_scartato = final_text[:verdetto_pos].strip()
@@ -1756,12 +1393,6 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
             final_text,
         )
 
-    # CONTROLLO DI SANITA' SULL'ORDINE: se nonostante il vincolo nel
-    # prompt Claude ha comunque alternato scrittura/ricerca, il report
-    # arriva con i campi fuori sequenza (es. "## Da chiedere" prima di
-    # "## Legit check", o "In una riga" prima di "Decisione"). Lo
-    # logghiamo come errore per accorgercene, ma NON blocchiamo l'invio:
-    # un report con ordine sbagliato e' comunque meglio di nessun report.
     if len(text_blocks) > 1:
         log.warning(
             "Claude ha prodotto %d blocchi di testo separati (probabile alternanza "
@@ -1779,24 +1410,6 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
             positions, expected_order, final_text,
         )
 
-    # CONTROLLO CORRETTIVO SU MARGINE-SOGLIA vs DECISIONE: se il testo
-    # contiene una frase tipo "sotto soglia" (il modello stesso lo scrive
-    # quando applica correttamente la regola dei 20 euro nel ragionamento)
-    # ma la riga "Decisione" contiene comunque un livello COMPRA, e' la
-    # stessa contraddizione vista nei casi reali "Mission Minikleid" e
-    # "Blouse Marni x Uniqlo" (margine sotto soglia dichiarato esplicita-
-    # mente, ma decisione COMPRA SE CI TIENI). Il solo logging non basta
-    # piu': qui CORREGGIAMO attivamente la riga Decisione prima dell'invio.
-    #
-    # Logica di correzione: se il margine scontato (se disponibile nel
-    # testo) potrebbe ragionevolmente superare la soglia trattando,
-    # forziamo TRATTA FORTE; altrimenti NON COMPRARE. Non potendo fare
-    # un parsing robusto del margine scontato in tutti i formati possibili,
-    # usiamo un'euristica semplice: se il testo menziona "Costo pieno
-    # trattato" con un valore numerico (non "N/A"), assumiamo che trattare
-    # sia ancora un'opzione percorribile -> TRATTA FORTE. Se invece il
-    # costo trattato e' N/A o il margine e' negativo/quasi nullo, forziamo
-    # NON COMPRARE direttamente.
     decisione_match = re.search(r"\*\*Decisione:\*\*\s*([^\n]+)", final_text)
     decisione_text = decisione_match.group(1) if decisione_match else ""
     ha_livello_compra = bool(re.search(r"\bCOMPRA\b", decisione_text))
@@ -1814,9 +1427,6 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
 
         nuova_decisione = "TRATTA FORTE" if costo_trattato_valido else "NON COMPRARE"
 
-        # Mantieni l'urgenza originale se presente (es. "· HAI QUALCHE ORA"),
-        # ma se la nuova decisione è NON COMPRARE l'urgenza non ha senso (vedi
-        # regola nel prompt) quindi la sostituiamo con N/A.
         urgenza_match = re.search(r"·\s*([^\n]+)$", decisione_text.strip())
         urgenza_originale = urgenza_match.group(1).strip() if urgenza_match else None
         if nuova_decisione == "NON COMPRARE":
@@ -1841,18 +1451,6 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
             count=1,
         )
 
-    # CONTROLLO CORRETTIVO SU "COMPRA SUBITO" + CONFIDENZA BASSA: la
-    # regola della matrice qualita' richiede esplicitamente "Confidenza
-    # non Bassa" per il livello COMPRA SUBITO (insieme a Deal 9-10,
-    # Margine 8-10, Rischio non ALTO) -- visto in produzione un caso
-    # reale (giacca Gaultier Jean's, margine 92-122EUR stimato da un
-    # singolo comp ask non-sold) dove Claude scrive "Confidenza: Bassa"
-    # nella stessa riga Deal/Margine/Liquidita'/Rischio/Confidenza e
-    # comunque assegna COMPRA SUBITO -- la stessa famiglia di errore
-    # del controllo sopra (decisione che contraddice un valore scritto
-    # nello stesso report), ma su un asse diverso (confidenza, non
-    # margine). Qui retrocediamo a COMPRA FORTE, il livello immediata-
-    # mente sotto nella matrice, che non ha il vincolo di confidenza.
     decisione_match_2 = re.search(r"\*\*Decisione:\*\*\s*([^\n]+)", final_text)
     decisione_text_2 = decisione_match_2.group(1) if decisione_match_2 else ""
     e_compra_subito = "COMPRA SUBITO" in decisione_text_2
@@ -1880,23 +1478,6 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
             count=1,
         )
 
-    # CONTROLLO CORRETTIVO SU ROI SOTTO SOGLIA 100% + DECISIONE COMPRA: la
-    # soglia ROI minimo 100% (vedi prompt) e' un secondo gate INDIPENDENTE
-    # dalla soglia margine assoluto 20€ -- un margine € alto con ROI basso
-    # non e' un COMPRA, anche se il primo controllo correttivo sopra (sulla
-    # soglia 20€) non si attiva perche' il margine assoluto e' comunque
-    # sopra soglia. Visto in produzione un caso reale (blazer Max Mara,
-    # margine €22-27 su costo pieno €48,04, ROI ~46-56%, Deal 6/10, Margine
-    # 5/10, Rischio BASSO) dove Claude assegna COMPRA perche' la matrice
-    # qualita' guarda solo Deal/Margine in punti (che misurano l'ampiezza
-    # assoluta in €), mai il ROI% in modo vincolante.
-    #
-    # Estrazione ROI: cerchiamo il primo "ROI ~NN%" o "ROI NN%" nella riga
-    # "Margine netto" (formato atteso: "€X (ROI Y%) — richiesto · trattato").
-    # Se il testo riporta un range (es. "ROI ~46-56%"), prendiamo il valore
-    # PIU' ALTO del range per dare a Claude il beneficio del dubbio --
-    # vogliamo correggere solo i casi in cui anche l'estremo piu' favorevole
-    # resta sotto soglia, non i casi limite dove il range attraversa 100%.
     decisione_match_3 = re.search(r"\*\*Decisione:\*\*\s*([^\n]+)", final_text)
     decisione_text_3 = decisione_match_3.group(1) if decisione_match_3 else ""
     ha_livello_compra_3 = bool(re.search(r"\bCOMPRA\b", decisione_text_3))
@@ -1953,35 +1534,19 @@ def call_claude_oracle(listing_info, gemini_analysis_json):
 # ---------------------------------------------------------------------------
 
 def _stima_costo_pieno_da_prezzo_e_lingua(prezzo_richiesto_str, titolo, descrizione):
-    """Stima il costo pieno d'acquisto (prezzo + protezione acquirenti +
-    spedizione) usando la stessa euristica di lingua->spedizione che il
-    prompt Claude applica normalmente (IT 2,50€, FR/ES/PT 4,50€, DE/NL/
-    nord-centro EU 5-6€), qui replicata in Python per il filtro pre-Claude
-    a costo zero. Una stima volutamente approssimativa -- usata solo per
-    decidere se skippare, non per il verdetto finale (quello lo fa sempre
-    Claude con piu' contesto, quando arriva a vederlo).
-
-    Rileva la lingua in modo grezzo (poche parole-chiave comuni nei titoli
-    Vinted di quei paesi) -- non e' un rilevatore linguistico serio, e non
-    deve esserlo: se sbaglia paese, la spedizione stimata e' comunque nello
-    stesso ordine di grandezza (2,50-6€), l'errore massimo e' ~3,50€ sul
-    costo pieno, che non sposta in modo decisivo la soglia di 20€ netti.
-
-    Ritorna None se il prezzo richiesto non e' un numero valido (non
-    possiamo stimare nulla senza un prezzo di partenza)."""
     try:
         prezzo = float(str(prezzo_richiesto_str).replace(",", "."))
     except (TypeError, ValueError):
         return None
 
     testo = f"{titolo or ''} {descrizione or ''}".lower()
-    spedizione_stimata = 2.50  # default IT, la lingua piu' comune nel tuo caso d'uso
+    spedizione_stimata = 2.50
     indicatori_non_it = (
         " la ", " et ", " avec ", " une ", " talle ", " size ", " größe ",
         " und ", " met ", " con la ", " der ", " die ", " das ",
     )
     if any(ind in testo for ind in indicatori_non_it):
-        spedizione_stimata = 4.50  # FR/ES/PT/altre EU come approssimazione unica
+        spedizione_stimata = 4.50
 
     protezione_acquirenti = round(prezzo * 0.05 + 0.70, 2)
     costo_pieno = round(prezzo + protezione_acquirenti + spedizione_stimata, 2)
@@ -1989,55 +1554,6 @@ def _stima_costo_pieno_da_prezzo_e_lingua(prezzo_richiesto_str, titolo, descrizi
 
 
 def check_skip_pre_claude(gemini_analysis_json, listing_info=None):
-    """Controllo a COSTO ZERO (nessuna chiamata API) sul JSON gia' ottenuto
-    da Gemini: se uno di QUATTRO segnali distinti indica chiaramente che non
-    vale la pena procedere, skippiamo la chiamata Claude (la voce di
-    costo piu' alta della pipeline) e rispondiamo subito con NON COMPRARE.
-
-    I quattro segnali, controllati in ordine:
-    1. Falso conclamato: legit check "Probabilmente falso" + confidenza
-       >=90% + rischio "molto alto".
-    2. Categoria a basso valore strutturale (es. calzini, intimo) --
-       campo dedicato compilato da Gemini stesso nel prompt.
-    3. Verdetto grezzo di Gemini "NON COMPRARE" -- un giudizio preliminare
-       intenzionalmente approssimativo che Gemini fa basandosi solo sulla
-       foto, senza ricerca prezzi.
-    4. Margine insufficiente ANCHE nello scenario migliore: Gemini stima
-       un prezzo_vendita_massimo_plausibile_eur (deliberatamente generoso,
-       il MIGLIOR caso possibile secondo la sua conoscenza generale, non
-       una media) -- se anche quel numero, confrontato col costo pieno
-       d'acquisto stimato, non supera la soglia di margine, allora nessuna
-       ricerca comp potrebbe salvare il deal: Claude con dati reali
-       arriverebbe quasi certamente alla stessa identica conclusione di
-       NON COMPRARE, partendo da un'ipotesi gia' piu' favorevole di
-       qualsiasi comp reale.
-
-    ASIMMETRIA DELIBERATA SUL SEGNALE 4 (importante, NON rimuovere questa
-    nota se si modifica la logica): Gemini e' sistematicamente PIU'
-    GENEROSO di Claude nelle stime di prezzo (osservato dall'utente sui
-    report reali) -- per questo il segnale 4 e' usato SOLO per SCARTARE
-    (quando anche la stima generosa dice "non basta"), mai per CONFERMARE.
-    Il bias di Gemini verso l'alto gioca A FAVORE della sicurezza qui: se
-    anche essendo generoso il margine non c'e', e' un segnale quasi certo.
-    Il contrario (usare la stima di Gemini per dire "compra") sarebbe
-    invece pericoloso, perche' il bias lavorerebbe contro la sicurezza --
-    e' per questo che questo segnale NON esiste nella direzione opposta,
-    e non va aggiunto in futuro senza ripensare l'intera asimmetria.
-
-    listing_info: necessario SOLO per il segnale 4 (serve il prezzo
-    richiesto dal venditore, non presente nel JSON di Gemini). Se None o
-    senza prezzo valido, il segnale 4 viene semplicemente saltato -- gli
-    altri tre restano validi e indipendenti.
-
-    Questo NON sostituisce il giudizio di Claude sui casi dubbi -- e'
-    deliberatamente conservativo su ciascun segnale: un falso negativo
-    (non skippare un caso ovvio) costa solo la chiamata Claude risparmiata;
-    un falso positivo (skippare un deal valido) costerebbe un margine
-    perso, molto piu' caro. Per questo i criteri di ciascun segnale sono
-    stretti, anche se i quattro segnali tra loro sono in OR (basta che
-    scatti uno per skippare).
-
-    Ritorna (True, motivo) se va skippato, (False, None) altrimenti."""
     try:
         data = json.loads(gemini_analysis_json)
     except (json.JSONDecodeError, ValueError, TypeError):
@@ -2056,7 +1572,6 @@ def check_skip_pre_claude(gemini_analysis_json, listing_info=None):
     confidenza = int(confidenza_match.group(1)) if confidenza_match else 0
     rischio = (legit.get("rischio_fake_qualitativo") or "").strip().lower()
 
-    # SEGNALE 1: falso conclamato (criteri stretti, tutti e tre insieme)
     e_falso_evidente = (
         verdetto_legit == "probabilmente falso"
         and confidenza >= 90
@@ -2066,7 +1581,6 @@ def check_skip_pre_claude(gemini_analysis_json, listing_info=None):
         motivo = legit.get("cosa_non_torna_o_e_dubbio") or "Falso conclamato dall'analisi visiva."
         return True, f"[FALSO CONCLAMATO] {motivo}"
 
-    # SEGNALE 2 e 3: dal campo dedicato valutazione_flipper_preliminare
     valutazione = data.get("valutazione_flipper_preliminare", {})
     if isinstance(valutazione, dict):
         if valutazione.get("categoria_a_basso_valore") is True:
@@ -2078,16 +1592,6 @@ def check_skip_pre_claude(gemini_analysis_json, listing_info=None):
             motivo = valutazione.get("motivo_verdetto_grezzo") or "Verdetto preliminare negativo da Gemini."
             return True, f"[VERDETTO GREZZO GEMINI] {motivo}"
 
-        # SEGNALE 4: margine insufficiente anche nel miglior caso secondo Gemini.
-        # LETTURA TOLLERANTE AL NOME CAMPO: osservato empiricamente (test A/B
-        # 29/06/2026) che il modello a volte scrive il nome del campo come
-        # "prezzo_sale_massimo_plausibile_eur" invece di quello richiesto nel
-        # prompt ("prezzo_vendita_massimo_plausibile_eur") -- probabilmente
-        # una piccola variazione interna di interpretazione dello schema.
-        # Proviamo entrambe le chiavi, in ordine, per non perdere il segnale
-        # silenziosamente se capita ancora: un segnale perso qui costa solo
-        # una chiamata Claude in piu' (non grave), ma vale la pena non
-        # sprecarlo quando il dato c'e' davvero, solo sotto un nome diverso.
         prezzo_massimo_raw = (
             valutazione.get("prezzo_vendita_massimo_plausibile_eur")
             if valutazione.get("prezzo_vendita_massimo_plausibile_eur") is not None
@@ -2107,7 +1611,7 @@ def check_skip_pre_claude(gemini_analysis_json, listing_info=None):
                 )
                 if costo_pieno is not None:
                     margine_nello_scenario_migliore = prezzo_massimo_gemini - costo_pieno
-                    SOGLIA_MARGINE_EUR = 20  # stessa soglia usata da Claude nel prompt
+                    SOGLIA_MARGINE_EUR = 20
                     if margine_nello_scenario_migliore < SOGLIA_MARGINE_EUR:
                         motivo = (
                             f"Anche nello scenario di rivendita più favorevole "
@@ -2121,15 +1625,6 @@ def check_skip_pre_claude(gemini_analysis_json, listing_info=None):
 
 
 def build_skip_report(listing_info, motivo_skip):
-    """Costruisce un report NON COMPRARE nello stesso formato compatto
-    usato da Claude, senza fare alcuna chiamata API. Usato quando
-    check_skip_pre_claude() rileva un caso chiaro.
-
-    Il testo della sezione "Legit check" si adatta al TIPO di segnale che
-    ha attivato lo skip (riconosciuto dal prefisso tra parentesi quadre in
-    motivo_skip, impostato da check_skip_pre_claude) -- un margine
-    insufficiente non è un problema di autenticità, e il report non deve
-    suggerire il contrario."""
     e_segnale_margine = motivo_skip.startswith("[MARGINE INSUFFICIENTE")
 
     if e_segnale_margine:
@@ -2168,10 +1663,6 @@ def build_skip_report(listing_info, motivo_skip):
 
 
 def process_listing(parsed, url, cover_photo_bytes):
-    """Funzione sincrona (bloccante): viene lanciata in un thread separato
-    dall'event handler asincrono di Telethon, per non bloccare il loop
-    degli eventi mentre aspettiamo scraping/Gemini/Claude (che possono
-    richiedere fino a un minuto)."""
     listing_info = dict(parsed)
     listing_info["url"] = url
 
@@ -2192,7 +1683,7 @@ def process_listing(parsed, url, cover_photo_bytes):
             img = download_image_bytes(photo_url, referer=url)
             if img:
                 photo_bytes_list.append(img)
-            time.sleep(0.4)  # piccola pausa per non sembrare scraping aggressivo
+            time.sleep(0.4)
 
     if not photo_bytes_list and cover_photo_bytes:
         photo_bytes_list = [cover_photo_bytes]
@@ -2214,10 +1705,6 @@ def process_listing(parsed, url, cover_photo_bytes):
     gemini_analysis_json = call_gemini_vision(photo_bytes_list, listing_info)
     log.info("RISPOSTA GEMINI (JSON, %d foto inviate):\n%s", len(photo_bytes_list), gemini_analysis_json)
 
-    # FILTRO PRE-CLAUDE A COSTO ZERO: se Gemini ha gia' rilevato un segnale
-    # chiaro (falso conclamato, categoria a basso valore, o verdetto grezzo
-    # negativo), skippiamo la chiamata Claude (la voce di costo piu' alta
-    # della pipeline) e rispondiamo direttamente.
     e_skip, motivo_skip = check_skip_pre_claude(gemini_analysis_json, listing_info=listing_info)
     if e_skip:
         log.info(
@@ -2229,20 +1716,6 @@ def process_listing(parsed, url, cover_photo_bytes):
     else:
         final_report = call_claude_oracle(listing_info, gemini_analysis_json)
 
-    # VERIFICA DIRETTA DEL CONTENUTO IN MEMORIA: stampiamo un hash e la
-    # lunghezza del testo PRIMA di qualsiasi altra cosa, con marcatori
-    # espliciti di inizio/fine. Se Railway interlaccia le righe per
-    # colpa della sua UI di aggregazione log (come sospettato), questa
-    # riga lo confermerebbe comunque, perche' l'hash e la lunghezza sono
-    # calcolati su una stringa Python gia' assemblata in memoria, non su
-    # come il testo viene poi visualizzato. Se invece il problema e' nei
-    # dati (Claude ha davvero scritto i campi fuori ordine), il blocco
-    # "===REPORT VERBATIM START===...END===" mostrera' lo stesso identico
-    # disordine che vedresti su Telegram, perche' e' un singolo argomento
-    # %s passato a log.info -- Railway non puo' "rimescolare" il
-    # contenuto di una stringa che gli arriva gia' completa su una riga
-    # di stdout (puo' al massimo interlacciare RIGHE diverse tra loro,
-    # non il contenuto interno di una singola chiamata di log).
     report_hash = hashlib.md5(final_report.encode()).hexdigest()[:12]
     log.info(
         "VERIFICA REPORT -- lunghezza: %d caratteri, hash: %s, righe: %d",
@@ -2272,68 +1745,14 @@ client = TelegramClient(
     TELEGRAM_API_HASH,
 )
 
-# DEDUPLICAZIONE MESSAGGI: osservato in produzione che lo stesso annuncio
-# (stesso message_id) puo' generare DUE eventi NewMessage a distanza di
-# meno di 1 secondo -- causa probabile: il bot "Vinted Tracker" modifica
-# il proprio messaggio dopo l'invio iniziale (es. aggiunge il bottone con
-# l'URL in un secondo momento), e Telethon emette un evento NewMessage
-# anche per quell'edit, oppure ci sono piu' "getUpdates" che si sovrap-
-# pongono. L'effetto e' GRAVE: stesso annuncio elaborato due volte in
-# parallelo, doppio costo Gemini+Serper+Claude, e nei casi osservati
-# persino DUE VERDETTI DIVERSI per lo stesso capo (es. "NON COMPRARE" e
-# "CHIEDI ALTRE FOTO" sullo stesso identico Top Missoni), che e' confuso
-# e potenzialmente dannoso se l'utente agisce sul verdetto sbagliato.
-#
-# Fix: manteniamo un set dei message_id gia' elaborati (con scadenza
-# implicita via dimensione massima, per non crescere all'infinito in un
-# processo long-running) e scartiamo silenziosamente i duplicati.
 _processed_message_ids = set()
-_MAX_PROCESSED_IDS_TRACKED = 500  # tetto per evitare crescita illimitata della memoria
+_MAX_PROCESSED_IDS_TRACKED = 500
 
-
-# DEDUPLICAZIONE PER CONTENUTO (stesso oggetto, taglie diverse): un secondo
-# problema distinto da quello sopra -- osservato in produzione che lo
-# stesso venditore pubblica spesso lo STESSO capo in piu' annunci separati,
-# uno per taglia disponibile (es. "Miu Miu short sleeves Talle S/M/L/XL/
-# XXL"), ognuno con message_id LEGITTIMAMENTE diverso (sono annunci Vinted
-# reali e distinti), stesso titolo/brand/prezzo tranne l'ultima parola
-# (la taglia). Il dedup sopra (per message_id) non li intercetta, e il
-# bot finisce per valutare 5 volte lo stesso identico capo nel giro di
-# pochi secondi -- 5x costo Gemini+Serper+Claude per un'informazione che
-# la prima valutazione gia' dava (stesso brand, stesso prezzo, stesso
-# margine: la taglia diversa non cambia la decisione economica).
-#
-# Fix: una seconda chiave di dedup basata sul CONTENUTO (titolo con la
-# taglia finale rimossa + brand + prezzo), con finestra temporale di 5
-# minuti -- entro quella finestra, una chiave gia' vista viene scartata
-# in silenzio (nessun messaggio di errore, e' un comportamento atteso,
-# non un fallimento). Dopo 5 minuti la stessa chiave puo' tornare a
-# passare (es. il venditore ripubblica lo stesso capo in un secondo
-# momento, caso raro ma non impossibile, meglio non bloccarlo per sempre).
-DEDUP_CONTENUTO_WINDOW_SECONDS = 300  # 5 minuti
-_recent_listings_seen = {}  # chiave_normalizzata (tupla) -> timestamp ultimo avvistamento
+DEDUP_CONTENUTO_WINDOW_SECONDS = 300
+_recent_listings_seen = {}
 
 
 def _normalizza_titolo_per_dedup(title):
-    """Rimuove dal titolo la parte finale che identifica la taglia, per
-    ottenere una chiave di confronto stabile tra varianti taglia dello
-    stesso identico annuncio.
-
-    Gestisce due pattern osservati in produzione, in ordine di priorita':
-    1. Taglia tra virgolette/apici a fine titolo, es. "Talle L", "Taglia
-       42" -- il bot Vinted Tracker riporta il campo as-is da Vinted nella
-       lingua scelta dal venditore (visto sia 'Talle' spagnolo che
-       'Taglia' italiano), quindi NON proviamo a riconoscere la parola
-       taglia in ogni lingua possibile (fragile, lista incompleta):
-       rimuoviamo l'intero blocco tra virgolette a fine stringa, a
-       prescindere dalla lingua.
-    2. Fallback se non ci sono virgolette: rimuove solo l'ultima parola
-       spazio-separata (spesso la taglia anche senza virgolette, es. un
-       numero "32"/"42" o sigla "XL" a fine titolo).
-
-    Il confronto finale e' case-insensitive e con spazi multipli
-    normalizzati, per tollerare piccole variazioni di spaziatura viste
-    nei messaggi reali (es. doppio spazio tra parole)."""
     if not title:
         return ""
     t = title.strip()
@@ -2347,18 +1766,6 @@ def _normalizza_titolo_per_dedup(title):
 
 
 def e_variante_recente_dello_stesso_oggetto(parsed):
-    """True se un annuncio con lo stesso titolo normalizzato (taglia
-    esclusa) + brand + prezzo e' gia' stato visto negli ultimi
-    DEDUP_CONTENUTO_WINDOW_SECONDS. In quel caso, NON registra una nuova
-    occorrenza (la finestra resta ancorata al primo avvistamento, non si
-    rinnova ad ogni variante taglia che arriva -- altrimenti una serie di
-    10 taglie che arrivano a raffica entro 5 minuti l'una dall'altra
-    estenderebbe la finestra all'infinito).
-
-    Se non e' un duplicato, registra il nuovo avvistamento e ritorna
-    False. Pulisce anche le voci scadute ad ogni chiamata -- manutenzione
-    a costo trascurabile, evita crescita illimitata del dizionario in un
-    processo long-running su Railway."""
     chiave = (
         _normalizza_titolo_per_dedup(parsed.get("title")),
         (parsed.get("brand") or "").strip().lower(),
@@ -2392,15 +1799,12 @@ async def on_new_message(event):
             return
         _processed_message_ids.add(message_id)
         if len(_processed_message_ids) > _MAX_PROCESSED_IDS_TRACKED:
-            # Rimuove gli ID piu' vecchi (i message_id di Telegram sono
-            # monotonicamente crescenti, quindi min() trova il piu' vecchio)
             _processed_message_ids.discard(min(_processed_message_ids))
 
         sender = await event.get_sender()
         sender_name = ((getattr(sender, "username", None) or "") + " " +
                         (getattr(sender, "first_name", None) or "")).lower()
 
-        # filtriamo solo i messaggi che arrivano dal bot "Vinted Tracker"
         if not any(hint in sender_name for hint in VINTED_TRACKER_NAME_HINTS):
             return
 
@@ -2410,11 +1814,6 @@ async def on_new_message(event):
 
         parsed = parse_vinted_tracker_message(text)
 
-        # DEDUP PER CONTENUTO (vedi note sopra): se e' una variante taglia
-        # di un annuncio gia' valutato negli ultimi 5 minuti, skip silenzioso
-        # PRIMA di qualsiasi lavoro costoso (scraping, foto, Gemini, Claude).
-        # Nessun messaggio di errore o avviso all'utente -- e' il
-        # comportamento desiderato, non un fallimento.
         if e_variante_recente_dello_stesso_oggetto(parsed):
             log.info(
                 "Variante taglia di un annuncio gia' valutato di recente -- skip silenzioso. "
@@ -2425,8 +1824,6 @@ async def on_new_message(event):
 
         url = extract_url_from_text(text)
 
-        # se l'URL non e' nel testo, alcuni bot lo mettono in un bottone
-        # inline -- Telethon lo espone nei bottoni del messaggio (event.message.buttons)
         if not url and event.message.buttons:
             for row in event.message.buttons:
                 for button in row:
@@ -2441,9 +1838,6 @@ async def on_new_message(event):
 
         log.info("Nuovo annuncio rilevato: %s | url=%s", parsed.get("title"), url)
 
-        # process_listing e' bloccante (richieste HTTP sincrone): la
-        # eseguiamo in un thread separato per non bloccare il loop asyncio
-        # di Telethon mentre aspettiamo le risposte di Gemini/Claude.
         await asyncio.to_thread(process_listing, parsed, url, cover_photo_bytes)
 
     except Exception:
