@@ -152,13 +152,17 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(
 log = logging.getLogger("vinted_flip_bot")
 
 
-def scegli_materiale_per_ricerca(testo_libero):
-    if not testo_libero:
+def scegli_materiale_per_ricerca(material_value_raw):
+    """Cerca il materiale piu' pregiato nella lista prioritaria, splittando
+    prima su virgola (es. '70% Lana, 30% Cotone' -> ['70% lana', '30% cotone'])
+    e cercando match esatti per elemento -- piu' robusto della ricerca per
+    substring diretta che potrebbe matchare 'cashmere' dentro 'extra-cashmere'."""
+    if not material_value_raw:
         return None
-    testo_lower = testo_libero.lower()
-    for materiale in MATERIALI_PREGIATI_PRIORITA:
-        if materiale in testo_lower:
-            return materiale
+    materiali_annuncio = [m.strip().lower() for m in material_value_raw.split(",")]
+    for materiale_prioritario in MATERIALI_PREGIATI_PRIORITA:
+        if any(materiale_prioritario in elemento for elemento in materiali_annuncio):
+            return materiale_prioritario
     return None
 
 
@@ -582,18 +586,26 @@ def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, grounding=Fal
 # SERPER -- RICERCA COMP (usata solo in Scenario G)
 # ---------------------------------------------------------------------------
 
-def build_vinted_search_url(brand, categoria, materiale=None):
+def build_vinted_search_url(brand, categoria, materiale=None, catalog_id=None):
     brand_id = VINTED_BRAND_IDS.get((brand or "").strip().lower())
     parti_search_text = [p for p in (categoria, materiale) if p]
     search_text_finale = " ".join(parti_search_text)
+    catalog_str = f"&catalog[]={catalog_id}" if catalog_id else ""
     if brand_id:
-        return (
+        url = (
             f"https://www.vinted.it/catalog?brand_ids[]={brand_id}"
+            f"{catalog_str}"
             f"&search_text={quote(search_text_finale)}"
-            "&order=newest_first&status_ids[]=2&status_ids[]=3"
-        ), True
+            "&order=newest_first&status_ids[]=1&status_ids[]=2&status_ids[]=3"
+        )
+        return url, True
     query_text = f"{brand} {search_text_finale}".strip()
-    return f"https://www.vinted.it/catalog?search_text={quote(query_text)}&order=newest_first", False
+    url = (
+        f"https://www.vinted.it/catalog?search_text={quote(query_text)}"
+        f"{catalog_str}"
+        "&order=newest_first"
+    )
+    return url, False
 
 
 def search_comps_ebay_sold_url(brand, categoria):
@@ -748,13 +760,15 @@ def _serper_batch_query_vestiaire(brand, categoria):
     return ("\n".join(lines) if lines else "Nessun risultato trovato."), True
 
 
-def search_comps_completo(brand, categoria, query_base):
-    """Esegue le 3 ricerche Serper (Vestiaire via Google, Vinted, eBay) in
-    parallelo. Ritorna (testo_comp_completo, serper_ha_funzionato).
-    serper_ha_funzionato=False se TUTTE e 3 le chiamate sono fallite per
-    motivi di servizio (non "zero risultati", che e' un successo)."""
-    materiale_per_ricerca = scegli_materiale_per_ricerca(query_base)
-    vinted_url, _ = build_vinted_search_url(brand, categoria, materiale_per_ricerca)
+
+
+def search_comps_completo(brand, categoria, query_base, catalog_id=None, material_per_ricerca=None):
+    """Esegue le 3 ricerche Serper in parallelo: Vestiaire (Google batch) +
+    Vinted (scrape diretto) + eBay sold (scrape diretto).
+    3 fonti deliberate per Gemini Flash-Lite: contesto piu' pulito e
+    meno token rispetto alle 5 fonti del vecchio bot con Claude.
+    Ritorna (testo_comp_completo, serper_ha_funzionato)."""
+    vinted_url, vinted_per_id = build_vinted_search_url(brand, categoria, material_per_ricerca, catalog_id)
     ebay_url = search_comps_ebay_sold_url(brand, categoria)
 
     risultati = {}
@@ -774,36 +788,167 @@ def search_comps_completo(brand, categoria, query_base):
                 risultati[nome] = f"  Query fallita: {e}"
                 successi[nome] = False
 
-    serper_ha_funzionato = any(successi.values())  # almeno UNA fonte ha risposto correttamente
+    serper_ha_funzionato = any(successi.values())
 
-    testo_finale = (
-        f"RICERCA WEB PRE-RACCOLTA (3 fonti, base: '{query_base}'):\n\n"
-        f"📍 FONTE: VESTIAIRE COLLECTIVE\n{risultati.get('vestiaire', 'Nessun risultato')}\n\n"
-        f"📍 FONTE: VINTED (scrape diretto)\n{risultati.get('vinted', 'Nessun risultato')}\n\n"
-        f"📍 FONTE: EBAY SOLD (scrape diretto)\n{risultati.get('ebay', 'Nessun risultato')}"
+    nota_brand = "" if vinted_per_id else (
+        "⚠️ Brand non nella mappa brand_id Vinted -- la ricerca Vinted usa testo libero "
+        "(meno precisa, possibili falsi positivi)."
     )
-    return testo_finale, serper_ha_funzionato
+
+    parti = [f"RICERCA WEB PRE-RACCOLTA (3 fonti, base: '{query_base}'):"]
+    if nota_brand:
+        parti.append(nota_brand)
+    parti.append(f"\n📍 FONTE: VESTIAIRE COLLECTIVE\n{risultati.get('vestiaire', 'Nessun risultato')}")
+    parti.append(f"\n📍 FONTE: VINTED (scrape diretto)\n{risultati.get('vinted', 'Nessun risultato')}")
+    parti.append(f"\n📍 FONTE: EBAY SOLD (scrape diretto)\n{risultati.get('ebay', 'Nessun risultato')}")
+
+    return "\n".join(parti), serper_ha_funzionato
 
 
 # ---------------------------------------------------------------------------
-# FILTRO PRE-CERVELLO (early exit a costo zero, identico alla logica precedente)
+# FILTRO PRE-CERVELLO e VALIDAZIONE POST-GENERAZIONE
+# (recuperati dal bot originale main300626.py)
 # ---------------------------------------------------------------------------
 
 def _stima_costo_pieno_da_prezzo_e_lingua(prezzo_richiesto_str, titolo, descrizione):
+    """Stima il costo pieno d'acquisto tenendo conto della lingua del testo
+    per stimare la spedizione (IT 2.50€, non-IT 4.50€ come nel bot originale)."""
     try:
         prezzo = float(str(prezzo_richiesto_str).replace(",", "."))
     except (TypeError, ValueError):
         return None
     testo = f"{titolo or ''} {descrizione or ''}".lower()
-    indicatori_non_it = (" la ", " et ", " avec ", " une ", " talle ", " size ", " größe ", " und ", " met ", " con la ", " der ", " die ", " das ")
+    indicatori_non_it = (
+        " la ", " et ", " avec ", " une ", " talle ", " size ", " größe ",
+        " und ", " met ", " con la ", " der ", " die ", " das ",
+    )
     spedizione_stimata = 4.50 if any(ind in testo for ind in indicatori_non_it) else 2.50
-    return round(prezzo + round(prezzo * 0.05 + 0.70, 2) + spedizione_stimata, 2)
+    protezione_acquirenti = round(prezzo * 0.05 + 0.70, 2)
+    return round(prezzo + protezione_acquirenti + spedizione_stimata, 2)
+
+
+def check_skip_pre_cervello(output_occhi_testo, listing_info=None):
+    """Tenta di estrarre segnali di skip dall'output testo-libero degli occhi.
+    Poiche' il nuovo formato e' testo libero (non JSON strutturato come nel
+    vecchio bot), i check sono meno precisi ma recuperano i casi piu' evidenti:
+    falso conclamato dichiarato esplicitamente, categoria basso valore, e
+    margine nullo. Ritorna (e_skip, motivo_skip)."""
+
+    testo = (output_occhi_testo or "").lower()
+
+    # Falso conclamato: il modello lo dichiara esplicitamente nel legit check
+    if any(f in testo for f in ("probabilmente falso", "falso conclamato", "fake")) and \
+       any(c in testo for c in ("confidenza alta", "90%", "95%", "100%", "molto alto")):
+        return True, "[FALSO CONCLAMATO] Rilevato da analisi visiva con alta confidenza."
+
+    # Categoria a basso valore (calzini)
+    if any(c in testo for c in ("calzini", "calze sportive", "categoria_a_basso_valore: true")):
+        return True, "[CATEGORIA BASSO VALORE] Calzini/calze sportive, nessun valore di rivendita."
+
+    # NON COMPRARE esplicito da verdetto grezzo con motivo forte
+    if "non comprare" in testo and any(
+        m in testo for m in ("condizione pessima", "da riparare", "non rivendibile", "buchi", "strappi gravi")
+    ):
+        return True, "[VERDETTO GREZZO NEGATIVO] Condizione non rivendibile rilevata dall'analisi visiva."
+
+    # Margine insufficiente: cerca il prezzo massimo plausibile nel testo
+    # (il modello a volte lo dichiara in forma "vendita probabile: €X" o "stima €X")
+    match_prezzo_max = re.search(
+        r"(?:stima|massimo|plausibile|vendita probabile)[^\n]*?€\s*(\d+(?:[.,]\d+)?)",
+        output_occhi_testo or "", re.IGNORECASE,
+    )
+    if match_prezzo_max and listing_info:
+        try:
+            prezzo_max_stimato = float(match_prezzo_max.group(1).replace(",", "."))
+            costo_pieno = _stima_costo_pieno_da_prezzo_e_lingua(
+                listing_info.get("price"), listing_info.get("title"), listing_info.get("description"),
+            )
+            if costo_pieno is not None:
+                margine = prezzo_max_stimato - costo_pieno
+                if margine < 20:
+                    return True, (
+                        f"[MARGINE INSUFFICIENTE ANCHE NEL MIGLIOR CASO] "
+                        f"Stima massima occhi €{prezzo_max_stimato:.0f}, "
+                        f"costo pieno €{costo_pieno:.2f}, margine €{margine:.0f} < €20."
+                    )
+        except (TypeError, ValueError):
+            pass
+
+    return False, None
+
+
+def build_skip_report(listing_info, motivo_skip):
+    """Report formattato NON COMPRARE per i casi filtrati prima del cervello
+    (risparmia la chiamata al modello cervello quando il risultato e' gia' chiaro)."""
+    e_segnale_margine = motivo_skip.startswith("[MARGINE INSUFFICIENTE")
+    if e_segnale_margine:
+        riga_legit = "Non valutato — filtro pre-cervello su margine insufficiente (non un problema di autenticità)."
+        riga_rischio = "BASSO — margine insufficiente (filtro automatico, cervello non consultato)"
+    else:
+        riga_legit = "Probabilmente falso o categoria basso valore — filtro automatico pre-cervello."
+        riga_rischio = "ALTO — filtro automatico, cervello non consultato"
+    motivo_breve = motivo_skip[:117].rsplit(" ", 1)[0] + "..." if len(motivo_skip) > 120 else motivo_skip
+    return (
+        "## Verdetto operativo\n"
+        "- **Decisione:** NON COMPRARE · N/A\n"
+        "- **Costo pieno richiesto:** N/A — filtro automatico pre-cervello\n"
+        "- **Costo pieno trattato:** N/A\n"
+        "- **Vendita probabile:** N/A\n"
+        "- **Margine netto:** N/A\n"
+        f"- **Deal:** 0/10 · **Margine:** 0/10 · **Liquidità:** Bassa · **Rischio:** {riga_rischio} · **Confidenza:** Alta\n"
+        f"- **In una riga:** {motivo_breve}\n\n"
+        f"## Legit check\n{riga_legit}\n\n"
+        "## Da chiedere\nNon rilevante: filtro automatico pre-cervello attivato.\n\n"
+        "## Messaggio da inviare\nNon necessario."
+    )
+
+
+def valida_contraddizioni_report(testo):
+    """Post-processing del report: corregge 3 contraddizioni logiche comuni
+    che il modello puo' commettere, identiche a quelle del bot originale:
+    (1) COMPRA + margine sotto soglia dichiarato -> TRATTA/NON COMPRARE
+    (2) COMPRA SUBITO + Confidenza Bassa -> COMPRA FORTE
+    (3) COMPRA + ROI < 100% dichiarato -> TRATTA/NON COMPRARE"""
+    final_text = testo
+
+    # (1) COMPRA + "sotto soglia"
+    dm = re.search(r"\*\*Decisione:\*\*\s*([^\n]+)", final_text)
+    dt = dm.group(1) if dm else ""
+    if re.search(r"\bCOMPRA\b", dt) and re.search(r"sotto\s+soglia", final_text, re.IGNORECASE):
+        ct = re.search(r"\*\*Costo pieno trattato:\*\*\s*(N/A|€[\d.,]+)", final_text, re.IGNORECASE)
+        nuova = "TRATTA FORTE" if (ct and ct.group(1).upper() != "N/A") else "NON COMPRARE"
+        urg = re.search(r"·\s*([^\n]+)$", dt.strip())
+        decisione_ok = f"{nuova} · {urg.group(1).strip()}" if (urg and nuova != "NON COMPRARE") else f"{nuova} · N/A"
+        log.warning("Contraddizione (1) margine/decisione: '%s' -> '%s'", dt.strip(), decisione_ok)
+        final_text = re.sub(r"(\*\*Decisione:\*\*\s*)[^\n]+", r"\1" + decisione_ok + " ⚠️ _(corretto: margine sotto soglia)_", final_text, count=1)
+
+    # (2) COMPRA SUBITO + Confidenza Bassa
+    dm2 = re.search(r"\*\*Decisione:\*\*\s*([^\n]+)", final_text)
+    dt2 = dm2.group(1) if dm2 else ""
+    if "COMPRA SUBITO" in dt2 and re.search(r"\*\*Confidenza:\*\*\s*Bassa", final_text, re.IGNORECASE):
+        urg2 = re.search(r"·\s*([^\n⚠️]+)", dt2.strip())
+        decisione_ok2 = f"COMPRA FORTE · {urg2.group(1).strip()}" if urg2 else "COMPRA FORTE · HAI QUALCHE ORA"
+        log.warning("Contraddizione (2) COMPRA SUBITO/Confidenza Bassa: '%s' -> '%s'", dt2.strip(), decisione_ok2)
+        final_text = re.sub(r"(\*\*Decisione:\*\*\s*)[^\n]+", r"\1" + decisione_ok2 + " ⚠️ _(corretto: COMPRA SUBITO richiede Confidenza non Bassa)_", final_text, count=1)
+
+    # (3) COMPRA + ROI < 100%
+    dm3 = re.search(r"\*\*Decisione:\*\*\s*([^\n]+)", final_text)
+    dt3 = dm3.group(1) if dm3 else ""
+    roi_m = re.search(r"ROI\s*~?\s*(\d+)(?:[-–](\d+))?\s*%", final_text, re.IGNORECASE)
+    if re.search(r"\bCOMPRA\b", dt3) and roi_m:
+        roi_max = max(int(roi_m.group(1)), int(roi_m.group(2)) if roi_m.group(2) else 0)
+        if roi_max < 100:
+            ct3 = re.search(r"\*\*Costo pieno trattato:\*\*\s*(N/A|€[\d.,]+)", final_text, re.IGNORECASE)
+            nuova3 = "TRATTA FORTE" if (ct3 and ct3.group(1).upper() != "N/A") else "NON COMPRARE"
+            urg3 = re.search(r"·\s*([^\n⚠️]+)", dt3.strip())
+            decisione_ok3 = f"{nuova3} · {urg3.group(1).strip()}" if (urg3 and nuova3 != "NON COMPRARE") else f"{nuova3} · N/A"
+            log.warning("Contraddizione (3) ROI %d%%/decisione: '%s' -> '%s'", roi_max, dt3.strip(), decisione_ok3)
+            final_text = re.sub(r"(\*\*Decisione:\*\*\s*)[^\n]+", r"\1" + decisione_ok3 + f" ⚠️ _(corretto: ROI {roi_max}% sotto soglia 100%)_", final_text, count=1)
+
+    return final_text
 
 
 def estrai_decisione_da_testo(testo):
-    """Estrae la riga 'Decisione' dal verdetto in testo libero, per
-    decidere se vale la pena mandare il messaggio al proprietario o se
-    e' chiaramente un NON COMPRARE da poter loggare e basta."""
     match = re.search(r"\*\*Decisione:\*\*\s*([^\n]+)", testo)
     return match.group(1).strip() if match else None
 
@@ -824,6 +969,7 @@ def process_listing(parsed, url, cover_photo_bytes):
             "size": scraped.get("size"), "condition": scraped.get("condition"),
             "description": scraped.get("description"), "age_days": scraped.get("age_days"),
             "catalog_id": scraped.get("catalog_id"), "material_raw": scraped.get("material_raw"),
+            "material_per_ricerca": scraped.get("material_per_ricerca"),
             "color_raw": scraped.get("color_raw"),
         })
         for photo_url in scraped.get("photo_urls", []):
@@ -835,8 +981,16 @@ def process_listing(parsed, url, cover_photo_bytes):
     if not photo_bytes_list and cover_photo_bytes:
         photo_bytes_list = [cover_photo_bytes]
     if not photo_bytes_list:
-        telegram_send_message(TELEGRAM_OWNER_CHAT_ID, f"⚠️ Niente foto per: {listing_info.get('title')}\nSalto valutazione.")
+        telegram_send_message(TELEGRAM_OWNER_CHAT_ID,
+            f"⚠️ Niente foto per: {listing_info.get('title')}\nURL: {url or 'non trovato'}\nSalto valutazione.")
         return
+
+    log.info("Foto raccolte: %d (fonte: %s)", len(photo_bytes_list),
+             "scraping Vinted" if url and len(photo_bytes_list) > 1 else "fallback copertina Telegram")
+
+    # Eta' annuncio formattata (usata nel prompt al cervello per il asse urgenza)
+    age_days = listing_info.get("age_days")
+    age_text = f"{age_days:.1f} giorni fa" if age_days is not None else "non disponibile (scraping data pubblicazione fallito)"
 
     user_text_occhi = (
         f"Titolo annuncio: {listing_info.get('title')}\n"
@@ -850,87 +1004,107 @@ def process_listing(parsed, url, cover_photo_bytes):
     )
 
     # ===== STEP 1: OCCHI -- foto + valutazione preliminare, zero ricerca web =====
-    output_occhi, costo_occhi, _ = chiama_gemini(GEMINI_OCCHI_SYSTEM_PROMPT, user_text_occhi, photo_bytes_list, grounding=False)
+    output_occhi, costo_occhi, _ = chiama_gemini(
+        GEMINI_OCCHI_SYSTEM_PROMPT, user_text_occhi, photo_bytes_list, grounding=False)
     costo_totale += costo_occhi
-    log.info("Occhi completati. Costo: $%.5f", costo_occhi)
+    log.info("Occhi completati. Costo: $%.5f\nOutput occhi (anteprima):\n%s%s",
+             costo_occhi, output_occhi[:600], "... [troncato]" if len(output_occhi) > 600 else "")
 
-    # ===== STEP 2: decidere Scenario G o F in base a Serper =====
-    titolo_annuncio = listing_info.get("title") or ""
-    brand_annuncio = listing_info.get("brand") or ""
-    categoria_per_ricerca = estrai_categoria_da_titolo(titolo_annuncio) or ""
+    # ===== STEP 1b: FILTRO PRE-CERVELLO (early exit, risparmia la chiamata cervello) =====
+    e_skip, motivo_skip = check_skip_pre_cervello(output_occhi, listing_info)
+    if e_skip:
+        log.info("FILTRO PRE-CERVELLO ATTIVATO: cervello NON consultato. Motivo: %s", motivo_skip)
+        output_finale = build_skip_report(listing_info, motivo_skip)
+        n_query_grounding = 0
+        scenario_usato = "SKIP"
+    else:
+        # ===== STEP 2: decidere Scenario G o F in base a Serper =====
+        titolo_annuncio = listing_info.get("title") or ""
+        brand_annuncio = listing_info.get("brand") or ""
+        categoria_per_ricerca = estrai_categoria_da_titolo(titolo_annuncio) or ""
+        catalog_id = listing_info.get("catalog_id")
+        material_per_ricerca = listing_info.get("material_per_ricerca")
 
-    scenario_usato = "F"  # default pessimista, sovrascritto sotto se Serper funziona
-    comps_text = None
+        scenario_usato = "F"
+        comps_text = None
 
-    tempo_trascorso_da_ultimo_fallimento = time.time() - _serper_timestamp_ultimo_fallimento[0]
-    in_raffreddamento = (
-        _serper_fallimenti_consecutivi[0] >= SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO
-        and tempo_trascorso_da_ultimo_fallimento < RAFFREDDAMENTO_SERPER_SECONDI
-    )
-    serper_disponibile = bool(SERPER_API_KEY) and not in_raffreddamento
+        tempo_trascorso = time.time() - _serper_timestamp_ultimo_fallimento[0]
+        in_raffreddamento = (
+            _serper_fallimenti_consecutivi[0] >= SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO
+            and tempo_trascorso < RAFFREDDAMENTO_SERPER_SECONDI
+        )
+        serper_disponibile = bool(SERPER_API_KEY) and not in_raffreddamento
 
-    if serper_disponibile:
-        comps_text, serper_ok = search_comps_completo(brand_annuncio, categoria_per_ricerca, titolo_annuncio)
-        if serper_ok:
-            scenario_usato = "G"
-            _serper_fallimenti_consecutivi[0] = 0
-        else:
-            _serper_fallimenti_consecutivi[0] += 1
-            _serper_timestamp_ultimo_fallimento[0] = time.time()
-            log.warning(
-                "Serper fallito (%d fallimenti consecutivi) -- fallback a Scenario F per questo annuncio.",
-                _serper_fallimenti_consecutivi[0],
+        if serper_disponibile:
+            comps_text, serper_ok = search_comps_completo(
+                brand_annuncio, categoria_per_ricerca, titolo_annuncio,
+                catalog_id=catalog_id, material_per_ricerca=material_per_ricerca,
             )
-            if _serper_fallimenti_consecutivi[0] >= SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO:
-                log.warning(
-                    "Soglia di %d fallimenti consecutivi raggiunta -- Serper verra' SALTATO per le prossime %.1f ore "
-                    "(probabile esaurimento crediti), poi si ritentera' automaticamente. Verificare manualmente "
-                    "l'account Serper se il problema persiste oltre questo periodo.",
-                    SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO, RAFFREDDAMENTO_SERPER_SECONDI / 3600,
-                )
-    else:
-        if in_raffreddamento:
-            ore_rimanenti = (RAFFREDDAMENTO_SERPER_SECONDI - tempo_trascorso_da_ultimo_fallimento) / 3600
-            log.info("Serper in raffreddamento (~%.1f ore rimanenti prima del prossimo tentativo) -- uso Scenario F.", ore_rimanenti)
+            log.info("Ricerca Serper:\n%s", comps_text)
+            if serper_ok:
+                scenario_usato = "G"
+                _serper_fallimenti_consecutivi[0] = 0
+            else:
+                _serper_fallimenti_consecutivi[0] += 1
+                _serper_timestamp_ultimo_fallimento[0] = time.time()
+                log.warning("Serper fallito (%d consecutivi) -- fallback Scenario F.", _serper_fallimenti_consecutivi[0])
+                if _serper_fallimenti_consecutivi[0] >= SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO:
+                    log.warning("Soglia %d fallimenti raggiunta -- Serper saltato per %.1f ore.",
+                                SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO, RAFFREDDAMENTO_SERPER_SECONDI / 3600)
         else:
-            log.info("Serper non disponibile (SERPER_API_KEY assente) -- uso Scenario F.")
+            if in_raffreddamento:
+                log.info("Serper in raffreddamento (~%.1f ore rimanenti) -- Scenario F.", (RAFFREDDAMENTO_SERPER_SECONDI - tempo_trascorso) / 3600)
+            else:
+                log.info("Serper non disponibile (chiave assente) -- Scenario F.")
 
-    # ===== STEP 3: CERVELLO -- rivalutazione con grounding forzato, G o F =====
-    if scenario_usato == "G":
-        user_text_cervello = (
-            f"{user_text_occhi}\n\n--- LA TUA VALUTAZIONE PRELIMINARE (prodotta poco fa, senza ricerca web) ---\n"
-            f"{output_occhi}\n--- FINE ---\n\n"
-            f"--- {comps_text} ---\n\n"
-            "Usa i risultati di ricerca web PRE-RACCOLTI sopra per confermare/correggere la tua proposta. "
-            "Esegui INOLTRE almeno una ricerca con il tool google_search per verificare o completare questi "
-            "dati (es. se manca un sold eBay, se i prezzi Vestiaire sono pochi, se vuoi controllare Depop/"
-            "Grailed/1stDibs che non sono stati pre-raccolti). Produci il verdetto operativo completo."
+        # ===== STEP 3: CERVELLO -- rivalutazione con grounding forzato, G o F =====
+        # Includo age_days e URL nel prompt come nel bot originale (utili per asse urgenza e debug)
+        contesto_listing = (
+            f"{user_text_occhi}\n"
+            f"Annuncio pubblicato: {age_text}\n"
+            f"URL annuncio: {url or 'non disponibile'}"
         )
-    else:
-        user_text_cervello = (
-            f"{user_text_occhi}\n\n--- LA TUA VALUTAZIONE PRELIMINARE (prodotta poco fa, senza ricerca web) ---\n"
-            f"{output_occhi}\n--- FINE ---\n\n"
-            "NOTA: non ci sono risultati di ricerca pre-raccolti in questo scenario (Serper non disponibile). "
-            "DEVI usare attivamente il tool google_search per trovare comp reali prima di produrre il verdetto "
-            "finale, seguendo le istruzioni nel tuo system prompt (eBay sold, Vinted, Depop, Vestiaire, Grailed, "
-            "1stDibs nell'ordine di priorita' indicato)."
-        )
+        if scenario_usato == "G":
+            user_text_cervello = (
+                f"{contesto_listing}\n\n"
+                f"--- LA TUA VALUTAZIONE PRELIMINARE (prodotta poco fa, senza ricerca web) ---\n"
+                f"{output_occhi}\n--- FINE ---\n\n"
+                f"--- {comps_text} ---\n\n"
+                "Usa i risultati di ricerca web PRE-RACCOLTI sopra per confermare/correggere la tua proposta. "
+                "Esegui INOLTRE almeno una ricerca con il tool google_search per verificare o completare questi "
+                "dati (es. se manca un sold eBay, se i prezzi Vestiaire sono pochi, se vuoi controllare Depop/"
+                "Grailed/1stDibs che non sono stati pre-raccolti). Produci il verdetto operativo completo."
+            )
+        else:
+            user_text_cervello = (
+                f"{contesto_listing}\n\n"
+                f"--- LA TUA VALUTAZIONE PRELIMINARE (prodotta poco fa, senza ricerca web) ---\n"
+                f"{output_occhi}\n--- FINE ---\n\n"
+                "NOTA: non ci sono risultati di ricerca pre-raccolti (Serper non disponibile). "
+                "DEVI usare attivamente il tool google_search per trovare comp reali prima di produrre il verdetto "
+                "finale, seguendo le istruzioni nel tuo system prompt (eBay sold, Vinted, Depop, Vestiaire, Grailed, "
+                "1stDibs nell'ordine di priorita' indicato)."
+            )
 
-    output_finale, costo_cervello, n_query_grounding = chiama_gemini(
-        GEMINI_CERVELLO_SYSTEM_PROMPT, user_text_cervello, photo_bytes_list=[], grounding=True,
-    )
-    costo_totale += costo_cervello
-    log.info(
-        "Scenario %s completato. Query grounding: %d. Costo cervello: $%.5f. Costo totale annuncio: $%.5f",
-        scenario_usato, n_query_grounding, costo_cervello, costo_totale,
-    )
+        output_finale_raw, costo_cervello, n_query_grounding = chiama_gemini(
+            GEMINI_CERVELLO_SYSTEM_PROMPT, user_text_cervello, photo_bytes_list=[], grounding=True)
+        costo_totale += costo_cervello
+
+        # Validazione contraddizioni (COMPRA+margine basso, COMPRA SUBITO+Confidenza Bassa, COMPRA+ROI<100%)
+        output_finale = valida_contraddizioni_report(output_finale_raw)
+
+        log.info("Scenario %s completato. Query grounding: %d. Costo cervello: $%.5f. Totale: $%.5f",
+                 scenario_usato, n_query_grounding, costo_cervello, costo_totale)
+
+    log.info("===REPORT VERBATIM START===\n%s\n===REPORT VERBATIM END===", output_finale)
 
     # ===== INVIO TELEGRAM =====
     header = (
         f"🆕 *{listing_info.get('title')}*\n"
         f"🏷️ {listing_info.get('brand') or '?'} · 💰 {listing_info.get('price') or '?'} EUR\n"
         f"🔧 Scenario {scenario_usato}"
-        + (f" ({n_query_grounding} ricerche)" if n_query_grounding else " (nessuna ricerca eseguita dal modello)")
+        + (f" ({n_query_grounding} ricerche grounding)" if scenario_usato not in ("SKIP",) and n_query_grounding else
+           " (nessuna ricerca grounding)" if scenario_usato not in ("SKIP",) else " (filtro pre-cervello)")
         + f"\n{url or ''}\n{'—' * 20}\n"
     )
     telegram_send_photo(TELEGRAM_OWNER_CHAT_ID, photo_bytes_list[0], caption=listing_info.get("title"))
@@ -946,11 +1120,35 @@ _processed_message_ids = set()
 _recent_listings_seen = {}
 
 
+DEDUP_CONTENUTO_WINDOW_SECONDS = 300
+
+def _normalizza_titolo_per_dedup(title):
+    """Rimuove l'ultima parola (di solito la taglia: S/M/L/XL/38/40/ecc.)
+    e le virgolette finali, per deduplicare varianti taglia dello stesso capo.
+    Es. 'Chemise Mugler S' e 'Chemise Mugler M' -> 'chemise mugler' (stesso capo)."""
+    if not title:
+        return ""
+    t = title.strip()
+    # Rimuove virgolette finali: "Chemise Mugler 'vintage'" -> "Chemise Mugler"
+    t_senza_virgolette = re.sub(r"['\"][^'\"]*['\"]\s*$", "", t).strip()
+    if t_senza_virgolette != t:
+        base = t_senza_virgolette
+    else:
+        # Rimuove l'ultima parola (taglia): "Chemise Mugler S" -> "Chemise Mugler"
+        parole = t.split()
+        base = " ".join(parole[:-1]) if len(parole) > 1 else t
+    return re.sub(r"\s+", " ", base).strip().lower()
+
+
 def e_variante_recente(parsed):
-    t = parsed.get("title", "").strip()
-    chiave = (re.sub(r"\s+", " ", t).strip().lower(), (parsed.get("brand") or "").strip().lower(), (parsed.get("price") or "").strip())
+    chiave = (
+        _normalizza_titolo_per_dedup(parsed.get("title")),
+        (parsed.get("brand") or "").strip().lower(),
+        (parsed.get("price") or "").strip(),
+    )
     now = time.time()
-    for k in [k for k, ts in _recent_listings_seen.items() if now - ts > 300]:
+    scadute = [k for k, ts in _recent_listings_seen.items() if now - ts > DEDUP_CONTENUTO_WINDOW_SECONDS]
+    for k in scadute:
         del _recent_listings_seen[k]
     if chiave in _recent_listings_seen:
         return True
