@@ -828,65 +828,83 @@ def _stima_costo_pieno_da_prezzo_e_lingua(prezzo_richiesto_str, titolo, descrizi
 
 
 def check_skip_pre_cervello(output_occhi_testo, listing_info=None):
-    """Tenta di estrarre segnali di skip dall'output testo-libero degli occhi.
-    Poiche' il nuovo formato e' testo libero (non JSON strutturato come nel
-    vecchio bot), i check sono meno precisi ma recuperano i casi piu' evidenti:
-    falso conclamato dichiarato esplicitamente, categoria basso valore, e
-    margine nullo. Ritorna (e_skip, motivo_skip)."""
+    """Filtro pre-cervello conservativo: scatta SOLO su segnali forti e
+    inequivocabili dall'output testo-libero degli occhi.
+
+    IMPORTANTE -- perche' e' conservativo:
+    Il vecchio bot usava JSON strutturato (campi precisi come
+    'verdetto_grezzo', 'categoria_a_basso_valore', 'confidenza_percentuale')
+    che rendevano il check affidabile. Con testo libero i match regex sono
+    inevitabilmente piu' fragili: una parola come 'non rivendibile' puo'
+    apparire in contesti diversi da quello atteso (es. 'smagliature non
+    visibili in foto' -> falso positivo). Per questo abbiamo rimosso il
+    check sul 'NON COMPRARE' testuale degli occhi: la decisione NON COMPRARE
+    del modello occhi e' quasi sempre economica (margine insufficiente,
+    liquidita' bassa) senza comp reali -- e' corretto passarla al cervello
+    che ha i comp Serper per confermare o ribaltare. Solo i casi FISICAMENTE
+    non rivendibili (condizione distrutta) o STRUTTURALMENTE senza mercato
+    (calzini) o CHIARAMENTE falsi giustificano lo skip.
+
+    Ritorna (e_skip, motivo_skip)."""
 
     testo = (output_occhi_testo or "").lower()
 
-    # Falso conclamato: il modello lo dichiara esplicitamente nel legit check
-    if any(f in testo for f in ("probabilmente falso", "falso conclamato", "fake")) and \
+    # 1. Falso conclamato: il modello lo dichiara esplicitamente con
+    # alta confidenza E motivo specifico. Richiede entrambe le condizioni
+    # per evitare falsi positivi su 'probabilmente autentico ma con dubbi'.
+    if ("probabilmente falso" in testo or "falso conclamato" in testo) and \
        any(c in testo for c in ("confidenza alta", "90%", "95%", "100%", "molto alto")):
         return True, "[FALSO CONCLAMATO] Rilevato da analisi visiva con alta confidenza."
 
-    # Categoria a basso valore (calzini)
-    if any(c in testo for c in ("calzini", "calze sportive", "categoria_a_basso_valore: true")):
+    # 2. Categoria strutturalmente senza mercato (calzini/calze sportive).
+    # Unica categoria che skippiamo sempre indipendentemente dal brand.
+    if any(c in testo for c in ("calzini", "calze sportive")):
         return True, "[CATEGORIA BASSO VALORE] Calzini/calze sportive, nessun valore di rivendita."
 
-    # NON COMPRARE esplicito da verdetto grezzo con motivo forte
-    if "non comprare" in testo and any(
-        m in testo for m in ("condizione pessima", "da riparare", "non rivendibile", "buchi", "strappi gravi")
-    ):
-        return True, "[VERDETTO GREZZO NEGATIVO] Condizione non rivendibile rilevata dall'analisi visiva."
+    # 3. Condizione fisicamente distrutta (non una valutazione economica):
+    # richiede segnali MULTIPLI e ESPLICITI di danno fisico grave, NON
+    # il solo "non comprare" o singole menzioni di difetti normali.
+    # "non rivendibile" da SOLO non basta -- puo' apparire in frasi come
+    # "smagliature non visibili" o "difetti non rivendibili a prezzi alti".
+    segnali_danno_fisico = sum([
+        "buchi" in testo,
+        "strappi gravi" in testo,
+        "bruciature" in testo,
+        "da riparare" in testo and "non riparabile" in testo,  # solo se irreparabile
+        "condizione pessima" in testo,
+        "indossabile" in testo and "non" in testo,  # "non indossabile"
+    ])
+    if segnali_danno_fisico >= 2:
+        return True, "[CONDIZIONE DISTRUTTA] Danni fisici gravi multipli rilevati dall'analisi visiva."
 
-    # Margine insufficiente: cerca il prezzo massimo plausibile nel testo
-    # (il modello a volte lo dichiara in forma "vendita probabile: €X" o "stima €X")
-    match_prezzo_max = re.search(
-        r"(?:stima|massimo|plausibile|vendita probabile)[^\n]*?€\s*(\d+(?:[.,]\d+)?)",
-        output_occhi_testo or "", re.IGNORECASE,
-    )
-    if match_prezzo_max and listing_info:
-        try:
-            prezzo_max_stimato = float(match_prezzo_max.group(1).replace(",", "."))
-            costo_pieno = _stima_costo_pieno_da_prezzo_e_lingua(
-                listing_info.get("price"), listing_info.get("title"), listing_info.get("description"),
-            )
-            if costo_pieno is not None:
-                margine = prezzo_max_stimato - costo_pieno
-                if margine < 20:
-                    return True, (
-                        f"[MARGINE INSUFFICIENTE ANCHE NEL MIGLIOR CASO] "
-                        f"Stima massima occhi €{prezzo_max_stimato:.0f}, "
-                        f"costo pieno €{costo_pieno:.2f}, margine €{margine:.0f} < €20."
-                    )
-        except (TypeError, ValueError):
-            pass
+    # NOTA: il check su margine numerico (basato su "vendita probabile" dichiarata
+    # dagli occhi) e' stato RIMOSSO deliberatamente. Il modello occhi stima la
+    # vendita senza comp reali e sistematicamente la sottostima -- es. un set
+    # Sport Missoni completo stimato €25 dagli occhi puo' valere €40-50 con i
+    # comp reali di Serper. Bloccare l'annuncio prima che il cervello possa
+    # verificare con dati reali produce falsi positivi costosi (persi deal veri).
+    # Il calcolo del margine spetta al cervello, che ha Serper. Il filtro
+    # pre-cervello gestisce solo i casi che NON dipendono dai comp di mercato:
+    # falso conclamato, calzini, condizione fisica distrutta.
 
     return False, None
 
 
 def build_skip_report(listing_info, motivo_skip):
-    """Report formattato NON COMPRARE per i casi filtrati prima del cervello
-    (risparmia la chiamata al modello cervello quando il risultato e' gia' chiaro)."""
-    e_segnale_margine = motivo_skip.startswith("[MARGINE INSUFFICIENTE")
-    if e_segnale_margine:
-        riga_legit = "Non valutato — filtro pre-cervello su margine insufficiente (non un problema di autenticità)."
+    """Report formattato NON COMPRARE per i casi filtrati prima del cervello."""
+    if motivo_skip.startswith("[MARGINE INSUFFICIENTE"):
+        riga_legit = "Non valutato — filtro pre-cervello su margine insufficiente. Autenticità non in dubbio."
         riga_rischio = "BASSO — margine insufficiente (filtro automatico, cervello non consultato)"
+    elif motivo_skip.startswith("[FALSO CONCLAMATO"):
+        riga_legit = "Probabilmente falso — rilevato da analisi visiva con alta confidenza."
+        riga_rischio = "ALTO — falso conclamato (filtro automatico, cervello non consultato)"
+    elif motivo_skip.startswith("[CONDIZIONE DISTRUTTA"):
+        riga_legit = "Autentico ma condizione fisica gravemente compromessa — non rivendibile."
+        riga_rischio = "BASSO (autenticità) / ALTO (condizione) — cervello non consultato"
     else:
-        riga_legit = "Probabilmente falso o categoria basso valore — filtro automatico pre-cervello."
-        riga_rischio = "ALTO — filtro automatico, cervello non consultato"
+        # CATEGORIA BASSO VALORE o altri
+        riga_legit = "Categoria strutturalmente senza mercato (es. calzini) — nessun valore di rivendita."
+        riga_rischio = "BASSO — categoria a basso valore (filtro automatico, cervello non consultato)"
     motivo_breve = motivo_skip[:117].rsplit(" ", 1)[0] + "..." if len(motivo_skip) > 120 else motivo_skip
     return (
         "## Verdetto operativo\n"
