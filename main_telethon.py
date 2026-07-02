@@ -325,8 +325,12 @@ Voto Margine: 0-2/10 <10€; 3-4/10 10-19€; 5-6/10 20-39€; 7-8/10 40-99€; 
 5. TRATTA — tutto ok ma margine migliorabile con trattativa.
 6. NON COMPRARE — fake evidente dalle foto, zero etichette + descrizione "tagliate", condizione distrutta, margine negativo con i comp reali.
 
-# POLICY ASK-COME-PROXY
-Ask multipli coerenti da fonti diverse → applica sconto prudenza 20-40% per stimare il sold reale. Rimane Confidenza Media (non Alta) salvo sold eBay confermati.
+# PREZZI E RICERCA (BILANCIAMENTO COMPS vs. KNOWLEDGE - REGOLA CRITICA)
+Ask multipli coerenti da fonti diverse → applica sconto prudenza 20-40% per stimare il sold reale.
+I risultati di ricerca web hanno un alto peso specifico, ma NON SONO VANGELO ASSOLUTO se la ricerca è troppo generica per il capo specifico. Applica questa logica di bilanciamento:
+- DIFFUSION LINES (es. Weekend Max Mara, 'S Max Mara, Moschino Jeans, Moschino Cheap & Chic, M Missoni, Anglomania): Qui devi AZZERARE il tuo bias del lusso. Se l'analisi visiva identifica una linea diffusion e i risultati web (specialmente eBay sold) sono bassi (es. 20-35€), FIDATI DEI COMPS. Sono il vero mercato per queste sottomarche. Non farti trascinare in alto dalla memoria dei prezzi della main line.
+- MAIN LINE O PEZZI RARI/PARTICOLARI: Se l'analisi visiva conferma un pezzo main line o un capo d'archivio particolare, ma le ricerche web hanno prodotto solo risultati generici e bassi (es. magliette basiche invece del tuo capo specifico), USA LA TUA CONOSCENZA. Se riconosci che la ricerca web non sta rendendo giustizia alla rarità o alla linea principale del capo, affidati alla tua competenza di esperto per stimare un prezzo di uscita più alto, motivando il peso della rarità/main line nel verdetto.
+- Se non hai comps validi e non hai certezze dalla tua knowledge, mantieni un conservatorismo rigido al ribasso.
 
 # OUTPUT — ottimizzato per lettura rapida da mobile. Verdetto SEMPRE in cima.
 
@@ -360,7 +364,6 @@ IMPORTANTE sul costo pieno:
 - **Obiettivo trattativa** = prezzo target che vuoi ottenere + protezione + spedizione (solo se TRATTA)
 Non invertire mai i due valori.
 """.strip()
-
 
 # ---------------------------------------------------------------------------
 # TELEGRAM BOT API HELPERS
