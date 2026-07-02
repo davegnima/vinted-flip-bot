@@ -417,6 +417,9 @@ Regole messaggio:
 
 EMOJI: 🟢 COMPRA SUBITO/FORTE · 🟡 COMPRA/TRATTA · 🔴 NON COMPRARE · 🔵 CHIEDI ALTRE FOTO
 
+URGENZA: ha senso SOLO su decisioni COMPRA/TRATTA (indica quanto velocemente agire).
+Su NON COMPRARE e CHIEDI ALTRE FOTO l'urgenza è sempre N/A — non scrivere mai "NON COMPRARE · Alta urgenza".
+
 IMPORTANTE sul costo pieno:
 - **Costo pieno richiesto** = prezzo annuncio + protezione + spedizione (quello che paghi ORA)
 - **Obiettivo trattativa** = prezzo target che vuoi ottenere + protezione + spedizione (solo se TRATTA)
