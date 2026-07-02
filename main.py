@@ -222,8 +222,13 @@ Assegna anche una % di confidenza (es. "75%"). Non dichiarare mai 100%.
 - Etichetta attaccata con punti metallici invece di cucita
 
 # STOP IMMEDIATO (NON COMPRARE senza guardare altro)
-- Descrizione venditore dice "etichette tagliate" / "no tags" / "senza etichette"
+- Descrizione venditore dice "etichette tagliate" / "no tags" / "senza etichette" riferito alla main label brand (non al wash tag)
 - Fake con discrepanze multiple e inequivocabili nelle foto
+
+# MINUS DA SEGNALARE (abbassano il prezzo di listing, non sono veti)
+- Wash tag tagliato fisicamente (si vede solo il lembo): comune, molti lo tagliano per comodità. Abbassa il listing di €3-5 perché non puoi dichiarare la composizione su Vestiaire, ma su Vinted non cambia quasi nulla
+- Piccole macchie o residui: minus se visibili, non veto se il prezzo di acquisto è basso
+- Orlo leggermente sformato su maglia: normale dopo lavaggi, recuperabile con stiratura
 
 # DESCRIZIONE VENDITORE — SEGNALE POSITIVO
 Se la descrizione contiene composizione dettagliata (es. "92% cotone", "cashmere"), condizione specifica, o dettagli tecnici precisi → il venditore sa cosa vende ed e' onesto. Questo compensa parzialmente l'assenza di foto etichette: in mancanza di etichette visibili, considera "Sospetto, servono altre foto" invece di NON COMPRARE, e chiedi le foto mancanti.
@@ -234,7 +239,53 @@ Se la descrizione contiene composizione dettagliata (es. "92% cotone", "cashmere
 - **Molte recensioni (50+) con prezzo basso**: venditore esperto, valuta perche' vende cosi' a poco
 - **Feedback negativi recenti**: segnale serio, chiedi chiarimenti
 
-# RISCHIO ASSOLUTO IN EURO — REGOLA CRITICA
+# MAINLINE VS DIFFUSION — DISTINZIONE CRITICA PER IL MARGINE
+Alcune etichette sembrano luxury ma sono diffusion line su licenza con valore second-hand radicalmente diverso. Questa distinzione va fatta SEMPRE prima di stimare il margine.
+
+**MOSCHINO:**
+- ✅ "Moschino" / "Moschino Couture!" / "Moschino Cheap & Chic" (archivio) → valore reale
+- ❌ "Love Moschino" → diffusion SINV, vale come fast fashion di fascia media. Camicie/top basic senza loghi grandi = invendibile come flip a meno di €5 di acquisto
+
+**VERSACE:**
+- ✅ "Gianni Versace" / "Versace" (etichetta oro/nera vintage) → valore d'archivio elevato
+- ⚠️ "Versace" attuale (Donatella) → valore, ma attenzione ai fake elevatissimi
+- ❌ "Versace Jeans Couture" / "Versus Versace" / "Versace Classic V2" → diffusion, valore molto ridotto
+
+**MISSONI:**
+- ✅ "Missoni" mainline con pattern colorati (chevron, zigzag, space-dye) → valore
+- ⚠️ "Missoni" mainline monocromatico → valore ridotto ma presente
+- ❌ "M Missoni" con pattern colorati → diffusion, valore 3-5x inferiore alla mainline
+- ❌❌ "M Missoni" monocromatico (nero/grigio/beige tinta unita) → quasi invendibile come flip. Non comprare sopra €5 di acquisto totale
+- ❌ "Missoni Sport" / "Missoni Mare" → diffusion, valore molto ridotto
+
+**VALENTINO:**
+- ✅ "Valentino" / "Valentino Garavani" → valore
+- ❌ "RED Valentino" / "Valentino Go" → diffusion, valore ridotto
+
+**ARMANI:**
+- ✅ "Giorgio Armani" / "Armani Collezioni" → valore
+- ❌ "Emporio Armani" / "Armani Exchange" / "Armani Jeans" → diffusion, valore ridotto
+
+**FERRÉ:**
+- ✅ "Gianfranco Ferré" mainline → valore d'archivio
+- ⚠️ "Gianfranco Ferré Beachwear/Studio/GFF" → licenza, ma beachwear vintage ha domanda Y2K
+
+**ROMEO GIGLI:**
+- ✅ "Romeo Gigli" mainline (silhouette drappeggiata, pezzi sartoriali anni '80-90) → valore d'archivio elevato, acquirenti di nicchia
+- ❌ "Romeo Gigli Sport" / "RG Sport" → licenza commerciale anni '90, zero mercato collezionistico. Polo, t-shirt, capi basic = invendibili come flip
+
+**MAX MARA:**
+- ✅ "Max Mara" mainline (cappotti, soprabiti, blazer strutturati) → valore, ma mercato lento
+- ❌ "Weekend Max Mara" / "Max Mara Weekend" → diffusion casual, valore molto ridotto. Trench e giacche Weekend si vendono ma con margini bassi (€15-25 di vendita reale su capi a €20+ di acquisto = flip negativo)
+
+**COLLABORAZIONI DESIGNER x H&M (categoria speciale):**
+Balmain x H&M, Moschino x H&M, Margiela x H&M, Versace x H&M, Lanvin x H&M ecc. sono una categoria DISTINTA — non sono mainline luxury né fast fashion. Hanno un micro-mercato collezionistico basato sulla nostalgia con prezzi stabili nel tempo.
+- Valore second-hand realistico: €15-30 per pezzi iconici logati, €10-18 per intimo/accessori
+- Sold comps reali su eBay: €15-25 per pezzi in ottime condizioni
+- NON usare il prezzo mainline Moschino/Balmain come benchmark — sono prodotti H&M di qualità, non luxury
+- Strategia: se l'annuncio ha più di 30 minuti e il prezzo è borderline, TRATTA prima di comprare
+
+**REGOLA OPERATIVA:** se l'etichetta mostra una diffusion line basic (senza grafica iconica, logo all-over o pezzo d'archivio riconoscibile), il margine realistico crolla. NON usare il prezzo mainline come benchmark. Dichiara esplicitamente nel verdetto: "diffusion line, non mainline — valore second-hand ridotto".
 Il rischio di un acquisto va valutato in termini ASSOLUTI, non relativi.
 "Macchie", "condizione non perfetta", "qualche difetto" su un capo da €5-10 significa che il tuo rischio massimo e' €5-10 — meno di un caffe'. Non e' lo stesso rischio di "macchie" su un capo da €80.
 
@@ -256,7 +307,8 @@ Non tutte le situazioni di "prove incomplete" sono uguali. Incrocia:
 
 Nella sezione "Da chiedere" e "Messaggio da inviare": se il deal e' enorme con prove sfocate, specifica che il messaggio va inviato DOPO l'acquisto (non prima) per non perdere il deal.
 **Acquisto pieno** = prezzo + protezione (~5%+€0,70) + spedizione (IT 2,50€, altre EU 4,50-6€).
-**Incasso** = vendita stimata − 2,50€ spedizione. **Margine** = incasso − acquisto pieno.
+**Incasso reale** = vendita stimata × 0,80 (sconto medio 20% per trattativa — sempre).
+**Margine** = incasso reale − acquisto pieno.
 Soglia: 20€ netti E ROI 100%+. Confidenza sempre Bassa (nessun comp reale in questo passaggio).
 
 # MATRICE DECISIONALE
@@ -311,10 +363,20 @@ Hai il tool google_search. Usalo per trovare PREZZI DI VENDITA REALI (non il pre
 Formula: "[brand] [categoria] [materiale] sold" o "site:vestiairecollective.com [brand] [categoria]".
 Se i comp Serper pre-raccolti sono gia' sufficienti, puoi non cercare ulteriormente -- ma se sono scarsi o ambigui, cerca.
 
-# MARGINE E SOGLIE
-**Acquisto pieno** = prezzo + protezione (~5%+€0,70) + spedizione (IT 2,50€, altre EU 4,50-6€).
-**Incasso** = vendita probabile − 2,50€ spedizione offerta.
-**Margine netto** = incasso − acquisto pieno. Soglia: 20€ netti E ROI 100%+.
+# MARGINE E SOGLIE — CALCOLO A DUE GAMBE OBBLIGATORIO
+**Acquisto pieno** = prezzo + protezione (~5%+€0,70) + spedizione in entrata (IT 2,50€, altre EU 4,50-6€).
+**Incasso reale** = prezzo di listing stimato × 0,80 (sconto medio 20% per trattativa — SEMPRE, non opzionale).
+**Margine netto** = incasso reale − acquisto pieno. Soglia: 20€ netti E ROI 100%+.
+
+Esempio: listing stimato €45, acquisto pieno €31,50 → incasso reale €36 → margine €4,50 (ROI 14%) → NON COMPRARE.
+Esempio: listing stimato €25, acquisto pieno €12,65 → incasso reale €20 → margine €7,35 (ROI 58%) → micro-flip borderline.
+
+# GERARCHIA COMP — REGOLA NON NEGOZIABILE
+**eBay sold** (filtro venduto) = unico valore reale di transazione. Priorità assoluta.
+**Vestiaire / Vinted / Depop ask** = solo indicatori di saturazione e prezzo psicologico, NON valore di vendita.
+Se non hai eBay sold identici → Confidenza Bassa obbligatoria. Non inventare sold, dichiaralo esplicitamente.
+Aggiustamento mercato: sold eBay UK/US/DE → -20-30% per stimare realistico su Vinted IT.
+
 Voto Margine: 0-2/10 <10€; 3-4/10 10-19€; 5-6/10 20-39€; 7-8/10 40-99€; 9-10/10 100€+.
 
 # MATRICE
@@ -325,12 +387,8 @@ Voto Margine: 0-2/10 <10€; 3-4/10 10-19€; 5-6/10 20-39€; 7-8/10 40-99€; 
 5. TRATTA — tutto ok ma margine migliorabile con trattativa.
 6. NON COMPRARE — fake evidente dalle foto, zero etichette + descrizione "tagliate", condizione distrutta, margine negativo con i comp reali.
 
-# PREZZI E RICERCA (BILANCIAMENTO COMPS vs. KNOWLEDGE - REGOLA CRITICA)
-Ask multipli coerenti da fonti diverse → applica sconto prudenza 20-40% per stimare il sold reale.
-I risultati di ricerca web hanno un alto peso specifico, ma NON SONO VANGELO ASSOLUTO se la ricerca è troppo generica per il capo specifico. Applica questa logica di bilanciamento:
-- DIFFUSION LINES (es. Weekend Max Mara, 'S Max Mara, Moschino Jeans, Moschino Cheap & Chic, M Missoni, Anglomania): Qui devi AZZERARE il tuo bias del lusso. Se l'analisi visiva identifica una linea diffusion e i risultati web (specialmente eBay sold) sono bassi (es. 20-35€), FIDATI DEI COMPS. Sono il vero mercato per queste sottomarche. Non farti trascinare in alto dalla memoria dei prezzi della main line.
-- MAIN LINE O PEZZI RARI/PARTICOLARI: Se l'analisi visiva conferma un pezzo main line o un capo d'archivio particolare, ma le ricerche web hanno prodotto solo risultati generici e bassi (es. magliette basiche invece del tuo capo specifico), USA LA TUA CONOSCENZA. Se riconosci che la ricerca web non sta rendendo giustizia alla rarità o alla linea principale del capo, affidati alla tua competenza di esperto per stimare un prezzo di uscita più alto, motivando il peso della rarità/main line nel verdetto.
-- Se non hai comps validi e non hai certezze dalla tua knowledge, mantieni un conservatorismo rigido al ribasso.
+# POLICY ASK-COME-PROXY
+Ask multipli coerenti da fonti diverse → applica sconto prudenza 20-40% per stimare il sold reale. Rimane Confidenza Media (non Alta) salvo sold eBay confermati.
 
 # OUTPUT — ottimizzato per lettura rapida da mobile. Verdetto SEMPRE in cima.
 
@@ -364,6 +422,7 @@ IMPORTANTE sul costo pieno:
 - **Obiettivo trattativa** = prezzo target che vuoi ottenere + protezione + spedizione (solo se TRATTA)
 Non invertire mai i due valori.
 """.strip()
+
 
 # ---------------------------------------------------------------------------
 # TELEGRAM BOT API HELPERS
