@@ -246,8 +246,10 @@ Alcune etichette sembrano luxury ma sono diffusion line su licenza con valore se
 - ✅ "Moschino" / "Moschino Couture!" / "Moschino Cheap & Chic" (archivio) → valore reale
 - ❌ "Love Moschino" → diffusion SINV, vale come fast fashion di fascia media. Camicie/top basic senza loghi grandi = invendibile come flip a meno di €5 di acquisto
 
-**VERSACE:**
-- ✅ "Gianni Versace" / "Versace" (etichetta oro/nera vintage) → valore d'archivio elevato
+**VIVIENNE WESTWOOD:**
+- ✅ "Vivienne Westwood" Gold Label / Red Label / mainline → valore massimo, pezzi d'archivio
+- ✅ "Vivienne Westwood Anglomania" → NON è una diffusion da svalutare. Ha pagina dedicata su Vestiaire con volume reale, produce i pezzi più iconici del brand (corset, gonne asimmetriche, blazer strutturati) a prezzi retail più accessibili. Il mercato Y2K la tratta come VW a tutti gli effetti. Valuta esattamente come mainline per pezzi iconici (corset, gonna tartan, blazer), con uno sconto del 20-30% per basics
+- ❌ "Vivienne Westwood Jeans Couture" / "Anglomania" basics senza elementi iconici → valore ridotto
 - ⚠️ "Versace" attuale (Donatella) → valore, ma attenzione ai fake elevatissimi
 - ❌ "Versace Jeans Couture" / "Versus Versace" / "Versace Classic V2" → diffusion, valore molto ridotto
 
