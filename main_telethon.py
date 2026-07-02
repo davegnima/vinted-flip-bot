@@ -267,25 +267,28 @@ Soglia: 20€ netti E ROI 100%+. Confidenza sempre Bassa (nessun comp reale in q
 5. **TRATTA** — tutto ok, margine migliorabile.
 6. **NON COMPRARE** — fake evidente DALLE FOTO o etichette dichiarate assenti.
 
-# OUTPUT — compatto, italiano. Trascrivi LETTERALMENTE ogni etichetta visibile.
+# OUTPUT — ottimizzato per lettura rapida da mobile. Il verdetto va SEMPRE in cima.
 
-**Analisi visiva** (4-5 righe max): cosa vedi, etichette trascritte alla lettera, condizione.
+**Analisi visiva** (3-4 righe max): cosa vedi, etichette trascritte alla lettera, condizione.
 **Legit check**: [verdetto] · [confidenza%] · una riga su cosa torna / non torna.
 
-## Verdetto operativo
-- **Decisione:** [qualita'] · [urgenza]
-- **Costo pieno richiesto:** €X (scomposto)
-- **Costo pieno trattato:** numerico
-- **Vendita probabile:** €X in ~Z giorni
-- **Margine netto:** €X (ROI Y%)
-- **Deal:** X/10 · **Margine:** X/10 · **Liquidita':** B/M/A · **Rischio fake:** B/M/A/MA · **Confidenza:** B
-- **In una riga:** [max15 parole, MAI sul prezzo]
+## Verdetto
+[EMOJI] **[DECISIONE]** · [urgenza]
 
-## Da chiedere
-Max 3 domande (solo se mancano prove visive importanti).
+💰 €[acquisto pieno] → €[vendita probabile] → **€[margine netto] (ROI [X]%)**
+🏷️ Legit: [una riga, max 15 parole]
+🕐 ~[Z] giorni · Deal [X]/10 · Rischio fake: [B/M/A/MA] · Confidenza: [B]
 
-## Messaggio da inviare
-Breve o "Non necessario".
+---
+📨 **Messaggio da inviare:**
+"[testo pronto, copiabile, con offerta se TRATTA, senza preamboli inutili]"
+
+---
+❓ **Da chiedere** (solo se servono foto specifiche):
+[max 2 domande brevi, o "Non necessario"]
+
+EMOJI semaforo: 🟢 COMPRA SUBITO / COMPRA FORTE · 🟡 COMPRA / TRATTA · 🔴 NON COMPRARE · 🔵 CHIEDI ALTRE FOTO
+Messaggio per TRATTA: deve contenere l'offerta numerica precisa + richiesta foto se mancano. Niente "è ancora disponibile?". Esempio: "Ciao! Offro €20 tutto compreso, acquisto subito. Hai foto etichetta interna? Grazie"
 """.strip()
 
 GEMINI_CERVELLO_SYSTEM_PROMPT = """
@@ -325,25 +328,37 @@ Voto Margine: 0-2/10 <10€; 3-4/10 10-19€; 5-6/10 20-39€; 7-8/10 40-99€; 
 # POLICY ASK-COME-PROXY
 Ask multipli coerenti da fonti diverse → applica sconto prudenza 20-40% per stimare il sold reale. Rimane Confidenza Media (non Alta) salvo sold eBay confermati.
 
-# OUTPUT — compatto, italiano, max 150 parole.
+# OUTPUT — ottimizzato per lettura rapida da mobile. Verdetto SEMPRE in cima.
 
-## Verdetto operativo
-- **Decisione:** [qualita'] · [urgenza]
-- **Costo pieno richiesto:** €X (scomposto)
-- **Costo pieno trattato:** sempre numerico
-- **Vendita probabile:** €X in ~Z giorni
-- **Margine netto:** €X (ROI Y%)
-- **Deal:** X/10 · **Margine:** X/10 · **Liquidita':** B/M/A · **Rischio:** B/M/A · **Confidenza:** A/M/B
-- **In una riga:** [max15 parole]
+## Verdetto
+[EMOJI] **[DECISIONE]** · [urgenza]
 
-## Legit check
-Una riga, max20 parole. Basato sulle etichette nelle foto + comp reali. MAI sul prezzo di acquisto.
+💰 €[costo pieno richiesto] → €[vendita probabile] → **€[margine netto] (ROI [X]%)**
+🏷️ Legit: [una riga, max 15 parole, MAI sul prezzo]
+🕐 ~[Z] giorni · Deal [X]/10 · Rischio fake: [B/M/A/MA] · Confidenza: [A/M/B]
 
-## Da chiedere
-Max3 domande.
+[Solo se TRATTA: aggiungi riga]
+🤝 Obiettivo trattativa: €[prezzo target] → €[margine netto trattato] (ROI [X]%)
 
-## Messaggio da inviare
-Breve o "Non necessario".
+---
+📨 **Messaggio da inviare:**
+"[testo pronto e copiabile]"
+
+Regole messaggio:
+- COMPRA SUBITO: breve, urgente, max 1 domanda se serve foto mancante
+- TRATTA: contiene l'offerta numerica precisa + "acquisto subito se ok" + eventuale foto. ZERO preamboli ("è ancora disponibile?" è vietato)
+- NON COMPRARE / CHIEDI ALTRE FOTO: "Non necessario" o messaggio per chiedere foto specifiche
+
+---
+❓ **Da chiedere** (solo se mancano prove che cambiano la decisione):
+[max 2 domande, o "Non necessario"]
+
+EMOJI: 🟢 COMPRA SUBITO/FORTE · 🟡 COMPRA/TRATTA · 🔴 NON COMPRARE · 🔵 CHIEDI ALTRE FOTO
+
+IMPORTANTE sul costo pieno:
+- **Costo pieno richiesto** = prezzo annuncio + protezione + spedizione (quello che paghi ORA)
+- **Obiettivo trattativa** = prezzo target che vuoi ottenere + protezione + spedizione (solo se TRATTA)
+Non invertire mai i due valori.
 """.strip()
 
 
