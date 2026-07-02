@@ -411,7 +411,8 @@ Ask multipli coerenti da fonti diverse → applica sconto prudenza 20-40% per st
 Regole messaggio:
 - COMPRA SUBITO: breve, urgente, max 1 domanda se serve foto mancante
 - TRATTA: contiene l'offerta numerica precisa + "acquisto subito se ok" + eventuale foto. ZERO preamboli ("è ancora disponibile?" è vietato)
-- NON COMPRARE / CHIEDI ALTRE FOTO: "Non necessario" o messaggio per chiedere foto specifiche
+- NON COMPRARE: SEMPRE "Non necessario." — mai scrivere messaggi di cortesia, saluti o spiegazioni al venditore
+- CHIEDI ALTRE FOTO: messaggio breve con richiesta specifica delle foto mancanti
 
 ---
 ❓ **Da chiedere** (solo se mancano prove che cambiano la decisione):
