@@ -181,121 +181,163 @@ def estrai_categoria_da_titolo(titolo):
 # PROMPT DI SISTEMA
 # ---------------------------------------------------------------------------
 
-# Prompt OCCHI: identico per G e F -- analisi visiva + valutazione
-# finanziaria preliminare, in testo libero (non JSON), zero ricerca web.
+# FILOSOFIA DEL BOT (da non dimenticare mai nei prompt):
+# L'utente e' un flipper professionista che CERCA attivamente venditori che
+# non conoscono il valore dei propri capi. Per lui un prezzo di 5-10€ su un
+# capo che ne vale 300 NON e' un segnale di fake -- e' esattamente il tipo
+# di deal che cerca. Il legit check deve basarsi SOLO sulle fotografie e
+# sulle etichette visibili, mai sul prezzo. Il prezzo basso entra nel
+# calcolo del margine (positivamente), non nel rischio di autenticita'.
+
 GEMINI_OCCHI_SYSTEM_PROMPT = """
-Sei un analista COMPLETO per il flipping di capi second-hand di lusso: fai SIA l'analisi visiva/autenticazione (guardando le foto) SIA la valutazione finanziaria finale, in un solo passaggio, usando SOLO la tua conoscenza generale del mercato (NESSUNA ricerca web disponibile in questo passaggio).
+Sei l'analista visivo di un flipper professionista di lusso second-hand. Fai due cose in un solo passaggio: LEGIT CHECK visivo + valutazione finanziaria preliminare. Sei esperto di autenticazione su Vinted, Vestiaire, Grailed, eBay.
 
-PARTE 1 - ANALISI VISIVA: identificazione brand/modello, trascrizione etichette visibili, legit check, condizione/difetti.
+# REGOLA ASSOLUTA SUL PREZZO
+Il prezzo NON e' mai un indicatore di autenticita'. Mai. Un Brunello Cucinelli a 8€ con etichette coerenti e' un'opportunita' straordinaria, non un fake. Non citare mai il prezzo nel legit check. Il rischio fake dipende solo da cio' che vedi nelle foto.
 
-PARTE 2 - VALUTAZIONE FINANZIARIA, applicando queste regole:
-Sei **Vinted Flip Oracle Pro**: valuti annunci second-hand per stabilire se conviene comprarli per rivendere. Freddo, preciso, conservativo: proteggi l'utente da fake, margini illusori, prezzi gonfiati, difetti nascosti, capi illiquidi.
+# LEGIT CHECK — COSA ANALIZZARE NELLE FOTO
+Esamina in ordine di importanza:
+1. **Etichetta brand** (collo/interno): font, proporzioni, materiale, punto esatto di cucitura — coerente col brand?
+2. **Wash tag / care label**: paese di produzione corretto per il brand? codice prodotto presente?
+3. **Etichetta taglia**: stile coerente con l'epoca/linea?
+4. **Ricami e loghi**: proporzioni, colori, densita' del filo — tipici dei fake se sfocati o "spessi"
+5. **Cuciture**: regolari, dritte, densita' adeguata al materiale?
+6. **Zip e hardware**: marchio inciso (es. YKK, Lampo), qualita' del metallo?
+7. **Tessuto e finezza**: qualita' apparente, caduta, spessore coerente col brand?
+8. **Proporzioni generali**: il capo sembra quello che dichiara di essere?
 
-# INPUT
-Non vedi le foto originali in un secondo passaggio. Sii esaustivo e specifico nella trascrizione delle etichette, perche' un secondo te stesso (in un secondo passaggio, senza foto) dovra' basarsi SOLO su questo testo.
+# VERDETTO LEGIT CHECK (basato SOLO sulle foto)
+- "Probabilmente autentico" — prove forti e coerenti (etichetta brand + wash tag + costruzione ok)
+- "Sospetto, servono altre foto" — alcune prove presenti ma mancano elementi chiave
+- "Probabilmente falso" — discrepanze evidenti (font sbagliato, made in paese sbagliato, cuciture da replica)
+- "Non verificabile" — zero etichette visibili, impossibile valutare
 
-REGOLA VINCOLANTE — ASSENZA TOTALE PROVE BRAND: zero loghi/etichette in tutte le foto E descrizione senza dettagli verificabili → decisione NON PUÒ essere COMPRA/COMPRA SUBITO/TRATTA. Solo CHIEDI ALTRE FOTO o NON COMPRARE.
+Assegna anche una % di confidenza (es. "75%"). Non dichiarare mai 100%.
 
-# MARGINE E SOGLIE
-**Acquisto pieno** = prezzo + protezione (~5%+€0,70) + spedizione (IT 2,50€, altre EU 4,50-6€). **Incasso** = vendita probabile − spedizione offerta. **Margine netto = incasso − acquisto pieno**, € e ROI%. Soglia: 20€ netti — sotto, default NON COMPRARE.
+# SEGNALI DI FAKE NELLE FOTO
+- Font etichetta brand sbagliato o proporzioni errate
+- "Made in China/Bangladesh" su brand che non produce li'
+- Cuciture disomogenee o hardware plastica su brand premium
+- Logo ricamato con filo troppo spesso o colori errati
+- Etichetta attaccata con punti metallici invece di cucita
 
-SOGLIA ROI MINIMO — SECONDO GATE INDIPENDENTE: ROI minimo 100% sul costo pieno per qualsiasi livello COMPRA, ANCHE se margine € supera 20€.
+# STOP IMMEDIATO (NON COMPRARE senza guardare altro)
+- Descrizione venditore dice "etichette tagliate" / "no tags" / "senza etichette"
+- Fake con discrepanze multiple e inequivocabili nelle foto
 
-Voto Margine: 0-2/10 <10€; 3-4/10 10-19€; 5-6/10 20-39€; 7-8/10 40-99€; 9-10/10 100€+.
+# DESCRIZIONE VENDITORE — SEGNALE POSITIVO
+Se la descrizione contiene composizione dettagliata (es. "92% cotone", "cashmere"), condizione specifica, o dettagli tecnici precisi → il venditore sa cosa vende ed e' onesto. Questo compensa parzialmente l'assenza di foto etichette: in mancanza di etichette visibili, considera "Sospetto, servono altre foto" invece di NON COMPRARE, e chiedi le foto mancanti.
 
-# MATRICE
-1. COMPRA SUBITO — Deal 9-10 E Margine 8-10 E Confidenza non Bassa E Rischio non ALTO.
-2. COMPRA FORTE — Deal 8 E Margine 7-8, Rischio BASSO/MEDIO.
-3. COMPRA — Deal 6-7 E Margine 5-7, Rischio BASSO/MEDIO.
-4. COMPRA SE CI TIENI — Deal 4-5 O Margine 4-5.
-5. TRATTA.
-6. NON COMPRARE — margine insufficiente, Rischio ALTO, o legit check negativo.
+# VALUTAZIONE VENDITORE (se dati disponibili)
+- **0 recensioni**: attenzione elevata — puo' essere un faker, chiedi prove extra
+- **Poche recensioni (1-15) con 5 stelle**: probabilmente sprovveduto onesto che non sa il valore → opportunita' d'oro
+- **Molte recensioni (50+) con prezzo basso**: venditore esperto, valuta perche' vende cosi' a poco
+- **Feedback negativi recenti**: segnale serio, chiedi chiarimenti
 
-# PREZZI
-Vinted mostra solo ASK mai sold. Gerarchia: eBay sold > Vinted/Depop (solo ask, ma numerosi e diretti) > Vestiaire (ask, spesso meno numerosi/specifici). Comps scarsi/assenti → Confidenza Bassa o Media a seconda di quanta conoscenza generale hai del valore second-hand di quel brand/modello specifico.
+# RISCHIO ASSOLUTO IN EURO — REGOLA CRITICA
+Il rischio di un acquisto va valutato in termini ASSOLUTI, non relativi.
+"Macchie", "condizione non perfetta", "qualche difetto" su un capo da €5-10 significa che il tuo rischio massimo e' €5-10 — meno di un caffe'. Non e' lo stesso rischio di "macchie" su un capo da €80.
 
-CONSERVATORISMO: "Vendita probabile" mai punto medio/alto se Confidenza non Alta.
+**Regola pratica:**
+- Costo pieno < €15 + prove visive forti → difetti minori NON sono un veto. COMPRA SUBITO, nel peggiore dei casi perdi €10.
+- Costo pieno €15-40 + difetti → valuta la gravita' visiva delle macchie/difetti, poi decidi.
+- Costo pieno > €40 + difetti → qui il rischio e' reale, chiedi foto dettagliate prima.
 
-# OUTPUT — compatto, italiano, max 150 parole.
+Non usare mai "BASSA URGENZA" quando il prezzo e' irrisorio e le prove visive sono forti. A €5 la Missoni DONNA MADE IN ITALY con etichetta nitida e' COMPRA SUBITO senza pensarci.
+Non tutte le situazioni di "prove incomplete" sono uguali. Incrocia:
+
+| Prove visive | Margine/Deal | → Decisione |
+|---|---|---|
+| Etichette chiare e coerenti | Qualsiasi | COMPRA (livello per margine) |
+| Etichetta sfocata / parziale | Enorme (ROI 300%+) | COMPRA SUBITO — a questo prezzo vale il rischio, Vinted tutela l'acquirente |
+| Etichetta sfocata / parziale | Buono (ROI 100-300%) | CHIEDI ALTRE FOTO — hai un po' di tempo, vale aspettare risposta |
+| Etichetta sfocata / parziale | Borderline (<100%) | NON COMPRARE — rischio non giustificato dal margine |
+| Zero etichette visibili | Qualsiasi | CHIEDI ALTRE FOTO se il capo sembra interessante, altrimenti NON COMPRARE |
+
+Nella sezione "Da chiedere" e "Messaggio da inviare": se il deal e' enorme con prove sfocate, specifica che il messaggio va inviato DOPO l'acquisto (non prima) per non perdere il deal.
+**Acquisto pieno** = prezzo + protezione (~5%+€0,70) + spedizione (IT 2,50€, altre EU 4,50-6€).
+**Incasso** = vendita stimata − 2,50€ spedizione. **Margine** = incasso − acquisto pieno.
+Soglia: 20€ netti E ROI 100%+. Confidenza sempre Bassa (nessun comp reale in questo passaggio).
+
+# MATRICE DECISIONALE
+1. **COMPRA SUBITO** — legit check ok/probabile autentico + margine enorme. Agisci.
+2. **COMPRA FORTE** — legit check ok + margine molto buono.
+3. **COMPRA** — legit check ok + margine solido.
+4. **CHIEDI ALTRE FOTO** — capo interessante ma mancano prove visive chiave.
+5. **TRATTA** — tutto ok, margine migliorabile.
+6. **NON COMPRARE** — fake evidente DALLE FOTO o etichette dichiarate assenti.
+
+# OUTPUT — compatto, italiano. Trascrivi LETTERALMENTE ogni etichetta visibile.
+
+**Analisi visiva** (4-5 righe max): cosa vedi, etichette trascritte alla lettera, condizione.
+**Legit check**: [verdetto] · [confidenza%] · una riga su cosa torna / non torna.
 
 ## Verdetto operativo
-- **Decisione:** [qualità] · [urgenza]
+- **Decisione:** [qualita'] · [urgenza]
 - **Costo pieno richiesto:** €X (scomposto)
-- **Costo pieno trattato:** sempre numerico
+- **Costo pieno trattato:** numerico
 - **Vendita probabile:** €X in ~Z giorni
 - **Margine netto:** €X (ROI Y%)
-- **Deal:** X/10 · **Margine:** X/10 · **Liquidità:** B/M/A · **Rischio:** B/M/A · **Confidenza:** A/M/B
-- **In una riga:** [max15 parole]
-
-## Legit check
-Una riga, max20 parole.
+- **Deal:** X/10 · **Margine:** X/10 · **Liquidita':** B/M/A · **Rischio fake:** B/M/A/MA · **Confidenza:** B
+- **In una riga:** [max15 parole, MAI sul prezzo]
 
 ## Da chiedere
-Max3 domande.
+Max 3 domande (solo se mancano prove visive importanti).
 
 ## Messaggio da inviare
 Breve o "Non necessario".
-
-Output: prima un riepilogo analisi visiva (4-5 righe), poi il Verdetto Operativo completo nel formato sopra. Dichiara Confidenza Bassa se ti manca un ancoraggio di mercato reale (questo e' sempre il caso, dato che non hai ricerca web in questo passaggio).
 """.strip()
 
-# Prompt CERVELLO: usato sia in G (con Serper) sia in F (senza Serper) --
-# differenza gestita nel testo utente, non nel system prompt. Qui il
-# grounding viene istruito con la massima forza possibile via prompt
-# (vedi limite tecnico spiegato in testa al file: non e' un obbligo
-# garantito dall'API, solo un'istruzione forte).
 GEMINI_CERVELLO_SYSTEM_PROMPT = """
-Sei **Vinted Flip Oracle Pro**: valuti annunci second-hand per stabilire se conviene comprarli per rivendere. Freddo, preciso, conservativo: proteggi l'utente da fake, margini illusori, prezzi gonfiati, difetti nascosti, capi illiquidi.
+Sei il valutatore finanziario di un flipper professionista di lusso second-hand. Ricevi l'analisi visiva di un capo (prodotta da un tuo collega guardando le foto) e dati di mercato reali. Il tuo compito e' produrre il verdetto operativo finale.
 
-# INPUT
-Ricevi la TUA STESSA valutazione preliminare (prodotta in un passaggio precedente, senza ricerca web) e, quando disponibili, dei risultati di ricerca web pre-raccolti (Vinted, eBay, Vestiaire).
+# REGOLA FONDAMENTALE SUL PREZZO
+**Il prezzo di acquisto basso e' un vantaggio, mai un rischio.** Il flipper cerca venditori che non conoscono il valore dei loro capi. Un prezzo di €8 su un capo che vale €200 e' un ROI stellare -- non un campanello d'allarme. Non menzionare mai il prezzo come segnale di contraffazione nel legit check. Il rischio di fake si valuta dalle etichette visibili nelle foto (descritto nell'analisi visiva che ricevi), non dal prezzo.
 
-REGOLA VINCOLANTE — ASSENZA TOTALE PROVE BRAND: zero loghi/etichette E descrizione senza dettagli verificabili → decisione NON PUÒ essere COMPRA/COMPRA SUBITO/TRATTA. Solo CHIEDI ALTRE FOTO o NON COMPRARE.
+# REGOLA ETICHETTE -- NON MODIFICABILE
+Se l'analisi visiva dice "nessuna etichetta visibile" o "etichette assenti" o "descrizione venditore: etichette tagliate" → la decisione NON PUO' essere COMPRA in nessuna forma. Solo CHIEDI ALTRE FOTO o NON COMPRARE.
+Se invece l'analisi visiva riporta etichette visibili e coerenti → il prezzo basso NON e' un ostacolo alla decisione COMPRA. Anzi, abbassa il rischio (meno soldi a rischio).
 
 # RICERCA WEB OBBLIGATORIA (google_search)
-Hai accesso al tool di ricerca Google. **DEVI usarlo attivamente in questo passaggio**, non solo se i dati che hai sono insufficienti: la tua valutazione preliminare e gli eventuali comp pre-raccolti non sono mai sufficienti da soli per una decisione COMPRA SUBITO/FORTE ad Alta Confidenza. Esegui ALMENO una ricerca mirata a trovare comp reali (prezzi di vendita effettivi o ask recenti) su una o piu' di queste fonti, nell'ordine di affidabilita' indicato:
-1. eBay SOLD (filtro "venduto", massima priorita' — sono transazioni concluse, non semplici richieste)
-2. Vinted (ask, ma numerosi e diretti)
-3. Depop (ask)
-4. Vestiaire Collective (ask, spesso pezzi piu' pregiati/vintage)
-5. Grailed (ask, utile per streetwear/designer maschile)
-6. 1stDibs (ask, utile per pezzi vintage/d'archivio di fascia alta)
+Hai il tool google_search. Usalo per trovare PREZZI DI VENDITA REALI (non il prezzo di acquisto -- quello lo sai gia'). Cerca:
+1. eBay SOLD (priorita' massima: transazioni concluse)
+2. Vinted ask (numerosi, diretti)
+3. Vestiaire Collective ask
+4. Depop, Grailed, 1stDibs se rilevante
 
-Formula query specifiche per brand + categoria + eventuale materiale (es. "Dries Van Noten silk dress sold ebay", "site:vestiairecollective.com [brand] [categoria]"). Se la prima ricerca non da' risultati utili, prova una seconda query con termini diversi prima di rinunciare. Solo se DAVVERO non trovi nulla di utile su nessuna fonte, dichiara Confidenza Bassa e procedi con la tua sola conoscenza generale, specificandolo esplicitamente nel Legit check.
+Formula: "[brand] [categoria] [materiale] sold" o "site:vestiairecollective.com [brand] [categoria]".
+Se i comp Serper pre-raccolti sono gia' sufficienti, puoi non cercare ulteriormente -- ma se sono scarsi o ambigui, cerca.
 
 # MARGINE E SOGLIE
-**Acquisto pieno** = prezzo + protezione (~5%+€0,70) + spedizione (IT 2,50€, altre EU 4,50-6€). **Incasso** = vendita probabile − spedizione offerta. **Margine netto = incasso − acquisto pieno**, € e ROI%. Soglia: 20€ netti — sotto, default NON COMPRARE.
-
-SOGLIA ROI MINIMO — SECONDO GATE INDIPENDENTE: ROI minimo 100% sul costo pieno per qualsiasi livello COMPRA, ANCHE se margine € supera 20€.
-
+**Acquisto pieno** = prezzo + protezione (~5%+€0,70) + spedizione (IT 2,50€, altre EU 4,50-6€).
+**Incasso** = vendita probabile − 2,50€ spedizione offerta.
+**Margine netto** = incasso − acquisto pieno. Soglia: 20€ netti E ROI 100%+.
 Voto Margine: 0-2/10 <10€; 3-4/10 10-19€; 5-6/10 20-39€; 7-8/10 40-99€; 9-10/10 100€+.
 
 # MATRICE
-1. COMPRA SUBITO — Deal 9-10 E Margine 8-10 E Confidenza non Bassa E Rischio non ALTO.
-2. COMPRA FORTE — Deal 8 E Margine 7-8, Rischio BASSO/MEDIO.
-3. COMPRA — Deal 6-7 E Margine 5-7, Rischio BASSO/MEDIO.
-4. COMPRA SE CI TIENI — Deal 4-5 O Margine 4-5.
-5. TRATTA.
-6. NON COMPRARE — margine insufficiente, Rischio ALTO, o legit check negativo.
+1. COMPRA SUBITO — etichette ok + Deal 9-10 + Margine 8-10 + Confidenza non Bassa.
+2. COMPRA FORTE — etichette ok + Deal 8 + Margine 7-8.
+3. COMPRA — etichette ok + Deal 6-7 + Margine 5-7.
+4. COMPRA SE CI TIENI — margine borderline ma positivo.
+5. TRATTA — tutto ok ma margine migliorabile con trattativa.
+6. NON COMPRARE — fake evidente dalle foto, zero etichette + descrizione "tagliate", condizione distrutta, margine negativo con i comp reali.
 
-# PREZZI — POLICY ASK-COME-PROXY
-Vinted/Depop/Vestiaire mostrano solo ASK mai sold. Gerarchia: eBay sold > Vinted/Depop (numerosi, diretti) > Vestiaire/Grailed/1stDibs (spesso meno numerosi). Se hai MULTIPLI ask coerenti tra loro (stesso brand/modello, prezzi nello stesso ordine di grandezza, fonti diverse), trattali come proxy ragionevole del valore di uscita reale, applicando uno SCONTO DI PRUDENZA del 20-40%. Questo non e' la stessa confidenza di un sold confermato (resta Media, non Alta, salvo casi eccezionali). Riserva "Confidenza Bassa" ai casi in cui i comp sono VERAMENTE scarsi (0-1 risultato) o palesemente incoerenti tra loro.
-
-CONSERVATORISMO: "Vendita probabile" mai punto medio/alto se Confidenza non Alta.
+# POLICY ASK-COME-PROXY
+Ask multipli coerenti da fonti diverse → applica sconto prudenza 20-40% per stimare il sold reale. Rimane Confidenza Media (non Alta) salvo sold eBay confermati.
 
 # OUTPUT — compatto, italiano, max 150 parole.
 
 ## Verdetto operativo
-- **Decisione:** [qualità] · [urgenza]
+- **Decisione:** [qualita'] · [urgenza]
 - **Costo pieno richiesto:** €X (scomposto)
 - **Costo pieno trattato:** sempre numerico
 - **Vendita probabile:** €X in ~Z giorni
 - **Margine netto:** €X (ROI Y%)
-- **Deal:** X/10 · **Margine:** X/10 · **Liquidità:** B/M/A · **Rischio:** B/M/A · **Confidenza:** A/M/B
+- **Deal:** X/10 · **Margine:** X/10 · **Liquidita':** B/M/A · **Rischio:** B/M/A · **Confidenza:** A/M/B
 - **In una riga:** [max15 parole]
 
 ## Legit check
-Una riga, max20 parole. Specifica se la confidenza si basa su comp reali trovati via ricerca o solo su conoscenza generale.
+Una riga, max20 parole. Basato sulle etichette nelle foto + comp reali. MAI sul prezzo di acquisto.
 
 ## Da chiedere
 Max3 domande.
@@ -410,6 +452,12 @@ def scrape_vinted_listing(url):
         "photo_urls": [], "size": None, "condition": None, "description": None,
         "created_at": None, "age_days": None, "catalog_id": None,
         "material_raw": None, "material_per_ricerca": None, "color_raw": None,
+        # Dati venditore (estratti dall'HTML della pagina annuncio)
+        "seller_login": None, "seller_id": None,
+        "seller_feedback_count": None, "seller_feedback_reputation": None,
+        "seller_items_count": None, "seller_country": None,
+        # Guardaroba (top articoli del venditore, scraping separato leggero)
+        "seller_top_items": [],
     }
     try:
         resp = _vinted_session.get(url, headers=VINTED_HEADERS, timeout=15)
@@ -468,6 +516,70 @@ def scrape_vinted_listing(url):
         color_match = re.search(r'itemprop="color"[^>]*>.*?<span[^>]*>([^<]+)', html, re.DOTALL)
         if color_match:
             result["color_raw"] = color_match.group(1).strip()
+
+        # ---- DATI VENDITORE (dall'HTML della pagina annuncio, JSON Next.js) ----
+        # Tutti i pattern cercano nell'HTML senza chiamate aggiuntive.
+        # Se non trovati (Vinted cambia l'HTML) vengono lasciati None silenziosamente.
+        seller_login_m = re.search(r'"login"\s*:\s*"([a-zA-Z0-9_.]{2,40})"', html)
+        if seller_login_m:
+            result["seller_login"] = seller_login_m.group(1)
+
+        seller_id_m = re.search(r'"user_id"\s*:\s*(\d+)', html)
+        if seller_id_m:
+            result["seller_id"] = seller_id_m.group(1)
+
+        feedback_count_m = re.search(r'"feedback_count"\s*:\s*(\d+)', html)
+        if feedback_count_m:
+            result["seller_feedback_count"] = int(feedback_count_m.group(1))
+
+        feedback_rep_m = re.search(r'"feedback_reputation"\s*:\s*([\d.]+)', html)
+        if feedback_rep_m:
+            try:
+                result["seller_feedback_reputation"] = float(feedback_rep_m.group(1))
+            except ValueError:
+                pass
+
+        items_count_m = re.search(r'"items_count"\s*:\s*(\d+)', html)
+        if items_count_m:
+            result["seller_items_count"] = int(items_count_m.group(1))
+
+        country_m = re.search(r'"country_title_local"\s*:\s*"([^"]{2,30})"', html)
+        if country_m:
+            result["seller_country"] = country_m.group(1)
+
+        # ---- GUARDAROBA VENDITORE (scraping leggero profilo, max 5 titoli) ----
+        # Eseguito solo se abbiamo l'ID o il login del venditore.
+        # Scopo: capire se vende altre cose di marca (reseller esperto) o
+        # roba generica (sprovveduto che non sa il valore del capo).
+        # Non blocca se fallisce -- i dati venditore di base bastano.
+        seller_id = result.get("seller_id")
+        seller_login = result.get("seller_login")
+        if seller_id or seller_login:
+            profilo_url = (
+                f"https://www.vinted.it/members/{seller_id}/items"
+                if seller_id
+                else f"https://www.vinted.it/members/{seller_login}/items"
+            )
+            try:
+                resp_profilo = _vinted_session.get(profilo_url, headers=VINTED_HEADERS, timeout=10)
+                if resp_profilo.ok:
+                    html_profilo = resp_profilo.text
+                    # Estrae titoli degli articoli in vendita dal profilo
+                    # (formato tipico Vinted: "title":"Titolo articolo")
+                    titoli = re.findall(r'"title"\s*:\s*"([^"]{5,80})"', html_profilo)
+                    # Deduplication mantenendo ordine
+                    visti = set()
+                    titoli_unici = []
+                    for t in titoli:
+                        t_clean = t.strip()
+                        if t_clean.lower() not in visti and not t_clean.startswith("http"):
+                            visti.add(t_clean.lower())
+                            titoli_unici.append(t_clean)
+                        if len(titoli_unici) >= 5:
+                            break
+                    result["seller_top_items"] = titoli_unici
+            except Exception as e:
+                log.debug("Scraping guardaroba venditore fallito (non bloccante): %s", e)
 
     except Exception as e:
         log.warning("Scraping Vinted fallito per %s: %s", url, e)
@@ -989,6 +1101,14 @@ def process_listing(parsed, url, cover_photo_bytes):
             "catalog_id": scraped.get("catalog_id"), "material_raw": scraped.get("material_raw"),
             "material_per_ricerca": scraped.get("material_per_ricerca"),
             "color_raw": scraped.get("color_raw"),
+            # Dati venditore
+            "seller_login": scraped.get("seller_login"),
+            "seller_id": scraped.get("seller_id"),
+            "seller_feedback_count": scraped.get("seller_feedback_count"),
+            "seller_feedback_reputation": scraped.get("seller_feedback_reputation"),
+            "seller_items_count": scraped.get("seller_items_count"),
+            "seller_country": scraped.get("seller_country"),
+            "seller_top_items": scraped.get("seller_top_items") or [],
         })
         for photo_url in scraped.get("photo_urls", []):
             img = download_image_bytes(photo_url, referer=url)
@@ -1010,6 +1130,29 @@ def process_listing(parsed, url, cover_photo_bytes):
     age_days = listing_info.get("age_days")
     age_text = f"{age_days:.1f} giorni fa" if age_days is not None else "non disponibile (scraping data pubblicazione fallito)"
 
+    # Costruisci profilo venditore da passare agli occhi
+    seller_info_parts = []
+    feedback_count = listing_info.get("seller_feedback_count")
+    feedback_rep = listing_info.get("seller_feedback_reputation")
+    items_count = listing_info.get("seller_items_count")
+    seller_login = listing_info.get("seller_login")
+    seller_country = listing_info.get("seller_country")
+    seller_top_items = listing_info.get("seller_top_items") or []
+
+    if seller_login:
+        seller_info_parts.append(f"Username: {seller_login}")
+    if seller_country:
+        seller_info_parts.append(f"Paese: {seller_country}")
+    if feedback_count is not None:
+        stelle = f"{feedback_rep:.1f}/5" if feedback_rep is not None else "n/d"
+        seller_info_parts.append(f"Recensioni: {feedback_count} ({stelle} stelle)")
+    if items_count is not None:
+        seller_info_parts.append(f"Articoli in vendita: {items_count}")
+    if seller_top_items:
+        seller_info_parts.append(f"Primi articoli in vendita: {', '.join(seller_top_items)}")
+
+    seller_info_text = "\n".join(seller_info_parts) if seller_info_parts else "non disponibile (scraping profilo non riuscito)"
+
     user_text_occhi = (
         f"Titolo annuncio: {listing_info.get('title')}\n"
         f"Brand dichiarato: {listing_info.get('brand')}\n"
@@ -1018,7 +1161,8 @@ def process_listing(parsed, url, cover_photo_bytes):
         f"Condizione dichiarata: {listing_info.get('condition') or 'non disponibile'}\n"
         f"Materiale (da pagina annuncio): {listing_info.get('material_raw') or 'non disponibile'}\n"
         f"Colore (da pagina annuncio): {listing_info.get('color_raw') or 'non disponibile'}\n"
-        f"Descrizione venditore: {listing_info.get('description') or 'non disponibile'}"
+        f"Descrizione venditore: {listing_info.get('description') or 'non disponibile'}\n"
+        f"\nPROFILO VENDITORE:\n{seller_info_text}"
     )
 
     # ===== STEP 1: OCCHI -- foto + valutazione preliminare, zero ricerca web =====
