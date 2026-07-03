@@ -73,6 +73,11 @@ TELEGRAM_GROUP_ID = int(os.environ["TELEGRAM_GROUP_ID"])
 
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_OWNER_CHAT_ID = os.environ["TELEGRAM_OWNER_CHAT_ID"]
+# TELEGRAM_ALERT_CHAT_ID (opzionale): se impostato, riceve SOLO i verdetti
+# COMPRA/TRATTA/CHIEDI ALTRE FOTO con notifica push normale.
+# TELEGRAM_OWNER_CHAT_ID riceve tutto ma può essere silenziato sul telefono.
+# Come ottenere il tuo user_id Telegram: scrivi /start a @userinfobot
+TELEGRAM_ALERT_CHAT_ID = os.environ.get("TELEGRAM_ALERT_CHAT_ID")  # es. "123456789"
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 SERPER_API_KEY = os.environ.get("SERPER_API_KEY")  # opzionale: assente -> fallback diretto a Scenario F
 
@@ -222,11 +227,12 @@ Assegna anche una % di confidenza (es. "75%"). Non dichiarare mai 100%.
 - Etichetta attaccata con punti metallici invece di cucita
 
 # STOP IMMEDIATO (NON COMPRARE senza guardare altro)
-- Descrizione venditore dice "etichette tagliate" / "no tags" / "senza etichette" riferito alla main label brand (non al wash tag)
+- Descrizione venditore dice "etichette tagliate" / "no tags" / "label removed" / "label missing" riferito alla **main label brand** (quella al collo con il nome del brand) → NON COMPRARE. Senza main label non si rivende su Vestiaire/eBay a prezzi premium.
 - Fake con discrepanze multiple e inequivocabili nelle foto
+- ⚠️ LEGGI SEMPRE LA DESCRIZIONE prima di guardare le foto: il venditore spesso dichiara esplicitamente difetti e etichette mancanti. "the inside label is missing", "etichetta tagliata", "no care label" nella descrizione = segnale da valutare correttamente prima di qualsiasi altra analisi.
 
 # MINUS DA SEGNALARE (abbassano il prezzo di listing, non sono veti)
-- Wash tag tagliato fisicamente (si vede solo il lembo): comune, molti lo tagliano per comodità. Abbassa il listing di €3-5 perché non puoi dichiarare la composizione su Vestiaire, ma su Vinted non cambia quasi nulla
+- **Wash tag / care label assente** (materiali e lavaggio): comune nei sample sale e outlet. Abbassa il listing di €5-10 su Vestiaire, quasi irrilevante su Vinted. Se il venditore spiega il motivo (es. "factory outlet sample", "bought at sample sale") = segnale di onestà, non di fake. NON confondere wash tag mancante con main label mancante.
 - Piccole macchie o residui: minus se visibili, non veto se il prezzo di acquisto è basso
 - Orlo leggermente sformato su maglia: normale dopo lavaggi, recuperabile con stiratura
 
@@ -277,8 +283,10 @@ Alcune etichette sembrano luxury ma sono diffusion line su licenza con valore se
 - ❌ "Romeo Gigli Sport" / "RG Sport" → licenza commerciale anni '90, zero mercato collezionistico. Polo, t-shirt, capi basic = invendibili come flip
 
 **MAX MARA:**
-- ✅ "Max Mara" mainline (cappotti, soprabiti, blazer strutturati) → valore, ma mercato lento
-- ❌ "Weekend Max Mara" / "Max Mara Weekend" → diffusion casual, valore molto ridotto. Trench e giacche Weekend si vendono ma con margini bassi (€15-25 di vendita reale su capi a €20+ di acquisto = flip negativo)
+- ✅ "Max Mara" mainline cappotti/soprabiti strutturati → valore, mercato lento
+- ✅ "Weekend Max Mara" piumini in piuma d'oca ("L'Autentico Piumino", "Heavy Padding") → valore reale elevato. Retail €350-450, rivendita €80-110 in stagione (ottobre-gennaio). Acquisto estivo a prezzi bassi = arbitraggio stagionale classico. Non applicare la regola diffusion qui.
+- ✅ "Weekend Max Mara" cappotti/soprabiti lana strutturati → valore medio, €40-70 rivendita
+- ❌ "Weekend Max Mara" abbigliamento casual (camicie, maglie, blazer leggeri, pantaloni) → diffusion casual, valore ridotto. Vendita reale €15-25 su capi a €20+ di acquisto = flip negativo
 
 **COLLABORAZIONI DESIGNER x H&M (categoria speciale):**
 Balmain x H&M, Moschino x H&M, Margiela x H&M, Versace x H&M, Lanvin x H&M ecc. sono una categoria DISTINTA — non sono mainline luxury né fast fashion. Hanno un micro-mercato collezionistico basato sulla nostalgia con prezzi stabili nel tempo.
@@ -288,6 +296,15 @@ Balmain x H&M, Moschino x H&M, Margiela x H&M, Versace x H&M, Lanvin x H&M ecc. 
 - Strategia: se l'annuncio ha più di 30 minuti e il prezzo è borderline, TRATTA prima di comprare
 
 **REGOLA OPERATIVA:** se l'etichetta mostra una diffusion line basic (senza grafica iconica, logo all-over o pezzo d'archivio riconoscibile), il margine realistico crolla. NON usare il prezzo mainline come benchmark. Dichiara esplicitamente nel verdetto: "diffusion line, non mainline — valore second-hand ridotto".
+
+# STAGIONALITÀ — ARBITRAGGIO TEMPORALE
+Il prezzo basso fuori stagione NON è un segnale negativo — è spesso la fonte del margine.
+- Piumini/cappotti pesanti in estate (giugno-agosto): prezzo Vinted 30-50% sotto il valore reale. Compra, deposita, rivendi a ottobre-novembre al prezzo pieno. Max Mara, Moncler, Helmut Lang in luglio a €30 = COMPRA.
+- Costumi/beachwear in inverno: stesso principio inverso.
+- Nella stima "Vendita probabile" indica SEMPRE il timing corretto: "€90 in ~90 giorni (ottobre)" non "€90 in 20 giorni" su un piumino comprato a luglio.
+- Il capitale immobilizzato per 2-3 mesi su un capo da €30-40 è accettabile se il margine atteso è €50+. Non penalizzare il deal score per la stagionalità — penalizza solo la liquidità e il tempo stimato.
+
+# RISCHIO ASSOLUTO IN EURO
 Il rischio di un acquisto va valutato in termini ASSOLUTI, non relativi.
 "Macchie", "condizione non perfetta", "qualche difetto" su un capo da €5-10 significa che il tuo rischio massimo e' €5-10 — meno di un caffe'. Non e' lo stesso rischio di "macchie" su un capo da €80.
 
@@ -324,7 +341,7 @@ Soglia: 20€ netti E ROI 100%+. Confidenza sempre Bassa (nessun comp reale in q
 # OUTPUT — ottimizzato per lettura rapida da mobile. Il verdetto va SEMPRE in cima.
 
 **Analisi visiva** (3-4 righe max): cosa vedi, etichette trascritte alla lettera, condizione.
-**Legit check**: [verdetto] · [confidenza%] · una riga su cosa torna / non torna.
+⚠️ **REGOLA CRITICA — NON INVENTARE ETICHETTE**: trascrivi SOLO ciò che è visibile e leggibile nelle foto. Se un'etichetta è sfocata, parzialmente coperta, o non presente in nessuna foto → dichiara "non visibile" o "non verificabile". MAI dedurre l'autenticità da codici che non si vedono chiaramente. Un codice letto male è peggio di un codice assente.
 
 ## Verdetto
 [EMOJI] **[DECISIONE]** · [urgenza]
@@ -1117,53 +1134,76 @@ def build_skip_report(listing_info, motivo_skip):
 
 
 def valida_contraddizioni_report(testo):
-    """Post-processing del report: corregge 3 contraddizioni logiche comuni
-    che il modello puo' commettere, identiche a quelle del bot originale:
-    (1) COMPRA + margine sotto soglia dichiarato -> TRATTA/NON COMPRARE
-    (2) COMPRA SUBITO + Confidenza Bassa -> COMPRA FORTE
-    (3) COMPRA + ROI < 100% dichiarato -> TRATTA/NON COMPRARE"""
+    """Post-processing del report: corregge 3 contraddizioni logiche comuni.
+    Gestisce sia il vecchio formato (**Decisione:** ...) sia il nuovo (🟢/🟡/🔴 COMPRA ...)."""
     final_text = testo
 
+    # Estrai la riga decisione in entrambi i formati
+    def _get_decisione_match(txt):
+        # Nuovo formato: riga con emoji semaforo
+        m = re.search(r"(🟢|🟡|🔴|🔵)\s+\*?\*?([^\n*]+)\*?\*?", txt)
+        if m:
+            return m, "emoji", m.group(2).strip()
+        # Vecchio formato: **Decisione:** ...
+        m2 = re.search(r"\*\*Decisione:\*\*\s*([^\n]+)", txt)
+        if m2:
+            return m2, "markdown", m2.group(1).strip()
+        return None, None, ""
+
+    match_d, fmt, dt = _get_decisione_match(final_text)
+
+    def _sostituisci_decisione(txt, nuova_decisione, motivo):
+        if fmt == "emoji":
+            emoji_map = {"NON COMPRARE": "🔴", "TRATTA": "🟡", "COMPRA": "🟢", "CHIEDI": "🔵"}
+            nuova_emoji = next((e for k, e in emoji_map.items() if k in nuova_decisione.upper()), "🟡")
+            return re.sub(
+                r"(🟢|🟡|🔴|🔵)\s+\*?\*?[^\n*]+\*?\*?",
+                f"{nuova_emoji} **{nuova_decisione}** ⚠️ _{motivo}_",
+                txt, count=1
+            )
+        else:
+            return re.sub(
+                r"(\*\*Decisione:\*\*\s*)[^\n]+",
+                r"\1" + nuova_decisione + f" ⚠️ _{motivo}_",
+                txt, count=1
+            )
+
+    # Estrai ROI dal testo
+    roi_m = re.search(r"ROI\s*~?\s*(\d+)(?:[-–](\d+))?\s*%", final_text, re.IGNORECASE)
+
     # (1) COMPRA + "sotto soglia"
-    dm = re.search(r"\*\*Decisione:\*\*\s*([^\n]+)", final_text)
-    dt = dm.group(1) if dm else ""
     if re.search(r"\bCOMPRA\b", dt) and re.search(r"sotto\s+soglia", final_text, re.IGNORECASE):
-        ct = re.search(r"\*\*Costo pieno trattato:\*\*\s*(N/A|€[\d.,]+)", final_text, re.IGNORECASE)
-        nuova = "TRATTA FORTE" if (ct and ct.group(1).upper() != "N/A") else "NON COMPRARE"
-        urg = re.search(r"·\s*([^\n]+)$", dt.strip())
-        decisione_ok = f"{nuova} · {urg.group(1).strip()}" if (urg and nuova != "NON COMPRARE") else f"{nuova} · N/A"
-        log.warning("Contraddizione (1) margine/decisione: '%s' -> '%s'", dt.strip(), decisione_ok)
-        final_text = re.sub(r"(\*\*Decisione:\*\*\s*)[^\n]+", r"\1" + decisione_ok + " ⚠️ _(corretto: margine sotto soglia)_", final_text, count=1)
+        nuova = "NON COMPRARE · N/A"
+        log.warning("Contraddizione (1) margine/decisione: '%s' -> '%s'", dt, nuova)
+        final_text = _sostituisci_decisione(final_text, nuova, "corretto: margine sotto soglia")
+        match_d, fmt, dt = _get_decisione_match(final_text)
 
     # (2) COMPRA SUBITO + Confidenza Bassa
-    dm2 = re.search(r"\*\*Decisione:\*\*\s*([^\n]+)", final_text)
-    dt2 = dm2.group(1) if dm2 else ""
-    if "COMPRA SUBITO" in dt2 and re.search(r"\*\*Confidenza:\*\*\s*Bassa", final_text, re.IGNORECASE):
-        urg2 = re.search(r"·\s*([^\n⚠️]+)", dt2.strip())
-        decisione_ok2 = f"COMPRA FORTE · {urg2.group(1).strip()}" if urg2 else "COMPRA FORTE · HAI QUALCHE ORA"
-        log.warning("Contraddizione (2) COMPRA SUBITO/Confidenza Bassa: '%s' -> '%s'", dt2.strip(), decisione_ok2)
-        final_text = re.sub(r"(\*\*Decisione:\*\*\s*)[^\n]+", r"\1" + decisione_ok2 + " ⚠️ _(corretto: COMPRA SUBITO richiede Confidenza non Bassa)_", final_text, count=1)
+    if "COMPRA SUBITO" in dt and re.search(r"Confidenza[:\s]+Bassa", final_text, re.IGNORECASE):
+        nuova = dt.replace("COMPRA SUBITO", "COMPRA FORTE")
+        log.warning("Contraddizione (2) COMPRA SUBITO/Confidenza Bassa: '%s' -> '%s'", dt, nuova)
+        final_text = _sostituisci_decisione(final_text, nuova, "corretto: COMPRA SUBITO richiede Confidenza non Bassa")
+        match_d, fmt, dt = _get_decisione_match(final_text)
 
     # (3) COMPRA + ROI < 100%
-    dm3 = re.search(r"\*\*Decisione:\*\*\s*([^\n]+)", final_text)
-    dt3 = dm3.group(1) if dm3 else ""
-    roi_m = re.search(r"ROI\s*~?\s*(\d+)(?:[-–](\d+))?\s*%", final_text, re.IGNORECASE)
-    if re.search(r"\bCOMPRA\b", dt3) and roi_m:
+    if re.search(r"\bCOMPRA\b", dt) and roi_m:
         roi_max = max(int(roi_m.group(1)), int(roi_m.group(2)) if roi_m.group(2) else 0)
         if roi_max < 100:
-            ct3 = re.search(r"\*\*Costo pieno trattato:\*\*\s*(N/A|€[\d.,]+)", final_text, re.IGNORECASE)
-            nuova3 = "TRATTA FORTE" if (ct3 and ct3.group(1).upper() != "N/A") else "NON COMPRARE"
-            urg3 = re.search(r"·\s*([^\n⚠️]+)", dt3.strip())
-            decisione_ok3 = f"{nuova3} · {urg3.group(1).strip()}" if (urg3 and nuova3 != "NON COMPRARE") else f"{nuova3} · N/A"
-            log.warning("Contraddizione (3) ROI %d%%/decisione: '%s' -> '%s'", roi_max, dt3.strip(), decisione_ok3)
-            final_text = re.sub(r"(\*\*Decisione:\*\*\s*)[^\n]+", r"\1" + decisione_ok3 + f" ⚠️ _(corretto: ROI {roi_max}% sotto soglia 100%)_", final_text, count=1)
+            nuova = "NON COMPRARE · N/A"
+            log.warning("Contraddizione (3) ROI %d%%/decisione: '%s' -> '%s'", roi_max, dt, nuova)
+            final_text = _sostituisci_decisione(final_text, nuova, f"corretto: ROI {roi_max}% sotto soglia 100%")
 
     return final_text
 
 
 def estrai_decisione_da_testo(testo):
-    match = re.search(r"\*\*Decisione:\*\*\s*([^\n]+)", testo)
-    return match.group(1).strip() if match else None
+    # Nuovo formato con emoji
+    m = re.search(r"(?:🟢|🟡|🔴|🔵)\s+\*?\*?([^\n*⚠️]+)", testo)
+    if m:
+        return m.group(1).strip().rstrip("*").strip()
+    # Vecchio formato
+    m2 = re.search(r"\*\*Decisione:\*\*\s*([^\n]+)", testo)
+    return m2.group(1).strip() if m2 else None
 
 
 # ---------------------------------------------------------------------------
@@ -1344,6 +1384,9 @@ def process_listing(parsed, url, cover_photo_bytes):
     log.info("===REPORT VERBATIM START===\n%s\n===REPORT VERBATIM END===", output_finale)
 
     # ===== INVIO TELEGRAM =====
+    decisione = estrai_decisione_da_testo(output_finale) or ""
+    e_compra = any(k in decisione.upper() for k in ("COMPRA", "TRATTA", "CHIEDI ALTRE FOTO"))
+
     header = (
         f"🆕 *{listing_info.get('title')}*\n"
         f"🏷️ {listing_info.get('brand') or '?'} · 💰 {listing_info.get('price') or '?'} EUR\n"
@@ -1352,8 +1395,37 @@ def process_listing(parsed, url, cover_photo_bytes):
            " (nessuna ricerca grounding)" if scenario_usato not in ("SKIP",) else " (filtro pre-cervello)")
         + f"\n{url or ''}\n{'—' * 20}\n"
     )
+
+    # Post-processing: rimuovi urgenza da NON COMPRARE (incoerente logicamente)
+    if "NON COMPRARE" in output_finale:
+        output_finale = re.sub(
+            r"(🔴\s+\*\*NON COMPRARE\*\*)\s*·\s*[^\n]+",
+            r"\1 · N/A",
+            output_finale
+        )
+
+    # Post-processing: rimuovi "è ancora disponibile?" dal messaggio (frase vietata)
+    output_finale = re.sub(
+        r"[EÈè]'?\s*ancora disponibile\??\s*[Ss]e\s+s[ìi][,.]?\s*",
+        "",
+        output_finale,
+        flags=re.IGNORECASE
+    )
+
+    # Chat principale: riceve tutto (silenziala sul telefono)
     telegram_send_photo(TELEGRAM_OWNER_CHAT_ID, photo_bytes_list[0], caption=listing_info.get("title"))
     telegram_send_message(TELEGRAM_OWNER_CHAT_ID, header + output_finale)
+
+    # Chat alert: riceve solo COMPRA/TRATTA con notifica push attiva
+    if TELEGRAM_ALERT_CHAT_ID and e_compra:
+        alert_text = (
+            f"🚨 *AZIONE RICHIESTA*\n"
+            f"*{listing_info.get('title')}*\n"
+            f"🏷️ {listing_info.get('brand') or '?'} · 💰 {listing_info.get('price') or '?'} EUR\n"
+            f"✅ {decisione}\n"
+            f"{url or ''}"
+        )
+        telegram_send_message(TELEGRAM_ALERT_CHAT_ID, alert_text)
 
 
 # ---------------------------------------------------------------------------
