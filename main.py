@@ -1544,9 +1544,12 @@ def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header, outpu
     else:
         telegram_send_photo(TELEGRAM_OWNER_CHAT_ID, photo_bytes_list[0], caption=listing_info.get("title"))
 
-    # Messaggio con bottoni per COMPRA urgente, normale per il resto
-    if e_compra_urgente and url:
-        telegram_send_with_buttons(TELEGRAM_OWNER_CHAT_ID, header + output_finale, url, item_id)
+    # Messaggio con bottoni per tutti gli annunci con URL
+    if url:
+        if e_compra_urgente:
+            telegram_send_with_buttons(TELEGRAM_OWNER_CHAT_ID, header + output_finale, url, item_id)
+        else:
+            telegram_send_with_buttons(TELEGRAM_OWNER_CHAT_ID, header + output_finale, url, None)
     else:
         telegram_send_message(TELEGRAM_OWNER_CHAT_ID, header + output_finale)
 
