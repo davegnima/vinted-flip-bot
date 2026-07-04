@@ -328,10 +328,14 @@ Non tutte le situazioni di "prove incomplete" sono uguali. Incrocia:
 | Zero etichette visibili | Qualsiasi | CHIEDI ALTRE FOTO se il capo sembra interessante, altrimenti NON COMPRARE |
 
 Nella sezione "Da chiedere" e "Messaggio da inviare": se il deal e' enorme con prove sfocate, specifica che il messaggio va inviato DOPO l'acquisto (non prima) per non perdere il deal.
-**Acquisto pieno** = prezzo + protezione (~5%+€0,70) + spedizione (IT 2,50€, altre EU 4,50-6€).
+**Acquisto pieno** = prezzo + protezione (~5%+€0,70) + spedizione in entrata (IT 2,50€, altre EU 6,50€).
 **Incasso reale** = vendita stimata × 0,80 (sconto medio 20% per trattativa — sempre).
 **Margine** = incasso reale − acquisto pieno.
 Soglia: 20€ netti E ROI 100%+. Confidenza sempre Bassa (nessun comp reale in questo passaggio).
+
+# TRATTA SE MARGINE BORDERLINE
+Se il margine netto è tra €10 e €20 O il ROI è tra 50% e 100% → decisione TRATTA, non COMPRA.
+A questi livelli vale la pena provare un'offerta al ribasso per migliorare il margine prima di impegnare il capitale.
 
 # MATRICE DECISIONALE
 1. **COMPRA SUBITO** — legit check ok/probabile autentico + margine enorme. Agisci.
@@ -1029,18 +1033,29 @@ def search_comps_completo(brand, categoria, query_base, catalog_id=None, materia
 # ---------------------------------------------------------------------------
 
 def _stima_costo_pieno_da_prezzo_e_lingua(prezzo_richiesto_str, titolo, descrizione):
-    """Stima il costo pieno d'acquisto tenendo conto della lingua del testo
-    per stimare la spedizione (IT 2.50€, non-IT 4.50€ come nel bot originale)."""
+    """Stima costo pieno per paese stimato dalla lingua del testo:
+    IT: 2.50€ | FR/ES: 4.50€ | DE/PT/NL: 6.00€"""
     try:
         prezzo = float(str(prezzo_richiesto_str).replace(",", "."))
     except (TypeError, ValueError):
         return None
     testo = f"{titolo or ''} {descrizione or ''}".lower()
-    indicatori_non_it = (
-        " la ", " et ", " avec ", " une ", " talle ", " size ", " größe ",
-        " und ", " met ", " con la ", " der ", " die ", " das ",
+    indicatori_de_pt_nl = (
+        " größe ", " und ", " der ", " die ", " das ", " ein ", " eine ",
+        " tamanho ", " maat ", " met ", " van ",
     )
-    spedizione_stimata = 4.50 if any(ind in testo for ind in indicatori_non_it) else 2.50
+    indicatori_fr_es = (
+        " et ", " avec ", " une ", "robe ", " taille ",
+        " talla ", " muy ", " para ", " con la ",
+        "débardeur", "haut ", "chemise", "veste ", "pantalon",
+        "blouse", "manteau", "pull ", "gilet",
+    )
+    if any(ind in testo for ind in indicatori_de_pt_nl):
+        spedizione_stimata = 6.00
+    elif any(ind in testo for ind in indicatori_fr_es):
+        spedizione_stimata = 4.50
+    else:
+        spedizione_stimata = 2.50
     protezione_acquirenti = round(prezzo * 0.05 + 0.70, 2)
     return round(prezzo + protezione_acquirenti + spedizione_stimata, 2)
 
@@ -1414,6 +1429,29 @@ def process_listing(parsed, url, cover_photo_bytes):
         output_finale,
         flags=re.IGNORECASE
     )
+
+    # Post-processing: rimuovi sezione "Messaggio da inviare" su COMPRA puro
+    # (solo TRATTA e CHIEDI ALTRE FOTO devono avere messaggi)
+    decisione_upper = decisione.upper()
+    e_compra_puro = (
+        re.search(r"\bCOMPRA\b", decisione_upper)
+        and "TRATTA" not in decisione_upper
+        and "CHIEDI" not in decisione_upper
+        and "NON COMPRARE" not in decisione_upper
+    )
+    if e_compra_puro:
+        output_finale = re.sub(
+            r"(📨\s*\*\*Messaggio da inviare[:\*]*\*?\*?)\s*\n[^\n#🧠❓]{1,300}",
+            r"\1\nNon necessario.",
+            output_finale,
+            flags=re.IGNORECASE
+        )
+        output_finale = re.sub(
+            r"(❓\s*\*\*Da chiedere[:\*]*\*?\*?)\s*\n[^\n#🧠]{1,300}",
+            r"\1\nNon necessario.",
+            output_finale,
+            flags=re.IGNORECASE
+        )
 
     log.info("===REPORT VERBATIM START===\n%s\n===REPORT VERBATIM END===", output_finale)
 
