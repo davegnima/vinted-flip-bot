@@ -417,7 +417,8 @@ Ask multipli coerenti da fonti diverse → applica sconto prudenza 20-40% per st
 ## Verdetto
 [EMOJI] **[DECISIONE]** · [urgenza]
 
-💰 €[costo pieno richiesto] → €[vendita probabile] → **€[margine netto] (ROI [X]%)**
+💰 €[acquisto pieno] → €[incasso reale = listing×0.80] → **€[margine netto] (ROI [X]%)**
+⚠️ Il secondo valore è sempre l'INCASSO REALE (listing × 0.80), non il prezzo di listing. Scrivi sempre "incasso reale" o "post-trattativa" per chiarezza. MAI scrivere il listing grezzo come secondo valore — genera confusione nel calcolo del margine.
 🏷️ Legit: [una riga, max 15 parole, MAI sul prezzo]
 🕐 ~[Z] giorni · Deal [X]/10 · Rischio fake: [B/M/A/MA] · Confidenza: [A/M/B]
 
