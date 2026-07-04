@@ -417,7 +417,8 @@ Ask multipli coerenti da fonti diverse → applica sconto prudenza 20-40% per st
 ## Verdetto
 [EMOJI] **[DECISIONE]** · [urgenza]
 
-💰 €[costo pieno richiesto] → €[vendita probabile] → **€[margine netto] (ROI [X]%)**
+💰 €[acquisto pieno] → €[incasso reale = listing×0.80] → **€[margine netto] (ROI [X]%)**
+⚠️ Il secondo valore è sempre l'INCASSO REALE (listing × 0.80), non il prezzo di listing. Scrivi sempre "incasso reale" o "post-trattativa" per chiarezza. MAI scrivere il listing grezzo come secondo valore — genera confusione nel calcolo del margine.
 🏷️ Legit: [una riga, max 15 parole, MAI sul prezzo]
 🕐 ~[Z] giorni · Deal [X]/10 · Rischio fake: [B/M/A/MA] · Confidenza: [A/M/B]
 
@@ -1415,11 +1416,106 @@ def process_listing(parsed, url, cover_photo_bytes):
         flags=re.IGNORECASE
     )
 
-    # Chat principale: riceve tutto (silenziala sul telefono)
-    telegram_send_photo(TELEGRAM_OWNER_CHAT_ID, photo_bytes_list[0], caption=listing_info.get("title"))
-    telegram_send_message(TELEGRAM_OWNER_CHAT_ID, header + output_finale)
+    log.info("===REPORT VERBATIM START===\n%s\n===REPORT VERBATIM END===", output_finale)
 
-    # Chat alert: riceve solo COMPRA/TRATTA con notifica push attiva
+    _invia_risultato_telegram(
+        listing_info, url, photo_bytes_list,
+        header, output_finale, decisione, e_compra,
+        scenario_usato, n_query_grounding if scenario_usato != "SKIP" else 0
+    )
+
+def telegram_send_media_group(chat_id, photos_bytes_list, caption=None):
+    """Manda fino a 10 foto come album Telegram (MediaGroup)."""
+    if not photos_bytes_list:
+        return
+    files = {}
+    media = []
+    for i, photo_bytes in enumerate(photos_bytes_list[:10]):
+        key = f"photo{i}"
+        files[key] = (f"photo{i}.jpg", photo_bytes, "image/jpeg")
+        item = {"type": "photo", "media": f"attach://{key}"}
+        if i == 0 and caption:
+            item["caption"] = caption[:1024]
+        media.append(item)
+    resp = requests.post(
+        f"{TELEGRAM_API}/sendMediaGroup",
+        data={"chat_id": chat_id, "media": json.dumps(media)},
+        files=files,
+        timeout=60,
+    )
+    if not resp.ok:
+        log.warning("sendMediaGroup fallita: %s", resp.text[:300])
+
+
+def telegram_send_with_buttons(chat_id, text, url_annuncio, item_id=None):
+    """Manda messaggio con bottoni inline: Vinted + Compra + Offerta."""
+    keyboard = {"inline_keyboard": [[
+        {"text": "🔗 Vinted", "url": url_annuncio},
+    ]]}
+    if item_id:
+        keyboard["inline_keyboard"][0].append(
+            {"text": "🛒 Compra", "url": f"https://www.vinted.it/items/{item_id}/buy"}
+        )
+        keyboard["inline_keyboard"][0].append(
+            {"text": "💬 Offerta", "url": f"https://www.vinted.it/items/{item_id}/offer"}
+        )
+    resp = requests.post(
+        f"{TELEGRAM_API}/sendMessage",
+        json={
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "Markdown",
+            "disable_web_page_preview": True,
+            "reply_markup": keyboard,
+        },
+        timeout=20,
+    )
+    if not resp.ok:
+        log.warning("sendMessage con bottoni fallita: %s", resp.text[:300])
+
+
+def _e_urgenza_alta(decisione_testo):
+    """Ritorna True se la decisione contiene urgenza Alta o Altissima."""
+    testo = (decisione_testo or "").lower()
+    return any(k in testo for k in ("alta", "altissima", "subito", "forte"))
+
+
+def _estrai_item_id_da_url(url):
+    """Estrae l'item_id numerico dall'URL Vinted."""
+    if not url:
+        return None
+    m = re.search(r"/items/(\d+)", url)
+    return m.group(1) if m else None
+
+
+def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header, output_finale, decisione, e_compra, scenario_usato, n_query_grounding=0):
+    """Gestisce l'invio su Telegram con gallery e bottoni per COMPRA urgente."""
+    item_id = _estrai_item_id_da_url(url)
+    urgenza_alta = _e_urgenza_alta(decisione)
+    e_compra_urgente = (
+        e_compra
+        and urgenza_alta
+        and "NON COMPRARE" not in (decisione or "").upper()
+        and "CHIEDI" not in (decisione or "").upper()
+    )
+
+    # Chat principale: gallery per COMPRA urgente, singola foto per il resto
+    if e_compra_urgente and len(photo_bytes_list) > 1:
+        telegram_send_media_group(
+            TELEGRAM_OWNER_CHAT_ID,
+            photo_bytes_list,
+            caption=f"📸 {listing_info.get('title')} · {len(photo_bytes_list)} foto"
+        )
+    else:
+        telegram_send_photo(TELEGRAM_OWNER_CHAT_ID, photo_bytes_list[0], caption=listing_info.get("title"))
+
+    # Messaggio con bottoni per COMPRA urgente, normale per il resto
+    if e_compra_urgente and url:
+        telegram_send_with_buttons(TELEGRAM_OWNER_CHAT_ID, header + output_finale, url, item_id)
+    else:
+        telegram_send_message(TELEGRAM_OWNER_CHAT_ID, header + output_finale)
+
+    # Chat alert separata
     if TELEGRAM_ALERT_CHAT_ID and e_compra:
         alert_text = (
             f"🚨 *AZIONE RICHIESTA*\n"
@@ -1428,7 +1524,10 @@ def process_listing(parsed, url, cover_photo_bytes):
             f"✅ {decisione}\n"
             f"{url or ''}"
         )
-        telegram_send_message(TELEGRAM_ALERT_CHAT_ID, alert_text)
+        if e_compra_urgente and item_id:
+            telegram_send_with_buttons(TELEGRAM_ALERT_CHAT_ID, alert_text, url, item_id)
+        else:
+            telegram_send_message(TELEGRAM_ALERT_CHAT_ID, alert_text)
 
 
 # ---------------------------------------------------------------------------
