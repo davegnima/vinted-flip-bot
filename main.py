@@ -295,7 +295,10 @@ Balmain x H&M, Moschino x H&M, Margiela x H&M, Versace x H&M, Lanvin x H&M ecc. 
 - NON usare il prezzo mainline Moschino/Balmain come benchmark — sono prodotti H&M di qualità, non luxury
 - Strategia: se l'annuncio ha più di 30 minuti e il prezzo è borderline, TRATTA prima di comprare
 
-**REGOLA OPERATIVA:** se l'etichetta mostra una diffusion line basic (senza grafica iconica, logo all-over o pezzo d'archivio riconoscibile), il margine realistico crolla. NON usare il prezzo mainline come benchmark. Dichiara esplicitamente nel verdetto: "diffusion line, non mainline — valore second-hand ridotto".
+**JEAN PAUL GAULTIER:**
+- ✅ "Jean Paul Gaultier" mainline adulto → valore d'archivio, alta domanda
+- ✅ "JPG" / "Gaultier Paris" → stessa cosa
+- ❌ "Junior Gaultier" / "Jean Paul Gaultier Junior" → linea bambini/ragazzi (taglie 10a/12a/14a/16a). Mercato completamente diverso dalla mainline adulto. Comp su Vinted spesso listati erroneamente come S/XS adulto. Vendita lenta, buyer di nicchia. Margine molto ridotto rispetto alla mainline. (senza grafica iconica, logo all-over o pezzo d'archivio riconoscibile), il margine realistico crolla. NON usare il prezzo mainline come benchmark. Dichiara esplicitamente nel verdetto: "diffusion line, non mainline — valore second-hand ridotto".
 
 # STAGIONALITÀ — ARBITRAGGIO TEMPORALE
 Il prezzo basso fuori stagione NON è un segnale negativo — è spesso la fonte del margine.
@@ -1406,7 +1409,7 @@ def process_listing(parsed, url, cover_photo_bytes):
 
     # Post-processing: rimuovi "è ancora disponibile?" dal messaggio (frase vietata)
     output_finale = re.sub(
-        r"[EÈè]'?\s*ancora disponibile\??\s*[Ss]e\s+s[ìi][,.]?\s*",
+        r"[EÈè]'?\s*ancora disponibile\??[\s,]*(?:[Ss]e\s+s[ìi][,.]?\s*)?",
         "",
         output_finale,
         flags=re.IGNORECASE
