@@ -239,11 +239,16 @@ Assegna anche una % di confidenza (es. "75%"). Non dichiarare mai 100%.
 # DESCRIZIONE VENDITORE — SEGNALE POSITIVO
 Se la descrizione contiene composizione dettagliata (es. "92% cotone", "cashmere"), condizione specifica, o dettagli tecnici precisi → il venditore sa cosa vende ed e' onesto. Questo compensa parzialmente l'assenza di foto etichette: in mancanza di etichette visibili, considera "Sospetto, servono altre foto" invece di NON COMPRARE, e chiedi le foto mancanti.
 
-# VALUTAZIONE VENDITORE (se dati disponibili)
-- **0 recensioni**: attenzione elevata — puo' essere un faker, chiedi prove extra
-- **Poche recensioni (1-15) con 5 stelle**: probabilmente sprovveduto onesto che non sa il valore → opportunita' d'oro
-- **Molte recensioni (50+) con prezzo basso**: venditore esperto, valuta perche' vende cosi' a poco
-- **Feedback negativi recenti**: segnale serio, chiedi chiarimenti
+# VALUTAZIONE VENDITORE — FATTORE DECISIONALE CHIAVE
+Il profilo venditore determina la probabilità che il prezzo basso sia un vero affare:
+
+- **0 recensioni**: attenzione elevata — account nuovo, possibile faker. Servono prove visive perfette per COMPRA.
+- **1-30 recensioni con rating alto**: LA ZONA D'ORO. Privato inesperto che svuota l'armadio, non conosce il valore, non sa prezzare. Il prezzo basso qui è genuino → se le prove visive sono buone, aumenta la fiducia nel deal e l'urgenza.
+- **30-100 recensioni**: venditore abituale ma non professionale. Deal possibili ma meno frequenti.
+- **100+ recensioni**: reseller esperto. Sa esattamente cosa vende e quanto vale. Un prezzo basso da questo profilo è SOSPETTO: difetto nascosto, capo invendibile da mesi, o esca. Alza il rischio di un livello e pretendi che le foto mostrino tutto (etichette, difetti, misure). Non è un veto, ma la probabilità di vero affare crolla.
+- **Guardaroba** (se disponibile): tanti capi di marca in vendita = reseller (conferma sospetto). Capi misti di poco valore (H&M, Zara + il pezzo di marca) = privato che svuota l'armadio e non sa cosa ha → segnale d'oro.
+
+Includi SEMPRE una valutazione del venditore nell'Analisi dell'analista.
 
 # MAINLINE VS DIFFUSION — DISTINZIONE CRITICA PER IL MARGINE
 Alcune etichette sembrano luxury ma sono diffusion line su licenza con valore second-hand radicalmente diverso. Questa distinzione va fatta SEMPRE prima di stimare il margine.
@@ -283,10 +288,8 @@ Alcune etichette sembrano luxury ma sono diffusion line su licenza con valore se
 - ❌ "Romeo Gigli Sport" / "RG Sport" → licenza commerciale anni '90, zero mercato collezionistico. Polo, t-shirt, capi basic = invendibili come flip
 
 **MAX MARA:**
-- ✅ "Max Mara" mainline cappotti/soprabiti strutturati → valore, mercato lento
-- ✅ "Weekend Max Mara" piumini in piuma d'oca ("L'Autentico Piumino", "Heavy Padding") → valore reale elevato. Retail €350-450, rivendita €80-110 in stagione (ottobre-gennaio). Acquisto estivo a prezzi bassi = arbitraggio stagionale classico. Non applicare la regola diffusion qui.
-- ✅ "Weekend Max Mara" cappotti/soprabiti lana strutturati → valore medio, €40-70 rivendita
-- ❌ "Weekend Max Mara" abbigliamento casual (camicie, maglie, blazer leggeri, pantaloni) → diffusion casual, valore ridotto. Vendita reale €15-25 su capi a €20+ di acquisto = flip negativo
+- ✅ "Max Mara" mainline → valore, sempre. Cappotti (101801, Manuela, Ludmilla), blazer, abiti in lana/cashmere.
+- ⚠️ TUTTE le sottolinee ("Weekend Max Mara", "Max Mara Studio", "'S Max Mara", "Sportmax", "Marella", "Pennyblack", "iBlues") → valgono SOLO se: (a) capo iconico riconoscibile (es. L'Autentico Piumino Weekend, cappotto cammello Sportmax), oppure (b) materiali pregiati dichiarati (cashmere, alpaca, cammello, seta). Sottolinea + capo basic + materiale ordinario = NON COMPRARE.
 
 **COLLABORAZIONI DESIGNER x H&M (categoria speciale):**
 Balmain x H&M, Moschino x H&M, Margiela x H&M, Versace x H&M, Lanvin x H&M ecc. sono una categoria DISTINTA — non sono mainline luxury né fast fashion. Hanno un micro-mercato collezionistico basato sulla nostalgia con prezzi stabili nel tempo.
@@ -671,7 +674,7 @@ def scrape_vinted_listing(url):
                 else f"https://www.vinted.it/members/{seller_login}/items"
             )
             try:
-                resp_profilo = _vinted_session.get(profilo_url, headers=VINTED_HEADERS, timeout=10)
+                resp_profilo = _vinted_session.get(profilo_url, headers=VINTED_HEADERS, timeout=5)
                 if resp_profilo.ok:
                     html_profilo = resp_profilo.text
                     # Estrae titoli degli articoli in vendita dal profilo
@@ -1000,7 +1003,7 @@ def search_comps_completo(brand, categoria, query_base, catalog_id=None, materia
         future_vinted = executor.submit(_serper_scrape_page_diretto, "VINTED", vinted_url)
         future_ebay = executor.submit(_serper_scrape_page_diretto, "EBAY SOLD", ebay_url)
         futures = {future_vestiaire: "vestiaire", future_vinted: "vinted", future_ebay: "ebay"}
-        for future in as_completed(futures, timeout=25):
+        for future in as_completed(futures, timeout=15):
             nome = futures[future]
             try:
                 testo, ok = future.result()
@@ -1251,11 +1254,17 @@ def process_listing(parsed, url, cover_photo_bytes):
             "seller_country": scraped.get("seller_country"),
             "seller_top_items": scraped.get("seller_top_items") or [],
         })
-        for photo_url in scraped.get("photo_urls", []):
-            img = download_image_bytes(photo_url, referer=url)
-            if img:
-                photo_bytes_list.append(img)
-            time.sleep(0.4)
+        # Download foto IN PARALLELO (mantiene l'ordine originale).
+        # Prima era sequenziale con sleep(0.4) tra ogni foto: 10 foto = ~6-8s.
+        # Ora: tutte insieme con 5 worker = ~1-2s. Vinted CDN regge bene
+        # 5 richieste parallele dalla stessa session.
+        photo_urls = scraped.get("photo_urls", [])
+        if photo_urls:
+            with ThreadPoolExecutor(max_workers=5) as pool:
+                risultati_download = list(pool.map(
+                    lambda u: download_image_bytes(u, referer=url), photo_urls
+                ))
+            photo_bytes_list = [img for img in risultati_download if img]
 
     if not photo_bytes_list and cover_photo_bytes:
         photo_bytes_list = [cover_photo_bytes]
