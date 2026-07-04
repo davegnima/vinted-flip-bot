@@ -260,10 +260,10 @@ Alcune etichette sembrano luxury ma sono diffusion line su licenza con valore se
 - ❌ "Versace Jeans Couture" / "Versus Versace" / "Versace Classic V2" → diffusion, valore molto ridotto
 
 **MISSONI:**
-- ✅ "Missoni" mainline con pattern colorati (chevron, zigzag, space-dye) → valore
+- ✅ "Missoni" mainline con pattern colorati (chevron, zigzag, space-dye) → valore massimo
 - ⚠️ "Missoni" mainline monocromatico → valore ridotto ma presente
-- ❌ "M Missoni" con pattern colorati → diffusion, valore 3-5x inferiore alla mainline
-- ❌❌ "M Missoni" monocromatico (nero/grigio/beige tinta unita) → quasi invendibile come flip. Non comprare sopra €5 di acquisto totale
+- ⚠️ "M Missoni" **abiti e gonne con pattern** → diffusion ma con domanda reale su Vinted EU (FR/DE/BE). Rivendita realistica €35-45, non €20. TRATTA se il prezzo è borderline, non NON COMPRARE diretto.
+- ❌ "M Missoni" **basics monocromatici** (top, maglia nera/grigia senza pattern) → quasi invendibile come flip. Non comprare sopra €5 di acquisto totale.
 - ❌ "Missoni Sport" / "Missoni Mare" → diffusion, valore molto ridotto
 
 **VALENTINO:**
@@ -430,16 +430,18 @@ Ask multipli coerenti da fonti diverse → applica sconto prudenza 20-40% per st
 "[testo pronto e copiabile]"
 
 Regole messaggio:
-- COMPRA SUBITO: breve, urgente, max 1 domanda se serve foto mancante
-- TRATTA: contiene l'offerta numerica precisa + "acquisto subito se ok" + eventuale foto. ZERO preamboli ("è ancora disponibile?" è vietato)
-- NON COMPRARE: SEMPRE "Non necessario." — mai scrivere messaggi di cortesia, saluti o spiegazioni al venditore
-- CHIEDI ALTRE FOTO: messaggio breve con richiesta specifica delle foto mancanti
+- **COMPRA SUBITO / COMPRA FORTE / COMPRA**: NESSUN messaggio da inviare. Compri e basta.
+- **TRATTA**: messaggio con offerta numerica precisa + "acquisto subito se ok". ZERO preamboli. ZERO "è ancora disponibile?".
+- **CHIEDI ALTRE FOTO**: messaggio breve con richiesta specifica delle foto mancanti.
+- **NON COMPRARE**: NESSUN messaggio. Mai.
 
 ---
 ❓ **Da chiedere** (solo se mancano prove che cambiano la decisione):
 [max 2 domande, o "Non necessario"]
 
-EMOJI: 🟢 COMPRA SUBITO/FORTE · 🟡 COMPRA/TRATTA · 🔴 NON COMPRARE · 🔵 CHIEDI ALTRE FOTO
+---
+🧠 **Analisi dell'analista:**
+[3-5 righe obbligatorie che spiegano il ragionamento: perché questa decisione, quali comp hanno pesato di più, quali dubbi rimangono, cosa cambierebbe la decisione. Scrivi come un flipper esperto che spiega a se stesso il ragionamento — non come un report formale.]
 
 URGENZA: ha senso SOLO su decisioni COMPRA/TRATTA (indica quanto velocemente agire).
 Su NON COMPRARE e CHIEDI ALTRE FOTO l'urgenza è sempre N/A — non scrivere mai "NON COMPRARE · Alta urgenza".
@@ -1182,20 +1184,17 @@ def valida_contraddizioni_report(testo):
         final_text = _sostituisci_decisione(final_text, nuova, "corretto: margine sotto soglia")
         match_d, fmt, dt = _get_decisione_match(final_text)
 
-    # (2) COMPRA SUBITO + Confidenza Bassa
+    # (2) COMPRA SUBITO + Confidenza Bassa → degrada a COMPRA FORTE
     if "COMPRA SUBITO" in dt and re.search(r"Confidenza[:\s]+Bassa", final_text, re.IGNORECASE):
         nuova = dt.replace("COMPRA SUBITO", "COMPRA FORTE")
         log.warning("Contraddizione (2) COMPRA SUBITO/Confidenza Bassa: '%s' -> '%s'", dt, nuova)
         final_text = _sostituisci_decisione(final_text, nuova, "corretto: COMPRA SUBITO richiede Confidenza non Bassa")
         match_d, fmt, dt = _get_decisione_match(final_text)
 
-    # (3) COMPRA + ROI < 100%
-    if re.search(r"\bCOMPRA\b", dt) and roi_m:
-        roi_max = max(int(roi_m.group(1)), int(roi_m.group(2)) if roi_m.group(2) else 0)
-        if roi_max < 100:
-            nuova = "NON COMPRARE · N/A"
-            log.warning("Contraddizione (3) ROI %d%%/decisione: '%s' -> '%s'", roi_max, dt, nuova)
-            final_text = _sostituisci_decisione(final_text, nuova, f"corretto: ROI {roi_max}% sotto soglia 100%")
+    # NOTA: il check ROI < 100% è stato rimosso deliberatamente.
+    # Era troppo rigido e causava NON COMPRARE errati su deal validi
+    # (es. abito Marni autentico a ROI 85% con €25 di margine netto).
+    # La soglia ROI è una linea guida nel prompt, non un veto automatico.
 
     return final_text
 
@@ -1448,17 +1447,15 @@ def telegram_send_media_group(chat_id, photos_bytes_list, caption=None):
 
 
 def telegram_send_with_buttons(chat_id, text, url_annuncio, item_id=None):
-    """Manda messaggio con bottoni inline: Vinted + Compra + Offerta."""
+    """Manda messaggio con bottoni inline."""
     keyboard = {"inline_keyboard": [[
-        {"text": "🔗 Vinted", "url": url_annuncio},
+        {"text": "🔗 Apri su Vinted", "url": url_annuncio},
     ]]}
+    # Aggiunge bottone messaggio venditore (URL diretto alla chat Vinted)
     if item_id:
-        keyboard["inline_keyboard"][0].append(
-            {"text": "🛒 Compra", "url": f"https://www.vinted.it/items/{item_id}/buy"}
-        )
-        keyboard["inline_keyboard"][0].append(
-            {"text": "💬 Offerta", "url": f"https://www.vinted.it/items/{item_id}/offer"}
-        )
+        keyboard["inline_keyboard"].append([
+            {"text": "💬 Scrivi venditore", "url": f"https://www.vinted.it/items/{item_id}"},
+        ])
     resp = requests.post(
         f"{TELEGRAM_API}/sendMessage",
         json={
@@ -1499,8 +1496,8 @@ def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header, outpu
         and "CHIEDI" not in (decisione or "").upper()
     )
 
-    # Chat principale: gallery per COMPRA urgente, singola foto per il resto
-    if e_compra_urgente and len(photo_bytes_list) > 1:
+    # Chat principale: gallery per tutti se più di 1 foto, singola altrimenti
+    if len(photo_bytes_list) > 1:
         telegram_send_media_group(
             TELEGRAM_OWNER_CHAT_ID,
             photo_bytes_list,
