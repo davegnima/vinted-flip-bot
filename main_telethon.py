@@ -84,9 +84,6 @@ SERPER_API_KEY = os.environ.get("SERPER_API_KEY")  # opzionale: assente -> fallb
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 
 # MODELLO UNICO per occhi e cervello (Scenario G/F): gemini-3.1-flash-lite.
-# Verificato nei 7 scenari testati come il piu' economico e con output
-# completo (a differenza di gemini-2.5-flash-lite, che nei test si e'
-# troncato a meta' frase per esaurimento del budget di thinking dinamico).
 GEMINI_MODEL = "gemini-3.1-flash-lite"
 GEMINI_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 
@@ -109,6 +106,9 @@ _serper_fallimenti_consecutivi = [0]
 _serper_timestamp_ultimo_fallimento = [0.0]
 SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO = 3
 RAFFREDDAMENTO_SERPER_SECONDI = 3600 * 6  # 6 ore prima di riprovare
+# Flag per notificare UNA SOLA VOLTA l'esaurimento crediti Serper via Telegram
+# (evita di spammare ad ogni annuncio durante le 6 ore di raffreddamento)
+_serper_notifica_esaurimento_inviata = [False]
 
 VINTED_BRAND_IDS = {
     "brunello cucinelli": "103740", "rick owens": "145654",
@@ -159,9 +159,7 @@ log = logging.getLogger("vinted_flip_bot")
 
 def scegli_materiale_per_ricerca(material_value_raw):
     """Cerca il materiale piu' pregiato nella lista prioritaria, splittando
-    prima su virgola (es. '70% Lana, 30% Cotone' -> ['70% lana', '30% cotone'])
-    e cercando match esatti per elemento -- piu' robusto della ricerca per
-    substring diretta che potrebbe matchare 'cashmere' dentro 'extra-cashmere'."""
+    prima su virgola e cercando match esatti per elemento."""
     if not material_value_raw:
         return None
     materiali_annuncio = [m.strip().lower() for m in material_value_raw.split(",")]
@@ -185,14 +183,6 @@ def estrai_categoria_da_titolo(titolo):
 # ---------------------------------------------------------------------------
 # PROMPT DI SISTEMA
 # ---------------------------------------------------------------------------
-
-# FILOSOFIA DEL BOT (da non dimenticare mai nei prompt):
-# L'utente e' un flipper professionista che CERCA attivamente venditori che
-# non conoscono il valore dei propri capi. Per lui un prezzo di 5-10€ su un
-# capo che ne vale 300 NON e' un segnale di fake -- e' esattamente il tipo
-# di deal che cerca. Il legit check deve basarsi SOLO sulle fotografie e
-# sulle etichette visibili, mai sul prezzo. Il prezzo basso entra nel
-# calcolo del margine (positivamente), non nel rischio di autenticita'.
 
 GEMINI_OCCHI_SYSTEM_PROMPT = """
 Sei l'analista visivo di un flipper professionista di lusso second-hand. Fai due cose in un solo passaggio: LEGIT CHECK visivo + valutazione finanziaria preliminare. Sei esperto di autenticazione su Vinted, Vestiaire, Grailed, eBay.
@@ -263,6 +253,8 @@ Alcune etichette sembrano luxury ma sono diffusion line su licenza con valore se
 - ✅ "Vivienne Westwood" Gold Label / Red Label / mainline → valore massimo, pezzi d'archivio
 - ✅ "Vivienne Westwood Anglomania" → NON è una diffusion da svalutare. Ha pagina dedicata su Vestiaire con volume reale, produce i pezzi più iconici del brand (corset, gonne asimmetriche, blazer strutturati) a prezzi retail più accessibili. Il mercato Y2K la tratta come VW a tutti gli effetti. Valuta esattamente come mainline per pezzi iconici (corset, gonna tartan, blazer), con uno sconto del 20-30% per basics
 - ❌ "Vivienne Westwood Jeans Couture" / "Anglomania" basics senza elementi iconici → valore ridotto
+
+**VERSACE:**
 - ⚠️ "Versace" attuale (Donatella) → valore, ma attenzione ai fake elevatissimi
 - ❌ "Versace Jeans Couture" / "Versus Versace" / "Versace Classic V2" → diffusion, valore molto ridotto
 
@@ -301,9 +293,13 @@ Balmain x H&M, Moschino x H&M, Margiela x H&M, Versace x H&M, Lanvin x H&M ecc. 
 - Strategia: se l'annuncio ha più di 30 minuti e il prezzo è borderline, TRATTA prima di comprare
 
 **JEAN PAUL GAULTIER:**
+- Il nome si scrive **GAULTIER** (senza H). Varianti come "Gauthier", "Golthier", o qualsiasi storpiatura → FAKE CERTO, non una linea alternativa. Nessuna collezione ufficiale JPG si chiama con anni futuri tipo "2026" o simili date scritte per esteso ("Deux Mille Vingt Six") — questo è un pattern tipico di bootleg da mercato rionale.
 - ✅ "Jean Paul Gaultier" mainline adulto → valore d'archivio, alta domanda
 - ✅ "JPG" / "Gaultier Paris" → stessa cosa
-- ❌ "Junior Gaultier" / "Jean Paul Gaultier Junior" → linea bambini/ragazzi (taglie 10a/12a/14a/16a). Mercato completamente diverso dalla mainline adulto. Comp su Vinted spesso listati erroneamente come S/XS adulto. Vendita lenta, buyer di nicchia. Margine molto ridotto rispetto alla mainline. (senza grafica iconica, logo all-over o pezzo d'archivio riconoscibile), il margine realistico crolla. NON usare il prezzo mainline come benchmark. Dichiara esplicitamente nel verdetto: "diffusion line, non mainline — valore second-hand ridotto".
+- ❌ "Junior Gaultier" / "Jean Paul Gaultier Junior" → linea bambini/ragazzi (taglie 10a/12a/14a/16a). Mercato completamente diverso dalla mainline adulto. Comp su Vinted spesso listati erroneamente come S/XS adulto. Vendita lenta, buyer di nicchia. Margine molto ridotto rispetto alla mainline.
+
+# REGOLA GENERALE — NOMI BRAND STORPIATI
+Se il nome sul capo è QUASI corretto ma con una lettera diversa, aggiunta o mancante (es. "Gauthier" invece di "Gaultier", "Pucci" scritto "Puci", "Versace" scritto "Versачe") → questo NON è mai una linea alternativa, sub-brand di ricerca, o variante estetica. È SEMPRE il segnale più affidabile di un fake, spesso più affidabile di qualsiasi altro dettaglio visivo. I falsari storpiano leggermente i nomi per motivi legali/di elusione controlli. Se noti una storpiatura del nome brand → NON COMPRARE immediato, Confidenza Alta, indipendentemente da quanto sembrino "autentiche" le altre etichette o quanto sia forte il presunto mercato di nicchia.
 
 # STAGIONALITÀ — ARBITRAGGIO TEMPORALE
 Il prezzo basso fuori stagione NON è un segnale negativo — è spesso la fonte del margine.
@@ -326,6 +322,8 @@ Questa regola del "rischio assoluto" vale SOLO per difetti minori: piccole macch
 - QUALSIASI prezzo + difetto strutturale (buco/strappo/bruciatura) → NON COMPRARE sempre.
 
 Non usare mai "BASSA URGENZA" quando il prezzo e' irrisorio e le prove visive sono forti. A €5 la Missoni DONNA MADE IN ITALY con etichetta nitida e' COMPRA SUBITO senza pensarci.
+
+# QUALITÀ PROVE VISIVE × URGENZA DEL DEAL
 Non tutte le situazioni di "prove incomplete" sono uguali. Incrocia:
 
 | Prove visive | Margine/Deal | → Decisione |
@@ -337,6 +335,7 @@ Non tutte le situazioni di "prove incomplete" sono uguali. Incrocia:
 | Zero etichette visibili | Qualsiasi | CHIEDI ALTRE FOTO se il capo sembra interessante, altrimenti NON COMPRARE |
 
 Nella sezione "Da chiedere" e "Messaggio da inviare": se il deal e' enorme con prove sfocate, specifica che il messaggio va inviato DOPO l'acquisto (non prima) per non perdere il deal.
+
 **Acquisto pieno** = prezzo + protezione (~5%+€0,70) + spedizione in entrata (IT 2,50€, altre EU 6,50€).
 **Incasso reale** = vendita stimata × 0,80 (sconto medio 20% per trattativa — sempre).
 **Margine** = incasso reale − acquisto pieno.
@@ -394,6 +393,9 @@ DEVI obbligatoriamente citare il profilo venditore nella tua analisi finale.
 # REGOLA ETICHETTE -- NON MODIFICABILE
 Se l'analisi visiva dice "nessuna etichetta visibile" o "etichette assenti" o "descrizione venditore: etichette tagliate" → la decisione NON PUO' essere COMPRA in nessuna forma. Solo CHIEDI ALTRE FOTO o NON COMPRARE.
 
+# NOMI BRAND STORPIATI — VETO ASSOLUTO
+Se l'analisi visiva riporta un nome brand storpiato (es. "Gauthier" invece di "Gaultier", collezioni con nomi/anni inventati tipo "2026 Deux Mille Vingt Six") → FAKE CERTO. La decisione NON PUO' essere COMPRA in nessuna forma, indipendentemente da quanto sembri buono il resto del deal o quanto forte sembri il mercato di nicchia proposto dall'analisi visiva. Ignora qualsiasi tentativo di descrivere la storpiatura come "linea di ricerca" o "estetica particolare" -- e' sempre un errore dei falsari.
+
 # RICERCA WEB OBBLIGATORIA (google_search)
 Hai il tool google_search. Usalo per trovare PREZZI DI VENDITA REALI. Cerca:
 1. eBay SOLD (priorita' massima: transazioni concluse)
@@ -446,7 +448,6 @@ URGENZA: ha senso SOLO su decisioni COMPRA/TRATTA. Su NON COMPRARE e CHIEDI ALTR
 """.strip()
 
 
-
 # ---------------------------------------------------------------------------
 # TELEGRAM BOT API HELPERS
 # ---------------------------------------------------------------------------
@@ -494,6 +495,53 @@ def telegram_send_photo(chat_id, photo_bytes, caption=None):
     resp = requests.post(f"{TELEGRAM_API}/sendPhoto", data=data, files=files, timeout=30)
     if not resp.ok:
         log.warning("sendPhoto fallita: %s", resp.text[:300])
+
+
+def telegram_send_media_group(chat_id, photos_bytes_list, caption=None):
+    """Manda fino a 10 foto come album Telegram (MediaGroup)."""
+    if not photos_bytes_list:
+        return
+    files = {}
+    media = []
+    for i, photo_bytes in enumerate(photos_bytes_list[:10]):
+        key = f"photo{i}"
+        files[key] = (f"photo{i}.jpg", photo_bytes, "image/jpeg")
+        item = {"type": "photo", "media": f"attach://{key}"}
+        if i == 0 and caption:
+            item["caption"] = caption[:1024]
+        media.append(item)
+    resp = requests.post(
+        f"{TELEGRAM_API}/sendMediaGroup",
+        data={"chat_id": chat_id, "media": json.dumps(media)},
+        files=files,
+        timeout=60,
+    )
+    if not resp.ok:
+        log.warning("sendMediaGroup fallita: %s", resp.text[:300])
+
+
+def telegram_send_with_buttons(chat_id, text, url_annuncio, item_id=None):
+    """Manda messaggio con bottoni inline."""
+    keyboard = {"inline_keyboard": [[
+        {"text": "🔗 Apri su Vinted", "url": url_annuncio},
+    ]]}
+    if item_id:
+        keyboard["inline_keyboard"].append([
+            {"text": "💬 Scrivi venditore", "url": f"https://www.vinted.it/items/{item_id}"},
+        ])
+    resp = requests.post(
+        f"{TELEGRAM_API}/sendMessage",
+        json={
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "Markdown",
+            "disable_web_page_preview": True,
+            "reply_markup": keyboard,
+        },
+        timeout=20,
+    )
+    if not resp.ok:
+        log.warning("sendMessage con bottoni fallita: %s", resp.text[:300])
 
 
 # ---------------------------------------------------------------------------
@@ -552,11 +600,9 @@ def scrape_vinted_listing(url):
         "photo_urls": [], "size": None, "condition": None, "description": None,
         "created_at": None, "age_days": None, "catalog_id": None,
         "material_raw": None, "material_per_ricerca": None, "color_raw": None,
-        # Dati venditore (estratti dall'HTML della pagina annuncio)
         "seller_login": None, "seller_id": None,
         "seller_feedback_count": None, "seller_feedback_reputation": None,
         "seller_items_count": None, "seller_country": None,
-        # Guardaroba (top articoli del venditore, scraping separato leggero)
         "seller_top_items": [],
     }
     try:
@@ -567,8 +613,7 @@ def scrape_vinted_listing(url):
         # Escludi la foto profilo venditore dalla gallery, se possibile.
         # INCERTEZZA: non e' garantito che il blocco venditore appaia dopo
         # le foto prodotto nell'HTML -- se il taglio elimina troppe foto
-        # (probabile ordine invertito), usiamo l'HTML completo come fallback
-        # e accettiamo il piccolo rischio di includere la foto profilo.
+        # (probabile ordine invertito), usiamo l'HTML completo come fallback.
         marker_venditore = re.search(r'data-testid="profile-username"', html)
 
         def _estrai_foto(html_sorgente):
@@ -587,8 +632,6 @@ def scrape_vinted_listing(url):
         foto_complete = _estrai_foto(html)
         if marker_venditore:
             foto_tagliate = _estrai_foto(html[:marker_venditore.start()])
-            # Usa il taglio solo se lascia almeno 1 foto e ne toglie al massimo 1-2
-            # (la foto profilo e' tipicamente 1 sola immagine)
             if 0 < len(foto_tagliate) and len(foto_complete) - len(foto_tagliate) <= 2:
                 best_url_by_photo_id = foto_tagliate
             else:
@@ -639,17 +682,11 @@ def scrape_vinted_listing(url):
         if color_match:
             result["color_raw"] = color_match.group(1).strip()
 
-        # ---- DATI VENDITORE (dall'HTML della pagina annuncio) ----
-        # Vinted mostra i dati venditore come HTML renderizzato lato client,
-        # non come JSON semplice. Pattern basati sulla struttura reale osservata:
-        # <span data-testid="profile-username">nome</span>
-        # <div class="...Rating..." aria-label="...valutazione di 4.9 su 5 stelle">
-        # <div class="web_ui__Rating__label"><span class="web_ui__Text__text...">592</span></div>
+        # ---- DATI VENDITORE ----
         seller_login_m = re.search(r'data-testid="profile-username"[^>]*>([^<]{2,40})<', html)
         if seller_login_m:
             result["seller_login"] = seller_login_m.group(1).strip()
         else:
-            # Fallback: vecchio formato JSON, se mai riapparisse
             seller_login_m2 = re.search(r'"login"\s*:\s*"([a-zA-Z0-9_.]{2,40})"', html)
             if seller_login_m2:
                 result["seller_login"] = seller_login_m2.group(1)
@@ -662,7 +699,6 @@ def scrape_vinted_listing(url):
             if seller_id_m2:
                 result["seller_id"] = seller_id_m2.group(1)
 
-        # Rating: aria-label="...valutazione di 4.9 su 5 stelle" + numero recensioni nel Rating__label
         rating_m = re.search(r'valutazione di\s+([\d.,]+)\s+su\s+5\s+stelle', html, re.IGNORECASE)
         if rating_m:
             try:
@@ -677,7 +713,6 @@ def scrape_vinted_listing(url):
                 except ValueError:
                     pass
 
-        # Numero recensioni: cerca il numero dentro web_ui__Rating__label vicino al rating
         count_m = re.search(
             r'web_ui__Rating__label[^>]*>\s*<span[^>]*>\s*(\d+)\s*<', html
         )
@@ -696,11 +731,7 @@ def scrape_vinted_listing(url):
         if country_m:
             result["seller_country"] = country_m.group(1)
 
-        # ---- GUARDAROBA VENDITORE (scraping leggero profilo, max 5 titoli) ----
-        # Eseguito solo se abbiamo l'ID o il login del venditore.
-        # Scopo: capire se vende altre cose di marca (reseller esperto) o
-        # roba generica (sprovveduto che non sa il valore del capo).
-        # Non blocca se fallisce -- i dati venditore di base bastano.
+        # ---- GUARDAROBA VENDITORE ----
         seller_id = result.get("seller_id")
         seller_login = result.get("seller_login")
         if seller_id or seller_login:
@@ -713,14 +744,11 @@ def scrape_vinted_listing(url):
                 resp_profilo = _vinted_session.get(profilo_url, headers=VINTED_HEADERS, timeout=5)
                 if resp_profilo.ok:
                     html_profilo = resp_profilo.text
-                    # Titoli/brand degli articoli in vendita: formato reale osservato
-                    # <p data-testid="other_user_items-{id}--description-title">Titolo o Brand</p>
                     titoli = re.findall(
                         r'data-testid="other_user_items-\d+--description-title">([^<]+)<',
                         html_profilo
                     )
                     if not titoli:
-                        # Fallback vecchi formati
                         titoli = re.findall(r'"title"\s*:\s*"([^"]{5,80})"', html_profilo)
                     if not titoli:
                         titoli = re.findall(r'<img[^>]+alt="([^"]{5,80})"', html_profilo)
@@ -758,7 +786,7 @@ def download_image_bytes(url, referer="https://www.vinted.it/", max_retries=2):
 
 
 # ---------------------------------------------------------------------------
-# GEMINI -- CHIAMATA UNICA PARAMETRIZZATA (occhi/cervello, grounding si/no)
+# GEMINI
 # ---------------------------------------------------------------------------
 
 def optimize_image_bytes(img_bytes, max_size=768):
@@ -789,12 +817,6 @@ def costo_gemini_token(usage):
 
 
 def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, grounding=False, max_retries=4):
-    """Chiamata unica parametrizzata: usata sia per gli 'occhi' (con foto,
-    senza grounding) sia per il 'cervello' (senza foto, con grounding
-    attivo su entrambi gli scenari G e F).
-
-    Ritorna: (testo_risposta, costo_totale_usd, numero_query_grounding)
-    """
     photo_bytes_list = photo_bytes_list or []
     parts = [{"text": user_text}] + costruisci_parts_foto(photo_bytes_list)
 
@@ -806,10 +828,6 @@ def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, grounding=Fal
                 "HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH",
                 "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT")
         ],
-        # CORRETTO (30/06/2026): thinkingLevel e' specifico della famiglia
-        # Gemini 3.x (qui usiamo solo gemini-3.1-flash-lite, quindi sempre
-        # questo ramo -- thinkingBudget servirebbe solo per la serie 2.5,
-        # non usata in questo file).
         "generationConfig": {"temperature": 0.2, "maxOutputTokens": 3000, "thinkingConfig": {"thinkingLevel": "low"}},
     }
     if grounding:
@@ -820,10 +838,6 @@ def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, grounding=Fal
         try:
             resp = requests.post(GEMINI_API_URL, params={"key": GEMINI_API_KEY}, json=payload, timeout=90)
             if not resp.ok:
-                # Logghiamo SEMPRE il corpo dell'errore prima di eventualmente
-                # ritentare -- altrimenti un 400 di configurazione (es.
-                # parametro sbagliato) verrebbe ritentato alla cieca invece
-                # di essere diagnosticato.
                 log.warning("Gemini HTTP %d: %s", resp.status_code, resp.text[:500])
             if resp.ok:
                 data = resp.json()
@@ -851,7 +865,7 @@ def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, grounding=Fal
 
 
 # ---------------------------------------------------------------------------
-# SERPER -- RICERCA COMP (usata solo in Scenario G)
+# SERPER
 # ---------------------------------------------------------------------------
 
 def build_vinted_search_url(brand, categoria, materiale=None, catalog_id=None):
@@ -952,10 +966,6 @@ def _estrai_articoli_ebay(content, max_articoli=15):
 
 
 def _serper_scrape_page_diretto(label, url):
-    """Ritorna (contenuto_pulito, successo). successo=False segnala un
-    fallimento di Serper (rete, autenticazione, crediti esauriti) -- NON
-    un semplice 'zero risultati', che e' invece un successo con contenuto
-    vuoto/informativo."""
     if not SERPER_API_KEY:
         return "Scrape non eseguito (SERPER_API_KEY non impostata).", False
 
@@ -966,10 +976,6 @@ def _serper_scrape_page_diretto(label, url):
             headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
             json=payload, timeout=15,
         )
-        # CORRETTO: un 401/403 (chiave invalida/scaduta) o 402/429 (crediti
-        # esauriti/rate limit) sono FALLIMENTI veri del servizio, non
-        # "zero risultati" -- vanno trattati come segnale per il fallback,
-        # non come "nessun comp trovato".
         if resp.status_code in (401, 402, 403, 429):
             log.warning("Serper fallito per esaurimento crediti o autenticazione (HTTP %d): %s", resp.status_code, resp.text[:300])
             return f"  Serper fallito (HTTP {resp.status_code}).", False
@@ -989,7 +995,6 @@ def _serper_scrape_page_diretto(label, url):
 
 
 def _serper_batch_query_vestiaire(brand, categoria):
-    """Ritorna (testo_vestiaire, successo)."""
     if not SERPER_API_KEY:
         return "Ricerca non eseguita (SERPER_API_KEY non impostata).", False
 
@@ -1028,13 +1033,9 @@ def _serper_batch_query_vestiaire(brand, categoria):
     return ("\n".join(lines) if lines else "Nessun risultato trovato."), True
 
 
-
-
 def search_comps_completo(brand, categoria, query_base, catalog_id=None, material_per_ricerca=None):
     """Esegue le 3 ricerche Serper in parallelo: Vestiaire (Google batch) +
     Vinted (scrape diretto) + eBay sold (scrape diretto).
-    3 fonti deliberate per Gemini Flash-Lite: contesto piu' pulito e
-    meno token rispetto alle 5 fonti del vecchio bot con Claude.
     Ritorna (testo_comp_completo, serper_ha_funzionato)."""
     vinted_url, vinted_per_id = build_vinted_search_url(brand, categoria, material_per_ricerca, catalog_id)
     ebay_url = search_comps_ebay_sold_url(brand, categoria)
@@ -1046,7 +1047,7 @@ def search_comps_completo(brand, categoria, query_base, catalog_id=None, materia
         future_vinted = executor.submit(_serper_scrape_page_diretto, "VINTED", vinted_url)
         future_ebay = executor.submit(_serper_scrape_page_diretto, "EBAY SOLD", ebay_url)
         futures = {future_vestiaire: "vestiaire", future_vinted: "vinted", future_ebay: "ebay"}
-        
+
         try:
             for future in as_completed(futures, timeout=15):
                 nome = futures[future]
@@ -1058,13 +1059,25 @@ def search_comps_completo(brand, categoria, query_base, catalog_id=None, materia
                     risultati[nome] = f"  Query fallita: {e}"
                     successi[nome] = False
         except TimeoutError:
-            # Cattura il timeout di as_completed. Il thread non muore.
-            log.warning("Timeout di 15s raggiunto in Serper! Salvataggio risultati parziali.")
-            # Segniamo come fallite le query che non hanno fatto in tempo a rispondere
+            # CRITICO: senza questo except, il TimeoutError di as_completed()
+            # risale fino a on_new_message e blocca l'INTERO processing
+            # dell'annuncio prima dell'invio Telegram -- causa di "notifiche
+            # sparite" osservata in produzione. Recuperiamo i risultati delle
+            # fonti che sono comunque riuscite a completare in tempo.
+            log.warning("Timeout in search_comps_completo: almeno una fonte Serper non ha risposto entro 15s.")
             for future, nome in futures.items():
                 if nome not in risultati:
-                    risultati[nome] = "  Query fallita (Timeout 15s superato)."
-                    successi[nome] = False
+                    if future.done():
+                        try:
+                            testo, ok = future.result()
+                            risultati[nome] = testo
+                            successi[nome] = ok
+                        except Exception as e:
+                            risultati[nome] = f"  Query fallita: {e}"
+                            successi[nome] = False
+                    else:
+                        risultati[nome] = "  Timeout (fonte troppo lenta, oltre 15s)."
+                        successi[nome] = False
 
     serper_ha_funzionato = any(successi.values())
 
@@ -1085,7 +1098,6 @@ def search_comps_completo(brand, categoria, query_base, catalog_id=None, materia
 
 # ---------------------------------------------------------------------------
 # FILTRO PRE-CERVELLO e VALIDAZIONE POST-GENERAZIONE
-# (recuperati dal bot originale main300626.py)
 # ---------------------------------------------------------------------------
 
 def _stima_costo_pieno_da_prezzo_e_lingua(prezzo_richiesto_str, titolo, descrizione):
@@ -1118,63 +1130,27 @@ def _stima_costo_pieno_da_prezzo_e_lingua(prezzo_richiesto_str, titolo, descrizi
 
 def check_skip_pre_cervello(output_occhi_testo, listing_info=None):
     """Filtro pre-cervello conservativo: scatta SOLO su segnali forti e
-    inequivocabili dall'output testo-libero degli occhi.
-
-    IMPORTANTE -- perche' e' conservativo:
-    Il vecchio bot usava JSON strutturato (campi precisi come
-    'verdetto_grezzo', 'categoria_a_basso_valore', 'confidenza_percentuale')
-    che rendevano il check affidabile. Con testo libero i match regex sono
-    inevitabilmente piu' fragili: una parola come 'non rivendibile' puo'
-    apparire in contesti diversi da quello atteso (es. 'smagliature non
-    visibili in foto' -> falso positivo). Per questo abbiamo rimosso il
-    check sul 'NON COMPRARE' testuale degli occhi: la decisione NON COMPRARE
-    del modello occhi e' quasi sempre economica (margine insufficiente,
-    liquidita' bassa) senza comp reali -- e' corretto passarla al cervello
-    che ha i comp Serper per confermare o ribaltare. Solo i casi FISICAMENTE
-    non rivendibili (condizione distrutta) o STRUTTURALMENTE senza mercato
-    (calzini) o CHIARAMENTE falsi giustificano lo skip.
-
-    Ritorna (e_skip, motivo_skip)."""
+    inequivocabili dall'output testo-libero degli occhi."""
 
     testo = (output_occhi_testo or "").lower()
 
-    # 1. Falso conclamato: il modello lo dichiara esplicitamente con
-    # alta confidenza E motivo specifico. Richiede entrambe le condizioni
-    # per evitare falsi positivi su 'probabilmente autentico ma con dubbi'.
     if ("probabilmente falso" in testo or "falso conclamato" in testo) and \
        any(c in testo for c in ("confidenza alta", "90%", "95%", "100%", "molto alto")):
         return True, "[FALSO CONCLAMATO] Rilevato da analisi visiva con alta confidenza."
 
-    # 2. Categoria strutturalmente senza mercato (calzini/calze sportive).
-    # Unica categoria che skippiamo sempre indipendentemente dal brand.
     if any(c in testo for c in ("calzini", "calze sportive")):
         return True, "[CATEGORIA BASSO VALORE] Calzini/calze sportive, nessun valore di rivendita."
 
-    # 3. Condizione fisicamente distrutta (non una valutazione economica):
-    # richiede segnali MULTIPLI e ESPLICITI di danno fisico grave, NON
-    # il solo "non comprare" o singole menzioni di difetti normali.
-    # "non rivendibile" da SOLO non basta -- puo' apparire in frasi come
-    # "smagliature non visibili" o "difetti non rivendibili a prezzi alti".
     segnali_danno_fisico = sum([
         "buchi" in testo,
         "strappi gravi" in testo,
         "bruciature" in testo,
-        "da riparare" in testo and "non riparabile" in testo,  # solo se irreparabile
+        "da riparare" in testo and "non riparabile" in testo,
         "condizione pessima" in testo,
-        "indossabile" in testo and "non" in testo,  # "non indossabile"
+        "indossabile" in testo and "non" in testo,
     ])
     if segnali_danno_fisico >= 2:
         return True, "[CONDIZIONE DISTRUTTA] Danni fisici gravi multipli rilevati dall'analisi visiva."
-
-    # NOTA: il check su margine numerico (basato su "vendita probabile" dichiarata
-    # dagli occhi) e' stato RIMOSSO deliberatamente. Il modello occhi stima la
-    # vendita senza comp reali e sistematicamente la sottostima -- es. un set
-    # Sport Missoni completo stimato €25 dagli occhi puo' valere €40-50 con i
-    # comp reali di Serper. Bloccare l'annuncio prima che il cervello possa
-    # verificare con dati reali produce falsi positivi costosi (persi deal veri).
-    # Il calcolo del margine spetta al cervello, che ha Serper. Il filtro
-    # pre-cervello gestisce solo i casi che NON dipendono dai comp di mercato:
-    # falso conclamato, calzini, condizione fisica distrutta.
 
     return False, None
 
@@ -1191,7 +1167,6 @@ def build_skip_report(listing_info, motivo_skip):
         riga_legit = "Autentico ma condizione fisica gravemente compromessa — non rivendibile."
         riga_rischio = "BASSO (autenticità) / ALTO (condizione) — cervello non consultato"
     else:
-        # CATEGORIA BASSO VALORE o altri
         riga_legit = "Categoria strutturalmente senza mercato (es. calzini) — nessun valore di rivendita."
         riga_rischio = "BASSO — categoria a basso valore (filtro automatico, cervello non consultato)"
     motivo_breve = motivo_skip[:117].rsplit(" ", 1)[0] + "..." if len(motivo_skip) > 120 else motivo_skip
@@ -1211,17 +1186,14 @@ def build_skip_report(listing_info, motivo_skip):
 
 
 def valida_contraddizioni_report(testo):
-    """Post-processing del report: corregge 3 contraddizioni logiche comuni.
+    """Post-processing del report: corregge contraddizioni logiche comuni.
     Gestisce sia il vecchio formato (**Decisione:** ...) sia il nuovo (🟢/🟡/🔴 COMPRA ...)."""
     final_text = testo
 
-    # Estrai la riga decisione in entrambi i formati
     def _get_decisione_match(txt):
-        # Nuovo formato: riga con emoji semaforo
         m = re.search(r"(🟢|🟡|🔴|🔵)\s+\*?\*?([^\n*]+)\*?\*?", txt)
         if m:
             return m, "emoji", m.group(2).strip()
-        # Vecchio formato: **Decisione:** ...
         m2 = re.search(r"\*\*Decisione:\*\*\s*([^\n]+)", txt)
         if m2:
             return m2, "markdown", m2.group(1).strip()
@@ -1245,39 +1217,83 @@ def valida_contraddizioni_report(testo):
                 txt, count=1
             )
 
-    # Estrai ROI dal testo
     roi_m = re.search(r"ROI\s*~?\s*(\d+)(?:[-–](\d+))?\s*%", final_text, re.IGNORECASE)
 
-    # (1) COMPRA + "sotto soglia"
     if re.search(r"\bCOMPRA\b", dt) and re.search(r"sotto\s+soglia", final_text, re.IGNORECASE):
         nuova = "NON COMPRARE · N/A"
         log.warning("Contraddizione (1) margine/decisione: '%s' -> '%s'", dt, nuova)
         final_text = _sostituisci_decisione(final_text, nuova, "corretto: margine sotto soglia")
         match_d, fmt, dt = _get_decisione_match(final_text)
 
-    # (2) COMPRA SUBITO + Confidenza Bassa → degrada a COMPRA FORTE
     if "COMPRA SUBITO" in dt and re.search(r"Confidenza[:\s]+Bassa", final_text, re.IGNORECASE):
         nuova = dt.replace("COMPRA SUBITO", "COMPRA FORTE")
         log.warning("Contraddizione (2) COMPRA SUBITO/Confidenza Bassa: '%s' -> '%s'", dt, nuova)
         final_text = _sostituisci_decisione(final_text, nuova, "corretto: COMPRA SUBITO richiede Confidenza non Bassa")
         match_d, fmt, dt = _get_decisione_match(final_text)
 
-    # NOTA: il check ROI < 100% è stato rimosso deliberatamente.
-    # Era troppo rigido e causava NON COMPRARE errati su deal validi
-    # (es. abito Marni autentico a ROI 85% con €25 di margine netto).
-    # La soglia ROI è una linea guida nel prompt, non un veto automatico.
-
     return final_text
 
 
 def estrai_decisione_da_testo(testo):
-    # Nuovo formato con emoji
     m = re.search(r"(?:🟢|🟡|🔴|🔵)\s+\*?\*?([^\n*⚠️]+)", testo)
     if m:
         return m.group(1).strip().rstrip("*").strip()
-    # Vecchio formato
     m2 = re.search(r"\*\*Decisione:\*\*\s*([^\n]+)", testo)
     return m2.group(1).strip() if m2 else None
+
+
+def _e_urgenza_alta(decisione_testo):
+    testo = (decisione_testo or "").lower()
+    return any(k in testo for k in ("alta", "altissima", "subito", "forte"))
+
+
+def _estrai_item_id_da_url(url):
+    if not url:
+        return None
+    m = re.search(r"/items/(\d+)", url)
+    return m.group(1) if m else None
+
+
+def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header, output_finale, decisione, e_compra, scenario_usato, n_query_grounding=0):
+    """Gestisce l'invio su Telegram con gallery e bottoni per COMPRA urgente."""
+    item_id = _estrai_item_id_da_url(url)
+    urgenza_alta = _e_urgenza_alta(decisione)
+    e_compra_urgente = (
+        e_compra
+        and urgenza_alta
+        and "NON COMPRARE" not in (decisione or "").upper()
+        and "CHIEDI" not in (decisione or "").upper()
+    )
+
+    if len(photo_bytes_list) > 1:
+        telegram_send_media_group(
+            TELEGRAM_OWNER_CHAT_ID,
+            photo_bytes_list,
+            caption=f"📸 {listing_info.get('title')} · {len(photo_bytes_list)} foto"
+        )
+    else:
+        telegram_send_photo(TELEGRAM_OWNER_CHAT_ID, photo_bytes_list[0], caption=listing_info.get("title"))
+
+    if url:
+        if e_compra_urgente:
+            telegram_send_with_buttons(TELEGRAM_OWNER_CHAT_ID, header + output_finale, url, item_id)
+        else:
+            telegram_send_with_buttons(TELEGRAM_OWNER_CHAT_ID, header + output_finale, url, None)
+    else:
+        telegram_send_message(TELEGRAM_OWNER_CHAT_ID, header + output_finale)
+
+    if TELEGRAM_ALERT_CHAT_ID and e_compra:
+        alert_text = (
+            f"🚨 *AZIONE RICHIESTA*\n"
+            f"*{listing_info.get('title')}*\n"
+            f"🏷️ {listing_info.get('brand') or '?'} · 💰 {listing_info.get('price') or '?'} EUR\n"
+            f"✅ {decisione}\n"
+            f"{url or ''}"
+        )
+        if e_compra_urgente and item_id:
+            telegram_send_with_buttons(TELEGRAM_ALERT_CHAT_ID, alert_text, url, item_id)
+        else:
+            telegram_send_message(TELEGRAM_ALERT_CHAT_ID, alert_text)
 
 
 # ---------------------------------------------------------------------------
@@ -1298,7 +1314,6 @@ def process_listing(parsed, url, cover_photo_bytes):
             "catalog_id": scraped.get("catalog_id"), "material_raw": scraped.get("material_raw"),
             "material_per_ricerca": scraped.get("material_per_ricerca"),
             "color_raw": scraped.get("color_raw"),
-            # Dati venditore
             "seller_login": scraped.get("seller_login"),
             "seller_id": scraped.get("seller_id"),
             "seller_feedback_count": scraped.get("seller_feedback_count"),
@@ -1307,10 +1322,6 @@ def process_listing(parsed, url, cover_photo_bytes):
             "seller_country": scraped.get("seller_country"),
             "seller_top_items": scraped.get("seller_top_items") or [],
         })
-        # Download foto IN PARALLELO (mantiene l'ordine originale).
-        # Prima era sequenziale con sleep(0.4) tra ogni foto: 10 foto = ~6-8s.
-        # Ora: tutte insieme con 5 worker = ~1-2s. Vinted CDN regge bene
-        # 5 richieste parallele dalla stessa session.
         photo_urls = scraped.get("photo_urls", [])
         if photo_urls:
             with ThreadPoolExecutor(max_workers=5) as pool:
@@ -1329,11 +1340,9 @@ def process_listing(parsed, url, cover_photo_bytes):
     log.info("Foto raccolte: %d (fonte: %s)", len(photo_bytes_list),
              "scraping Vinted" if url and len(photo_bytes_list) > 1 else "fallback copertina Telegram")
 
-    # Eta' annuncio formattata (usata nel prompt al cervello per il asse urgenza)
     age_days = listing_info.get("age_days")
     age_text = f"{age_days:.1f} giorni fa" if age_days is not None else "non disponibile (scraping data pubblicazione fallito)"
 
-    # Costruisci profilo venditore da passare agli occhi
     seller_info_parts = []
     feedback_count = listing_info.get("seller_feedback_count")
     feedback_rep = listing_info.get("seller_feedback_reputation")
@@ -1368,14 +1377,12 @@ def process_listing(parsed, url, cover_photo_bytes):
         f"\nPROFILO VENDITORE:\n{seller_info_text}"
     )
 
-    # ===== STEP 1: OCCHI -- foto + valutazione preliminare, zero ricerca web =====
     output_occhi, costo_occhi, _ = chiama_gemini(
         GEMINI_OCCHI_SYSTEM_PROMPT, user_text_occhi, photo_bytes_list, grounding=False)
     costo_totale += costo_occhi
     log.info("Occhi completati. Costo: $%.5f\nOutput occhi (anteprima):\n%s%s",
              costo_occhi, output_occhi[:600], "... [troncato]" if len(output_occhi) > 600 else "")
 
-    # ===== STEP 1b: FILTRO PRE-CERVELLO (early exit, risparmia la chiamata cervello) =====
     e_skip, motivo_skip = check_skip_pre_cervello(output_occhi, listing_info)
     if e_skip:
         log.info("FILTRO PRE-CERVELLO ATTIVATO: cervello NON consultato. Motivo: %s", motivo_skip)
@@ -1383,7 +1390,6 @@ def process_listing(parsed, url, cover_photo_bytes):
         n_query_grounding = 0
         scenario_usato = "SKIP"
     else:
-        # ===== STEP 2: decidere Scenario G o F in base a Serper =====
         titolo_annuncio = listing_info.get("title") or ""
         brand_annuncio = listing_info.get("brand") or ""
         categoria_per_ricerca = estrai_categoria_da_titolo(titolo_annuncio) or ""
@@ -1409,6 +1415,14 @@ def process_listing(parsed, url, cover_photo_bytes):
             if serper_ok:
                 scenario_usato = "G"
                 _serper_fallimenti_consecutivi[0] = 0
+                # Reset del flag: se Serper torna a funzionare dopo un'interruzione,
+                # permetti una nuova notifica al prossimo esaurimento
+                if _serper_notifica_esaurimento_inviata[0]:
+                    _serper_notifica_esaurimento_inviata[0] = False
+                    telegram_send_message(
+                        TELEGRAM_OWNER_CHAT_ID,
+                        "✅ Serper è tornato a funzionare normalmente."
+                    )
             else:
                 _serper_fallimenti_consecutivi[0] += 1
                 _serper_timestamp_ultimo_fallimento[0] = time.time()
@@ -1416,14 +1430,22 @@ def process_listing(parsed, url, cover_photo_bytes):
                 if _serper_fallimenti_consecutivi[0] >= SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO:
                     log.warning("Soglia %d fallimenti raggiunta -- Serper saltato per %.1f ore.",
                                 SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO, RAFFREDDAMENTO_SERPER_SECONDI / 3600)
+                    if not _serper_notifica_esaurimento_inviata[0]:
+                        _serper_notifica_esaurimento_inviata[0] = True
+                        telegram_send_message(
+                            TELEGRAM_OWNER_CHAT_ID,
+                            f"⚠️ *Serper ha esaurito i crediti o non risponde* "
+                            f"({_serper_fallimenti_consecutivi[0]} fallimenti consecutivi).\n"
+                            f"Il bot passa automaticamente allo Scenario F (senza comp Serper, solo grounding Gemini) "
+                            f"per le prossime {RAFFREDDAMENTO_SERPER_SECONDI/3600:.0f} ore, poi ritenta da solo.\n"
+                            f"Verifica il tuo account Serper se serve ricaricare i crediti."
+                        )
         else:
             if in_raffreddamento:
                 log.info("Serper in raffreddamento (~%.1f ore rimanenti) -- Scenario F.", (RAFFREDDAMENTO_SERPER_SECONDI - tempo_trascorso) / 3600)
             else:
                 log.info("Serper non disponibile (chiave assente) -- Scenario F.")
 
-        # ===== STEP 3: CERVELLO -- rivalutazione con grounding forzato, G o F =====
-        # Includo age_days e URL nel prompt come nel bot originale (utili per asse urgenza e debug)
         contesto_listing = (
             f"{user_text_occhi}\n"
             f"Annuncio pubblicato: {age_text}\n"
@@ -1455,15 +1477,11 @@ def process_listing(parsed, url, cover_photo_bytes):
             GEMINI_CERVELLO_SYSTEM_PROMPT, user_text_cervello, photo_bytes_list=[], grounding=True)
         costo_totale += costo_cervello
 
-        # Validazione contraddizioni (COMPRA+margine basso, COMPRA SUBITO+Confidenza Bassa, COMPRA+ROI<100%)
         output_finale = valida_contraddizioni_report(output_finale_raw)
 
         log.info("Scenario %s completato. Query grounding: %d. Costo cervello: $%.5f. Totale: $%.5f",
                  scenario_usato, n_query_grounding, costo_cervello, costo_totale)
 
-    log.info("===REPORT VERBATIM START===\n%s\n===REPORT VERBATIM END===", output_finale)
-
-    # ===== INVIO TELEGRAM =====
     decisione = estrai_decisione_da_testo(output_finale) or ""
     e_compra = any(k in decisione.upper() for k in ("COMPRA", "TRATTA", "CHIEDI ALTRE FOTO"))
 
@@ -1476,7 +1494,6 @@ def process_listing(parsed, url, cover_photo_bytes):
         + f"\n{url or ''}\n{'—' * 20}\n"
     )
 
-    # Post-processing: rimuovi urgenza da NON COMPRARE (incoerente logicamente)
     if "NON COMPRARE" in output_finale:
         output_finale = re.sub(
             r"(🔴\s+\*\*NON COMPRARE\*\*)\s*·\s*[^\n]+",
@@ -1484,7 +1501,6 @@ def process_listing(parsed, url, cover_photo_bytes):
             output_finale
         )
 
-    # Post-processing: rimuovi "è ancora disponibile?" dal messaggio (frase vietata)
     output_finale = re.sub(
         r"[EÈè]'?\s*ancora disponibile\??[\s,]*(?:[Ss]e\s+s[ìi][,.]?\s*)?",
         "",
@@ -1492,8 +1508,6 @@ def process_listing(parsed, url, cover_photo_bytes):
         flags=re.IGNORECASE
     )
 
-    # Post-processing: rimuovi sezione "Messaggio da inviare" su COMPRA puro
-    # (solo TRATTA e CHIEDI ALTRE FOTO devono avere messaggi)
     decisione_upper = decisione.upper()
     e_compra_puro = (
         re.search(r"\bCOMPRA\b", decisione_upper)
@@ -1523,112 +1537,6 @@ def process_listing(parsed, url, cover_photo_bytes):
         scenario_usato, n_query_grounding if scenario_usato != "SKIP" else 0
     )
 
-def telegram_send_media_group(chat_id, photos_bytes_list, caption=None):
-    """Manda fino a 10 foto come album Telegram (MediaGroup)."""
-    if not photos_bytes_list:
-        return
-    files = {}
-    media = []
-    for i, photo_bytes in enumerate(photos_bytes_list[:10]):
-        key = f"photo{i}"
-        files[key] = (f"photo{i}.jpg", photo_bytes, "image/jpeg")
-        item = {"type": "photo", "media": f"attach://{key}"}
-        if i == 0 and caption:
-            item["caption"] = caption[:1024]
-        media.append(item)
-    resp = requests.post(
-        f"{TELEGRAM_API}/sendMediaGroup",
-        data={"chat_id": chat_id, "media": json.dumps(media)},
-        files=files,
-        timeout=60,
-    )
-    if not resp.ok:
-        log.warning("sendMediaGroup fallita: %s", resp.text[:300])
-
-
-def telegram_send_with_buttons(chat_id, text, url_annuncio, item_id=None):
-    """Manda messaggio con bottoni inline."""
-    keyboard = {"inline_keyboard": [[
-        {"text": "🔗 Apri su Vinted", "url": url_annuncio},
-    ]]}
-    # Aggiunge bottone messaggio venditore (URL diretto alla chat Vinted)
-    if item_id:
-        keyboard["inline_keyboard"].append([
-            {"text": "💬 Scrivi venditore", "url": f"https://www.vinted.it/items/{item_id}"},
-        ])
-    resp = requests.post(
-        f"{TELEGRAM_API}/sendMessage",
-        json={
-            "chat_id": chat_id,
-            "text": text,
-            "parse_mode": "Markdown",
-            "disable_web_page_preview": True,
-            "reply_markup": keyboard,
-        },
-        timeout=20,
-    )
-    if not resp.ok:
-        log.warning("sendMessage con bottoni fallita: %s", resp.text[:300])
-
-
-def _e_urgenza_alta(decisione_testo):
-    """Ritorna True se la decisione contiene urgenza Alta o Altissima."""
-    testo = (decisione_testo or "").lower()
-    return any(k in testo for k in ("alta", "altissima", "subito", "forte"))
-
-
-def _estrai_item_id_da_url(url):
-    """Estrae l'item_id numerico dall'URL Vinted."""
-    if not url:
-        return None
-    m = re.search(r"/items/(\d+)", url)
-    return m.group(1) if m else None
-
-
-def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header, output_finale, decisione, e_compra, scenario_usato, n_query_grounding=0):
-    """Gestisce l'invio su Telegram con gallery e bottoni per COMPRA urgente."""
-    item_id = _estrai_item_id_da_url(url)
-    urgenza_alta = _e_urgenza_alta(decisione)
-    e_compra_urgente = (
-        e_compra
-        and urgenza_alta
-        and "NON COMPRARE" not in (decisione or "").upper()
-        and "CHIEDI" not in (decisione or "").upper()
-    )
-
-    # Chat principale: gallery per tutti se più di 1 foto, singola altrimenti
-    if len(photo_bytes_list) > 1:
-        telegram_send_media_group(
-            TELEGRAM_OWNER_CHAT_ID,
-            photo_bytes_list,
-            caption=f"📸 {listing_info.get('title')} · {len(photo_bytes_list)} foto"
-        )
-    else:
-        telegram_send_photo(TELEGRAM_OWNER_CHAT_ID, photo_bytes_list[0], caption=listing_info.get("title"))
-
-    # Messaggio con bottoni per tutti gli annunci con URL
-    if url:
-        if e_compra_urgente:
-            telegram_send_with_buttons(TELEGRAM_OWNER_CHAT_ID, header + output_finale, url, item_id)
-        else:
-            telegram_send_with_buttons(TELEGRAM_OWNER_CHAT_ID, header + output_finale, url, None)
-    else:
-        telegram_send_message(TELEGRAM_OWNER_CHAT_ID, header + output_finale)
-
-    # Chat alert separata
-    if TELEGRAM_ALERT_CHAT_ID and e_compra:
-        alert_text = (
-            f"🚨 *AZIONE RICHIESTA*\n"
-            f"*{listing_info.get('title')}*\n"
-            f"🏷️ {listing_info.get('brand') or '?'} · 💰 {listing_info.get('price') or '?'} EUR\n"
-            f"✅ {decisione}\n"
-            f"{url or ''}"
-        )
-        if e_compra_urgente and item_id:
-            telegram_send_with_buttons(TELEGRAM_ALERT_CHAT_ID, alert_text, url, item_id)
-        else:
-            telegram_send_message(TELEGRAM_ALERT_CHAT_ID, alert_text)
-
 
 # ---------------------------------------------------------------------------
 # TELETHON CLIENT
@@ -1638,22 +1546,17 @@ client = TelegramClient(StringSession(TELEGRAM_SESSION_STRING), TELEGRAM_API_ID,
 _processed_message_ids = set()
 _recent_listings_seen = {}
 
-
 DEDUP_CONTENUTO_WINDOW_SECONDS = 300
 
+
 def _normalizza_titolo_per_dedup(title):
-    """Rimuove l'ultima parola (di solito la taglia: S/M/L/XL/38/40/ecc.)
-    e le virgolette finali, per deduplicare varianti taglia dello stesso capo.
-    Es. 'Chemise Mugler S' e 'Chemise Mugler M' -> 'chemise mugler' (stesso capo)."""
     if not title:
         return ""
     t = title.strip()
-    # Rimuove virgolette finali: "Chemise Mugler 'vintage'" -> "Chemise Mugler"
     t_senza_virgolette = re.sub(r"['\"][^'\"]*['\"]\s*$", "", t).strip()
     if t_senza_virgolette != t:
         base = t_senza_virgolette
     else:
-        # Rimuove l'ultima parola (taglia): "Chemise Mugler S" -> "Chemise Mugler"
         parole = t.split()
         base = " ".join(parole[:-1]) if len(parole) > 1 else t
     return re.sub(r"\s+", " ", base).strip().lower()
