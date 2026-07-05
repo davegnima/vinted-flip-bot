@@ -521,7 +521,9 @@ def telegram_send_media_group(chat_id, photos_bytes_list, caption=None):
 
 
 def telegram_send_with_buttons(chat_id, text, url_annuncio, item_id=None):
-    """Manda messaggio con bottoni inline."""
+    """Manda messaggio con bottoni inline. Fallback senza Markdown se il
+    parsing fallisce (es. underscore non bilanciati in username come
+    'stella_1002', o asterischi spaiati nel testo generato da Gemini)."""
     keyboard = {"inline_keyboard": [[
         {"text": "🔗 Apri su Vinted", "url": url_annuncio},
     ]]}
@@ -541,7 +543,19 @@ def telegram_send_with_buttons(chat_id, text, url_annuncio, item_id=None):
         timeout=20,
     )
     if not resp.ok:
-        log.warning("sendMessage con bottoni fallita: %s", resp.text[:300])
+        log.warning("sendMessage con bottoni (Markdown) fallita: %s -- ritento senza parse_mode", resp.text[:300])
+        resp2 = requests.post(
+            f"{TELEGRAM_API}/sendMessage",
+            json={
+                "chat_id": chat_id,
+                "text": text,
+                "disable_web_page_preview": True,
+                "reply_markup": keyboard,
+            },
+            timeout=20,
+        )
+        if not resp2.ok:
+            log.error("sendMessage con bottoni fallita ANCHE senza Markdown: %s", resp2.text[:300])
 
 
 # ---------------------------------------------------------------------------
