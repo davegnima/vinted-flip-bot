@@ -314,10 +314,14 @@ Il prezzo basso fuori stagione NON è un segnale negativo — è spesso la fonte
 Il rischio di un acquisto va valutato in termini ASSOLUTI, non relativi.
 "Macchie", "condizione non perfetta", "qualche difetto" su un capo da €5-10 significa che il tuo rischio massimo e' €5-10 — meno di un caffe'. Non e' lo stesso rischio di "macchie" su un capo da €80.
 
-**Regola pratica:**
-- Costo pieno < €15 + prove visive forti → difetti minori NON sono un veto. COMPRA SUBITO, nel peggiore dei casi perdi €10.
-- Costo pieno €15-40 + difetti → valuta la gravita' visiva delle macchie/difetti, poi decidi.
-- Costo pieno > €40 + difetti → qui il rischio e' reale, chiedi foto dettagliate prima.
+⚠️ DISTINZIONE CRITICA — DIFETTI MINORI vs DIFETTI STRUTTURALI:
+Questa regola del "rischio assoluto" vale SOLO per difetti minori: piccole macchie, pilling leggero, lieve scolorimento uniforme, segni d'uso normali. NON vale MAI per difetti strutturali gravi: **buchi, strappi, bruciature, cuciture strappate, tessuto lacerato, fori con bordi sfilacciati**. Un buco nel tessuto rende un capo INVENDIBILE nel mercato del lusso/vintage a QUALSIASI prezzo di acquisto — non è compensato dal prezzo basso, perché il problema non è il rischio economico ma l'assenza di domanda per un capo danneggiato in modo irreparabile. Se vedi un buco, uno strappo o una bruciatura in foto → NON COMPRARE, indipendentemente da brand, prezzo o margine teorico.
+
+**Regola pratica (solo per difetti MINORI):**
+- Costo pieno < €15 + prove visive forti + difetti MINORI (non strutturali) → non sono un veto. COMPRA SUBITO.
+- Costo pieno €15-40 + difetti minori → valuta la gravita' visiva, poi decidi.
+- Costo pieno > €40 + difetti minori → il rischio e' reale, chiedi foto dettagliate prima.
+- QUALSIASI prezzo + difetto strutturale (buco/strappo/bruciatura) → NON COMPRARE sempre.
 
 Non usare mai "BASSA URGENZA" quando il prezzo e' irrisorio e le prove visive sono forti. A €5 la Missoni DONNA MADE IN ITALY con etichetta nitida e' COMPRA SUBITO senza pensarci.
 Non tutte le situazioni di "prove incomplete" sono uguali. Incrocia:
@@ -630,27 +634,54 @@ def scrape_vinted_listing(url):
         if color_match:
             result["color_raw"] = color_match.group(1).strip()
 
-        # ---- DATI VENDITORE (dall'HTML della pagina annuncio, JSON Next.js) ----
-        # Tutti i pattern cercano nell'HTML senza chiamate aggiuntive.
-        # Se non trovati (Vinted cambia l'HTML) vengono lasciati None silenziosamente.
-        seller_login_m = re.search(r'"login"\s*:\s*"([a-zA-Z0-9_.]{2,40})"', html)
+        # ---- DATI VENDITORE (dall'HTML della pagina annuncio) ----
+        # Vinted mostra i dati venditore come HTML renderizzato lato client,
+        # non come JSON semplice. Pattern basati sulla struttura reale osservata:
+        # <span data-testid="profile-username">nome</span>
+        # <div class="...Rating..." aria-label="...valutazione di 4.9 su 5 stelle">
+        # <div class="web_ui__Rating__label"><span class="web_ui__Text__text...">592</span></div>
+        seller_login_m = re.search(r'data-testid="profile-username"[^>]*>([^<]{2,40})<', html)
         if seller_login_m:
-            result["seller_login"] = seller_login_m.group(1)
+            result["seller_login"] = seller_login_m.group(1).strip()
+        else:
+            # Fallback: vecchio formato JSON, se mai riapparisse
+            seller_login_m2 = re.search(r'"login"\s*:\s*"([a-zA-Z0-9_.]{2,40})"', html)
+            if seller_login_m2:
+                result["seller_login"] = seller_login_m2.group(1)
 
-        seller_id_m = re.search(r'"user_id"\s*:\s*(\d+)', html)
+        seller_id_m = re.search(r'href="/member/(\d+)"', html)
         if seller_id_m:
             result["seller_id"] = seller_id_m.group(1)
+        else:
+            seller_id_m2 = re.search(r'"user_id"\s*:\s*(\d+)', html)
+            if seller_id_m2:
+                result["seller_id"] = seller_id_m2.group(1)
 
-        feedback_count_m = re.search(r'"feedback_count"\s*:\s*(\d+)', html)
-        if feedback_count_m:
-            result["seller_feedback_count"] = int(feedback_count_m.group(1))
-
-        feedback_rep_m = re.search(r'"feedback_reputation"\s*:\s*([\d.]+)', html)
-        if feedback_rep_m:
+        # Rating: aria-label="...valutazione di 4.9 su 5 stelle" + numero recensioni nel Rating__label
+        rating_m = re.search(r'valutazione di\s+([\d.,]+)\s+su\s+5\s+stelle', html, re.IGNORECASE)
+        if rating_m:
             try:
-                result["seller_feedback_reputation"] = float(feedback_rep_m.group(1))
+                result["seller_feedback_reputation"] = float(rating_m.group(1).replace(",", "."))
             except ValueError:
                 pass
+        else:
+            feedback_rep_m2 = re.search(r'"feedback_reputation"\s*:\s*([\d.]+)', html)
+            if feedback_rep_m2:
+                try:
+                    result["seller_feedback_reputation"] = float(feedback_rep_m2.group(1))
+                except ValueError:
+                    pass
+
+        # Numero recensioni: cerca il numero dentro web_ui__Rating__label vicino al rating
+        count_m = re.search(
+            r'web_ui__Rating__label[^>]*>\s*<span[^>]*>\s*(\d+)\s*<', html
+        )
+        if count_m:
+            result["seller_feedback_count"] = int(count_m.group(1))
+        else:
+            feedback_count_m2 = re.search(r'"feedback_count"\s*:\s*(\d+)', html)
+            if feedback_count_m2:
+                result["seller_feedback_count"] = int(feedback_count_m2.group(1))
 
         items_count_m = re.search(r'"items_count"\s*:\s*(\d+)', html)
         if items_count_m:
@@ -669,18 +700,25 @@ def scrape_vinted_listing(url):
         seller_login = result.get("seller_login")
         if seller_id or seller_login:
             profilo_url = (
-                f"https://www.vinted.it/members/{seller_id}/items"
+                f"https://www.vinted.it/member/{seller_id}"
                 if seller_id
-                else f"https://www.vinted.it/members/{seller_login}/items"
+                else f"https://www.vinted.it/member/{seller_login}"
             )
             try:
                 resp_profilo = _vinted_session.get(profilo_url, headers=VINTED_HEADERS, timeout=5)
                 if resp_profilo.ok:
                     html_profilo = resp_profilo.text
-                    # Estrae titoli degli articoli in vendita dal profilo
-                    # (formato tipico Vinted: "title":"Titolo articolo")
-                    titoli = re.findall(r'"title"\s*:\s*"([^"]{5,80})"', html_profilo)
-                    # Deduplication mantenendo ordine
+                    # Titoli/brand degli articoli in vendita: formato reale osservato
+                    # <p data-testid="other_user_items-{id}--description-title">Titolo o Brand</p>
+                    titoli = re.findall(
+                        r'data-testid="other_user_items-\d+--description-title">([^<]+)<',
+                        html_profilo
+                    )
+                    if not titoli:
+                        # Fallback vecchi formati
+                        titoli = re.findall(r'"title"\s*:\s*"([^"]{5,80})"', html_profilo)
+                    if not titoli:
+                        titoli = re.findall(r'<img[^>]+alt="([^"]{5,80})"', html_profilo)
                     visti = set()
                     titoli_unici = []
                     for t in titoli:
@@ -688,7 +726,7 @@ def scrape_vinted_listing(url):
                         if t_clean.lower() not in visti and not t_clean.startswith("http"):
                             visti.add(t_clean.lower())
                             titoli_unici.append(t_clean)
-                        if len(titoli_unici) >= 5:
+                        if len(titoli_unici) >= 8:
                             break
                     result["seller_top_items"] = titoli_unici
             except Exception as e:
