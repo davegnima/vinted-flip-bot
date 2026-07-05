@@ -245,7 +245,9 @@ Il profilo venditore determina la probabilità che il prezzo basso sia un vero a
 - **0 recensioni**: attenzione elevata — account nuovo, possibile faker. Servono prove visive perfette per COMPRA.
 - **1-30 recensioni con rating alto**: LA ZONA D'ORO. Privato inesperto che svuota l'armadio, non conosce il valore, non sa prezzare. Il prezzo basso qui è genuino → se le prove visive sono buone, aumenta la fiducia nel deal e l'urgenza.
 - **30-100 recensioni**: venditore abituale ma non professionale. Deal possibili ma meno frequenti.
-- **100+ recensioni**: reseller esperto. Sa esattamente cosa vende e quanto vale. Un prezzo basso da questo profilo è SOSPETTO: difetto nascosto, capo invendibile da mesi, o esca. Alza il rischio di un livello e pretendi che le foto mostrino tutto (etichette, difetti, misure). Non è un veto, ma la probabilità di vero affare crolla.
+- **100+ recensioni**: qui il GUARDAROBA conta più del numero. Guarda i "primi articoli in vendita":
+  - Se il guardaroba è pieno di ALTRI capi di marca/lusso simili al capo in analisi → reseller specializzato. Prezzo basso è SOSPETTO: difetto nascosto, invenduto da mesi, o esca. Alza il rischio.
+  - Se il guardaroba è fatto perlopiù di capi generici/fast-fashion (Zara, H&M, Naf Naf, Monki, taglie/descrizioni base tipo "Robe femme", "Jupe femme") → venditore abituale che smaltisce guardaroba personale, NON specializzato in capi di marca. Le 100+ recensioni riflettono solo attività, non competenza sui brand. In questo caso il capo di marca in analisi è probabilmente un pezzo isolato ricevuto/ereditato che il venditore non sa valutare — trattalo come la "zona d'oro", non come sospetto.
 - **Guardaroba** (se disponibile): tanti capi di marca in vendita = reseller (conferma sospetto). Capi misti di poco valore (H&M, Zara + il pezzo di marca) = privato che svuota l'armadio e non sa cosa ha → segnale d'oro.
 
 Includi SEMPRE una valutazione del venditore nell'Analisi dell'analista.
@@ -581,16 +583,38 @@ def scrape_vinted_listing(url):
         resp.raise_for_status()
         html = resp.text
 
-        matches = re.findall(
-            r'https://images\d?\.vinted\.net/t/([a-zA-Z0-9_]+)/((?:f800|\d+x\d+))/'
-            r'[^\s"\'\\]+?\.(?:jpe?g|png|webp)(?:\?s=[a-f0-9]+)?', html)
-        full_matches = re.findall(
-            r'https://images\d?\.vinted\.net/t/[a-zA-Z0-9_]+/(?:f800|\d+x\d+)/'
-            r'[^\s"\'\\]+?\.(?:jpe?g|png|webp)(?:\?s=[a-f0-9]+)?', html)
-        best_url_by_photo_id = {}
-        for (photo_id, resolution), full_url in zip(matches, full_matches):
-            if photo_id not in best_url_by_photo_id or resolution == "f800":
-                best_url_by_photo_id[photo_id] = full_url
+        # Escludi la foto profilo venditore dalla gallery, se possibile.
+        # INCERTEZZA: non e' garantito che il blocco venditore appaia dopo
+        # le foto prodotto nell'HTML -- se il taglio elimina troppe foto
+        # (probabile ordine invertito), usiamo l'HTML completo come fallback
+        # e accettiamo il piccolo rischio di includere la foto profilo.
+        marker_venditore = re.search(r'data-testid="profile-username"', html)
+
+        def _estrai_foto(html_sorgente):
+            m1 = re.findall(
+                r'https://images\d?\.vinted\.net/t/([a-zA-Z0-9_]+)/((?:f800|\d+x\d+))/'
+                r'[^\s"\'\\]+?\.(?:jpe?g|png|webp)(?:\?s=[a-f0-9]+)?', html_sorgente)
+            m2 = re.findall(
+                r'https://images\d?\.vinted\.net/t/[a-zA-Z0-9_]+/(?:f800|\d+x\d+)/'
+                r'[^\s"\'\\]+?\.(?:jpe?g|png|webp)(?:\?s=[a-f0-9]+)?', html_sorgente)
+            diz = {}
+            for (photo_id, resolution), full_url in zip(m1, m2):
+                if photo_id not in diz or resolution == "f800":
+                    diz[photo_id] = full_url
+            return diz
+
+        foto_complete = _estrai_foto(html)
+        if marker_venditore:
+            foto_tagliate = _estrai_foto(html[:marker_venditore.start()])
+            # Usa il taglio solo se lascia almeno 1 foto e ne toglie al massimo 1-2
+            # (la foto profilo e' tipicamente 1 sola immagine)
+            if 0 < len(foto_tagliate) and len(foto_complete) - len(foto_tagliate) <= 2:
+                best_url_by_photo_id = foto_tagliate
+            else:
+                best_url_by_photo_id = foto_complete
+        else:
+            best_url_by_photo_id = foto_complete
+
         result["photo_urls"] = list(best_url_by_photo_id.values())[:MAX_GALLERY_PHOTOS]
 
         size_match = re.search(r'"size_title"\s*:\s*"([^"]+)"', html)
