@@ -55,7 +55,7 @@ import logging
 import traceback
 from io import BytesIO
 from urllib.parse import quote
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 
 import requests
 from telethon import TelegramClient, events
@@ -1065,15 +1065,25 @@ def search_comps_completo(brand, categoria, query_base, catalog_id=None, materia
         future_vinted = executor.submit(_serper_scrape_page_diretto, "VINTED", vinted_url)
         future_ebay = executor.submit(_serper_scrape_page_diretto, "EBAY SOLD", ebay_url)
         futures = {future_vestiaire: "vestiaire", future_vinted: "vinted", future_ebay: "ebay"}
-        for future in as_completed(futures, timeout=15):
-            nome = futures[future]
-            try:
-                testo, ok = future.result()
-                risultati[nome] = testo
-                successi[nome] = ok
-            except Exception as e:
-                risultati[nome] = f"  Query fallita: {e}"
-                successi[nome] = False
+        
+        try:
+            for future in as_completed(futures, timeout=15):
+                nome = futures[future]
+                try:
+                    testo, ok = future.result()
+                    risultati[nome] = testo
+                    successi[nome] = ok
+                except Exception as e:
+                    risultati[nome] = f"  Query fallita: {e}"
+                    successi[nome] = False
+        except TimeoutError:
+            # Cattura il timeout di as_completed. Il thread non muore.
+            log.warning("Timeout di 15s raggiunto in Serper! Salvataggio risultati parziali.")
+            # Segniamo come fallite le query che non hanno fatto in tempo a rispondere
+            for future, nome in futures.items():
+                if nome not in risultati:
+                    risultati[nome] = "  Query fallita (Timeout 15s superato)."
+                    successi[nome] = False
 
     serper_ha_funzionato = any(successi.values())
 
