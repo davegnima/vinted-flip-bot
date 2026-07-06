@@ -137,6 +137,21 @@ MATERIALI_PREGIATI_PRIORITA = [
     "denim", "cotone",
 ]
 
+# Traduzioni EN/FR/DE dei materiali pregiati -> termine italiano canonico.
+# Usate come fallback quando si cerca il materiale nella descrizione libera
+# di annunci scritti in altre lingue (es. "silk skirt" -> "seta").
+MATERIALI_TRADUZIONI = {
+    "silk": "seta", "soie": "seta", "seide": "seta",
+    "velvet": "velluto", "velours": "velluto", "samt": "velluto",
+    "leather": "pelle", "cuir": "pelle", "leder": "pelle",
+    "wool": "lana", "laine": "lana", "wolle": "lana",
+    "linen": "lino", "lin": "lino", "leinen": "lino",
+    "cotton": "cotone", "coton": "cotone", "baumwolle": "cotone",
+    "cashmere": "cashmere", "cachemire": "cashmere", "kaschmir": "cashmere",
+    "viscose": "viscosa", "viskose": "viscosa",
+    "mohair": "mohair", "alpaca": "alpaca", "alpaga": "alpaca",
+}
+
 CATEGORIA_KEYWORDS = {
     "abito": ["abito", "vestito", "kleid", "dress", "robe"],
     "blusa": ["blusa", "camicetta", "bluse", "blouse", "chemisier"],
@@ -158,14 +173,25 @@ log = logging.getLogger("vinted_flip_bot")
 
 
 def scegli_materiale_per_ricerca(material_value_raw):
-    """Cerca il materiale piu' pregiato nella lista prioritaria, splittando
-    prima su virgola e cercando match esatti per elemento."""
+    """Cerca il materiale piu' pregiato nella lista prioritaria (italiano),
+    poi nelle traduzioni EN/FR/DE (per descrizioni in altre lingue).
+    Ritorna sempre il termine italiano canonico per la query Serper."""
     if not material_value_raw:
         return None
-    materiali_annuncio = [m.strip().lower() for m in material_value_raw.split(",")]
+    testo_lower = material_value_raw.lower()
+    materiali_annuncio = [m.strip() for m in testo_lower.split(",")]
+
+    # 1. Cerca prima i termini italiani (match preciso per elemento splittato)
     for materiale_prioritario in MATERIALI_PREGIATI_PRIORITA:
         if any(materiale_prioritario in elemento for elemento in materiali_annuncio):
             return materiale_prioritario
+
+    # 2. Fallback: cerca le traduzioni EN/FR/DE nel testo intero (utile per
+    # descrizioni libere non separate da virgole, es. "silk skirt size 42")
+    for termine_straniero, termine_it in MATERIALI_TRADUZIONI.items():
+        if re.search(r'\b' + re.escape(termine_straniero) + r'\b', testo_lower):
+            return termine_it
+
     return None
 
 
@@ -420,6 +446,14 @@ Ask multipli coerenti → applica sconto prudenza 20-40%.
 4. COMPRA SE CI TIENI — margine borderline ma positivo.
 5. TRATTA — tutto ok ma margine migliorabile con trattativa.
 6. NON COMPRARE — fake evidente, zero etichette, condizione distrutta, margine negativo.
+
+# VERIFICA FINALE OBBLIGATORIA — FAI QUESTO PRIMA DI SCRIVERE IL VERDETTO
+Non scrivere la decisione e poi giustificarla. Calcola PRIMA, decidi DOPO:
+1. Calcola acquisto pieno, incasso reale, margine netto, ROI% con i numeri esatti.
+2. Verifica: margine netto ≥ €20 E ROI ≥ 100%?
+   - SÌ a entrambe → puoi usare COMPRA (SUBITO/FORTE/semplice in base a deal/margine).
+   - NO anche a una sola → la decisione DEVE essere TRATTA (se margine positivo) o NON COMPRARE (se margine negativo o trascurabile). MAI "COMPRA" con urgenza alta se margine <€15 o ROI <60% — questo è un errore grave.
+3. Solo dopo aver verificato il punto 2, scrivi la sezione Verdetto con la decisione coerente con quello che hai appena calcolato. Se ti accorgi che il testo che stavi per scrivere contraddice il calcolo, correggi la decisione, non il calcolo.
 
 # OUTPUT — ottimizzato per lettura rapida. Verdetto SEMPRE in cima.
 
@@ -693,6 +727,14 @@ def scrape_vinted_listing(url):
         if material_match:
             result["material_raw"] = material_match.group(1).strip()
             result["material_per_ricerca"] = scegli_materiale_per_ricerca(material_match.group(1).strip())
+
+        # FALLBACK: se il campo materiale strutturato è vuoto (venditore che
+        # non lo compila, molto frequente), cerca il materiale pregiato
+        # direttamente nella descrizione libera. Es. "gonna in seta" nella
+        # descrizione ma campo Materiale vuoto -> senza questo fallback
+        # "seta" non entrerebbe mai nella query Serper.
+        if not result["material_per_ricerca"] and result.get("description"):
+            result["material_per_ricerca"] = scegli_materiale_per_ricerca(result["description"])
 
         color_match = re.search(r'itemprop="color"[^>]*>.*?<span[^>]*>([^<]+)', html, re.DOTALL)
         if color_match:
@@ -1262,6 +1304,35 @@ def valida_contraddizioni_report(testo):
         log.warning("Contraddizione (2) COMPRA SUBITO/Confidenza Bassa: '%s' -> '%s'", dt, nuova)
         final_text = _sostituisci_decisione(final_text, nuova, "corretto: COMPRA SUBITO richiede Confidenza non Bassa")
         match_d, fmt, dt = _get_decisione_match(final_text)
+
+    # (3) COMPRA con margine/ROI eclatantemente insufficiente -> degrada a TRATTA.
+    # SOGLIE CONSERVATIVE deliberate: il prompt chiede margine >=20€ e ROI >=100%,
+    # ma qui usiamo soglie piu' basse (15€ / 60%) per intercettare solo i casi
+    # gravi (es. margine $9.50 con "urgenza alta" sugli occhiali Cazal), senza
+    # penalizzare casi limite validi (es. abito Marni margine €25 ROI 85%,
+    # che e' un buon deal nonostante sia sotto la soglia ideale del prompt).
+    if re.search(r"\bCOMPRA\b", dt) and "TRATTA" not in dt.upper():
+        margine_m = re.search(r"€\s*([\d.,]+)\s*\(?ROI", final_text, re.IGNORECASE)
+        margine_valore = None
+        if margine_m:
+            try:
+                margine_valore = float(margine_m.group(1).replace(",", "."))
+            except ValueError:
+                pass
+        roi_max = None
+        if roi_m:
+            roi_max = max(int(roi_m.group(1)), int(roi_m.group(2)) if roi_m.group(2) else int(roi_m.group(1)))
+        margine_troppo_basso = margine_valore is not None and margine_valore < 15
+        roi_troppo_basso = roi_max is not None and roi_max < 60
+        if margine_troppo_basso or roi_troppo_basso:
+            nuova = dt
+            for k in ("COMPRA SUBITO", "COMPRA FORTE", "COMPRA SE CI TIENI", "COMPRA"):
+                if k in nuova.upper():
+                    nuova = re.sub(re.escape(k), "TRATTA", nuova, flags=re.IGNORECASE)
+                    break
+            motivo_num = f"margine €{margine_valore}" if margine_troppo_basso else f"ROI {roi_max}%"
+            log.warning("Contraddizione (3) COMPRA con %s eclatantemente insufficiente: '%s' -> '%s'", motivo_num, dt, nuova)
+            final_text = _sostituisci_decisione(final_text, nuova, f"corretto: {motivo_num} troppo basso per COMPRA diretto")
 
     return final_text
 
