@@ -979,6 +979,22 @@ def _estrai_articoli_ebay(content, max_articoli=15):
     return "\n".join(righe_pulite)
 
 
+def _e_errore_crediti_serper(resp):
+    """Rileva un errore di crediti esauriti Serper in modo robusto:
+    sia tramite codice HTTP standard, sia cercando parole chiave nel body,
+    perche' alcuni provider SERP restituiscono 400 con messaggio testuale
+    invece di 401/402/403/429 per l'esaurimento crediti."""
+    if resp.status_code in (400, 401, 402, 403, 429):
+        testo_body = (resp.text or "").lower()
+        if resp.status_code in (401, 402, 403, 429):
+            return True
+        # HTTP 400: verifica parole chiave prima di considerarlo un errore crediti
+        # (un 400 potrebbe anche essere un URL malformato, non necessariamente crediti)
+        if any(k in testo_body for k in ("credit", "insufficient", "balance", "payment", "quota")):
+            return True
+    return False
+
+
 def _serper_scrape_page_diretto(label, url):
     if not SERPER_API_KEY:
         return "Scrape non eseguito (SERPER_API_KEY non impostata).", False
@@ -990,7 +1006,7 @@ def _serper_scrape_page_diretto(label, url):
             headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
             json=payload, timeout=15,
         )
-        if resp.status_code in (401, 402, 403, 429):
+        if _e_errore_crediti_serper(resp):
             log.warning("Serper fallito per esaurimento crediti o autenticazione (HTTP %d): %s", resp.status_code, resp.text[:300])
             return f"  Serper fallito (HTTP {resp.status_code}).", False
         resp.raise_for_status()
@@ -1023,8 +1039,8 @@ def _serper_batch_query_vestiaire(brand, categoria):
             headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
             json=payload, timeout=15,
         )
-        if resp.status_code in (401, 402, 403, 429):
-            log.warning("Serper search fallito per esaurimento crediti o autenticazione (HTTP %d)", resp.status_code)
+        if _e_errore_crediti_serper(resp):
+            log.warning("Serper search fallito per esaurimento crediti o autenticazione (HTTP %d): %s", resp.status_code, resp.text[:300])
             return f"  Serper fallito (HTTP {resp.status_code}).", False
         resp.raise_for_status()
         results = resp.json()
