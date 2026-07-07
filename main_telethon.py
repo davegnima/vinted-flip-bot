@@ -260,6 +260,8 @@ Il profilo venditore determina la probabilità che il prezzo basso sia un vero a
 
 - **0 recensioni**: attenzione elevata — account nuovo, possibile faker. Servono prove visive perfette per COMPRA.
 - ⚠️ NOTA: link a Instagram/TikTok/Facebook o altri social nella bio del venditore sono NORMALI su Vinted (molti venditori si promuovono così) — NON è un segnale di truffa o account bot. Ignora questo dettaglio, valuta solo recensioni, guardaroba, e le foto del capo stesso.
+- ⚠️ Se i "primi articoli in vendita" forniti nel prompt contengono NOMI DI PIATTAFORME/SOCIAL (Vinted, Facebook, Instagram, TikTok, LinkedIn, App Store, ecc.) o elementi che sono chiaramente branding/loghi dell'interfaccia → questo è rumore di scraping (icone o badge della pagina scambiati per prodotti), NON un vero articolo del venditore. Ignora silenziosamente SOLO questi elementi specifici, non costruire teorie su "account bot" o "profilo sospetto" basandoti su di essi.
+- Se invece gli articoli sono oggetti reali ma di categoria diversa dall'abbigliamento (es. elettronica, libri, casalinghi, altri accessori) → sono dati validi sul venditore, considerali normalmente per capire se è un rivenditore generico, un privato che smaltisce casa, ecc.
 - **1-30 recensioni con rating alto**: LA ZONA D'ORO. Privato inesperto che svuota l'armadio, non conosce il valore, non sa prezzare. Il prezzo basso qui è genuino → se le prove visive sono buone, aumenta la fiducia nel deal e l'urgenza.
 - **30-100 recensioni**: venditore abituale ma non professionale. Deal possibili ma meno frequenti.
 - **100+ recensioni**: qui il GUARDAROBA REALE conta più del numero di recensioni. Guarda ATTENTAMENTE i "primi articoli in vendita" forniti nel prompt — non assumere genericamente, verifica cosa c'è scritto:
@@ -429,6 +431,7 @@ Sei il valutatore finanziario di un flipper professionista di lusso second-hand.
 Nel prompt ricevi i dati del venditore (recensioni, altri articoli in vendita REALI). Leggili attentamente, non assumere genericamente:
 - **0 recensioni** + prezzo troppo bello = Rischio truffa. Abbassa la confidenza.
 - ⚠️ Link social (Instagram/TikTok/Facebook) nella bio venditore sono NORMALI, non un segnale di truffa. Non penalizzare per questo.
+- ⚠️ Se gli "articoli in vendita" del venditore forniti nel prompt contengono nomi di piattaforme/social (Vinted, Facebook, Instagram, App Store, ecc.) → è rumore di scraping (icone/badge dell'interfaccia scambiati per prodotti), ignora SOLO questi elementi specifici. NON dedurre "account bot" da questo. Se invece sono oggetti reali di categoria diversa dall'abbigliamento (elettronica, libri, casalinghi) → sono dati validi sul venditore, usali normalmente.
 - **1-30 recensioni + guardaroba davvero fast-fashion generico** (niente altri capi di marca comparabili) = Sprovveduto genuino. Il prezzo basso conferma il deal, aumenta l'urgenza.
 - **100+ recensioni**: verifica il guardaroba reale fornito. Se contiene ANCHE solo 2-3 altri capi di marca (non serve che sia tutto lusso) → reseller esperto o quantomeno competente. Considera esplicitamente lo scenario "reseller con invenduto": un capo che non si vende da mesi viene svenduto sotto costo per liberare capitale — questo NON è ingenuità, è gestione di magazzino. In questo scenario: MAI "COMPRA SUBITO · Alta urgenza", al massimo COMPRA/TRATTA con urgenza media, e considera che la vendita potrebbe essere più lenta di quanto sembri (altri hanno già provato e fallito a venderlo velocemente).
 - Con 200+ recensioni la soglia si alza ulteriormente: non dare per scontata l'ingenuità solo perché il guardaroba sembra "misto" — un reseller esperto vende anche cose semplici insieme ai pezzi di valore.
@@ -825,8 +828,27 @@ def scrape_vinted_listing(url):
                     )
                     if not titoli:
                         titoli = re.findall(r'"title"\s*:\s*"([^"]{5,80})"', html_profilo)
-                    if not titoli:
-                        titoli = re.findall(r'<img[^>]+alt="([^"]{5,80})"', html_profilo)
+                    # NOTA: rimosso il fallback generico <img alt="..."> --
+                    # cattura rumore di interfaccia (loghi, badge store app,
+                    # icone social nel footer) che il cervello puo' scambiare
+                    # per articoli reali del venditore, causando allucinazioni
+                    # tipo "il venditore vende Facebook/LinkedIn = account bot".
+
+                    # Filtro di sanita': scarta elementi che sembrano UI/branding
+                    # piuttosto che titoli di capi (nomi di piattaforme, parole
+                    # singole troppo generiche, elementi senza spazi che sembrano
+                    # loghi invece di descrizioni di prodotto).
+                    ELEMENTI_UI_DA_SCARTARE = {
+                        "vinted", "facebook", "instagram", "linkedin", "twitter", "x",
+                        "tiktok", "app store", "google play", "logo", "logo di vinted",
+                        "scarica l'app", "pinterest", "youtube", "whatsapp", "telegram",
+                    }
+                    titoli = [
+                        t for t in titoli
+                        if t.strip().lower() not in ELEMENTI_UI_DA_SCARTARE
+                        and len(t.strip()) >= 4
+                    ]
+
                     visti = set()
                     titoli_unici = []
                     for t in titoli:
