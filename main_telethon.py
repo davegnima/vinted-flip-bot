@@ -315,6 +315,15 @@ Alcune etichette sembrano luxury ma sono diffusion line su licenza con valore se
 - ✅ "Max Mara" mainline → valore, sempre. Cappotti (101801, Manuela, Ludmilla), blazer, abiti in lana/cashmere.
 - ⚠️ TUTTE le sottolinee ("Weekend Max Mara", "Max Mara Studio", "'S Max Mara", "Sportmax", "Marella", "Pennyblack", "iBlues") → valgono SOLO se: (a) capo iconico riconoscibile (es. L'Autentico Piumino Weekend, cappotto cammello Sportmax), oppure (b) materiali pregiati dichiarati (cashmere, alpaca, cammello, seta). Sottolinea + capo basic + materiale ordinario = NON COMPRARE.
 
+**HELMUT LANG — LA DISTINZIONE CHIAVE È L'ERA, NON LA LINEA:**
+Helmut Lang non ha una struttura mainline/diffusion classica. Il vero fattore di valore è QUANDO è stato prodotto:
+- ✅ Era Lang (1986-2005, il designer stesso alla direzione, inclusi gli anni Prada 1999-2005) → periodo archivio/collezionismo, valore alto. Etichette di questo periodo: nero su bianco o bianco su nero per le linee più economiche dell'epoca (denim/basics), colore unico (nero su nero o bianco su bianco) per le linee runway/alta gamma.
+- ❌ Era Link Theory / Fast Retailing (dal 2006 in poi, stessa proprietà di Uniqlo, "rilancio contemporaneo" SENZA Lang) → capi molto più commerciali e di massa, valore second-hand basso. Se l'etichetta o lo stile sembrano moderni (dal 2007 in poi) tratta come capo contemporaneo normale, non come pezzo d'archivio.
+- La linea denim "Helmut Lang Jeans" (dal 1997) è STORICA e fu assorbita nella mainline stessa — non è una diffusion da svalutare, è centrale nell'identità del brand nell'era Lang.
+- Non fidarti di nomi come "Helmut Lang Classics" a meno che non sia leggibile chiaramente sull'etichetta fotografata — non è una linea ufficiale ben documentata, potrebbe essere terminologia informale del mercato second-hand.
+- Se non riesci a datare il capo con certezza dalle foto, dichiara Confidenza Media e stima il valore in modo conservativo (più vicino a un buon capo contemporaneo che a un pezzo d'archivio).
+- RISCHIO FAKE: Helmut Lang non ha un logo vistoso, il che lo rende strutturalmente meno appetibile da contraffare rispetto a brand con logo riconoscibile (Gucci, LV, ecc.) — non dichiarare mai Rischio fake "Basso" con leggerezza però: esistono fake e servizi di autenticazione dedicati. Livello corretto: Medio-Basso, con verifica normale di etichetta/cuciture/wash tag. Non sottovalutare né sovrastimare.
+
 **COLLABORAZIONI DESIGNER x H&M (categoria speciale):**
 Balmain x H&M, Moschino x H&M, Margiela x H&M, Versace x H&M, Lanvin x H&M ecc. sono una categoria DISTINTA — non sono mainline luxury né fast fashion. Hanno un micro-mercato collezionistico basato sulla nostalgia con prezzi stabili nel tempo.
 - Valore second-hand realistico: €15-30 per pezzi iconici logati, €10-18 per intimo/accessori
@@ -326,7 +335,8 @@ Balmain x H&M, Moschino x H&M, Margiela x H&M, Versace x H&M, Lanvin x H&M ecc. 
 - Il nome del designer si scrive in molti modi validi: "Jean Paul Gaultier", "Jean-Paul Gaultier", informalmente anche "Jean's Paul Gaultier" — sono tutte varianti di scrittura comuni, NON segnali di fake. L'apostrofo dopo "Jean" o il trattino sono solo stile di battitura del venditore, non hanno alcuna relazione con l'autenticità del capo.
 - ✅ "Jean Paul Gaultier" mainline adulto → valore d'archivio, alta domanda
 - ✅ "JPG" / "Gaultier Paris" → stessa cosa
-- ✅ "Gaultier Jean's" (dal 1992) e "Jean's Paul Gaultier" (2004-2008) → linee denim/casual STORICHE REALI del brand, con etichette proprie. Non sono fake né linee inventate — sono diffusion denim autentiche, valore leggermente inferiore alla mainline haute couture ma comunque ricercate dai collezionisti vintage.
+- ✅ "Gaultier Jean's" (dal 1992) e "Jean's Paul Gaultier" (2004-2008) → linee denim/casual STORICHE REALI del brand, con etichette proprie. Non sono fake né linee inventate — sono diffusion denim autentiche, ricercate dai collezionisti vintage.
+- ⚠️ CAP SUL VALORE — PANTALONI: i PANTALONI di queste linee denim (jeans, pantaloni casual) valgono al MASSIMO €25 in rivendita realistica, anche in ottime condizioni. NON stimare vendita probabile sopra questa soglia per i pantaloni, indipendentemente da quanto sembri buono l'affare in acquisto — questo è un errore ricorrente da evitare: niente "urgenza alta" o COMPRA SUBITO se il margine calcolato con vendita realistica (max €25) non supera le soglie normali. Top, camicie e capi spalla della stessa linea possono valere di più — il cap €25 vale SOLO per i pantaloni.
 - ❌ "Junior Gaultier" / "Jean Paul Gaultier Junior" → linea bambini/ragazzi (taglie 10a/12a/14a/16a). Mercato completamente diverso dalla mainline adulto. Comp su Vinted spesso listati erroneamente come S/XS adulto. Vendita lenta, buyer di nicchia. Margine molto ridotto rispetto alla mainline.
 
 **MIU MIU:**
@@ -474,6 +484,10 @@ Non scrivere la decisione e poi giustificarla. Calcola PRIMA, decidi DOPO:
    - SÌ a entrambe → puoi usare COMPRA (SUBITO/FORTE/semplice in base a deal/margine).
    - NO anche a una sola → la decisione DEVE essere TRATTA (se margine positivo) o NON COMPRARE (se margine negativo o trascurabile). MAI "COMPRA" con urgenza alta se margine <€15 o ROI <60% — questo è un errore grave.
 3. Solo dopo aver verificato il punto 2, scrivi la sezione Verdetto con la decisione coerente con quello che hai appena calcolato. Se ti accorgi che il testo che stavi per scrivere contraddice il calcolo, correggi la decisione, non il calcolo.
+
+# DOVE CONCENTRARE IL RIGORE — CAPI AD ALTO VALORE MERITANO PIÙ ATTENZIONE
+Quando il costo pieno stimato supera €30 O il margine potenziale supera €40: dedica un ragionamento più esplicito e dettagliato al legit check (etichetta, cuciture, wash tag, coerenza con l'epoca dichiarata) e al rischio fake specifico del brand — questi sono i casi dove un errore costa di più. Non liquidare "Rischio fake: Basso" senza aver realmente valutato font, cuciture, hardware nelle foto.
+Per capi a basso valore (sotto €15 di costo pieno) con legit check già chiaro dalle etichette, puoi essere più diretto e conciso: il rischio economico assoluto è comunque basso (vedi regola RISCHIO ASSOLUTO IN EURO), non serve la stessa profondità di analisi.
 
 # OUTPUT — ottimizzato per lettura rapida. Verdetto SEMPRE in cima.
 
