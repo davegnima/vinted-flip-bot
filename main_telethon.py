@@ -168,6 +168,33 @@ CATEGORIA_KEYWORDS = {
     "top": ["top"],
 }
 
+# Categorie da SKIPPARE COMPLETAMENTE prima di qualsiasi chiamata Gemini o
+# scraping completo -- zero valore di flip, zero notifica. Match sul titolo
+# in tutte le lingue principali di Vinted (IT/EN/FR/DE/ES/PT/NL).
+CATEGORIE_SKIP_TOTALE_KEYWORDS = [
+    # Calzini / calze
+    "calzini", "calza", "calze", "socks", "sock", "chaussettes", "chaussette",
+    "socken", "strumpf", "strümpfe", "calcetines", "calcetin", "meias", "meia",
+    "sokken", "sok",
+    # Occhiali (da vista E da sole)
+    "occhiali", "occhiale", "glasses", "eyeglasses", "sunglasses", "eyewear",
+    "lunettes", "lunette", "brille", "brillen", "sonnenbrille",
+    "gafas", "gafa", "óculos", "oculos", "bril", "zonnebril",
+]
+CATEGORIE_SKIP_TOTALE_REGEX = re.compile(
+    r"\b(" + "|".join(re.escape(k) for k in CATEGORIE_SKIP_TOTALE_KEYWORDS) + r")\b",
+    re.IGNORECASE
+)
+
+
+def e_categoria_skip_totale(titolo):
+    """Ritorna True se il titolo contiene una keyword di categoria da
+    skippare completamente (calzini, occhiali) in qualsiasi lingua Vinted."""
+    if not titolo:
+        return False
+    return bool(CATEGORIE_SKIP_TOTALE_REGEX.search(titolo))
+
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 log = logging.getLogger("vinted_flip_bot")
 
@@ -1460,6 +1487,13 @@ def process_listing(parsed, url, cover_photo_bytes):
     listing_info = dict(parsed)
     listing_info["url"] = url
     costo_totale = 0.0
+
+    # SKIP TOTALE per categorie a zero valore (calzini, occhiali) --
+    # controllo sul titolo PRIMA di qualsiasi scraping o chiamata Gemini.
+    # Zero notifica, zero costo, zero log rumoroso oltre questa riga.
+    if e_categoria_skip_totale(listing_info.get("title")):
+        log.info("SKIP TOTALE (categoria esclusa): '%s'", listing_info.get("title"))
+        return
 
     photo_bytes_list = []
     if url:
