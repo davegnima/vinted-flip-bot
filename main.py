@@ -1,48 +1,7 @@
 """
 Vinted Flip Oracle Bot (versione Telethon / userbot) -- Scenario G con fallback F
 ====================================================================================
-Pipeline finale (30/06/2026), basata sui 7 scenari testati in questa conversazione:
-
-  SCENARIO G (primario): Gemini 3.1 Flash-Lite (occhi) -> Serper (comp Vinted/
-  eBay/Vestiaire) -> Gemini 3.1 Flash-Lite (cervello, con grounding FORZATO nel
-  prompt) -- risultato piu' economico e affidabile dei 7 scenari testati
-  (~$0.004 per valutazione), con input occhi completo (non troncato come la
-  versione 2.5 Flash-Lite) e comp reali da Serper.
-
-  SCENARIO F (fallback automatico): stessa pipeline ma SENZA Serper -- si attiva
-  automaticamente se Serper esaurisce i crediti o fallisce. Il cervello riceve
-  solo la propria valutazione preliminare e DEVE affidarsi al grounding nativo
-  Google Search per trovare comp reali.
-
-IMPORTANTE -- limite tecnico del grounding: l'API Gemini NON permette di
-forzare l'esecuzione di google_search nel senso stretto di un tool_choice
-obbligatorio (a differenza di alcuni altri provider). Il tool e' sempre
-disponibile al modello quando "tools" e' nel payload, ma la DECISIONE di
-chiamarlo resta del modello. Possiamo solo istruirlo con forza nel prompt
-("DEVI cercare", non "puoi cercare se vuoi") -- e nei test Scenario F ha
-mostrato 0 query di grounding spontanee su 1 caso testato, quindi il prompt
-rinforzato qui sotto e' un tentativo di correggere quel comportamento, non
-una garanzia assoluta. Se in produzione si osserva ancora 0 query di
-grounding sistematicamente nello scenario F, vale la pena rivedere la
-strategia (es. instradare un secondo passaggio esplicito di ricerca anche
-senza Serper, invece di affidarsi al solo prompt).
-
-Modelli usati (prezzi verificati su ai.google.dev/gemini-api/docs/pricing,
-30/06/2026):
-  - gemini-3.1-flash-lite: $0.25/$1.50 per milione di token (input/output)
-  - Grounding con Google Search: 5000 query/mese gratis (condivise su tutta
-    la famiglia Gemini 3), poi $14 per 1000 query
-
-Variabili d'ambiente richieste:
-  TELEGRAM_API_ID
-  TELEGRAM_API_HASH
-  TELEGRAM_PHONE
-  TELEGRAM_SESSION_STRING
-  TELEGRAM_GROUP_ID
-  TELEGRAM_BOT_TOKEN
-  TELEGRAM_OWNER_CHAT_ID
-  GEMINI_API_KEY
-  SERPER_API_KEY (opzionale -- se assente o esaurita, fallback automatico a Scenario F)
+Pipeline finale, basata sugli scenari di ottimizzazione dei costi e filtro.
 """
 
 import os
@@ -73,42 +32,31 @@ TELEGRAM_GROUP_ID = int(os.environ["TELEGRAM_GROUP_ID"])
 
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_OWNER_CHAT_ID = os.environ["TELEGRAM_OWNER_CHAT_ID"]
-# TELEGRAM_ALERT_CHAT_ID (opzionale): se impostato, riceve SOLO i verdetti
-# COMPRA/TRATTA/CHIEDI ALTRE FOTO con notifica push normale.
-# TELEGRAM_OWNER_CHAT_ID riceve tutto ma può essere silenziato sul telefono.
-# Come ottenere il tuo user_id Telegram: scrivi /start a @userinfobot
-TELEGRAM_ALERT_CHAT_ID = os.environ.get("TELEGRAM_ALERT_CHAT_ID")  # es. "123456789"
+TELEGRAM_ALERT_CHAT_ID = os.environ.get("TELEGRAM_ALERT_CHAT_ID")
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
-SERPER_API_KEY = os.environ.get("SERPER_API_KEY")  # opzionale: assente -> fallback diretto a Scenario F
+SERPER_API_KEY = os.environ.get("SERPER_API_KEY")
 
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 
-# MODELLO UNICO per occhi e cervello (Scenario G/F): gemini-3.1-flash-lite.
 GEMINI_MODEL = "gemini-3.1-flash-lite"
 GEMINI_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 
-# Prezzi verificati (30/06/2026) -- vedi pricing ufficiale Google.
 PREZZO_GEMINI_INPUT = 0.25
 PREZZO_GEMINI_OUTPUT = 1.50
-PREZZO_GROUNDING_PER_QUERY = 14 / 1000  # sopra le 5000 query gratis/mese condivise
+PREZZO_GROUNDING_PER_QUERY = 14 / 1000
 
 MAX_GALLERY_PHOTOS = 10
 
 VINTED_TRACKER_NAME_HINTS = ("vinted", "tracker")
 
-# Contatore consecutivo di fallimenti Serper -- se troppi di fila (es.
-# crediti esauriti, non solo un errore di rete isolato), passiamo in
-# "modalita' fallback temporaneo" per un periodo di raffreddamento,
-# evitando di tentare Serper ad ogni singolo annuncio sapendo che
-# fallira'. Dopo il raffreddamento riprova automaticamente (utile se i
-# crediti si rinnovano o sono stati ricaricati manualmente nel frattempo).
 _serper_fallimenti_consecutivi = [0]
 _serper_timestamp_ultimo_fallimento = [0.0]
 SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO = 3
-RAFFREDDAMENTO_SERPER_SECONDI = 3600 * 6  # 6 ore prima di riprovare
-# Flag per notificare UNA SOLA VOLTA l'esaurimento crediti Serper via Telegram
-# (evita di spammare ad ogni annuncio durante le 6 ore di raffreddamento)
+RAFFREDDAMENTO_SERPER_SECONDI = 3600 * 6
 _serper_notifica_esaurimento_inviata = [False]
+
+# BLOCKLIST VENDITORI
+VENDITORI_BLOCKLIST = {"valeryepippo"}
 
 VINTED_BRAND_IDS = {
     "brunello cucinelli": "103740", "rick owens": "145654",
@@ -129,7 +77,24 @@ VINTED_BRAND_IDS = {
     "veilance": "3388210", "nanga": "434286",
     "snow peak": "666350", "acronym": "712647",
     "isabel marant": "14361",
+    "alaïa": "69184",
+    "alaia": "69184",
+    "yves saint laurent": "377",
+    "junya watanabe": "235040",
+    "thom browne": "399438",
+    "khaite": "806862",
+    "alexander mcqueen": "52193",
+    "chloé": "2113",
+    "chloe": "2113",
+    "stella mccartney": "13893",
+    "totême": "546105",
+    "toteme": "546105",
+    "undercover": "59974",
 }
+# ESCLUSIONI VOLUTE (non mappare per evitare falsi positivi o capi di scarso valore):
+# - "saint laurent" (post-2012, id 83122): altissimo rischio fake, preferiamo concentrarci su YSL vintage.
+# - "McQ" (id 849677): diffusion line di Alexander McQueen, valore di mercato molto inferiore.
+# - "See by Chloé" (id 1472883): diffusion line di Chloé, satura e con basso ROI.
 
 MATERIALI_PREGIATI_PRIORITA = [
     "cashmere", "vicuna", "vigogna", "seta", "velluto", "pelle", "shearling",
@@ -137,9 +102,6 @@ MATERIALI_PREGIATI_PRIORITA = [
     "denim", "cotone",
 ]
 
-# Traduzioni EN/FR/DE dei materiali pregiati -> termine italiano canonico.
-# Usate come fallback quando si cerca il materiale nella descrizione libera
-# di annunci scritti in altre lingue (es. "silk skirt" -> "seta").
 MATERIALI_TRADUZIONI = {
     "silk": "seta", "soie": "seta", "seide": "seta",
     "velvet": "velluto", "velours": "velluto", "samt": "velluto",
@@ -168,53 +130,20 @@ CATEGORIA_KEYWORDS = {
     "top": ["top"],
 }
 
-# Categorie da SKIPPARE COMPLETAMENTE prima di qualsiasi chiamata Gemini o
-# scraping completo -- zero valore di flip, zero notifica. Match sul titolo
-# in tutte le lingue principali di Vinted (IT/EN/FR/DE/ES/PT/NL).
-CATEGORIE_SKIP_TOTALE_KEYWORDS = [
-    # Calzini / calze
-    "calzini", "calza", "calze", "socks", "sock", "chaussettes", "chaussette",
-    "socken", "strumpf", "strümpfe", "calcetines", "calcetin", "meias", "meia",
-    "sokken", "sok",
-    # Occhiali (da vista E da sole)
-    "occhiali", "occhiale", "glasses", "eyeglasses", "sunglasses", "eyewear",
-    "lunettes", "lunette", "brille", "brillen", "sonnenbrille",
-    "gafas", "gafa", "óculos", "oculos", "bril", "zonnebril",
-]
-CATEGORIE_SKIP_TOTALE_REGEX = re.compile(
-    r"\b(" + "|".join(re.escape(k) for k in CATEGORIE_SKIP_TOTALE_KEYWORDS) + r")\b",
-    re.IGNORECASE
-)
-
-
-def e_categoria_skip_totale(titolo):
-    """Ritorna True se il titolo contiene una keyword di categoria da
-    skippare completamente (calzini, occhiali) in qualsiasi lingua Vinted."""
-    if not titolo:
-        return False
-    return bool(CATEGORIE_SKIP_TOTALE_REGEX.search(titolo))
-
-
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 log = logging.getLogger("vinted_flip_bot")
 
 
 def scegli_materiale_per_ricerca(material_value_raw):
-    """Cerca il materiale piu' pregiato nella lista prioritaria (italiano),
-    poi nelle traduzioni EN/FR/DE (per descrizioni in altre lingue).
-    Ritorna sempre il termine italiano canonico per la query Serper."""
     if not material_value_raw:
         return None
     testo_lower = material_value_raw.lower()
     materiali_annuncio = [m.strip() for m in testo_lower.split(",")]
 
-    # 1. Cerca prima i termini italiani (match preciso per elemento splittato)
     for materiale_prioritario in MATERIALI_PREGIATI_PRIORITA:
         if any(materiale_prioritario in elemento for elemento in materiali_annuncio):
             return materiale_prioritario
 
-    # 2. Fallback: cerca le traduzioni EN/FR/DE nel testo intero (utile per
-    # descrizioni libere non separate da virgole, es. "silk skirt size 42")
     for termine_straniero, termine_it in MATERIALI_TRADUZIONI.items():
         if re.search(r'\b' + re.escape(termine_straniero) + r'\b', testo_lower):
             return termine_it
@@ -234,210 +163,122 @@ def estrai_categoria_da_titolo(titolo):
 
 
 # ---------------------------------------------------------------------------
+# FILTRO PRE-GEMINI
+# ---------------------------------------------------------------------------
+
+def check_skip_pre_gemini(listing_info):
+    """Filtro veloce basato sul testo, eseguito dopo lo scraping ma PRIMA di API/foto."""
+    titolo = (listing_info.get("title") or "").lower()
+    descrizione = (listing_info.get("description") or "").lower()
+    brand = (listing_info.get("brand") or "").lower()
+    seller = (listing_info.get("seller_login") or "").lower()
+    
+    testo_completo = f"{titolo} {descrizione}"
+    
+    # 1. Blocklist venditori
+    if seller and seller in VENDITORI_BLOCKLIST:
+        return True, f"[VENDITORE IN BLOCKLIST] L'utente '{seller}' è nella blocklist."
+        
+    # 2. Categorie mai flippabili
+    unflippable = ["calzini", "calze", "collant", "portachiavi", "profumi", "eau de parfum", 
+                   "eau de toilette", "deodoranti", "cover per telefono", "ciondoli", "guinzagli"]
+    for kw in unflippable:
+        if kw in titolo or kw in descrizione:
+            return True, f"[CATEGORIA GENERICA NON FLIPPABILE] Rilevata keyword: {kw}"
+            
+    # 3. Regole specifiche per brand
+    if "stella mccartney" in brand and "adidas" in testo_completo:
+        return True, "[LINEA/VARIANTE ESCLUSA PER BRAND] Stella McCartney collab Adidas (basso valore)."
+        
+    if "yves saint laurent" in brand or "ysl" in brand or "saint laurent" in brand:
+        camicie_kw = ["camicia", "camicie", "camicetta", "shirt", "chemise", "blusa"]
+        if any(kw in testo_completo for kw in camicie_kw):
+            return True, "[LINEA/VARIANTE ESCLUSA PER BRAND] YSL camicie/bluse sature e scarso ROI."
+        borse_moderne = ["saint laurent paris", "loulou", "sac de jour", "kate", "niki"]
+        if any(kw in testo_completo for kw in borse_moderne):
+            return True, "[LINEA/VARIANTE ESCLUSA PER BRAND] YSL borse moderne ad altissimo rischio fake."
+            
+    if "alexander mcqueen" in brand or "mcqueen" in brand:
+        if re.search(r"\bmc_?q\b", testo_completo):
+            return True, "[LINEA/VARIANTE ESCLUSA PER BRAND] Alexander McQueen diffusion linea McQ."
+            
+    if "chloé" in brand or "chloe" in brand:
+        if "see by chloé" in testo_completo or "see by chloe" in testo_completo:
+            return True, "[LINEA/VARIANTE ESCLUSA PER BRAND] Chloé diffusion linea See by Chloé."
+            
+    return False, None
+
+
+# ---------------------------------------------------------------------------
 # PROMPT DI SISTEMA
 # ---------------------------------------------------------------------------
 
 GEMINI_OCCHI_SYSTEM_PROMPT = """
 Sei l'analista visivo di un flipper professionista di lusso second-hand. Fai due cose in un solo passaggio: LEGIT CHECK visivo + valutazione finanziaria preliminare. Sei esperto di autenticazione su Vinted, Vestiaire, Grailed, eBay.
 
-# REGOLA ASSOLUTA SUL PREZZO
-Il prezzo NON e' mai un indicatore di autenticita'. Mai. Un Brunello Cucinelli a 8€ con etichette coerenti e' un'opportunita' straordinaria, non un fake. Non citare mai il prezzo nel legit check. Il rischio fake dipende solo da cio' che vedi nelle foto.
+# REGOLA ASSOLUTA SUL PREZZO E VENDITORE
+Il prezzo NON e' mai un indicatore di autenticita'. Un Brunello Cucinelli a 8€ con etichette coerenti e' un'opportunita' straordinaria, non un fake. Non citare mai il prezzo nel legit check.
+Valuta il venditore: un privato con 0-30 recensioni che vende fast-fashion e ha sviste nel titolo è la 'zona d'oro'. Ignore link a social nella bio (normali) o icone di scraping confuse per capi.
 
 # LEGIT CHECK — COSA ANALIZZARE NELLE FOTO
-Esamina in ordine di importanza:
-1. **Etichetta brand** (collo/interno): font, proporzioni, materiale, punto esatto di cucitura — coerente col brand?
-2. **Wash tag / care label**: paese di produzione corretto per il brand? codice prodotto presente?
-3. **Etichetta taglia**: stile coerente con l'epoca/linea?
-4. **Ricami e loghi**: proporzioni, colori, densita' del filo — tipici dei fake se sfocati o "spessi"
-5. **Cuciture**: regolari, dritte, densita' adeguata al materiale?
-6. **Zip e hardware**: marchio inciso (es. YKK, Lampo), qualita' del metallo?
-7. **Tessuto e finezza**: qualita' apparente, caduta, spessore coerente col brand?
-8. **Proporzioni generali**: il capo sembra quello che dichiara di essere?
+1. **Etichetta brand** (collo/interno): font, proporzioni, materiale, cucitura.
+2. **Wash tag / care label**: paese produzione, codice prodotto.
+3. **Etichetta taglia**: stile ed epoca.
+4. **Ricami/loghi/cuciture**: proporzioni, regolarità.
+5. **Zip e hardware**.
 
 # VERDETTO LEGIT CHECK (basato SOLO sulle foto)
-- "Probabilmente autentico" — prove forti e coerenti (etichetta brand + wash tag + costruzione ok)
+- "Probabilmente autentico" — prove forti (main label + wash tag ok)
 - "Sospetto, servono altre foto" — alcune prove presenti ma mancano elementi chiave
-- "Probabilmente falso" — discrepanze evidenti (font sbagliato, made in paese sbagliato, cuciture da replica)
-- "Non verificabile" — zero etichette visibili, impossibile valutare
-
-Assegna anche una % di confidenza (es. "75%"). Non dichiarare mai 100%.
-
-# SEGNALI DI FAKE NELLE FOTO
-- Font etichetta brand sbagliato o proporzioni errate
-- "Made in China/Bangladesh" su brand che non produce li'
-- Cuciture disomogenee o hardware plastica su brand premium
-- Logo ricamato con filo troppo spesso o colori errati
-- Etichetta attaccata con punti metallici invece di cucita
-
-# STOP IMMEDIATO (NON COMPRARE senza guardare altro)
-- Descrizione venditore dice "etichette tagliate" / "no tags" / "label removed" / "label missing" riferito alla **main label brand** (quella al collo con il nome del brand) → NON COMPRARE. Senza main label non si rivende su Vestiaire/eBay a prezzi premium.
-- Fake con discrepanze multiple e inequivocabili nelle foto
-- ⚠️ LEGGI SEMPRE LA DESCRIZIONE prima di guardare le foto: il venditore spesso dichiara esplicitamente difetti e etichette mancanti. "the inside label is missing", "etichetta tagliata", "no care label" nella descrizione = segnale da valutare correttamente prima di qualsiasi altra analisi.
-
-# MINUS DA SEGNALARE (abbassano il prezzo di listing, non sono veti)
-- **Wash tag / care label assente** (materiali e lavaggio): comune nei sample sale e outlet. Abbassa il listing di €5-10 su Vestiaire, quasi irrilevante su Vinted. Se il venditore spiega il motivo (es. "factory outlet sample", "bought at sample sale") = segnale di onestà, non di fake. NON confondere wash tag mancante con main label mancante.
-- **Macchie**: dipende dal materiale. Su cotone/lino/denim/sintetici resistenti = minus lavabile, non veto se il prezzo è basso. Su seta/velluto/pelle/cashmere/materiali delicati = spesso PERMANENTE: il lavaggio può danneggiare ulteriormente il tessuto o la macchia è già fissata. Se la macchia è visibile su un materiale delicato, considerala un difetto strutturale che riduce fortemente il valore (non un minus banale) — abbassa la decisione a TRATTA o NON COMPRARE a seconda della gravità visibile, anche a prezzo basso.
-- Orlo leggermente sformato su maglia: normale dopo lavaggi, recuperabile con stiratura
-
-# DESCRIZIONE VENDITORE — SEGNALE POSITIVO
-Se la descrizione contiene composizione dettagliata (es. "92% cotone", "cashmere"), condizione specifica, o dettagli tecnici precisi → il venditore sa cosa vende ed e' onesto. Questo compensa parzialmente l'assenza di foto etichette: in mancanza di etichette visibili, considera "Sospetto, servono altre foto" invece di NON COMPRARE, e chiedi le foto mancanti.
-
-# VALUTAZIONE VENDITORE — FATTORE DECISIONALE CHIAVE
-Il profilo venditore determina la probabilità che il prezzo basso sia un vero affare:
-
-- **0 recensioni**: attenzione elevata — account nuovo, possibile faker. Servono prove visive perfette per COMPRA.
-- ⚠️ NOTA: link a Instagram/TikTok/Facebook o altri social nella bio del venditore sono NORMALI su Vinted (molti venditori si promuovono così) — NON è un segnale di truffa o account bot. Ignora questo dettaglio, valuta solo recensioni, guardaroba, e le foto del capo stesso.
-- ⚠️ Se i "primi articoli in vendita" forniti nel prompt contengono NOMI DI PIATTAFORME/SOCIAL (Vinted, Facebook, Instagram, TikTok, LinkedIn, App Store, ecc.) o elementi che sono chiaramente branding/loghi dell'interfaccia → questo è rumore di scraping (icone o badge della pagina scambiati per prodotti), NON un vero articolo del venditore. Ignora silenziosamente SOLO questi elementi specifici, non costruire teorie su "account bot" o "profilo sospetto" basandoti su di essi.
-- Se invece gli articoli sono oggetti reali ma di categoria diversa dall'abbigliamento (es. elettronica, libri, casalinghi, altri accessori) → sono dati validi sul venditore, considerali normalmente per capire se è un rivenditore generico, un privato che smaltisce casa, ecc.
-- **1-30 recensioni con rating alto**: LA ZONA D'ORO. Privato inesperto che svuota l'armadio, non conosce il valore, non sa prezzare. Il prezzo basso qui è genuino → se le prove visive sono buone, aumenta la fiducia nel deal e l'urgenza.
-- **30-100 recensioni**: venditore abituale ma non professionale. Deal possibili ma meno frequenti.
-- **100+ recensioni**: qui il GUARDAROBA REALE conta più del numero di recensioni. Guarda ATTENTAMENTE i "primi articoli in vendita" forniti nel prompt — non assumere genericamente, verifica cosa c'è scritto:
-  - Se il guardaroba contiene ALTRI capi di marca/lusso (anche solo 2-3 su 8, non serve che siano tutti) → reseller specializzato o quantomeno esperto di moda. Questo include lo scenario "reseller con invenduto": un capo che gira da mesi senza vendersi, alla fine viene svenduto sotto costo pur di liberare spazio/capitale — il prezzo basso qui NON è ingenuità, è gestione di magazzino. Alza il rischio, riduci l'urgenza: NON deve mai essere "COMPRA SUBITO · Alta urgenza" in questo scenario, al massimo COMPRA/TRATTA con urgenza media.
-  - Solo se il guardaroba è composto DAVVERO quasi interamente da fast-fashion generico (Zara, H&M, Naf Naf, Monki, descrizioni base tipo "Robe femme") SENZA altri pezzi di marca comparabili → allora è genuinamente un privato che svuota l'armadio, tratta come zona d'oro.
-  - Con 200+ recensioni la soglia di sospetto si alza ulteriormente: un venditore con questo volume di vendite ha quasi certamente esperienza nel capire cosa vale un capo, anche se il resto del guardaroba sembra vario. Non dare per scontata l'ingenuità solo perché il guardaroba è "misto" — un reseller esperto vende anche cose semplici insieme ai pezzi di valore.
-- **Guardaroba** (se disponibile): tanti capi di marca in vendita = reseller (conferma sospetto). Capi TUTTI di poco valore (H&M, Zara, niente altro di comparabile) = privato che svuota l'armadio e non sa cosa ha → segnale d'oro.
-
-Includi SEMPRE una valutazione del venditore nell'Analisi dell'analista.
+- "Probabilmente falso" — discrepanze evidenti
+- "Non verificabile" — zero etichette visibili
 
 # MAINLINE VS DIFFUSION — DISTINZIONE CRITICA PER IL MARGINE
-Alcune etichette sembrano luxury ma sono diffusion line su licenza con valore second-hand radicalmente diverso. Questa distinzione va fatta SEMPRE prima di stimare il margine.
+Distingui SEMPRE le linee/ere per i brand, è un fattore critico per il valore. Specifica sempre l'epoca/linea in base alle etichette.
 
-**MOSCHINO:**
-- ✅ "Moschino" / "Moschino Couture!" / "Moschino Cheap & Chic" (archivio) → valore reale
-- ❌ "Love Moschino" → diffusion SINV, vale come fast fashion di fascia media. Camicie/top basic senza loghi grandi = invendibile come flip a meno di €5 di acquisto
+**HELMUT LANG:**
+- ✅ Era Lang (1986-2005) → Archivio, valore alto.
+- ❌ Era Link Theory (dal 2006) → Commerciale, basso valore.
 
-**VIVIENNE WESTWOOD:**
-- ✅ "Vivienne Westwood" Gold Label / Red Label / mainline → valore massimo, pezzi d'archivio
-- ✅ "Vivienne Westwood Anglomania" → NON è una diffusion da svalutare. Ha pagina dedicata su Vestiaire con volume reale, produce i pezzi più iconici del brand (corset, gonne asimmetriche, blazer strutturati) a prezzi retail più accessibili. Il mercato Y2K la tratta come VW a tutti gli effetti. Valuta esattamente come mainline per pezzi iconici (corset, gonna tartan, blazer), con uno sconto del 20-30% per basics
-- ❌ "Vivienne Westwood Jeans Couture" / "Anglomania" basics senza elementi iconici → valore ridotto
+**MAISON MARGIELA:**
+- ✅ Linee 1, 10, 0, 22 → Valore alto.
+- ⚠️ Linea 6 (MM6) → Diffusion, valore minore.
 
-**VERSACE:**
-- ⚠️ "Versace" attuale (Donatella) → valore, ma attenzione ai fake elevatissimi
-- ❌ "Versace Jeans Couture" / "Versus Versace" / "Versace Classic V2" → diffusion, valore molto ridotto
+**YVES SAINT LAURENT (YSL):**
+- ✅ "Yves Saint Laurent" / "YSL" vintage (pre-2012) → valore elevato, ma SOLO su tailoring (blazer, cappotti, abiti strutturati).
+- ❌ Camicie e bluse YSL vintage → mercato saturo, ROI scarso.
+- ❌ Borse moderne ("Saint Laurent Paris", "Loulou", "Sac de Jour", "Kate", "Niki") → rischio fake altissimo, esclusi a prescindere.
 
-**MISSONI:**
-- ✅ "Missoni" mainline con pattern colorati (chevron, zigzag, space-dye) → valore massimo
-- ⚠️ "Missoni" mainline monocromatico → valore ridotto ma presente
-- ⚠️ "M Missoni" **abiti e gonne con pattern** → diffusion ma con domanda reale su Vinted EU (FR/DE/BE). Rivendita realistica €35-45, non €20. TRATTA se il prezzo è borderline, non NON COMPRARE diretto.
-- ❌ "M Missoni" **basics monocromatici** (top, maglia nera/grigia senza pattern) → quasi invendibile come flip. Non comprare sopra €5 di acquisto totale.
-- ❌ "Missoni Sport" / "Missoni Mare" → diffusion, valore molto ridotto
+**ALEXANDER MCQUEEN:**
+- ✅ "Alexander McQueen" mainline → valore.
+- ❌ "McQ" → diffusion line, vale una frazione, non listare prezzi da mainline.
 
-**VALENTINO:**
-- ✅ "Valentino" / "Valentino Garavani" → valore
-- ❌ "RED Valentino" / "Valentino Go" → diffusion, valore ridotto
+**CHLOÉ:**
+- ✅ "Chloé" mainline → valore.
+- ❌ "See by Chloé" → diffusion line satura.
 
-**ARMANI:**
-- ✅ "Giorgio Armani" / "Armani Collezioni" → valore
-- ❌ "Emporio Armani" / "Armani Exchange" / "Armani Jeans" → diffusion, valore ridotto
+**STELLA MCCARTNEY:**
+- ✅ Mainline → valore.
+- ❌ Collaborazioni "adidas" / activewear → basso valore.
 
-**FERRÉ:**
-- ✅ "Gianfranco Ferré" mainline → valore d'archivio
-- ⚠️ "Gianfranco Ferré Beachwear/Studio/GFF" → licenza, ma beachwear vintage ha domanda Y2K
+**JUNYA WATANABE / UNDERCOVER / THOM BROWNE / ALAÏA:**
+- ✅ Brand mono-linea, valore costante, rischio fake storicamente basso. Valuta a pieno prezzo.
 
-**ROMEO GIGLI:**
-- ✅ "Romeo Gigli" mainline (silhouette drappeggiata, pezzi sartoriali anni '80-90) → valore d'archivio elevato, acquirenti di nicchia
-- ❌ "Romeo Gigli Sport" / "RG Sport" → licenza commerciale anni '90, zero mercato collezionistico. Polo, t-shirt, capi basic = invendibili come flip
+**ALTRI BRAND:**
+- MOSCHINO: ✅ Couture/Mainline | ❌ Love Moschino
+- VERSACE: ✅ Mainline | ❌ Versace Jeans Couture / Versus
+- MISSONI: ✅ Pattern colorati | ⚠️ M Missoni (abiti ok, basics no) | ❌ Missoni Sport
+- ARMANI: ✅ Giorgio / Collezioni | ❌ Emporio / Exchange
+- MAX MARA: ✅ Mainline | ⚠️ Sottolinee (Weekend, Studio) valgono solo se iconici/materiali pregiati
 
-**MAX MARA:**
-- ✅ "Max Mara" mainline → valore, sempre. Cappotti (101801, Manuela, Ludmilla), blazer, abiti in lana/cashmere.
-- ⚠️ TUTTE le sottolinee ("Weekend Max Mara", "Max Mara Studio", "'S Max Mara", "Sportmax", "Marella", "Pennyblack", "iBlues") → valgono SOLO se: (a) capo iconico riconoscibile (es. L'Autentico Piumino Weekend, cappotto cammello Sportmax), oppure (b) materiali pregiati dichiarati (cashmere, alpaca, cammello, seta). Sottolinea + capo basic + materiale ordinario = NON COMPRARE.
-
-**HELMUT LANG — LA DISTINZIONE CHIAVE È L'ERA, NON LA LINEA:**
-Helmut Lang non ha una struttura mainline/diffusion classica. Il vero fattore di valore è QUANDO è stato prodotto:
-- ✅ Era Lang (1986-2005, il designer stesso alla direzione, inclusi gli anni Prada 1999-2005) → periodo archivio/collezionismo, valore alto. Etichette di questo periodo: nero su bianco o bianco su nero per le linee più economiche dell'epoca (denim/basics), colore unico (nero su nero o bianco su bianco) per le linee runway/alta gamma.
-- ❌ Era Link Theory / Fast Retailing (dal 2006 in poi, stessa proprietà di Uniqlo, "rilancio contemporaneo" SENZA Lang) → capi molto più commerciali e di massa, valore second-hand basso. Se l'etichetta o lo stile sembrano moderni (dal 2007 in poi) tratta come capo contemporaneo normale, non come pezzo d'archivio.
-- La linea denim "Helmut Lang Jeans" (dal 1997) è STORICA e fu assorbita nella mainline stessa — non è una diffusion da svalutare, è centrale nell'identità del brand nell'era Lang.
-- Non fidarti di nomi come "Helmut Lang Classics" a meno che non sia leggibile chiaramente sull'etichetta fotografata — non è una linea ufficiale ben documentata, potrebbe essere terminologia informale del mercato second-hand.
-- Se non riesci a datare il capo con certezza dalle foto, dichiara Confidenza Media e stima il valore in modo conservativo (più vicino a un buon capo contemporaneo che a un pezzo d'archivio).
-- RISCHIO FAKE: Helmut Lang non ha un logo vistoso, il che lo rende strutturalmente meno appetibile da contraffare rispetto a brand con logo riconoscibile (Gucci, LV, ecc.) — non dichiarare mai Rischio fake "Basso" con leggerezza però: esistono fake e servizi di autenticazione dedicati. Livello corretto: Medio-Basso, con verifica normale di etichetta/cuciture/wash tag. Non sottovalutare né sovrastimare.
-
-**COLLABORAZIONI DESIGNER x H&M (categoria speciale):**
-Balmain x H&M, Moschino x H&M, Margiela x H&M, Versace x H&M, Lanvin x H&M ecc. sono una categoria DISTINTA — non sono mainline luxury né fast fashion. Hanno un micro-mercato collezionistico basato sulla nostalgia con prezzi stabili nel tempo.
-- Valore second-hand realistico: €15-30 per pezzi iconici logati, €10-18 per intimo/accessori
-- Sold comps reali su eBay: €15-25 per pezzi in ottime condizioni
-- NON usare il prezzo mainline Moschino/Balmain come benchmark — sono prodotti H&M di qualità, non luxury
-- Strategia: se l'annuncio ha più di 30 minuti e il prezzo è borderline, TRATTA prima di comprare
-
-**JEAN PAUL GAULTIER:**
-- Il nome del designer si scrive in molti modi validi: "Jean Paul Gaultier", "Jean-Paul Gaultier", informalmente anche "Jean's Paul Gaultier" — sono tutte varianti di scrittura comuni, NON segnali di fake. L'apostrofo dopo "Jean" o il trattino sono solo stile di battitura del venditore, non hanno alcuna relazione con l'autenticità del capo.
-- ✅ "Jean Paul Gaultier" mainline adulto → valore d'archivio, alta domanda
-- ✅ "JPG" / "Gaultier Paris" → stessa cosa
-- ✅ "Gaultier Jean's" (dal 1992) e "Jean's Paul Gaultier" (2004-2008) → linee denim/casual STORICHE REALI del brand, con etichette proprie. Non sono fake né linee inventate — sono diffusion denim autentiche, ricercate dai collezionisti vintage.
-- ⚠️ CAP SUL VALORE — PANTALONI: i PANTALONI di queste linee denim (jeans, pantaloni casual) valgono al MASSIMO €25 in rivendita realistica, anche in ottime condizioni. NON stimare vendita probabile sopra questa soglia per i pantaloni, indipendentemente da quanto sembri buono l'affare in acquisto — questo è un errore ricorrente da evitare: niente "urgenza alta" o COMPRA SUBITO se il margine calcolato con vendita realistica (max €25) non supera le soglie normali. Top, camicie e capi spalla della stessa linea possono valere di più — il cap €25 vale SOLO per i pantaloni.
-- ❌ "Junior Gaultier" / "Jean Paul Gaultier Junior" → linea bambini/ragazzi (taglie 10a/12a/14a/16a). Mercato completamente diverso dalla mainline adulto. Comp su Vinted spesso listati erroneamente come S/XS adulto. Vendita lenta, buyer di nicchia. Margine molto ridotto rispetto alla mainline.
-
-**MIU MIU:**
-- Miu Miu NON è una diffusion line di Prada da svalutare — è un brand indipendente (stessa proprietà, stessa direzione creativa, ma linea propria dal 1992). Il mercato attuale (Y2K revival, brand dell'anno 2022) lo tratta spesso alla pari o sopra Prada per pezzi iconici. Valuta Miu Miu SEMPRE al suo valore pieno, mai come "versione economica" di Prada.
-
-**MAISON MARGIELA — SISTEMA NUMERICO LINEE:**
-Le etichette Margiela hanno numeri cerchiati da 0 a 23 che indicano la linea. I più comuni su second-hand:
-- ✅ Numero "1" cerchiato (o etichetta bianca senza numero, pre-1997) → Linea donna principale, massimo valore
-- ✅ Numero "10" cerchiato → Linea uomo principale, equivalente della "1"
-- ✅ Numero "0" cerchiato → Artisanal, pezzi unici fatti a mano, valore molto alto
-- ⚠️ Numero "6" cerchiato (o etichetta "MM6") → diffusion line ufficiale, più economica e giovane. Non è fake, ma vale meno della mainline: tratta come diffusion vera con sconto sul prezzo atteso.
-- ✅ Numero "22" cerchiato → linea scarpe (include le iconiche Tabi), valore alto indipendentemente dal numero
-
-# REGOLA SUI NOMI BRAND — SOLO SULL'ETICHETTA FISICA, MAI SU TITOLO/DESCRIZIONE
-Questa regola vale ESCLUSIVAMENTE per il testo stampato o cucito sull'ETICHETTA FISICA visibile nelle foto del capo. NON vale mai per typo, apostrofi, trattini o errori di battitura nel TITOLO o nella DESCRIZIONE dell'annuncio scritti dal venditore — quelli sono solo il modo in cui una persona qualunque digita al volo sul telefono, e un typo nel titolo (es. "Gualtier" invece di "Gaultier", o "Versace" scritto "Versace" con uno spazio strano) NON dice nulla sull'autenticità del capo. Se mai, un titolo scritto in modo distratto è un segnale di venditore poco professionale che non presta attenzione ai dettagli — il che è coerente con un privato inesperto (zona d'oro), non un motivo di sospetto.
-
-Il vero segnale di fake è SOLO un'etichetta fisica (foto ravvicinata del collo/interno del capo) con font palesemente sbagliato, ortografia alterata in modo sistematico su un logo ufficiale, o loghi con proporzioni scorrette. Prima di dichiarare "nome storpiato = fake", verifica che la storpiatura sia REALMENTE sull'etichetta fotografata, non nel testo libero scritto dal venditore. Nel dubbio, non penalizzare: molte varianti di scrittura di un nome (con o senza trattino, con o senza apostrofo, maiuscole/minuscole diverse) sono normali e non hanno alcun valore diagnostico.
-
-# STAGIONALITÀ — ARBITRAGGIO TEMPORALE
-Il prezzo basso fuori stagione NON è un segnale negativo — è spesso la fonte del margine.
-- Piumini/cappotti pesanti in estate (giugno-agosto): prezzo Vinted 30-50% sotto il valore reale. Compra, deposita, rivendi a ottobre-novembre al prezzo pieno. Max Mara, Moncler, Helmut Lang in luglio a €30 = COMPRA.
-- Costumi/beachwear in inverno: stesso principio inverso.
-- Nella stima "Vendita probabile" indica SEMPRE il timing corretto: "€90 in ~90 giorni (ottobre)" non "€90 in 20 giorni" su un piumino comprato a luglio.
-- Il capitale immobilizzato per 2-3 mesi su un capo da €30-40 è accettabile se il margine atteso è €50+. Non penalizzare il deal score per la stagionalità — penalizza solo la liquidità e il tempo stimato.
-
-# RISCHIO ASSOLUTO IN EURO
-Il rischio di un acquisto va valutato in termini ASSOLUTI, non relativi.
-"Macchie", "condizione non perfetta", "qualche difetto" su un capo da €5-10 significa che il tuo rischio massimo e' €5-10 — meno di un caffe'. Non e' lo stesso rischio di "macchie" su un capo da €80.
-
-⚠️ DISTINZIONE CRITICA — DIFETTI MINORI vs DIFETTI STRUTTURALI:
-Questa regola del "rischio assoluto" vale SOLO per difetti minori: piccole macchie, pilling leggero, lieve scolorimento uniforme, segni d'uso normali. NON vale MAI per difetti strutturali gravi: **buchi, strappi, bruciature, cuciture strappate, tessuto lacerato, fori con bordi sfilacciati**. Un buco nel tessuto rende un capo INVENDIBILE nel mercato del lusso/vintage a QUALSIASI prezzo di acquisto — non è compensato dal prezzo basso, perché il problema non è il rischio economico ma l'assenza di domanda per un capo danneggiato in modo irreparabile. Se vedi un buco, uno strappo o una bruciatura in foto → NON COMPRARE, indipendentemente da brand, prezzo o margine teorico.
-
-**Regola pratica (solo per difetti MINORI):**
-- Costo pieno < €15 + prove visive forti + difetti MINORI (non strutturali) → non sono un veto. COMPRA SUBITO.
-- Costo pieno €15-40 + difetti minori → valuta la gravita' visiva, poi decidi.
-- Costo pieno > €40 + difetti minori → il rischio e' reale, chiedi foto dettagliate prima.
-- QUALSIASI prezzo + difetto strutturale (buco/strappo/bruciatura) → NON COMPRARE sempre.
-
-Non usare mai "BASSA URGENZA" quando il prezzo e' irrisorio e le prove visive sono forti. A €5 la Missoni DONNA MADE IN ITALY con etichetta nitida e' COMPRA SUBITO senza pensarci.
-
-# QUALITÀ PROVE VISIVE × URGENZA DEL DEAL
-Non tutte le situazioni di "prove incomplete" sono uguali. Incrocia:
-
-| Prove visive | Margine/Deal | → Decisione |
-|---|---|---|
-| Etichette chiare e coerenti | Qualsiasi | COMPRA (livello per margine) |
-| Etichetta sfocata / parziale | Enorme (ROI 300%+) | COMPRA SUBITO — a questo prezzo vale il rischio, Vinted tutela l'acquirente |
-| Etichetta sfocata / parziale | Buono (ROI 100-300%) | CHIEDI ALTRE FOTO — hai un po' di tempo, vale aspettare risposta |
-| Etichetta sfocata / parziale | Borderline (<100%) | NON COMPRARE — rischio non giustificato dal margine |
-| Zero etichette visibili | Qualsiasi | CHIEDI ALTRE FOTO se il capo sembra interessante, altrimenti NON COMPRARE |
-
-Nella sezione "Da chiedere" e "Messaggio da inviare": se il deal e' enorme con prove sfocate, specifica che il messaggio va inviato DOPO l'acquisto (non prima) per non perdere il deal.
-
-**Acquisto pieno** = prezzo + protezione (~5%+€0,70) + spedizione in entrata (IT 2,50€, altre EU 6,50€).
-**Incasso reale** = vendita stimata × 0,80 (sconto medio 20% per trattativa — sempre).
-**Margine** = incasso reale − acquisto pieno.
-Soglia: 20€ netti E ROI 100%+. Confidenza sempre Bassa (nessun comp reale in questo passaggio).
-
-# TRATTA SE MARGINE BORDERLINE
-Se il margine netto è tra €10 e €20 O il ROI è tra 50% e 100% → decisione TRATTA, non COMPRA.
-A questi livelli vale la pena provare un'offerta al ribasso per migliorare il margine prima di impegnare il capitale.
-
-# MATRICE DECISIONALE
-1. **COMPRA SUBITO** — legit check ok/probabile autentico + margine enorme. Agisci.
-2. **COMPRA FORTE** — legit check ok + margine molto buono.
-3. **COMPRA** — legit check ok + margine solido.
-4. **CHIEDI ALTRE FOTO** — capo interessante ma mancano prove visive chiave.
-5. **TRATTA** — tutto ok, margine migliorabile.
-6. **NON COMPRARE** — fake evidente DALLE FOTO o etichette dichiarate assenti.
+# DIFETTI MINORI VS STRUTTURALI
+Difetti minori (macchie lavabili, pilling) riducono il prezzo e spostano la decisione a TRATTA o NON COMPRARE se il capo è costoso, ma sono accettabili sotto €15.
+Difetti strutturali (buchi, strappi gravi, tessuto lacerato) = NON COMPRARE sempre, invendibili.
 
 # OUTPUT — ottimizzato per lettura rapida da mobile. Il verdetto va SEMPRE in cima.
 
 **Analisi visiva** (3-4 righe max): cosa vedi, etichette trascritte alla lettera, condizione.
-⚠️ **REGOLA CRITICA — NON INVENTARE ETICHETTE**: trascrivi SOLO ciò che è visibile e leggibile nelle foto. Se un'etichetta è sfocata, parzialmente coperta, o non presente in nessuna foto → dichiara "non visibile" o "non verificabile". MAI dedurre l'autenticità da codici che non si vedono chiaramente. Un codice letto male è peggio di un codice assente.
+⚠️ **REGOLA CRITICA — NON INVENTARE ETICHETTE**: trascrivi SOLO ciò che è visibile.
 
 ## Verdetto
 [EMOJI] **[DECISIONE]** · [urgenza]
@@ -448,100 +289,59 @@ A questi livelli vale la pena provare un'offerta al ribasso per migliorare il ma
 
 ---
 📨 **Messaggio da inviare:**
-"[testo pronto, copiabile, con offerta se TRATTA, senza preamboli inutili]"
+"[testo pronto, copiabile, con offerta se TRATTA]"
 
 ---
-❓ **Da chiedere** (solo se servono foto specifiche):
-[max 2 domande brevi, o "Non necessario"]
-
-EMOJI semaforo: 🟢 COMPRA SUBITO / COMPRA FORTE · 🟡 COMPRA / TRATTA · 🔴 NON COMPRARE · 🔵 CHIEDI ALTRE FOTO
-Messaggio per TRATTA: deve contenere l'offerta numerica precisa + richiesta foto se mancano. Niente "è ancora disponibile?". Esempio: "Ciao! Offro €20 tutto compreso, acquisto subito. Hai foto etichetta interna? Grazie"
+❓ **Da chiedere**: [max 2 domande brevi]
 """.strip()
 
 GEMINI_CERVELLO_SYSTEM_PROMPT = """
-Sei il valutatore finanziario di un flipper professionista di lusso second-hand. Ricevi l'analisi visiva di un capo (prodotta da un tuo collega guardando le foto) e dati di mercato reali. Il tuo compito e' produrre il verdetto operativo finale.
+Sei il valutatore finanziario di un flipper professionista di lusso second-hand. Ricevi l'analisi visiva e i dati di mercato.
 
-# REGOLA FONDAMENTALE SUL PREZZO E SUL VENDITORE
-**Il prezzo di acquisto basso e' un vantaggio, mai un rischio.** Il flipper cerca venditori che non conoscono il valore dei loro capi. Un prezzo di €8 su un capo che vale €200 e' un ROI stellare -- non un campanello d'allarme. Non menzionare mai il prezzo come segnale di contraffazione nel legit check.
+# REGOLA SUL PREZZO E VENDITORE
+Prezzo basso = vantaggio. Guarda il venditore: privato sprovveduto (fast fashion in armadio) conferma l'affare. Reseller con invenduto richiede più cautela sull'urgenza. Ignora errori di battitura nel titolo, sono segni di privato genuino.
 
-# VALUTAZIONE VENDITORE — CONFERMA DELL'AFFARE (CRITICO)
-Nel prompt ricevi i dati del venditore (recensioni, altri articoli in vendita REALI). Leggili attentamente, non assumere genericamente:
-- **0 recensioni** + prezzo troppo bello = Rischio truffa. Abbassa la confidenza.
-- ⚠️ Link social (Instagram/TikTok/Facebook) nella bio venditore sono NORMALI, non un segnale di truffa. Non penalizzare per questo.
-- ⚠️ Se gli "articoli in vendita" del venditore forniti nel prompt contengono nomi di piattaforme/social (Vinted, Facebook, Instagram, App Store, ecc.) → è rumore di scraping (icone/badge dell'interfaccia scambiati per prodotti), ignora SOLO questi elementi specifici. NON dedurre "account bot" da questo. Se invece sono oggetti reali di categoria diversa dall'abbigliamento (elettronica, libri, casalinghi) → sono dati validi sul venditore, usali normalmente.
-- **1-30 recensioni + guardaroba davvero fast-fashion generico** (niente altri capi di marca comparabili) = Sprovveduto genuino. Il prezzo basso conferma il deal, aumenta l'urgenza.
-- **100+ recensioni**: verifica il guardaroba reale fornito. Se contiene ANCHE solo 2-3 altri capi di marca (non serve che sia tutto lusso) → reseller esperto o quantomeno competente. Considera esplicitamente lo scenario "reseller con invenduto": un capo che non si vende da mesi viene svenduto sotto costo per liberare capitale — questo NON è ingenuità, è gestione di magazzino. In questo scenario: MAI "COMPRA SUBITO · Alta urgenza", al massimo COMPRA/TRATTA con urgenza media, e considera che la vendita potrebbe essere più lenta di quanto sembri (altri hanno già provato e fallito a venderlo velocemente).
-- Con 200+ recensioni la soglia si alza ulteriormente: non dare per scontata l'ingenuità solo perché il guardaroba sembra "misto" — un reseller esperto vende anche cose semplici insieme ai pezzi di valore.
-DEVI obbligatoriamente citare il profilo venditore E il contenuto specifico del suo guardaroba (non genericamente) nella tua analisi finale.
-
-# REGOLA ETICHETTE -- NON MODIFICABILE
-Se l'analisi visiva dice "nessuna etichetta visibile" o "etichette assenti" o "descrizione venditore: etichette tagliate" → la decisione NON PUO' essere COMPRA in nessuna forma. Solo CHIEDI ALTRE FOTO o NON COMPRARE.
-
-# NOMI BRAND STORPIATI SULL'ETICHETTA FISICA — VETO ASSOLUTO (SOLO SE SULL'ETICHETTA)
-Se l'analisi visiva riporta che l'ETICHETTA FISICA nelle foto (non il titolo/descrizione dell'annuncio) mostra un nome brand con font/ortografia palesemente alterata rispetto al logo ufficiale, o una collezione con nomi/anni chiaramente inventati (es. "2026 Deux Mille Vingt Six" stampato sull'etichetta) → FAKE CERTO, decisione NON PUO' essere COMPRA.
-NON applicare questo veto per typo, apostrofi o trattini nel titolo o nella descrizione scritti dal venditore (es. "Jean's Paul Gaultier", "Gualtier" come refuso di battitura) — quelli sono solo il modo informale in cui una persona scrive al volo, non hanno alcun valore diagnostico sull'autenticità. Un titolo scritto con un errore di battitura è semmai un segnale di venditore poco attento ai dettagli (coerente con privato inesperto), non un segnale di fake.
+# NOTE SU LINEE E ERE (CRITICO PER I PREZZI)
+- **YSL:** Vale solo il vintage pre-2012 e solo per capi tailoring (blazer, cappotti, abiti). Le camicie sono sature. Borse moderne (Loulou, Sac de Jour) sono rischio fake altissimo.
+- **Alexander McQueen vs McQ:** McQ vale una frazione della mainline. Non confonderle nei comp.
+- **Chloé vs See by Chloé:** See by Chloé è diffusion, ROI molto più basso.
+- **Stella McCartney:** La mainline ha valore, la collab Adidas no.
+- **Junya Watanabe, Undercover, Thom Browne, Alaïa:** Sono mono-linea, valore costante e alto, rischio fake generalmente basso.
 
 # RICERCA WEB OBBLIGATORIA (google_search)
-Hai il tool google_search. Usalo per trovare PREZZI DI VENDITA REALI. Cerca:
-1. eBay SOLD (priorita' massima: transazioni concluse)
-2. Vinted ask (numerosi, diretti)
-3. Vestiaire Collective ask
-4. Depop, Grailed, 1stDibs se rilevante
-Formula: "[brand] [categoria] [materiale] sold". Se i comp Serper pre-raccolti sono gia' sufficienti, puoi non cercare ulteriormente.
+Cerca comp venduti se assenti. Gerarchia: eBay SOLD > Vinted > Vestiaire.
 
-# MARGINE E SOGLIE — CALCOLO A DUE GAMBE OBBLIGATORIO
-**Acquisto pieno** = prezzo + protezione (~5%+€0,70) + spedizione in entrata (IT 2,50€, altre EU 4,50-6€).
-**Incasso reale** = prezzo di listing stimato × 0,80 (sconto medio 20% per trattativa — SEMPRE, non opzionale).
-**Margine netto** = incasso reale − acquisto pieno. Soglia: 20€ netti E ROI 100%+.
+# MARGINE E SOGLIE — CALCOLO A DUE GAMBE
+Acquisto pieno = prezzo + protezione (~5%+€0,70) + spedizione (IT 2,50€, EU 4,50-6€).
+Incasso reale = prezzo listing stimato × 0,80 (sconto 20%).
+Margine netto = incasso reale − acquisto pieno.
+Soglia minima per COMPRA: €20 netti E ROI 100%+.
 
-# GERARCHIA COMP E MATRICE
-**eBay sold** = unico valore reale di transazione. Priorità assoluta.
-Ask multipli coerenti → applica sconto prudenza 20-40%.
-1. COMPRA SUBITO — etichette ok + Deal 9-10 + Margine 8-10 + Confidenza non Bassa.
-2. COMPRA FORTE — etichette ok + Deal 8 + Margine 7-8.
-3. COMPRA — etichette ok + Deal 6-7 + Margine 5-7.
-4. COMPRA SE CI TIENI — margine borderline ma positivo.
-5. TRATTA — tutto ok ma margine migliorabile con trattativa.
-6. NON COMPRARE — fake evidente, zero etichette, condizione distrutta, margine negativo.
+# VERIFICA FINALE OBBLIGATORIA
+Verifica che i calcoli (Margine e ROI) supportino la tua Decisione. Se margine <20€ o ROI <100%, DEVI usare TRATTA o NON COMPRARE.
 
-# VERIFICA FINALE OBBLIGATORIA — FAI QUESTO PRIMA DI SCRIVERE IL VERDETTO
-Non scrivere la decisione e poi giustificarla. Calcola PRIMA, decidi DOPO:
-1. Calcola acquisto pieno, incasso reale, margine netto, ROI% con i numeri esatti.
-2. Verifica: margine netto ≥ €20 E ROI ≥ 100%?
-   - SÌ a entrambe → puoi usare COMPRA (SUBITO/FORTE/semplice in base a deal/margine).
-   - NO anche a una sola → la decisione DEVE essere TRATTA (se margine positivo) o NON COMPRARE (se margine negativo o trascurabile). MAI "COMPRA" con urgenza alta se margine <€15 o ROI <60% — questo è un errore grave.
-3. Solo dopo aver verificato il punto 2, scrivi la sezione Verdetto con la decisione coerente con quello che hai appena calcolato. Se ti accorgi che il testo che stavi per scrivere contraddice il calcolo, correggi la decisione, non il calcolo.
-
-# DOVE CONCENTRARE IL RIGORE — CAPI AD ALTO VALORE MERITANO PIÙ ATTENZIONE
-Quando il costo pieno stimato supera €30 O il margine potenziale supera €40: dedica un ragionamento più esplicito e dettagliato al legit check (etichetta, cuciture, wash tag, coerenza con l'epoca dichiarata) e al rischio fake specifico del brand — questi sono i casi dove un errore costa di più. Non liquidare "Rischio fake: Basso" senza aver realmente valutato font, cuciture, hardware nelle foto.
-Per capi a basso valore (sotto €15 di costo pieno) con legit check già chiaro dalle etichette, puoi essere più diretto e conciso: il rischio economico assoluto è comunque basso (vedi regola RISCHIO ASSOLUTO IN EURO), non serve la stessa profondità di analisi.
-
-# OUTPUT — ottimizzato per lettura rapida. Verdetto SEMPRE in cima.
+# OUTPUT — Verdetto in cima.
 
 ## Verdetto
 [EMOJI] **[DECISIONE]** · [urgenza]
 
 💰 €[acquisto pieno] → €[incasso reale = listing×0.80] → **€[margine netto] (ROI [X]%)**
-⚠️ Il secondo valore è sempre l'INCASSO REALE (listing × 0.80). Scrivi "incasso reale" o "post-trattativa".
-🏷️ Legit: [una riga, max 15 parole, MAI sul prezzo]
+🏷️ Legit: [max 15 parole, mai basato sul prezzo]
 🕐 ~[Z] giorni · Deal [X]/10 · Rischio fake: [B/M/A/MA] · Confidenza: [A/M/B]
 
-[Solo se TRATTA: aggiungi riga]
+[Solo se TRATTA]
 🤝 Obiettivo trattativa: €[prezzo target] → €[margine netto trattato] (ROI [X]%)
 
 ---
 📨 **Messaggio da inviare:**
-"[testo pronto e copiabile. ZERO preamboli. Messaggio vuoto se NON COMPRA o COMPRA SUBITO]"
+"[testo pronto]"
 
 ---
-❓ **Da chiedere** (solo se mancano prove che cambiano la decisione):
-[max 2 domande, o "Non necessario"]
+❓ **Da chiedere**: [max 2 domande]
 
 ---
 🧠 **Analisi dell'analista:**
-[3-5 righe OBBLIGATORIE. Spiega il ragionamento sui prezzi/margine E inserisci un COMMENTO ESPLICITO sul profilo del venditore (recensioni/guardaroba) spiegando come questo conferma o smentisce la genuinità dell'affare. Scrivi come un flipper esperto.]
-
-URGENZA: ha senso SOLO su decisioni COMPRA/TRATTA. Su NON COMPRARE e CHIEDI ALTRE FOTO l'urgenza è N/A.
+[3-5 righe. Spiega il ragionamento sui prezzi E commenta esplicitamente il profilo/guardaroba venditore.]
 """.strip()
 
 
@@ -572,16 +372,12 @@ def telegram_send_message(chat_id, text):
             timeout=20,
         )
         if not resp.ok:
-            log.warning("sendMessage Markdown fallita (chunk %d/%d) -- HTTP %d: %s -- ritento senza parse_mode",
-                        i, len(chunks), resp.status_code, resp.text[:300])
-            resp2 = requests.post(
+            log.warning("sendMessage Markdown fallita -- HTTP %d: %s -- ritento senza parse_mode", resp.status_code, resp.text[:300])
+            requests.post(
                 f"{TELEGRAM_API}/sendMessage",
                 json={"chat_id": chat_id, "text": chunk, "disable_web_page_preview": True},
                 timeout=20,
             )
-            if not resp2.ok:
-                log.error("sendMessage fallita ANCHE senza Markdown (chunk %d/%d) -- HTTP %d: %s",
-                          i, len(chunks), resp2.status_code, resp2.text[:300])
 
 
 def telegram_send_photo(chat_id, photo_bytes, caption=None):
@@ -589,13 +385,10 @@ def telegram_send_photo(chat_id, photo_bytes, caption=None):
     data = {"chat_id": chat_id}
     if caption:
         data["caption"] = caption[:1024]
-    resp = requests.post(f"{TELEGRAM_API}/sendPhoto", data=data, files=files, timeout=30)
-    if not resp.ok:
-        log.warning("sendPhoto fallita: %s", resp.text[:300])
+    requests.post(f"{TELEGRAM_API}/sendPhoto", data=data, files=files, timeout=30)
 
 
 def telegram_send_media_group(chat_id, photos_bytes_list, caption=None):
-    """Manda fino a 10 foto come album Telegram (MediaGroup)."""
     if not photos_bytes_list:
         return
     files = {}
@@ -607,20 +400,15 @@ def telegram_send_media_group(chat_id, photos_bytes_list, caption=None):
         if i == 0 and caption:
             item["caption"] = caption[:1024]
         media.append(item)
-    resp = requests.post(
+    requests.post(
         f"{TELEGRAM_API}/sendMediaGroup",
         data={"chat_id": chat_id, "media": json.dumps(media)},
         files=files,
         timeout=60,
     )
-    if not resp.ok:
-        log.warning("sendMediaGroup fallita: %s", resp.text[:300])
 
 
 def telegram_send_with_buttons(chat_id, text, url_annuncio, item_id=None):
-    """Manda messaggio con bottoni inline. Fallback senza Markdown se il
-    parsing fallisce (es. underscore non bilanciati in username come
-    'stella_1002', o asterischi spaiati nel testo generato da Gemini)."""
     keyboard = {"inline_keyboard": [[
         {"text": "🔗 Apri su Vinted", "url": url_annuncio},
     ]]}
@@ -640,8 +428,7 @@ def telegram_send_with_buttons(chat_id, text, url_annuncio, item_id=None):
         timeout=20,
     )
     if not resp.ok:
-        log.warning("sendMessage con bottoni (Markdown) fallita: %s -- ritento senza parse_mode", resp.text[:300])
-        resp2 = requests.post(
+        requests.post(
             f"{TELEGRAM_API}/sendMessage",
             json={
                 "chat_id": chat_id,
@@ -651,8 +438,6 @@ def telegram_send_with_buttons(chat_id, text, url_annuncio, item_id=None):
             },
             timeout=20,
         )
-        if not resp2.ok:
-            log.error("sendMessage con bottoni fallita ANCHE senza Markdown: %s", resp2.text[:300])
 
 
 # ---------------------------------------------------------------------------
@@ -662,7 +447,6 @@ def telegram_send_with_buttons(chat_id, text, url_annuncio, item_id=None):
 URL_REGEX = re.compile(r"https?://(?:www\.)?vinted\.[a-z]+/items/\S+", re.IGNORECASE)
 PRICE_REGEX = re.compile(r"Price\s*:\s*([\d.,]+)\s*EUR", re.IGNORECASE)
 BRAND_REGEX = re.compile(r"Brand\s*:\s*(.+)", re.IGNORECASE)
-
 
 def parse_vinted_tracker_message(text):
     lines = [l.strip() for l in text.splitlines() if l.strip()]
@@ -721,10 +505,6 @@ def scrape_vinted_listing(url):
         resp.raise_for_status()
         html = resp.text
 
-        # Escludi la foto profilo venditore dalla gallery, se possibile.
-        # INCERTEZZA: non e' garantito che il blocco venditore appaia dopo
-        # le foto prodotto nell'HTML -- se il taglio elimina troppe foto
-        # (probabile ordine invertito), usiamo l'HTML completo come fallback.
         marker_venditore = re.search(r'data-testid="profile-username"', html)
 
         def _estrai_foto(html_sorgente):
@@ -789,11 +569,6 @@ def scrape_vinted_listing(url):
             result["material_raw"] = material_match.group(1).strip()
             result["material_per_ricerca"] = scegli_materiale_per_ricerca(material_match.group(1).strip())
 
-        # FALLBACK: se il campo materiale strutturato è vuoto (venditore che
-        # non lo compila, molto frequente), cerca il materiale pregiato
-        # direttamente nella descrizione libera. Es. "gonna in seta" nella
-        # descrizione ma campo Materiale vuoto -> senza questo fallback
-        # "seta" non entrerebbe mai nella query Serper.
         if not result["material_per_ricerca"] and result.get("description"):
             result["material_per_ricerca"] = scegli_materiale_per_ricerca(result["description"])
 
@@ -801,12 +576,14 @@ def scrape_vinted_listing(url):
         if color_match:
             result["color_raw"] = color_match.group(1).strip()
 
-        # ---- DATI VENDITORE ----
+        # ---- DATI VENDITORE E SELLER_LOGIN (con blocklist compatibility) ----
         seller_login_m = re.search(r'data-testid="profile-username"[^>]*>([^<]{2,40})<', html)
         if seller_login_m:
             result["seller_login"] = seller_login_m.group(1).strip()
         else:
-            seller_login_m2 = re.search(r'"login"\s*:\s*"([a-zA-Z0-9_.]{2,40})"', html)
+            seller_login_m2 = re.search(r'"(?:user|seller)"\s*:\s*\{[^}]*"login"\s*:\s*"([a-zA-Z0-9_.]{2,40})"', html)
+            if not seller_login_m2:
+                seller_login_m2 = re.search(r'"(?:login|user_login)"\s*:\s*"([a-zA-Z0-9_.]{2,40})"', html)
             if seller_login_m2:
                 result["seller_login"] = seller_login_m2.group(1)
 
@@ -832,9 +609,7 @@ def scrape_vinted_listing(url):
                 except ValueError:
                     pass
 
-        count_m = re.search(
-            r'web_ui__Rating__label[^>]*>\s*<span[^>]*>\s*(\d+)\s*<', html
-        )
+        count_m = re.search(r'web_ui__Rating__label[^>]*>\s*<span[^>]*>\s*(\d+)\s*<', html)
         if count_m:
             result["seller_feedback_count"] = int(count_m.group(1))
         else:
@@ -850,7 +625,6 @@ def scrape_vinted_listing(url):
         if country_m:
             result["seller_country"] = country_m.group(1)
 
-        # ---- GUARDAROBA VENDITORE ----
         seller_id = result.get("seller_id")
         seller_login = result.get("seller_login")
         if seller_id or seller_login:
@@ -869,16 +643,7 @@ def scrape_vinted_listing(url):
                     )
                     if not titoli:
                         titoli = re.findall(r'"title"\s*:\s*"([^"]{5,80})"', html_profilo)
-                    # NOTA: rimosso il fallback generico <img alt="..."> --
-                    # cattura rumore di interfaccia (loghi, badge store app,
-                    # icone social nel footer) che il cervello puo' scambiare
-                    # per articoli reali del venditore, causando allucinazioni
-                    # tipo "il venditore vende Facebook/LinkedIn = account bot".
 
-                    # Filtro di sanita': scarta elementi che sembrano UI/branding
-                    # piuttosto che titoli di capi (nomi di piattaforme, parole
-                    # singole troppo generiche, elementi senza spazi che sembrano
-                    # loghi invece di descrizioni di prodotto).
                     ELEMENTI_UI_DA_SCARTARE = {
                         "vinted", "facebook", "instagram", "linkedin", "twitter", "x",
                         "tiktok", "app store", "google play", "logo", "logo di vinted",
@@ -924,7 +689,7 @@ def download_image_bytes(url, referer="https://www.vinted.it/", max_retries=2):
 
 
 # ---------------------------------------------------------------------------
-# GEMINI
+# GEMINI E TOOLKIT IA
 # ---------------------------------------------------------------------------
 
 def optimize_image_bytes(img_bytes, max_size=768):
@@ -939,7 +704,6 @@ def optimize_image_bytes(img_bytes, max_size=768):
     except Exception:
         return img_bytes
 
-
 def costruisci_parts_foto(photo_bytes_list):
     parts = []
     for img_bytes in photo_bytes_list:
@@ -947,12 +711,10 @@ def costruisci_parts_foto(photo_bytes_list):
         parts.append({"inline_data": {"mime_type": "image/jpeg", "data": base64.b64encode(optimized).decode("utf-8")}})
     return parts
 
-
 def costo_gemini_token(usage):
     inp = usage.get("promptTokenCount", 0) or 0
     out = usage.get("candidatesTokenCount", 0) or 0
     return (inp * PREZZO_GEMINI_INPUT + out * PREZZO_GEMINI_OUTPUT) / 1_000_000
-
 
 def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, grounding=False, max_retries=4):
     photo_bytes_list = photo_bytes_list or []
@@ -1003,7 +765,7 @@ def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, grounding=Fal
 
 
 # ---------------------------------------------------------------------------
-# SERPER
+# SERPER RICERCA
 # ---------------------------------------------------------------------------
 
 def build_vinted_search_url(brand, categoria, materiale=None, catalog_id=None):
@@ -1027,13 +789,11 @@ def build_vinted_search_url(brand, categoria, materiale=None, catalog_id=None):
     )
     return url, False
 
-
 def search_comps_ebay_sold_url(brand, categoria):
     query_base = f"{brand} {categoria}".strip()
     if not query_base:
         return None
     return f"https://www.ebay.it/sch/i.html?_nkw={quote(query_base)}&_sacat=0&_from=R40&LH_Sold=1&rt=nc&LH_PrefLoc=2"
-
 
 def _estrai_articoli_vinted(content, max_articoli=15):
     righe_pulite, visti = [], set()
@@ -1063,7 +823,6 @@ def _estrai_articoli_vinted(content, max_articoli=15):
         if len(righe_pulite) >= max_articoli:
             break
     return "\n".join(righe_pulite) if righe_pulite else "  Nessun articolo trovato."
-
 
 def _estrai_articoli_ebay(content, max_articoli=15):
     pattern_titolo = re.compile(r'<span[^>]*class="su-styled-text primary default"[^>]*>([^<]+)</span>', re.IGNORECASE)
@@ -1102,22 +861,14 @@ def _estrai_articoli_ebay(content, max_articoli=15):
         return "  Nessun articolo con titolo+prezzo riconosciuto in questa pagina."
     return "\n".join(righe_pulite)
 
-
 def _e_errore_crediti_serper(resp):
-    """Rileva un errore di crediti esauriti Serper in modo robusto:
-    sia tramite codice HTTP standard, sia cercando parole chiave nel body,
-    perche' alcuni provider SERP restituiscono 400 con messaggio testuale
-    invece di 401/402/403/429 per l'esaurimento crediti."""
     if resp.status_code in (400, 401, 402, 403, 429):
         testo_body = (resp.text or "").lower()
         if resp.status_code in (401, 402, 403, 429):
             return True
-        # HTTP 400: verifica parole chiave prima di considerarlo un errore crediti
-        # (un 400 potrebbe anche essere un URL malformato, non necessariamente crediti)
         if any(k in testo_body for k in ("credit", "insufficient", "balance", "payment", "quota")):
             return True
     return False
-
 
 def _serper_scrape_page_diretto(label, url):
     if not SERPER_API_KEY:
@@ -1131,12 +882,10 @@ def _serper_scrape_page_diretto(label, url):
             json=payload, timeout=15,
         )
         if _e_errore_crediti_serper(resp):
-            log.warning("Serper fallito per esaurimento crediti o autenticazione (HTTP %d): %s", resp.status_code, resp.text[:300])
             return f"  Serper fallito (HTTP {resp.status_code}).", False
         resp.raise_for_status()
         data = resp.json()
     except Exception as e:
-        log.warning("Serper scrape fallito: %s", e)
         return f"  Scrape fallito: {e}", False
 
     if "EBAY" in label.upper():
@@ -1146,7 +895,6 @@ def _serper_scrape_page_diretto(label, url):
         content = data.get("markdown") or data.get("text") or ""
         return _estrai_articoli_vinted(content), True
     return "  Fonte non supportata.", True
-
 
 def _serper_batch_query_vestiaire(brand, categoria):
     if not SERPER_API_KEY:
@@ -1164,12 +912,10 @@ def _serper_batch_query_vestiaire(brand, categoria):
             json=payload, timeout=15,
         )
         if _e_errore_crediti_serper(resp):
-            log.warning("Serper search fallito per esaurimento crediti o autenticazione (HTTP %d): %s", resp.status_code, resp.text[:300])
             return f"  Serper fallito (HTTP {resp.status_code}).", False
         resp.raise_for_status()
         results = resp.json()
     except Exception as e:
-        log.warning("Serper Vestiaire query fallita: %s", e)
         return f"Ricerca fallita: {e}", False
 
     lines = []
@@ -1186,11 +932,7 @@ def _serper_batch_query_vestiaire(brand, categoria):
             lines.append(f"- {titolo}\n  {snippet_troncato}")
     return ("\n".join(lines) if lines else "Nessun risultato trovato."), True
 
-
 def search_comps_completo(brand, categoria, query_base, catalog_id=None, material_per_ricerca=None):
-    """Esegue le 3 ricerche Serper in parallelo: Vestiaire (Google batch) +
-    Vinted (scrape diretto) + eBay sold (scrape diretto).
-    Ritorna (testo_comp_completo, serper_ha_funzionato)."""
     vinted_url, vinted_per_id = build_vinted_search_url(brand, categoria, material_per_ricerca, catalog_id)
     ebay_url = search_comps_ebay_sold_url(brand, categoria)
 
@@ -1213,12 +955,6 @@ def search_comps_completo(brand, categoria, query_base, catalog_id=None, materia
                     risultati[nome] = f"  Query fallita: {e}"
                     successi[nome] = False
         except TimeoutError:
-            # CRITICO: senza questo except, il TimeoutError di as_completed()
-            # risale fino a on_new_message e blocca l'INTERO processing
-            # dell'annuncio prima dell'invio Telegram -- causa di "notifiche
-            # sparite" osservata in produzione. Recuperiamo i risultati delle
-            # fonti che sono comunque riuscite a completare in tempo.
-            log.warning("Timeout in search_comps_completo: almeno una fonte Serper non ha risposto entro 15s.")
             for future, nome in futures.items():
                 if nome not in risultati:
                     if future.done():
@@ -1254,46 +990,12 @@ def search_comps_completo(brand, categoria, query_base, catalog_id=None, materia
 # FILTRO PRE-CERVELLO e VALIDAZIONE POST-GENERAZIONE
 # ---------------------------------------------------------------------------
 
-def _stima_costo_pieno_da_prezzo_e_lingua(prezzo_richiesto_str, titolo, descrizione):
-    """Stima costo pieno per paese stimato dalla lingua del testo:
-    IT: 2.50€ | FR/ES: 4.50€ | DE/PT/NL: 6.00€"""
-    try:
-        prezzo = float(str(prezzo_richiesto_str).replace(",", "."))
-    except (TypeError, ValueError):
-        return None
-    testo = f"{titolo or ''} {descrizione or ''}".lower()
-    indicatori_de_pt_nl = (
-        " größe ", " und ", " der ", " die ", " das ", " ein ", " eine ",
-        " tamanho ", " maat ", " met ", " van ",
-    )
-    indicatori_fr_es = (
-        " et ", " avec ", " une ", "robe ", " taille ",
-        " talla ", " muy ", " para ", " con la ",
-        "débardeur", "haut ", "chemise", "veste ", "pantalon",
-        "blouse", "manteau", "pull ", "gilet",
-    )
-    if any(ind in testo for ind in indicatori_de_pt_nl):
-        spedizione_stimata = 6.00
-    elif any(ind in testo for ind in indicatori_fr_es):
-        spedizione_stimata = 4.50
-    else:
-        spedizione_stimata = 2.50
-    protezione_acquirenti = round(prezzo * 0.05 + 0.70, 2)
-    return round(prezzo + protezione_acquirenti + spedizione_stimata, 2)
-
-
 def check_skip_pre_cervello(output_occhi_testo, listing_info=None):
-    """Filtro pre-cervello conservativo: scatta SOLO su segnali forti e
-    inequivocabili dall'output testo-libero degli occhi."""
-
     testo = (output_occhi_testo or "").lower()
 
     if ("probabilmente falso" in testo or "falso conclamato" in testo) and \
        any(c in testo for c in ("confidenza alta", "90%", "95%", "100%", "molto alto")):
         return True, "[FALSO CONCLAMATO] Rilevato da analisi visiva con alta confidenza."
-
-    if any(c in testo for c in ("calzini", "calze sportive")):
-        return True, "[CATEGORIA BASSO VALORE] Calzini/calze sportive, nessun valore di rivendita."
 
     segnali_danno_fisico = sum([
         "buchi" in testo,
@@ -1310,7 +1012,6 @@ def check_skip_pre_cervello(output_occhi_testo, listing_info=None):
 
 
 def build_skip_report(listing_info, motivo_skip):
-    """Report formattato NON COMPRARE per i casi filtrati prima del cervello."""
     if motivo_skip.startswith("[MARGINE INSUFFICIENTE"):
         riga_legit = "Non valutato — filtro pre-cervello su margine insufficiente. Autenticità non in dubbio."
         riga_rischio = "BASSO — margine insufficiente (filtro automatico, cervello non consultato)"
@@ -1320,28 +1021,36 @@ def build_skip_report(listing_info, motivo_skip):
     elif motivo_skip.startswith("[CONDIZIONE DISTRUTTA"):
         riga_legit = "Autentico ma condizione fisica gravemente compromessa — non rivendibile."
         riga_rischio = "BASSO (autenticità) / ALTO (condizione) — cervello non consultato"
+    elif motivo_skip.startswith("[CATEGORIA GENERICA NON FLIPPABILE"):
+        riga_legit = "Categoria strutturalmente senza mercato — nessun valore di rivendita."
+        riga_rischio = "BASSO — categoria non flippabile (filtro pre-Gemini)"
+    elif motivo_skip.startswith("[LINEA/VARIANTE ESCLUSA PER BRAND"):
+        riga_legit = "Linea o variante esclusa esplicitamente dalle regole di valutazione."
+        riga_rischio = "ALTO / SCONVENIENTE — linea esclusa (filtro pre-Gemini)"
+    elif motivo_skip.startswith("[VENDITORE IN BLOCKLIST"):
+        riga_legit = "Venditore in blocklist (possibile truffatore o perditempo)."
+        riga_rischio = "MOLTO ALTO — venditore bloccato (filtro pre-Gemini)"
     else:
-        riga_legit = "Categoria strutturalmente senza mercato (es. calzini) — nessun valore di rivendita."
-        riga_rischio = "BASSO — categoria a basso valore (filtro automatico, cervello non consultato)"
+        riga_legit = "Motivo di skip automatico non categorizzato."
+        riga_rischio = "N/A — filtro automatico"
+        
     motivo_breve = motivo_skip[:117].rsplit(" ", 1)[0] + "..." if len(motivo_skip) > 120 else motivo_skip
     return (
         "## Verdetto operativo\n"
         "- **Decisione:** NON COMPRARE · N/A\n"
-        "- **Costo pieno richiesto:** N/A — filtro automatico pre-cervello\n"
+        "- **Costo pieno richiesto:** N/A — filtro automatico\n"
         "- **Costo pieno trattato:** N/A\n"
         "- **Vendita probabile:** N/A\n"
         "- **Margine netto:** N/A\n"
         f"- **Deal:** 0/10 · **Margine:** 0/10 · **Liquidità:** Bassa · **Rischio:** {riga_rischio} · **Confidenza:** Alta\n"
         f"- **In una riga:** {motivo_breve}\n\n"
         f"## Legit check\n{riga_legit}\n\n"
-        "## Da chiedere\nNon rilevante: filtro automatico pre-cervello attivato.\n\n"
+        "## Da chiedere\nNon rilevante: filtro automatico attivato.\n\n"
         "## Messaggio da inviare\nNon necessario."
     )
 
 
 def valida_contraddizioni_report(testo):
-    """Post-processing del report: corregge contraddizioni logiche comuni.
-    Gestisce sia il vecchio formato (**Decisione:** ...) sia il nuovo (🟢/🟡/🔴 COMPRA ...)."""
     final_text = testo
 
     def _get_decisione_match(txt):
@@ -1375,22 +1084,14 @@ def valida_contraddizioni_report(testo):
 
     if re.search(r"\bCOMPRA\b", dt) and re.search(r"sotto\s+soglia", final_text, re.IGNORECASE):
         nuova = "NON COMPRARE · N/A"
-        log.warning("Contraddizione (1) margine/decisione: '%s' -> '%s'", dt, nuova)
         final_text = _sostituisci_decisione(final_text, nuova, "corretto: margine sotto soglia")
         match_d, fmt, dt = _get_decisione_match(final_text)
 
     if "COMPRA SUBITO" in dt and re.search(r"Confidenza[:\s]+Bassa", final_text, re.IGNORECASE):
         nuova = dt.replace("COMPRA SUBITO", "COMPRA FORTE")
-        log.warning("Contraddizione (2) COMPRA SUBITO/Confidenza Bassa: '%s' -> '%s'", dt, nuova)
         final_text = _sostituisci_decisione(final_text, nuova, "corretto: COMPRA SUBITO richiede Confidenza non Bassa")
         match_d, fmt, dt = _get_decisione_match(final_text)
 
-    # (3) COMPRA con margine/ROI eclatantemente insufficiente -> degrada a TRATTA.
-    # SOGLIE CONSERVATIVE deliberate: il prompt chiede margine >=20€ e ROI >=100%,
-    # ma qui usiamo soglie piu' basse (15€ / 60%) per intercettare solo i casi
-    # gravi (es. margine $9.50 con "urgenza alta" sugli occhiali Cazal), senza
-    # penalizzare casi limite validi (es. abito Marni margine €25 ROI 85%,
-    # che e' un buon deal nonostante sia sotto la soglia ideale del prompt).
     if re.search(r"\bCOMPRA\b", dt) and "TRATTA" not in dt.upper():
         margine_m = re.search(r"€\s*([\d.,]+)\s*\(?ROI", final_text, re.IGNORECASE)
         margine_valore = None
@@ -1402,8 +1103,10 @@ def valida_contraddizioni_report(testo):
         roi_max = None
         if roi_m:
             roi_max = max(int(roi_m.group(1)), int(roi_m.group(2)) if roi_m.group(2) else int(roi_m.group(1)))
+        
         margine_troppo_basso = margine_valore is not None and margine_valore < 15
         roi_troppo_basso = roi_max is not None and roi_max < 60
+        
         if margine_troppo_basso or roi_troppo_basso:
             nuova = dt
             for k in ("COMPRA SUBITO", "COMPRA FORTE", "COMPRA SE CI TIENI", "COMPRA"):
@@ -1411,7 +1114,6 @@ def valida_contraddizioni_report(testo):
                     nuova = re.sub(re.escape(k), "TRATTA", nuova, flags=re.IGNORECASE)
                     break
             motivo_num = f"margine €{margine_valore}" if margine_troppo_basso else f"ROI {roi_max}%"
-            log.warning("Contraddizione (3) COMPRA con %s eclatantemente insufficiente: '%s' -> '%s'", motivo_num, dt, nuova)
             final_text = _sostituisci_decisione(final_text, nuova, f"corretto: {motivo_num} troppo basso per COMPRA diretto")
 
     return final_text
@@ -1438,7 +1140,6 @@ def _estrai_item_id_da_url(url):
 
 
 def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header, output_finale, decisione, e_compra, scenario_usato, n_query_grounding=0):
-    """Gestisce l'invio su Telegram con gallery e bottoni per COMPRA urgente."""
     item_id = _estrai_item_id_da_url(url)
     urgenza_alta = _e_urgenza_alta(decisione)
     e_compra_urgente = (
@@ -1454,7 +1155,7 @@ def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header, outpu
             photo_bytes_list,
             caption=f"📸 {listing_info.get('title')} · {len(photo_bytes_list)} foto"
         )
-    else:
+    elif len(photo_bytes_list) == 1:
         telegram_send_photo(TELEGRAM_OWNER_CHAT_ID, photo_bytes_list[0], caption=listing_info.get("title"))
 
     if url:
@@ -1480,20 +1181,13 @@ def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header, outpu
 
 
 # ---------------------------------------------------------------------------
-# PIPELINE PRINCIPALE: SCENARIO G CON FALLBACK A F
+# PIPELINE PRINCIPALE
 # ---------------------------------------------------------------------------
 
 def process_listing(parsed, url, cover_photo_bytes):
     listing_info = dict(parsed)
     listing_info["url"] = url
     costo_totale = 0.0
-
-    # SKIP TOTALE per categorie a zero valore (calzini, occhiali) --
-    # controllo sul titolo PRIMA di qualsiasi scraping o chiamata Gemini.
-    # Zero notifica, zero costo, zero log rumoroso oltre questa riga.
-    if e_categoria_skip_totale(listing_info.get("title")):
-        log.info("SKIP TOTALE (categoria esclusa): '%s'", listing_info.get("title"))
-        return
 
     photo_bytes_list = []
     if url:
@@ -1512,6 +1206,16 @@ def process_listing(parsed, url, cover_photo_bytes):
             "seller_country": scraped.get("seller_country"),
             "seller_top_items": scraped.get("seller_top_items") or [],
         })
+        
+        # NUOVO FILTRO PRE-GEMINI
+        e_skip_pre, motivo_skip_pre = check_skip_pre_gemini(listing_info)
+        if e_skip_pre:
+            log.info("FILTRO PRE-GEMINI ATTIVATO: '%s'. Motivo: %s", listing_info.get("title"), motivo_skip_pre)
+            output_finale = build_skip_report(listing_info, motivo_skip_pre)
+            # Invio rapido con report skip e uscita immediata
+            telegram_send_message(TELEGRAM_OWNER_CHAT_ID, f"🚫 *SKIP PRE-GEMINI*\n{listing_info.get('title')}\n{url or ''}\n\n{output_finale}")
+            return
+            
         photo_urls = scraped.get("photo_urls", [])
         if photo_urls:
             with ThreadPoolExecutor(max_workers=5) as pool:
@@ -1527,11 +1231,8 @@ def process_listing(parsed, url, cover_photo_bytes):
             f"⚠️ Niente foto per: {listing_info.get('title')}\nURL: {url or 'non trovato'}\nSalto valutazione.")
         return
 
-    log.info("Foto raccolte: %d (fonte: %s)", len(photo_bytes_list),
-             "scraping Vinted" if url and len(photo_bytes_list) > 1 else "fallback copertina Telegram")
-
     age_days = listing_info.get("age_days")
-    age_text = f"{age_days:.1f} giorni fa" if age_days is not None else "non disponibile (scraping data pubblicazione fallito)"
+    age_text = f"{age_days:.1f} giorni fa" if age_days is not None else "non disponibile"
 
     seller_info_parts = []
     feedback_count = listing_info.get("seller_feedback_count")
@@ -1553,7 +1254,7 @@ def process_listing(parsed, url, cover_photo_bytes):
     if seller_top_items:
         seller_info_parts.append(f"Primi articoli in vendita: {', '.join(seller_top_items)}")
 
-    seller_info_text = "\n".join(seller_info_parts) if seller_info_parts else "non disponibile (scraping profilo non riuscito)"
+    seller_info_text = "\n".join(seller_info_parts) if seller_info_parts else "non disponibile"
 
     user_text_occhi = (
         f"Titolo annuncio: {listing_info.get('title')}\n"
@@ -1570,12 +1271,10 @@ def process_listing(parsed, url, cover_photo_bytes):
     output_occhi, costo_occhi, _ = chiama_gemini(
         GEMINI_OCCHI_SYSTEM_PROMPT, user_text_occhi, photo_bytes_list, grounding=False)
     costo_totale += costo_occhi
-    log.info("Occhi completati. Costo: $%.5f\nOutput occhi (anteprima):\n%s%s",
-             costo_occhi, output_occhi[:600], "... [troncato]" if len(output_occhi) > 600 else "")
 
     e_skip, motivo_skip = check_skip_pre_cervello(output_occhi, listing_info)
     if e_skip:
-        log.info("FILTRO PRE-CERVELLO ATTIVATO: cervello NON consultato. Motivo: %s", motivo_skip)
+        log.info("FILTRO PRE-CERVELLO ATTIVATO. Motivo: %s", motivo_skip)
         output_finale = build_skip_report(listing_info, motivo_skip)
         n_query_grounding = 0
         scenario_usato = "SKIP"
@@ -1601,40 +1300,22 @@ def process_listing(parsed, url, cover_photo_bytes):
                 brand_annuncio, categoria_per_ricerca, titolo_annuncio,
                 catalog_id=catalog_id, material_per_ricerca=material_per_ricerca,
             )
-            log.info("Ricerca Serper:\n%s", comps_text)
             if serper_ok:
                 scenario_usato = "G"
                 _serper_fallimenti_consecutivi[0] = 0
-                # Reset del flag: se Serper torna a funzionare dopo un'interruzione,
-                # permetti una nuova notifica al prossimo esaurimento
                 if _serper_notifica_esaurimento_inviata[0]:
                     _serper_notifica_esaurimento_inviata[0] = False
-                    telegram_send_message(
-                        TELEGRAM_OWNER_CHAT_ID,
-                        "✅ Serper è tornato a funzionare normalmente."
-                    )
+                    telegram_send_message(TELEGRAM_OWNER_CHAT_ID, "✅ Serper è tornato a funzionare normalmente.")
             else:
                 _serper_fallimenti_consecutivi[0] += 1
                 _serper_timestamp_ultimo_fallimento[0] = time.time()
-                log.warning("Serper fallito (%d consecutivi) -- fallback Scenario F.", _serper_fallimenti_consecutivi[0])
                 if _serper_fallimenti_consecutivi[0] >= SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO:
-                    log.warning("Soglia %d fallimenti raggiunta -- Serper saltato per %.1f ore.",
-                                SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO, RAFFREDDAMENTO_SERPER_SECONDI / 3600)
                     if not _serper_notifica_esaurimento_inviata[0]:
                         _serper_notifica_esaurimento_inviata[0] = True
                         telegram_send_message(
                             TELEGRAM_OWNER_CHAT_ID,
-                            f"⚠️ *Serper ha esaurito i crediti o non risponde* "
-                            f"({_serper_fallimenti_consecutivi[0]} fallimenti consecutivi).\n"
-                            f"Il bot passa automaticamente allo Scenario F (senza comp Serper, solo grounding Gemini) "
-                            f"per le prossime {RAFFREDDAMENTO_SERPER_SECONDI/3600:.0f} ore, poi ritenta da solo.\n"
-                            f"Verifica il tuo account Serper se serve ricaricare i crediti."
+                            f"⚠️ *Serper ha esaurito i crediti o non risponde*.\nFallback a Scenario F per {RAFFREDDAMENTO_SERPER_SECONDI/3600:.0f} ore."
                         )
-        else:
-            if in_raffreddamento:
-                log.info("Serper in raffreddamento (~%.1f ore rimanenti) -- Scenario F.", (RAFFREDDAMENTO_SERPER_SECONDI - tempo_trascorso) / 3600)
-            else:
-                log.info("Serper non disponibile (chiave assente) -- Scenario F.")
 
         contesto_listing = (
             f"{user_text_occhi}\n"
@@ -1644,23 +1325,17 @@ def process_listing(parsed, url, cover_photo_bytes):
         if scenario_usato == "G":
             user_text_cervello = (
                 f"{contesto_listing}\n\n"
-                f"--- LA TUA VALUTAZIONE PRELIMINARE (prodotta poco fa, senza ricerca web) ---\n"
+                f"--- LA TUA VALUTAZIONE PRELIMINARE ---\n"
                 f"{output_occhi}\n--- FINE ---\n\n"
                 f"--- {comps_text} ---\n\n"
-                "Usa i risultati di ricerca web PRE-RACCOLTI sopra per confermare/correggere la tua proposta. "
-                "Esegui INOLTRE almeno una ricerca con il tool google_search per verificare o completare questi "
-                "dati (es. se manca un sold eBay, se i prezzi Vestiaire sono pochi, se vuoi controllare Depop/"
-                "Grailed/1stDibs che non sono stati pre-raccolti). Produci il verdetto operativo completo."
+                "Usa i risultati di ricerca web PRE-RACCOLTI. Esegui INOLTRE almeno una ricerca con il tool google_search."
             )
         else:
             user_text_cervello = (
                 f"{contesto_listing}\n\n"
-                f"--- LA TUA VALUTAZIONE PRELIMINARE (prodotta poco fa, senza ricerca web) ---\n"
+                f"--- LA TUA VALUTAZIONE PRELIMINARE ---\n"
                 f"{output_occhi}\n--- FINE ---\n\n"
-                "NOTA: non ci sono risultati di ricerca pre-raccolti (Serper non disponibile). "
-                "DEVI usare attivamente il tool google_search per trovare comp reali prima di produrre il verdetto "
-                "finale, seguendo le istruzioni nel tuo system prompt (eBay sold, Vinted, Depop, Vestiaire, Grailed, "
-                "1stDibs nell'ordine di priorita' indicato)."
+                "NOTA: non ci sono risultati di ricerca pre-raccolti. DEVI usare attivamente google_search."
             )
 
         output_finale_raw, costo_cervello, n_query_grounding = chiama_gemini(
@@ -1668,9 +1343,6 @@ def process_listing(parsed, url, cover_photo_bytes):
         costo_totale += costo_cervello
 
         output_finale = valida_contraddizioni_report(output_finale_raw)
-
-        log.info("Scenario %s completato. Query grounding: %d. Costo cervello: $%.5f. Totale: $%.5f",
-                 scenario_usato, n_query_grounding, costo_cervello, costo_totale)
 
     decisione = estrai_decisione_da_testo(output_finale) or ""
     e_compra = any(k in decisione.upper() for k in ("COMPRA", "TRATTA", "CHIEDI ALTRE FOTO"))
@@ -1718,8 +1390,6 @@ def process_listing(parsed, url, cover_photo_bytes):
             output_finale,
             flags=re.IGNORECASE
         )
-
-    log.info("===REPORT VERBATIM START===\n%s\n===REPORT VERBATIM END===", output_finale)
 
     _invia_risultato_telegram(
         listing_info, url, photo_bytes_list,
@@ -1802,7 +1472,7 @@ async def on_new_message(event):
 
 
 async def main():
-    log.info("Vinted Oracle (Scenario G con fallback F) avviato su Telethon.")
+    log.info("Vinted Oracle avviato su Telethon.")
     await client.start()
     await client.run_until_disconnected()
 
