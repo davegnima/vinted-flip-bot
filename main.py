@@ -320,6 +320,17 @@ Prezzo basso = vantaggio. Guarda il venditore: privato sprovveduto (fast fashion
 - **Chloé vs See by Chloé:** See by Chloé è diffusion, ROI molto più basso.
 - **Stella McCartney:** La mainline ha valore, la collab Adidas no.
 - **Junya Watanabe, Undercover, Thom Browne, Alaïa:** Sono mono-linea, valore costante e alto, rischio fake generalmente basso.
+- **Helmut Lang:** Solo era Lang (1986-2005) ha valore archivio. Era Link Theory (dal 2006) è commerciale, basso valore.
+- **Maison Margiela:** Linee 1, 10, 0, 22 valgono. MM6 (linea 6) è diffusion, valore molto minore — non confondere nei comp.
+- **Missoni:** Pattern colorati zig-zag hanno valore. M Missoni ok solo su abiti strutturati, non basics. Missoni Sport è diffusion, basso valore.
+- **Max Mara:** Solo mainline ha valore pieno. Sottolinee (Weekend, Studio, Sportmax) valgono solo se modello iconico o materiale pregiato (es. cammello, cashmere) — altrimenti ROI marginale.
+- **Visvim, Kapital, 45RPM, Carol Christian Poell, Haider Ackermann, The Row, Boris Bidjan Saberi, sacai, Kiko Kostadinov:** Mono-linea o quasi, valore costante, rischio fake storicamente basso. Valuta a pieno prezzo.
+
+# NOTE SU DOMANDA E LIQUIDITÀ PER SEGMENTO (usa per calibrare Deal, giorni di vendita e messaggio)
+- Archivio eclettico (Missoni, JPG, Pucci, Westwood, Mugler, Montana, Marni, Courrèges, Miu Miu): target 25-45, vendita più lenta ma prezzo alto per pezzi iconici riconoscibili; premia sempre provenienza/collezione nel messaggio di vendita.
+- Quiet luxury 90s (Helmut Lang, Jil Sander, Margiela, Bottega, Max Mara): target 28-45 stile-consapevole, premia capi da collezione/decade specifica nel titolo; coats iconici (es. Max Mara 101801) molto più liquidi dei basic.
+- Avantgarde/designer riconosciuti (Rick Owens, Yohji, Dries, Ann Demeulemeester, Raf Simons, Loewe, Cucinelli, YSL, Chloé, Stella McCartney, Totême): community fashion-insider, alta disponibilità a pagare premium per pezzi con provenienza documentata.
+- Giapponese artigianale + designer esperto (Visvim, Kapital, CCP, Haider, The Row, Alaïa, BBS, Sacai, Kiko Kostadinov, Junya, Thom Browne, McQueen, Undercover): community verticale molto informata, taglie piccole (46-48 IT/S-M) più richieste e liquide, vendita rapida se il pezzo è riconosciuto come "grail".
 
 # RICERCA WEB OBBLIGATORIA (google_search)
 Cerca comp venduti se assenti. Gerarchia: eBay SOLD > Vinted > Vestiaire.
