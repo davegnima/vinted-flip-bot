@@ -185,7 +185,11 @@ def check_skip_pre_gemini(listing_info):
     for kw in unflippable:
         if kw in titolo or kw in descrizione:
             return True, f"[CATEGORIA GENERICA NON FLIPPABILE] Rilevata keyword: {kw}"
-            
+
+    # 2b. Titoli con stringa di ricerca residua "gilet -blanc"
+    if "gilet -blanc" in titolo:
+        return True, "[TITOLO CON STRINGA DI RICERCA RESIDUA] Rilevato 'gilet -blanc' nel titolo."
+
     # 3. Regole specifiche per brand
     if "stella mccartney" in brand and "adidas" in testo_completo:
         return True, "[LINEA/VARIANTE ESCLUSA PER BRAND] Stella McCartney collab Adidas (basso valore)."
@@ -1024,6 +1028,9 @@ def build_skip_report(listing_info, motivo_skip):
     elif motivo_skip.startswith("[CATEGORIA GENERICA NON FLIPPABILE"):
         riga_legit = "Categoria strutturalmente senza mercato — nessun valore di rivendita."
         riga_rischio = "BASSO — categoria non flippabile (filtro pre-Gemini)"
+    elif motivo_skip.startswith("[TITOLO CON STRINGA DI RICERCA RESIDUA"):
+        riga_legit = "Titolo contiene una stringa di ricerca residua ('gilet -blanc') — annuncio non valutato."
+        riga_rischio = "BASSO — titolo malformato (filtro pre-Gemini)"
     elif motivo_skip.startswith("[LINEA/VARIANTE ESCLUSA PER BRAND"):
         riga_legit = "Linea o variante esclusa esplicitamente dalle regole di valutazione."
         riga_rischio = "ALTO / SCONVENIENTE — linea esclusa (filtro pre-Gemini)"
@@ -1210,10 +1217,9 @@ def process_listing(parsed, url, cover_photo_bytes):
         # NUOVO FILTRO PRE-GEMINI
         e_skip_pre, motivo_skip_pre = check_skip_pre_gemini(listing_info)
         if e_skip_pre:
-            log.info("FILTRO PRE-GEMINI ATTIVATO: '%s'. Motivo: %s", listing_info.get("title"), motivo_skip_pre)
-            output_finale = build_skip_report(listing_info, motivo_skip_pre)
-            # Invio rapido con report skip e uscita immediata
-            telegram_send_message(TELEGRAM_OWNER_CHAT_ID, f"🚫 *SKIP PRE-GEMINI*\n{listing_info.get('title')}\n{url or ''}\n\n{output_finale}")
+            # Silenzioso: nessuna notifica Telegram per le esclusioni pre-Gemini.
+            # Rimane visibile solo nei log (Railway) per debug/controllo.
+            log.info("FILTRO PRE-GEMINI ATTIVATO (silenzioso, no notifica): '%s'. Motivo: %s", listing_info.get("title"), motivo_skip_pre)
             return
             
         photo_urls = scraped.get("photo_urls", [])
