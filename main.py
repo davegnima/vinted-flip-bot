@@ -1367,6 +1367,9 @@ def process_listing(parsed, url, cover_photo_bytes):
                 "NOTA: non ci sono risultati di ricerca pre-raccolti. DEVI usare attivamente google_search."
             )
 
+log.info("=== DEBUG USER_TEXT_CERVELLO ===\n%s\n=== FINE DEBUG ===", user_text_cervello)
+
+
         output_finale_raw, costo_cervello, n_query_grounding = chiama_gemini(
             GEMINI_CERVELLO_SYSTEM_PROMPT, user_text_cervello, photo_bytes_list=[], grounding=True)
         costo_totale += costo_cervello
