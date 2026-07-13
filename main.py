@@ -341,9 +341,6 @@ Incasso reale = prezzo listing stimato × 0,80 (sconto 20%).
 Margine netto = incasso reale − acquisto pieno.
 Soglia minima per COMPRA: €20 netti E ROI 100%+.
 
-# GESTIONE VARIANZA PREZZI NEI COMP
-Se i comp raccolti mostrano prezzi molto variabili (es. range >40% tra min e max) o meno di 3 comp comparabili realmente simili (stesso tipo di capo, non solo stesso brand), usa il valore MEDIANO-BASSO tra i comp raccolti, mai il più alto. Segnala esplicitamente nell'analisi finale quando la varianza è alta o i comp sono scarsi, indicando "stima incerta" invece di presentarla come dato solido. In caso di scenario G, esegui SEMPRE almeno una query google_search di verifica anche se i comp Serper sembrano già sufficienti — i comp pre-raccolti sono un punto di partenza, non sostituiscono la verifica.
-
 # VERIFICA FINALE OBBLIGATORIA
 Verifica che i calcoli (Margine e ROI) supportino la tua Decisione. Se margine <20€ o ROI <100%, DEVI usare TRATTA o NON COMPRARE.
 
@@ -1367,8 +1364,8 @@ def process_listing(parsed, url, cover_photo_bytes):
                 "NOTA: non ci sono risultati di ricerca pre-raccolti. DEVI usare attivamente google_search."
             )
 
-log.info("=== DEBUG USER_TEXT_CERVELLO ===\n%s\n=== FINE DEBUG ===", user_text_cervello)
-
+        # === DEBUG TEMPORANEO: rimuovere dopo aver raccolto un esempio ===
+        log.info("=== DEBUG USER_TEXT_CERVELLO ===\n%s\n=== FINE DEBUG ===", user_text_cervello)
 
         output_finale_raw, costo_cervello, n_query_grounding = chiama_gemini(
             GEMINI_CERVELLO_SYSTEM_PROMPT, user_text_cervello, photo_bytes_list=[], grounding=True)
