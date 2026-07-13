@@ -90,6 +90,15 @@ VINTED_BRAND_IDS = {
     "totême": "546105",
     "toteme": "546105",
     "undercover": "59974",
+    "visvim": "276225",
+    "45rpm": "464091",
+    "kapital": "576107",
+    "carol christian poell": "1996050", "ccp": "1996050",
+    "haider ackermann": "232276",
+    "the row": "547584",
+    "boris bidjan saberi": "484649", "bbs": "484649",
+    "sacai": "369700",
+    "kiko kostadinov": "5821136",
 }
 # ESCLUSIONI VOLUTE (non mappare per evitare falsi positivi o capi di scarso valore):
 # - "saint laurent" (post-2012, id 83122): altissimo rischio fake, preferiamo concentrarci su YSL vintage.
