@@ -56,7 +56,7 @@ RAFFREDDAMENTO_SERPER_SECONDI = 3600 * 6
 _serper_notifica_esaurimento_inviata = [False]
 
 # BLOCKLIST VENDITORI
-VENDITORI_BLOCKLIST = {"valeryepippo"}
+VENDITORI_BLOCKLIST = {"valeryepippo", "firmadonna98"}
 
 VINTED_BRAND_IDS = {
     "brunello cucinelli": "103740", "rick owens": "145654",
