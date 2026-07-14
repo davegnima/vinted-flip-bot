@@ -393,6 +393,7 @@ Prezzo basso = vantaggio. Guarda il venditore: privato sprovveduto (fast fashion
 - **Missoni:** Pattern colorati zig-zag hanno valore. M Missoni ok solo su abiti strutturati, non basics. Missoni Sport è diffusion, basso valore.
 - **Max Mara:** Solo mainline ha valore pieno. Sottolinee (Weekend, Studio, Sportmax) valgono solo se modello iconico o materiale pregiato (es. cammello, cashmere) — altrimenti ROI marginale.
 - **Visvim, Kapital, 45RPM, Carol Christian Poell, Haider Ackermann, The Row, Boris Bidjan Saberi, sacai, Kiko Kostadinov:** Mono-linea o quasi, valore costante, rischio fake storicamente basso. Valuta a pieno prezzo.
+- **Jean Paul Gaultier / "Jean's Paul Gaultier" — T-shirt e maglie (manica corta o lunga):** Tetto di prezzo di rivendita realistico €30, sia per la linea mainline che per quella diffusion/commerciale "Jean's Paul Gaultier". Non stimare vendite sopra questa soglia per capi in jersey/cotone di questo tipo, indipendentemente da stampe o loghi. Il tailoring (giacche, cappotti) segue regole diverse e può valere molto di più.
 
 # NOTE SU DOMANDA E LIQUIDITÀ PER SEGMENTO (usa per calibrare Deal, giorni di vendita e messaggio)
 - Archivio eclettico (Missoni, JPG, Pucci, Westwood, Mugler, Montana, Marni, Courrèges, Miu Miu): target 25-45, vendita più lenta ma prezzo alto per pezzi iconici riconoscibili; premia sempre provenienza/collezione nel messaggio di vendita.
@@ -412,8 +413,11 @@ Incasso reale = prezzo listing stimato × 0,80 (sconto 20%).
 Margine netto = incasso reale − acquisto pieno.
 Soglia minima per COMPRA: €20 netti E ROI 100%+.
 
+# SOGLIA SEPARATA PER L'URGENZA (non confondere con la soglia minima per COMPRA)
+"Alta urgenza" NON è il default per ogni COMPRA che supera la soglia minima — è riservata ai casi con margine di sicurezza reale, non a quelli borderline. Usa "Alta urgenza" SOLO se margine netto ≥ €30 E ROI ≥ 150%. Se il margine/ROI supera la soglia minima (€20/100%) ma resta sotto questi valori, la decisione resta COMPRA ma l'urgenza deve essere "Media" o "Bassa", mai "Alta". Inoltre, non giustificare "Alta urgenza" con stime generiche di valore del brand ("il capo vale tipicamente tra X e Y") se la ricerca web non ha restituito comp specifici e verificabili: in quel caso l'urgenza non può essere Alta, indipendentemente dal margine calcolato.
+
 # VERIFICA FINALE OBBLIGATORIA
-Verifica che i calcoli (Margine e ROI) supportino la tua Decisione. Se margine <20€ o ROI <100%, DEVI usare TRATTA o NON COMPRARE.
+Verifica che i calcoli (Margine e ROI) supportino la tua Decisione. Se margine <20€ o ROI <100%, DEVI usare TRATTA o NON COMPRARE. Verifica anche che l'urgenza dichiarata rispetti la soglia separata sopra: se hai scritto "Alta urgenza" ma margine <€30 o ROI <150%, correggi in "Media urgenza".
 
 # OUTPUT — Verdetto in cima.
 
@@ -1516,6 +1520,55 @@ def forza_soglia_minima_compra(testo):
     return testa_corretta + resto
 
 
+def declassa_urgenza_se_borderline(testo):
+    """Rete di sicurezza indipendente dal formato: 'Alta urgenza' deve
+    riflettere un margine di sicurezza reale (>=€30 netti E ROI >=150%),
+    non un semplice superamento della soglia minima per COMPRA. Se il
+    modello scrive 'Alta urgenza' con margine/ROI solo appena sopra soglia,
+    la declassa a 'Media urgenza' -- coerente con la regola nel prompt, ma
+    applicata anche quando il modello non la rispetta da solo."""
+    LUNGHEZZA_BLOCCO_VERDETTO = 400
+    testa = testo[:LUNGHEZZA_BLOCCO_VERDETTO]
+    resto = testo[LUNGHEZZA_BLOCCO_VERDETTO:]
+
+    if not re.search(r"alta\s+urgenza", testa, re.IGNORECASE):
+        return testo
+
+    margine_m = re.search(r"€\s*([\d.,]+)\s*\)?\s*\(?ROI", testa, re.IGNORECASE)
+    roi_m = re.search(r"ROI\s*~?\s*(\d+)", testa, re.IGNORECASE)
+
+    margine_valore = None
+    if margine_m:
+        try:
+            margine_valore = float(margine_m.group(1).replace(",", "."))
+        except ValueError:
+            pass
+
+    roi_valore = None
+    if roi_m:
+        try:
+            roi_valore = int(roi_m.group(1))
+        except ValueError:
+            pass
+
+    margine_insufficiente_per_urgenza = margine_valore is not None and margine_valore < 30
+    roi_insufficiente_per_urgenza = roi_valore is not None and roi_valore < 150
+
+    if not (margine_insufficiente_per_urgenza or roi_insufficiente_per_urgenza):
+        return testo
+
+    testa_corretta = re.sub(
+        r"[Aa]lta\s+urgenza",
+        "Media urgenza ⚠️ _declassata: margine/ROI sopra soglia minima ma non abbastanza abbondante per Alta urgenza_",
+        testa, count=1,
+    )
+    log.info(
+        "declassa_urgenza_se_borderline: Alta urgenza declassata a Media (margine=%s, ROI=%s%%).",
+        margine_valore, roi_valore,
+    )
+    return testa_corretta + resto
+
+
 def valida_contraddizioni_report(testo):
     final_text = testo
 
@@ -1839,6 +1892,7 @@ def process_listing(parsed, url, cover_photo_bytes):
 
         output_finale = valida_contraddizioni_report(output_finale_raw)
         output_finale = forza_soglia_minima_compra(output_finale)
+        output_finale = declassa_urgenza_se_borderline(output_finale)
 
     decisione = estrai_decisione_da_testo(output_finale) or ""
     e_compra = any(k in decisione.upper() for k in ("COMPRA", "TRATTA", "CHIEDI ALTRE FOTO"))
