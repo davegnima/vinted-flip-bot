@@ -427,7 +427,10 @@ Margine netto = incasso reale − acquisto pieno.
 Soglia minima per COMPRA: €20 netti E ROI 100%+.
 
 # LIMITE MASSIMO DI SCONTO IN TRATTATIVA (regola rigida)
-Quando proponi un "Obiettivo trattativa", puoi chiedere al massimo il 40% di sconto sul PREZZO DEL PRODOTTO (non sul totale con spedizione), e solo se il venditore accetta — la spedizione non è mai scontabile. Esempio: prodotto €10 + spedizione €5 = totale €15. Sconto massimo: 40% di €10 = €4, quindi l'offerta minima proponibile è €6 (prodotto) + €5 (spedizione) = €11 totale, mai meno. Non proporre mai un'offerta totale inferiore a [prezzo prodotto × 0,6 + spedizione reale]. Se il margine resta insufficiente anche a questa soglia massima di sconto, la decisione corretta è NON COMPRARE, non un'offerta ancora più aggressiva.
+Quando proponi un "Obiettivo trattativa", puoi chiedere al massimo il 40% di sconto sul PREZZO DEL PRODOTTO (non sul totale con spedizione), e solo se il venditore accetta — la spedizione non è mai scontabile. Esempio: prodotto €10 + spedizione €5 = totale €15. Sconto massimo: 40% di €10 = €4, quindi l'offerta minima proponibile è €6 (prodotto) + €5 (spedizione) = €11 totale, mai meno.
+
+# TRATTA SOLO SE L'OBIETTIVO DI TRATTATIVA FUNZIONA DAVVERO (regola critica, spesso violata)
+Non proporre MAI TRATTA se il tuo stesso "Obiettivo trattativa" — calcolato al massimo sconto consentito (40% sul prodotto) — non raggiunge margine ≥€20 E ROI ≥100%. Prima di scrivere TRATTA, calcola il margine e il ROI dell'obiettivo di trattativa che stai per proporre: se anche a sconto massimo il margine resta <€20 o il ROI <100%, non ha senso negoziare — la decisione corretta è NON COMPRARE, non TRATTA con un obiettivo che comunque non risolve il problema. Un "Obiettivo trattativa" con ROI 40-70% è un errore: la trattativa deve portare l'affare SOPRA soglia, non semplicemente più vicino.
 
 # SOGLIA SEPARATA PER L'URGENZA (non confondere con la soglia minima per COMPRA)
 "Alta urgenza" NON è il default per ogni COMPRA che supera la soglia minima — è riservata ai casi con margine di sicurezza reale, non a quelli borderline. Usa "Alta urgenza" SOLO se margine netto ≥ €30 E ROI ≥ 150%. Se il margine/ROI supera la soglia minima (€20/100%) ma resta sotto questi valori, la decisione resta COMPRA ma l'urgenza deve essere "Media" o "Bassa", mai "Alta". Inoltre, non giustificare "Alta urgenza" con stime generiche di valore del brand ("il capo vale tipicamente tra X e Y") se la ricerca web non ha restituito comp specifici e verificabili: in quel caso l'urgenza non può essere Alta, indipendentemente dal margine calcolato.
@@ -442,7 +445,7 @@ La stima di vendita DEVE ancorarsi ai comp di VENDUTO/ASK reali trovati (pre-rac
 Usa ESCLUSIVAMENTE queste 4 emoji per il verdetto: 🟢 (COMPRA) 🟡 (TRATTA) 🔴 (NON COMPRARE) 🔵 (CHIEDI ALTRE FOTO). NON usare mai ✅ ⚠️ ❌ nel tuo verdetto finale: sono riservate al legit check dell'occhio, non al tuo output. La parola urgenza deve essere ESATTAMENTE "Alta urgenza", "Media urgenza" o "Bassa urgenza" — mai sinonimi come "priorità", "importanza" o simili.
 
 # VERIFICA FINALE OBBLIGATORIA
-Verifica che i calcoli (Margine e ROI) supportino la tua Decisione. Se margine <20€ o ROI <100%, DEVI usare TRATTA o NON COMPRARE. Verifica anche che l'urgenza dichiarata rispetti la soglia separata sopra: se hai scritto "Alta urgenza" ma margine <€30 o ROI <150%, correggi in "Media urgenza". Verifica infine che la tua stima di vendita non superi il valore più alto tra i comp reali raccolti (regola di ancoraggio sopra), e che qualunque "Obiettivo trattativa" rispetti il limite massimo di sconto del 40% sul prezzo prodotto (mai sulla spedizione).
+Verifica che i calcoli (Margine e ROI) supportino la tua Decisione. Se margine <20€ o ROI <100%, DEVI usare TRATTA o NON COMPRARE. Se scegli TRATTA, verifica che il margine/ROI del TUO STESSO "Obiettivo trattativa" raggiunga ≥€20/≥100% — se non ci arriva nemmeno lì, cambia la decisione in NON COMPRARE. Verifica anche che l'urgenza dichiarata rispetti la soglia separata sopra: se hai scritto "Alta urgenza" ma margine <€30 o ROI <150%, correggi in "Media urgenza". Verifica infine che la tua stima di vendita non superi il valore più alto tra i comp reali raccolti (regola di ancoraggio sopra), e che qualunque "Obiettivo trattativa" rispetti il limite massimo di sconto del 40% sul prezzo prodotto (mai sulla spedizione).
 
 # OUTPUT — Verdetto in cima.
 
@@ -1658,6 +1661,55 @@ def applica_soglia_trattativa_40_percento(testo, prezzo_prodotto):
     return testo_corretto
 
 
+def converti_tratta_senza_obiettivo_valido(testo):
+    """Rete di sicurezza: TRATTA ha senso solo se il proprio 'Obiettivo
+    trattativa' raggiunge davvero la soglia minima (€20/ROI 100%). Se il
+    modello propone TRATTA ma il suo stesso obiettivo negoziato resta sotto
+    soglia (es. ROI 40-70%), o non propone nessun obiettivo di trattativa,
+    la negoziazione non risolve nulla -- la decisione corretta e' NON
+    COMPRARE, non un tentativo di trattativa inutile."""
+    testo = _normalizza_emoji_decisione(testo)
+
+    LUNGHEZZA_BLOCCO_VERDETTO = 400
+    testa = testo[:LUNGHEZZA_BLOCCO_VERDETTO]
+    resto = testo[LUNGHEZZA_BLOCCO_VERDETTO:]
+
+    testa_upper = testa.upper()
+    e_tratta = (
+        "TRATTA" in testa_upper
+        and "NON COMPRARE" not in testa_upper
+        and not re.search(r"\bCOMPRA\b", testa_upper)
+    )
+    if not e_tratta:
+        return testo
+
+    m_obiettivo = re.search(r"Obiettivo trattativa[:\s]*.{0,250}", testo, re.IGNORECASE | re.DOTALL)
+    margine_obiettivo = None
+    roi_obiettivo = None
+    if m_obiettivo:
+        margine_obiettivo, roi_obiettivo = _estrai_margine_e_roi_da_blocco(m_obiettivo.group(0))
+
+    obiettivo_insufficiente = (
+        m_obiettivo is None
+        or (margine_obiettivo is not None and margine_obiettivo < 20)
+        or (roi_obiettivo is not None and roi_obiettivo < 100)
+    )
+    if not obiettivo_insufficiente:
+        return testo
+
+    testa_corretta = testa.replace("🟡", "🔴", 1)
+    testa_corretta = re.sub(
+        r"\bTRATTA\b",
+        "NON COMPRARE ⚠️ _corretto: anche l'obiettivo di trattativa non raggiunge la soglia minima (€20 netti / ROI 100%), non ha senso negoziare_",
+        testa_corretta, count=1, flags=re.IGNORECASE,
+    )
+    log.info(
+        "converti_tratta_senza_obiettivo_valido: TRATTA convertito in NON COMPRARE (margine_obiettivo=%s, ROI_obiettivo=%s%%, obiettivo_trovato=%s).",
+        margine_obiettivo, roi_obiettivo, m_obiettivo is not None,
+    )
+    return testa_corretta + resto
+
+
 def valida_contraddizioni_report(testo):
     final_text = _normalizza_emoji_decisione(testo)
 
@@ -1981,6 +2033,7 @@ def process_listing(parsed, url, cover_photo_bytes):
 
         output_finale = valida_contraddizioni_report(output_finale_raw)
         output_finale = forza_soglia_minima_compra(output_finale)
+        output_finale = converti_tratta_senza_obiettivo_valido(output_finale)
         output_finale = normalizza_urgenza_wording(output_finale)
         output_finale = declassa_urgenza_se_borderline(output_finale)
 
