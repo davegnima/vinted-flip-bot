@@ -135,7 +135,7 @@ CATEGORIA_KEYWORDS = {
     "camicia": ["camicia", "hemd", "shirt", "chemise", "camisa", "camisola"],
     "maglia": ["maglia", "maglione", "pullover", "sweater", "pull", "jumper", "jersey", "suéter", "trui", "strick"],
     "t-shirt": ["t-shirt", "tshirt", "maglietta", "camiseta", "playera"],
-    "canotta": ["canotta", "top", "tank top", "canotte", "débardeur", "tirantes"],
+    "canotta": ["canotta", "canottiera", "top", "tank top", "canotte", "débardeur", "tirantes"],
     "felpa": ["felpa", "hoodie", "sweatshirt", "sudadera", "kapuzenpulli"],
     "gonna": ["gonna", "rock", "skirt", "jupe", "falda", "saia"],
     "pantaloni": ["pantaloni", "pantalone", "hose", "trousers", "pants", "pantalon", "pantalón", "calças"],
@@ -150,6 +150,8 @@ CATEGORIA_KEYWORDS = {
     "sciarpa": ["sciarpa", "scarf", "echarpe", "bufanda"],
     "cintura": ["cintura", "belt", "ceinture", "cinturón"],
     "cappello": ["cappello", "hat", "chapeau", "sombrero", "cap", "berretto"],
+    "occhiali": ["occhiali", "gafas", "lunettes", "glasses", "brille", "monturas", "montatura"],
+    "tuta": ["tuta", "combinaison", "combishort", "jumpsuit", "playsuit", "overall", "salopette"],
 }
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -1196,9 +1198,9 @@ def check_skip_pre_cervello(output_occhi_testo, listing_info=None):
         return True, "[FALSO CONCLAMATO] Rilevato da analisi visiva con alta confidenza."
 
     segnali_danno_fisico = sum([
-        "buchi" in testo,
-        "strappi gravi" in testo,
-        "bruciature" in testo,
+        "buchi" in testo or "buco" in testo,
+        "strappi gravi" in testo or "strappo grave" in testo,
+        "bruciature" in testo or "bruciatura" in testo,
         "da riparare" in testo and "non riparabile" in testo,
         "condizione pessima" in testo,
         "indossabile" in testo and "non" in testo,
@@ -1249,6 +1251,64 @@ def build_skip_report(listing_info, motivo_skip):
         "## Da chiedere\nNon rilevante: filtro automatico attivato.\n\n"
         "## Messaggio da inviare\nNon necessario."
     )
+
+
+def forza_soglia_minima_compra(testo):
+    """Ultima rete di sicurezza, indipendente dal formato esatto del verdetto.
+    valida_contraddizioni_report funziona solo se il modello include l'emoji
+    (🟢/🟡/🔴/🔵) o la dicitura "**Decisione:**" -- se il modello omette
+    entrambi (capita), quella funzione non ha nulla da correggere e una
+    COMPRA sotto soglia passa inosservata. Questa funzione scansiona
+    direttamente il blocco iniziale del testo (indipendentemente dal
+    formato) e forza TRATTA se margine <20€ o ROI <100% nonostante un
+    verdetto COMPRA."""
+    LUNGHEZZA_BLOCCO_VERDETTO = 400
+    testa = testo[:LUNGHEZZA_BLOCCO_VERDETTO]
+    resto = testo[LUNGHEZZA_BLOCCO_VERDETTO:]
+
+    testa_upper = testa.upper()
+    contiene_compra = (
+        re.search(r"\bCOMPRA\b", testa_upper)
+        and "NON COMPRARE" not in testa_upper
+        and "TRATTA" not in testa_upper
+    )
+    if not contiene_compra:
+        return testo
+
+    margine_m = re.search(r"€\s*([\d.,]+)\s*\)?\s*\(?ROI", testa, re.IGNORECASE)
+    roi_m = re.search(r"ROI\s*~?\s*(\d+)", testa, re.IGNORECASE)
+
+    margine_valore = None
+    if margine_m:
+        try:
+            margine_valore = float(margine_m.group(1).replace(",", "."))
+        except ValueError:
+            pass
+
+    roi_valore = None
+    if roi_m:
+        try:
+            roi_valore = int(roi_m.group(1))
+        except ValueError:
+            pass
+
+    sotto_soglia = (
+        (margine_valore is not None and margine_valore < 20)
+        or (roi_valore is not None and roi_valore < 100)
+    )
+    if not sotto_soglia:
+        return testo
+
+    testa_corretta = re.sub(
+        r"\bCOMPRA(?:\s+(?:SUBITO|FORTE|IMMEDIATAMENTE|SE CI TIENI))?\b",
+        "TRATTA ⚠️ _corretto automaticamente: sotto soglia minima (€20 netti / ROI 100%)_",
+        testa, count=1, flags=re.IGNORECASE,
+    )
+    log.info(
+        "forza_soglia_minima_compra: COMPRA declassato a TRATTA (margine=%s, ROI=%s%%) -- verdetto originale privo di emoji/formato standard.",
+        margine_valore, roi_valore,
+    )
+    return testa_corretta + resto
 
 
 def valida_contraddizioni_report(testo):
@@ -1549,6 +1609,7 @@ def process_listing(parsed, url, cover_photo_bytes):
         costo_totale += costo_cervello
 
         output_finale = valida_contraddizioni_report(output_finale_raw)
+        output_finale = forza_soglia_minima_compra(output_finale)
 
     decisione = estrai_decisione_da_testo(output_finale) or ""
     e_compra = any(k in decisione.upper() for k in ("COMPRA", "TRATTA", "CHIEDI ALTRE FOTO"))
