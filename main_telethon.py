@@ -350,6 +350,9 @@ Prezzo basso = vantaggio. Guarda il venditore: privato sprovveduto (fast fashion
 # RICERCA WEB OBBLIGATORIA
 Se hai dubbi sui comp pre-raccolti (assenti, insufficienti, o palesemente fuori tema rispetto alla categoria del capo), chiama la funzione cerca_comp_prezzo con una query mirata PRIMA di rispondere. Gerarchia preferita per i comp: eBay SOLD > Vinted > Vestiaire.
 
+# VERIFICA ATTIVA DI CODICI E CLAIM SPECIFICI (non fidarti passivamente)
+Se l'analisi visiva cita un codice prodotto, una dicitura rara ("prototipo", "campionario", "edizione limitata", stagione specifica) o qualunque dettaglio molto specifico usato per giustificare un'autenticità o un valore superiore alla media, NON accettarlo passivamente come prova e NON limitarti a segnalare il dubbio nel testo finale. Usa attivamente cerca_comp_prezzo per verificare che quel codice/claim esista davvero e sia plausibile per il brand (es. cerca il codice stesso, o la dicitura esatta unita al brand). Se la verifica conferma, procedi con confidenza normale. Se la verifica non trova riscontro o è ambigua, tratta il dettaglio come NON confermato: abbassa la Confidenza e non usarlo come giustificazione principale del margine o dell'urgenza.
+
 # MARGINE E SOGLIE — CALCOLO A DUE GAMBE
 Acquisto pieno = prezzo + protezione (~5%+€0,70) + spedizione (IT 2,50€, EU 4,50-6€).
 Incasso reale = prezzo listing stimato × 0,80 (sconto 20%).
@@ -529,6 +532,25 @@ _vinted_session = requests.Session()
 _vinted_session.headers.update(VINTED_HEADERS)
 
 
+def _vinted_get_con_retry(url, timeout=15, max_retries=3):
+    """GET con retry per lo scraping Vinted. In precedenza un singolo timeout
+    faceva fallire l'intero scraping (foto, descrizione, venditore tutti
+    vuoti), costringendo il cervello a lavorare quasi alla cieca."""
+    ultimo_errore = None
+    for tentativo in range(1, max_retries + 1):
+        try:
+            resp = _vinted_session.get(url, headers=VINTED_HEADERS, timeout=timeout)
+            resp.raise_for_status()
+            return resp
+        except Exception as e:
+            ultimo_errore = e
+            if tentativo < max_retries:
+                time.sleep(1.5 * tentativo)
+                continue
+    log.warning("Scraping Vinted fallito dopo %d tentativi per %s: %s", max_retries, url, ultimo_errore)
+    return None
+
+
 def scrape_vinted_listing(url):
     result = {
         "photo_urls": [], "size": None, "condition": None, "description": None,
@@ -540,8 +562,9 @@ def scrape_vinted_listing(url):
         "seller_top_items": [],
     }
     try:
-        resp = _vinted_session.get(url, headers=VINTED_HEADERS, timeout=15)
-        resp.raise_for_status()
+        resp = _vinted_get_con_retry(url, timeout=15, max_retries=3)
+        if resp is None:
+            return result
         html = resp.text
 
         marker_venditore = re.search(r'data-testid="profile-username"', html)
@@ -713,12 +736,12 @@ def scrape_vinted_listing(url):
     return result
 
 
-def download_image_bytes(url, referer="https://www.vinted.it/", max_retries=2):
+def download_image_bytes(url, referer="https://www.vinted.it/", max_retries=3):
     headers = dict(IMAGE_DOWNLOAD_HEADERS)
     headers["Referer"] = referer
     for attempt in range(1, max_retries + 1):
         try:
-            resp = _vinted_session.get(url, headers=headers, timeout=15)
+            resp = _vinted_session.get(url, headers=headers, timeout=18)
             if resp.ok:
                 return resp.content
         except Exception:
@@ -841,16 +864,19 @@ def cerca_serper_mirata(query):
 CERVELLO_FUNCTION_DECLARATION = {
     "name": "cerca_comp_prezzo",
     "description": (
-        "Cerca comp di prezzo aggiuntivi sul web quando i dati pre-raccolti sono "
-        "insufficienti, fuori tema (es. categoria sbagliata) o troppo scarsi per "
-        "stimare un prezzo di vendita affidabile."
+        "Cerca sul web per due scopi distinti, entrambi validi: (1) trovare comp "
+        "di prezzo aggiuntivi quando i dati pre-raccolti sono insufficienti, fuori "
+        "tema o troppo scarsi; (2) VERIFICARE la plausibilita' di codici prodotto, "
+        "diciture rare ('prototipo', 'campionario', edizione limitata) o altri "
+        "claim molto specifici citati nell'analisi visiva, prima di trattarli come "
+        "prova di autenticita' o di valore superiore alla media."
     ),
     "parameters": {
         "type": "object",
         "properties": {
             "query": {
                 "type": "string",
-                "description": "Query di ricerca mirata, es. 'YSL camicia vintage uomo venduto eBay'",
+                "description": "Query di ricerca mirata, es. 'YSL camicia vintage uomo venduto eBay' oppure 'Miu Miu codice PMMJ-2016 prototipo collezione'",
             }
         },
         "required": ["query"],
@@ -1190,6 +1216,32 @@ def search_comps_completo(brand, categoria, query_base, catalog_id=None, materia
 # FILTRO PRE-CERVELLO e VALIDAZIONE POST-GENERAZIONE
 # ---------------------------------------------------------------------------
 
+def estrai_margine_preliminare(output_occhi_testo):
+    """Estrae margine netto e ROI dalla valutazione finanziaria preliminare
+    che l'occhio produce (best-effort: i formati variano leggermente).
+    Usato per far risparmiare token al cervello quando anche la stima
+    preliminare -- di solito ottimistica -- indica gia' una perdita."""
+    testo = output_occhi_testo or ""
+    margine_m = re.search(r"€\s*(-?[\d.,]+)\s*\)?\s*\(?ROI", testo, re.IGNORECASE)
+    roi_m = re.search(r"ROI\s*~?\s*(-?\d+)", testo, re.IGNORECASE)
+
+    margine = None
+    if margine_m:
+        try:
+            margine = float(margine_m.group(1).replace(",", "."))
+        except ValueError:
+            pass
+
+    roi = None
+    if roi_m:
+        try:
+            roi = int(roi_m.group(1))
+        except ValueError:
+            pass
+
+    return margine, roi
+
+
 def check_skip_pre_cervello(output_occhi_testo, listing_info=None):
     testo = (output_occhi_testo or "").lower()
 
@@ -1208,6 +1260,25 @@ def check_skip_pre_cervello(output_occhi_testo, listing_info=None):
     if segnali_danno_fisico >= 2:
         return True, "[CONDIZIONE DISTRUTTA] Danni fisici gravi multipli rilevati dall'analisi visiva."
 
+    # Skip su margine preliminare chiaramente negativo: se anche la stima
+    # dell'occhio (di solito ottimistica, senza comp reali) indica gia' una
+    # perdita netta o ROI negativo, e' molto improbabile che il cervello,
+    # con dati di mercato reali, trovi un risultato migliore. Risparmia
+    # una chiamata costosa (token + eventuale ricerca extra) senza cambiare
+    # l'esito finale nella grande maggioranza dei casi.
+    margine_prelim, roi_prelim = estrai_margine_preliminare(output_occhi_testo)
+    margine_esplicitamente_nullo = any(k in testo for k in (
+        "margine nullo", "margine negativo", "nessun valore di rivendita",
+        "valore di rivendita non significativo", "non c'è valore di rivendita",
+        "non vale il tempo",
+    ))
+    if margine_esplicitamente_nullo or (margine_prelim is not None and margine_prelim < 0) or (roi_prelim is not None and roi_prelim < 0):
+        return True, (
+            f"[MARGINE PRELIMINARE NEGATIVO] Stima preliminare dell'occhio indica "
+            f"perdita netta (margine≈{margine_prelim}, ROI≈{roi_prelim}%) -- "
+            "cervello non consultato per risparmiare token."
+        )
+
     return False, None
 
 
@@ -1221,6 +1292,9 @@ def build_skip_report(listing_info, motivo_skip):
     elif motivo_skip.startswith("[CONDIZIONE DISTRUTTA"):
         riga_legit = "Autentico ma condizione fisica gravemente compromessa — non rivendibile."
         riga_rischio = "BASSO (autenticità) / ALTO (condizione) — cervello non consultato"
+    elif motivo_skip.startswith("[MARGINE PRELIMINARE NEGATIVO"):
+        riga_legit = "Non valutato nel dettaglio — la stima preliminare indicava già una perdita netta."
+        riga_rischio = "N/A — margine preliminare negativo (cervello non consultato per risparmiare token)"
     elif motivo_skip.startswith("[CATEGORIA GENERICA NON FLIPPABILE"):
         riga_legit = "Categoria strutturalmente senza mercato — nessun valore di rivendita."
         riga_rischio = "BASSO — categoria non flippabile (filtro pre-Gemini)"
@@ -1483,6 +1557,27 @@ def process_listing(parsed, url, cover_photo_bytes):
                     lambda u: download_image_bytes(u, referer=url), photo_urls
                 ))
             photo_bytes_list = [img for img in risultati_download if img]
+
+            # Se alcune foto non sono state scaricate, ritenta specificamente
+            # quelle mancanti invece di procedere silenziosamente con meno
+            # foto di quelle disponibili -- l'analisi visiva ne risente molto.
+            mancanti = [u for u, img in zip(photo_urls, risultati_download) if img is None]
+            if mancanti:
+                log.warning(
+                    "Download foto incompleto per %s: %d/%d riuscite al primo giro, ritento le mancanti...",
+                    url, len(photo_bytes_list), len(photo_urls),
+                )
+                with ThreadPoolExecutor(max_workers=3) as pool:
+                    retry_risultati = list(pool.map(
+                        lambda u: download_image_bytes(u, referer=url, max_retries=4), mancanti
+                    ))
+                recuperate = [img for img in retry_risultati if img]
+                photo_bytes_list.extend(recuperate)
+                if len(photo_bytes_list) < len(photo_urls):
+                    log.warning(
+                        "Dopo il retry restano %d/%d foto mancanti per %s -- analisi visiva basata su set incompleto.",
+                        len(photo_urls) - len(photo_bytes_list), len(photo_urls), url,
+                    )
 
     if not photo_bytes_list and cover_photo_bytes:
         photo_bytes_list = [cover_photo_bytes]
