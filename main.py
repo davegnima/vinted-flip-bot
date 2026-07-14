@@ -1541,6 +1541,9 @@ def process_listing(parsed, url, cover_photo_bytes):
                 "cerca_comp_prezzo per ottenere comp reali prima di rispondere."
             )
 
+        # === DEBUG TEMPORANEO: rimuovere dopo aver verificato il caso ===
+        log.info("=== DEBUG USER_TEXT_CERVELLO ===\n%s\n=== FINE DEBUG ===", user_text_cervello)
+
         output_finale_raw, costo_cervello, n_query_grounding = chiama_gemini_cervello_forzato(
             GEMINI_CERVELLO_SYSTEM_PROMPT, user_text_cervello)
         costo_totale += costo_cervello
