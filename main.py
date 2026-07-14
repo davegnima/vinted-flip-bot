@@ -208,6 +208,15 @@ def check_skip_pre_gemini(listing_info):
     unflippable = [
         "calzini", "calze", "collant", "portachiavi", "profumi", "eau de parfum",
         "eau de toilette", "deodoranti", "cover per telefono", "ciondoli", "guinzagli",
+        # occhiali/occhialeria (vista o sole), montature, lenti, astucci -- basso
+        # ROI ricorrente e mercato saturo, escluso a monte su richiesta esplicita
+        "occhiali", "montatura", "montature", "lenti da vista", "occhiale da sole",
+        "occhiale da vista", "astuccio occhiali",
+        "glasses", "eyewear", "sunglasses", "spectacles", "eyeglass frames",
+        "brille", "brillengestell", "sonnenbrille",
+        "lunettes", "monture de lunettes",
+        "gafas", "monturas de gafas", "lentes de sol",
+        "óculos", "armação de óculos",
     ]
     for kw in unflippable:
         if kw in titolo or kw in descrizione:
