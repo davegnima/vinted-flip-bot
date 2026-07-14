@@ -1327,6 +1327,32 @@ def check_skip_pre_cervello(output_occhi_testo, listing_info=None):
     if segnali_danno_fisico >= 2:
         return True, "[CONDIZIONE DISTRUTTA] Danni fisici gravi multipli rilevati dall'analisi visiva."
 
+    # Skip su nessuna etichetta visibile: "Non verificabile" è uno dei 4
+    # verdetti standard del legit check dell'occhio (zero etichette visibili
+    # nelle foto). Senza nessuna etichetta il cervello non ha nulla in più
+    # da aggiungere sull'autenticità -- l'unico passo utile è chiedere altre
+    # foto al venditore, cosa che l'occhio stesso ha già suggerito nel suo
+    # output. Risparmia la chiamata al cervello.
+    #
+    # "non verificabile" e' generico e potrebbe comparire fuori contesto
+    # (es. "il colore non è verificabile dalla foto" pur con etichette
+    # presenti) -- lo cerchiamo SOLO nel blocco verdetto iniziale, dove il
+    # prompt lo colloca sempre come uno dei 4 esiti canonici del legit check.
+    # Le frasi esplicite sotto sono già specifiche abbastanza da matchare
+    # ovunque nel testo senza rischio di falsi positivi.
+    BLOCCO_VERDETTO_INIZIALE = testo[:250]
+    ETICHETTA_KEYWORDS_ESPLICITE = [
+        "nessuna etichetta visibile", "assenza totale di etichette",
+        "etichette non visibili", "zero etichette", "senza etichette visibili",
+        "non sono visibili etichette", "nessuna etichetta è visibile",
+    ]
+    if "non verificabile" in BLOCCO_VERDETTO_INIZIALE or any(kw in testo for kw in ETICHETTA_KEYWORDS_ESPLICITE):
+        return True, (
+            "[NESSUNA ETICHETTA VISIBILE] L'analisi visiva non ha trovato etichette "
+            "per verificare l'autenticità -- cervello non consultato, servono più foto "
+            "(main label + wash tag) prima di procedere."
+        )
+
     # Skip su margine preliminare chiaramente negativo: se anche la stima
     # dell'occhio (di solito ottimistica, senza comp reali) indica gia' una
     # perdita netta o ROI negativo, e' molto improbabile che il cervello,
@@ -1349,7 +1375,7 @@ def check_skip_pre_cervello(output_occhi_testo, listing_info=None):
     return False, None
 
 
-def build_skip_report(listing_info, motivo_skip):
+def build_skip_report(listing_info, motivo_skip, output_occhi_testo=None):
     if motivo_skip.startswith("[MARGINE INSUFFICIENTE"):
         riga_legit = "Non valutato — filtro pre-cervello su margine insufficiente. Autenticità non in dubbio."
         riga_rischio = "BASSO — margine insufficiente (filtro automatico, cervello non consultato)"
@@ -1359,6 +1385,9 @@ def build_skip_report(listing_info, motivo_skip):
     elif motivo_skip.startswith("[CONDIZIONE DISTRUTTA"):
         riga_legit = "Autentico ma condizione fisica gravemente compromessa — non rivendibile."
         riga_rischio = "BASSO (autenticità) / ALTO (condizione) — cervello non consultato"
+    elif motivo_skip.startswith("[NESSUNA ETICHETTA VISIBILE"):
+        riga_legit = "Nessuna etichetta visibile nelle foto fornite — autenticità non verificabile allo stato attuale."
+        riga_rischio = "ALTO (non verificabile) — servono più foto (filtro pre-cervello, risparmio token)"
     elif motivo_skip.startswith("[MARGINE PRELIMINARE NEGATIVO"):
         riga_legit = "Non valutato nel dettaglio — la stima preliminare indicava già una perdita netta."
         riga_rischio = "N/A — margine preliminare negativo (cervello non consultato per risparmiare token)"
@@ -1385,6 +1414,19 @@ def build_skip_report(listing_info, motivo_skip):
         riga_rischio = "N/A — filtro automatico"
         
     motivo_breve = motivo_skip[:117].rsplit(" ", 1)[0] + "..." if len(motivo_skip) > 120 else motivo_skip
+
+    # Per il caso "nessuna etichetta", riusa il messaggio che l'occhio ha già
+    # suggerito (di solito chiede foto di main label + wash tag) invece del
+    # generico "Non necessario" -- è l'unica azione utile in questo caso.
+    messaggio_skip = "Non necessario."
+    if motivo_skip.startswith("[NESSUNA ETICHETTA VISIBILE") and output_occhi_testo:
+        m = re.search(
+            r"📨\s*\*\*Messaggio da inviare:?\*\*\s*\n\"?([^\n\"]+)",
+            output_occhi_testo, re.IGNORECASE,
+        )
+        if m:
+            messaggio_skip = m.group(1).strip()
+
     return (
         "## Verdetto operativo\n"
         "- **Decisione:** NON COMPRARE · N/A\n"
@@ -1396,7 +1438,7 @@ def build_skip_report(listing_info, motivo_skip):
         f"- **In una riga:** {motivo_breve}\n\n"
         f"## Legit check\n{riga_legit}\n\n"
         "## Da chiedere\nNon rilevante: filtro automatico attivato.\n\n"
-        "## Messaggio da inviare\nNon necessario."
+        f"## Messaggio da inviare\n{messaggio_skip}"
     )
 
 
@@ -1703,7 +1745,7 @@ def process_listing(parsed, url, cover_photo_bytes):
     e_skip, motivo_skip = check_skip_pre_cervello(output_occhi, listing_info)
     if e_skip:
         log.info("FILTRO PRE-CERVELLO ATTIVATO. Motivo: %s", motivo_skip)
-        output_finale = build_skip_report(listing_info, motivo_skip)
+        output_finale = build_skip_report(listing_info, motivo_skip, output_occhi_testo=output_occhi)
         n_query_grounding = 0
         scenario_usato = "SKIP"
         forza_ricerca = None
