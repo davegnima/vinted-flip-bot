@@ -952,95 +952,111 @@ CERVELLO_FUNCTION_DECLARATION = {
 
 def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca=True, max_retries=4):
     """Variante del cervello con function calling. Se forza_ricerca=True, il
-    modello DEVE chiamare cerca_comp_prezzo almeno una volta (mode ANY). Se
-    False, il tool resta disponibile ma la scelta e' lasciata al modello
-    (mode AUTO) -- usato quando i comp pre-raccolti sono gia' sufficienti,
-    per evitare una ricerca extra ridondante su ogni singolo annuncio."""
+    primo giro DEVE chiamare cerca_comp_prezzo (mode ANY). Se False, il tool
+    resta disponibile ma la scelta e' lasciata al modello (mode AUTO).
+
+    Gestisce fino a MAX_ROUNDS_FUNZIONE giri di ricerca: se dopo aver
+    ricevuto un risultato (es. una ricerca fallita per crediti Serper
+    esauriti) il modello prova a richiamare di nuovo la funzione invece di
+    rispondere, i giri precedenti lasciavano il messaggio Telegram vuoto
+    (solo header, verdetto assente) perche' la seconda risposta veniva letta
+    come testo finale anche quando conteneva solo un'altra richiesta di
+    funzione. Ora, all'ultimo giro consentito, i tool vengono disabilitati
+    (mode NONE) per costringere il modello a rispondere con un verdetto
+    testuale usando qualunque dato abbia gia' raccolto."""
     contents = [{"role": "user", "parts": [{"text": user_text}]}]
-
-    function_calling_config = {"mode": "ANY" if forza_ricerca else "AUTO"}
-    if forza_ricerca:
-        function_calling_config["allowed_function_names"] = ["cerca_comp_prezzo"]
-
-    payload = {
-        "system_instruction": {"parts": [{"text": system_prompt}]},
-        "contents": contents,
-        "tools": [{"function_declarations": [CERVELLO_FUNCTION_DECLARATION]}],
-        "tool_config": {"function_calling_config": function_calling_config},
-        "safetySettings": [
-            {"category": c, "threshold": "BLOCK_NONE"} for c in (
-                "HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH",
-                "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT")
-        ],
-        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 3000},
-    }
-
     costo_totale = 0.0
     n_query_extra = 0
-    backoff_seconds = 2
+    MAX_ROUNDS_FUNZIONE = 2  # giri di ricerca consentiti prima di forzare una risposta testuale
 
-    for attempt in range(1, max_retries + 1):
-        try:
-            resp = requests.post(GEMINI_API_URL, params={"key": GEMINI_API_KEY}, json=payload, timeout=90)
-            if not resp.ok:
-                log.warning("Gemini (cervello forzato) HTTP %d: %s", resp.status_code, resp.text[:500])
-                if resp.status_code in {429, 500, 502, 503, 504} and attempt < max_retries:
+    def _chiama_gemini_raw(tool_mode, tools_abilitati, tentativi_rimasti):
+        function_calling_config = {"mode": tool_mode}
+        if tool_mode == "ANY":
+            function_calling_config["allowed_function_names"] = ["cerca_comp_prezzo"]
+
+        payload = {
+            "system_instruction": {"parts": [{"text": system_prompt}]},
+            "contents": contents,
+            "safetySettings": [
+                {"category": c, "threshold": "BLOCK_NONE"} for c in (
+                    "HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH",
+                    "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT")
+            ],
+            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 3000},
+        }
+        if tools_abilitati:
+            payload["tools"] = [{"function_declarations": [CERVELLO_FUNCTION_DECLARATION]}]
+            payload["tool_config"] = {"function_calling_config": function_calling_config}
+
+        backoff_seconds = 2
+        for attempt in range(1, tentativi_rimasti + 1):
+            try:
+                resp = requests.post(GEMINI_API_URL, params={"key": GEMINI_API_KEY}, json=payload, timeout=90)
+                if not resp.ok:
+                    log.warning("Gemini (cervello forzato) HTTP %d: %s", resp.status_code, resp.text[:500])
+                    if resp.status_code in {429, 500, 502, 503, 504} and attempt < tentativi_rimasti:
+                        time.sleep(backoff_seconds)
+                        backoff_seconds *= 2
+                        continue
+                    resp.raise_for_status()
+                return resp.json()
+            except Exception as e:
+                if attempt < tentativi_rimasti:
                     time.sleep(backoff_seconds)
                     backoff_seconds *= 2
                     continue
-                resp.raise_for_status()
+                raise
+        raise RuntimeError("tentativi esauriti")
 
-            data = resp.json()
-            candidates = data.get("candidates", [])
-            if not candidates:
-                return "[ERRORE: risposta Gemini senza candidates]", 0.0, 0
+    tool_mode = "ANY" if forza_ricerca else "AUTO"
 
-            usage = data.get("usageMetadata", {})
-            costo_totale += costo_gemini_token(usage)
-
-            parts = candidates[0].get("content", {}).get("parts", []) or []
-            function_call = next((p.get("functionCall") for p in parts if p.get("functionCall")), None)
-
-            if function_call:
-                query_richiesta = function_call.get("args", {}).get("query", "")
-                log.info("Cervello Gemini ha richiesto ricerca mirata: '%s'", query_richiesta)
-                risultato_ricerca = cerca_serper_mirata(query_richiesta)
-                n_query_extra += 1
-
-                contents.append({"role": "model", "parts": parts})
-                contents.append({
-                    "role": "user",
-                    "parts": [{
-                        "functionResponse": {
-                            "name": "cerca_comp_prezzo",
-                            "response": {"result": risultato_ricerca},
-                        }
-                    }]
-                })
-
-                payload["contents"] = contents
-                payload["tool_config"] = {"function_calling_config": {"mode": "AUTO"}}
-
-                resp2 = requests.post(GEMINI_API_URL, params={"key": GEMINI_API_KEY}, json=payload, timeout=90)
-                resp2.raise_for_status()
-                data2 = resp2.json()
-                usage2 = data2.get("usageMetadata", {})
-                costo_totale += costo_gemini_token(usage2)
-                candidates2 = data2.get("candidates", [])
-                if candidates2:
-                    text = "".join(p.get("text", "") for p in candidates2[0].get("content", {}).get("parts", []) or [])
-                    return text, costo_totale, n_query_extra
-                return "[ERRORE: risposta finale Gemini senza candidates]", costo_totale, n_query_extra
-
-            text = "".join(p.get("text", "") for p in parts)
-            return text, costo_totale, n_query_extra
-
+    for round_idx in range(MAX_ROUNDS_FUNZIONE + 1):
+        ultimo_giro = round_idx == MAX_ROUNDS_FUNZIONE
+        try:
+            data = _chiama_gemini_raw(
+                tool_mode="NONE" if ultimo_giro else tool_mode,
+                tools_abilitati=not ultimo_giro,
+                tentativi_rimasti=max_retries,
+            )
         except Exception as e:
-            if attempt < max_retries:
-                time.sleep(backoff_seconds)
-                backoff_seconds *= 2
-                continue
-            return f"[ERRORE: cervello forzato fallito dopo {max_retries} tentativi. Eccezione: {e}]", costo_totale, n_query_extra
+            return f"[ERRORE: cervello forzato fallito. Eccezione: {e}]", costo_totale, n_query_extra
+
+        candidates = data.get("candidates", [])
+        if not candidates:
+            return "[ERRORE: risposta Gemini senza candidates]", costo_totale, n_query_extra
+
+        usage = data.get("usageMetadata", {})
+        costo_totale += costo_gemini_token(usage)
+
+        parts = candidates[0].get("content", {}).get("parts", []) or []
+        function_call = next((p.get("functionCall") for p in parts if p.get("functionCall")), None)
+
+        if function_call and not ultimo_giro:
+            query_richiesta = function_call.get("args", {}).get("query", "")
+            log.info("Cervello Gemini ha richiesto ricerca mirata (giro %d/%d): '%s'", round_idx + 1, MAX_ROUNDS_FUNZIONE, query_richiesta)
+            risultato_ricerca = cerca_serper_mirata(query_richiesta)
+            n_query_extra += 1
+
+            contents.append({"role": "model", "parts": parts})
+            contents.append({
+                "role": "user",
+                "parts": [{
+                    "functionResponse": {
+                        "name": "cerca_comp_prezzo",
+                        "response": {"result": risultato_ricerca},
+                    }
+                }]
+            })
+            tool_mode = "AUTO"  # i giri successivi non sono piu' forzati
+            continue
+
+        testo = "".join(p.get("text", "") for p in parts)
+        if testo.strip():
+            return testo, costo_totale, n_query_extra
+        if not ultimo_giro:
+            # Nessun testo e nessuna function call valida (raro): un altro giro
+            continue
+        return "[ERRORE: il modello non ha prodotto una risposta testuale dopo i tentativi di ricerca]", costo_totale, n_query_extra
 
     return "[ERRORE: tentativi esauriti]", costo_totale, n_query_extra
 
