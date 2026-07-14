@@ -59,7 +59,7 @@ RAFFREDDAMENTO_SERPER_SECONDI = 3600 * 6
 _serper_notifica_esaurimento_inviata = [False]
 
 # BLOCKLIST VENDITORI
-VENDITORI_BLOCKLIST = {"valeryepippo", "firmadonna98"}
+VENDITORI_BLOCKLIST = {"valeryepippo", "firmadonna98", "cicciodonna779", "hadourif"}
 
 VINTED_BRAND_IDS = {
     "brunello cucinelli": "103740", "rick owens": "145654",
@@ -422,6 +422,9 @@ Incasso reale = prezzo listing stimato × 0,80 (sconto 20%).
 Margine netto = incasso reale − acquisto pieno.
 Soglia minima per COMPRA: €20 netti E ROI 100%+.
 
+# LIMITE MASSIMO DI SCONTO IN TRATTATIVA (regola rigida)
+Quando proponi un "Obiettivo trattativa", puoi chiedere al massimo il 40% di sconto sul PREZZO DEL PRODOTTO (non sul totale con spedizione), e solo se il venditore accetta — la spedizione non è mai scontabile. Esempio: prodotto €10 + spedizione €5 = totale €15. Sconto massimo: 40% di €10 = €4, quindi l'offerta minima proponibile è €6 (prodotto) + €5 (spedizione) = €11 totale, mai meno. Non proporre mai un'offerta totale inferiore a [prezzo prodotto × 0,6 + spedizione reale]. Se il margine resta insufficiente anche a questa soglia massima di sconto, la decisione corretta è NON COMPRARE, non un'offerta ancora più aggressiva.
+
 # SOGLIA SEPARATA PER L'URGENZA (non confondere con la soglia minima per COMPRA)
 "Alta urgenza" NON è il default per ogni COMPRA che supera la soglia minima — è riservata ai casi con margine di sicurezza reale, non a quelli borderline. Usa "Alta urgenza" SOLO se margine netto ≥ €30 E ROI ≥ 150%. Se il margine/ROI supera la soglia minima (€20/100%) ma resta sotto questi valori, la decisione resta COMPRA ma l'urgenza deve essere "Media" o "Bassa", mai "Alta". Inoltre, non giustificare "Alta urgenza" con stime generiche di valore del brand ("il capo vale tipicamente tra X e Y") se la ricerca web non ha restituito comp specifici e verificabili: in quel caso l'urgenza non può essere Alta, indipendentemente dal margine calcolato.
 
@@ -435,7 +438,7 @@ La stima di vendita DEVE ancorarsi ai comp di VENDUTO/ASK reali trovati (pre-rac
 Usa ESCLUSIVAMENTE queste 4 emoji per il verdetto: 🟢 (COMPRA) 🟡 (TRATTA) 🔴 (NON COMPRARE) 🔵 (CHIEDI ALTRE FOTO). NON usare mai ✅ ⚠️ ❌ nel tuo verdetto finale: sono riservate al legit check dell'occhio, non al tuo output. La parola urgenza deve essere ESATTAMENTE "Alta urgenza", "Media urgenza" o "Bassa urgenza" — mai sinonimi come "priorità", "importanza" o simili.
 
 # VERIFICA FINALE OBBLIGATORIA
-Verifica che i calcoli (Margine e ROI) supportino la tua Decisione. Se margine <20€ o ROI <100%, DEVI usare TRATTA o NON COMPRARE. Verifica anche che l'urgenza dichiarata rispetti la soglia separata sopra: se hai scritto "Alta urgenza" ma margine <€30 o ROI <150%, correggi in "Media urgenza". Verifica infine che la tua stima di vendita non superi il valore più alto tra i comp reali raccolti (regola di ancoraggio sopra).
+Verifica che i calcoli (Margine e ROI) supportino la tua Decisione. Se margine <20€ o ROI <100%, DEVI usare TRATTA o NON COMPRARE. Verifica anche che l'urgenza dichiarata rispetti la soglia separata sopra: se hai scritto "Alta urgenza" ma margine <€30 o ROI <150%, correggi in "Media urgenza". Verifica infine che la tua stima di vendita non superi il valore più alto tra i comp reali raccolti (regola di ancoraggio sopra), e che qualunque "Obiettivo trattativa" rispetti il limite massimo di sconto del 40% sul prezzo prodotto (mai sulla spedizione).
 
 # OUTPUT — Verdetto in cima.
 
@@ -1612,6 +1615,45 @@ def declassa_urgenza_se_borderline(testo):
     return testa_corretta + resto
 
 
+def applica_soglia_trattativa_40_percento(testo, prezzo_prodotto):
+    """Rete di sicurezza sulla regola: sconto massimo trattabile = 40% sul
+    prezzo del PRODOTTO (mai sulla spedizione). Se il modello propone
+    un'offerta totale ("Obiettivo trattativa: €X") sotto il minimo
+    consentito, la corregge al minimo effettivo -- usando una stima di
+    spedizione conservativa (il valore reale e' quasi sempre uguale o
+    superiore, quindi questo e' un limite di sicurezza, non una stima
+    esatta)."""
+    if prezzo_prodotto is None:
+        return testo
+
+    m = re.search(r"(Obiettivo trattativa:\s*€\s*)([\d.,]+)", testo, re.IGNORECASE)
+    if not m:
+        return testo
+
+    try:
+        valore_offerto = float(m.group(2).replace(",", "."))
+    except ValueError:
+        return testo
+
+    STIMA_SPEDIZIONE_MINIMA = 2.50  # tariffa IT, la piu' economica -- il vero minimo e' spesso piu' alto
+    soglia_minima = round(prezzo_prodotto * 0.6 + STIMA_SPEDIZIONE_MINIMA, 2)
+
+    if valore_offerto >= soglia_minima - 0.01:
+        return testo
+
+    soglia_str = f"{soglia_minima:.2f}".replace(".", ",")
+    testo_corretto = (
+        testo[:m.start(2)]
+        + f"{soglia_str} ⚠️ _corretto: sconto massimo consentito 40% sul prezzo prodotto (€{prezzo_prodotto:.2f}) + spedizione, mai sotto questa soglia_"
+        + testo[m.end(2):]
+    )
+    log.info(
+        "applica_soglia_trattativa_40_percento: offerta corretta da €%.2f a €%.2f (prezzo prodotto=€%.2f).",
+        valore_offerto, soglia_minima, prezzo_prodotto,
+    )
+    return testo_corretto
+
+
 def valida_contraddizioni_report(testo):
     final_text = _normalizza_emoji_decisione(testo)
 
@@ -1937,6 +1979,13 @@ def process_listing(parsed, url, cover_photo_bytes):
         output_finale = forza_soglia_minima_compra(output_finale)
         output_finale = normalizza_urgenza_wording(output_finale)
         output_finale = declassa_urgenza_se_borderline(output_finale)
+
+        prezzo_prodotto = None
+        try:
+            prezzo_prodotto = float(str(listing_info.get("price") or "").replace(",", "."))
+        except (ValueError, TypeError):
+            pass
+        output_finale = applica_soglia_trattativa_40_percento(output_finale, prezzo_prodotto)
 
     decisione = estrai_decisione_da_testo(output_finale) or ""
     e_compra = any(k in decisione.upper() for k in ("COMPRA", "TRATTA", "CHIEDI ALTRE FOTO"))
