@@ -416,8 +416,17 @@ Soglia minima per COMPRA: €20 netti E ROI 100%+.
 # SOGLIA SEPARATA PER L'URGENZA (non confondere con la soglia minima per COMPRA)
 "Alta urgenza" NON è il default per ogni COMPRA che supera la soglia minima — è riservata ai casi con margine di sicurezza reale, non a quelli borderline. Usa "Alta urgenza" SOLO se margine netto ≥ €30 E ROI ≥ 150%. Se il margine/ROI supera la soglia minima (€20/100%) ma resta sotto questi valori, la decisione resta COMPRA ma l'urgenza deve essere "Media" o "Bassa", mai "Alta". Inoltre, non giustificare "Alta urgenza" con stime generiche di valore del brand ("il capo vale tipicamente tra X e Y") se la ricerca web non ha restituito comp specifici e verificabili: in quel caso l'urgenza non può essere Alta, indipendentemente dal margine calcolato.
 
+# TAGLIA COME FATTORE DI LIQUIDITÀ (non ignorarla mai se nota)
+Se la taglia del capo è nota (dai dati annuncio o dalle foto), FATTORIZZALA sempre nella stima di vendita, nel Deal score e nei giorni stimati di vendita — non limitarti a valutare il brand. Taglie standard/centrali (donna IT 40-44, uomo IT 48-52) hanno il bacino di acquirenti più ampio e liquidità migliore. Taglie estreme (donna sotto IT 38 o sopra IT 46, uomo sotto 46 o sopra 54) hanno domanda strutturalmente più bassa: bacino di acquirenti ridotto, tempi di vendita più lunghi, spesso prezzo di vendita finale inferiore rispetto alla stessa taglia standard dello stesso capo. In questi casi abbassa il Deal score, allunga la stima giorni di vendita, e menzlonalo esplicitamente nell'Analisi dell'analista. Se la taglia non è nota, dillo esplicitamente come limite dell'analisi invece di ignorare il tema.
+
+# ANCORAGGIO AI COMP REALI (non al prezzo retail scontato)
+La stima di vendita DEVE ancorarsi ai comp di VENDUTO/ASK reali trovati (pre-raccolti o dalla ricerca), non al prezzo retail originale scontato di una percentuale arbitraria. Se i comp reali mostrano un range (es. venduti €35-55, ask €40-75), la tua stima di vendita non può superare il valore più alto dei comp reali raccolti, anche se il prezzo retail del capo nuovo è molto più alto. Se non hai comp specifici per quel modello ma solo per il brand in generale, usa il valore mediano-basso della fascia trovata, mai il valore più ottimistico. Diffida di te stesso se la tua stima di vendita finale supera nettamente tutti i prezzi "venduto" effettivamente citati nei dati raccolti: in quel caso stai probabilmente ragionando sul retail, non sul second-hand — correggi verso il basso.
+
+# FORMATO RIGIDO — NON DEVIARE
+Usa ESCLUSIVAMENTE queste 4 emoji per il verdetto: 🟢 (COMPRA) 🟡 (TRATTA) 🔴 (NON COMPRARE) 🔵 (CHIEDI ALTRE FOTO). NON usare mai ✅ ⚠️ ❌ nel tuo verdetto finale: sono riservate al legit check dell'occhio, non al tuo output. La parola urgenza deve essere ESATTAMENTE "Alta urgenza", "Media urgenza" o "Bassa urgenza" — mai sinonimi come "priorità", "importanza" o simili.
+
 # VERIFICA FINALE OBBLIGATORIA
-Verifica che i calcoli (Margine e ROI) supportino la tua Decisione. Se margine <20€ o ROI <100%, DEVI usare TRATTA o NON COMPRARE. Verifica anche che l'urgenza dichiarata rispetti la soglia separata sopra: se hai scritto "Alta urgenza" ma margine <€30 o ROI <150%, correggi in "Media urgenza".
+Verifica che i calcoli (Margine e ROI) supportino la tua Decisione. Se margine <20€ o ROI <100%, DEVI usare TRATTA o NON COMPRARE. Verifica anche che l'urgenza dichiarata rispetti la soglia separata sopra: se hai scritto "Alta urgenza" ma margine <€30 o ROI <150%, correggi in "Media urgenza". Verifica infine che la tua stima di vendita non superi il valore più alto tra i comp reali raccolti (regola di ancoraggio sopra).
 
 # OUTPUT — Verdetto in cima.
 
@@ -1299,18 +1308,15 @@ def search_comps_completo(brand, categoria, query_base, catalog_id=None, materia
     return "\n".join(parti), serper_ha_funzionato
 
 
-# ---------------------------------------------------------------------------
-# FILTRO PRE-CERVELLO e VALIDAZIONE POST-GENERAZIONE
-# ---------------------------------------------------------------------------
-
-def estrai_margine_preliminare(output_occhi_testo):
-    """Estrae margine netto e ROI dalla valutazione finanziaria preliminare
-    che l'occhio produce (best-effort: i formati variano leggermente).
-    Usato per far risparmiare token al cervello quando anche la stima
-    preliminare -- di solito ottimistica -- indica gia' una perdita."""
-    testo = output_occhi_testo or ""
-    margine_m = re.search(r"€\s*(-?[\d.,]+)\s*\)?\s*\(?ROI", testo, re.IGNORECASE)
-    roi_m = re.search(r"ROI\s*~?\s*(-?\d+)", testo, re.IGNORECASE)
+def _estrai_margine_e_roi_da_blocco(blocco_testo):
+    """Estrae margine netto e ROI da un blocco di testo. Gestisce anche i
+    range (es. '€27-40 (ROI 110-165%)'), prendendo sempre il valore piu'
+    basso come stima prudente -- il regex precedente si fermava sul primo
+    numero e falliva silenziosamente quando seguito da un range invece che
+    direttamente da 'ROI', lasciando margine=None e bypassando le reti di
+    sicurezza a valle."""
+    margine_m = re.search(r"€\s*(-?[\d.,]+)(?:\s*[-–]\s*[\d.,]+)?\s*\)?\s*\(?ROI", blocco_testo, re.IGNORECASE)
+    roi_m = re.search(r"ROI\s*~?\s*(-?\d+)", blocco_testo, re.IGNORECASE)
 
     margine = None
     if margine_m:
@@ -1327,6 +1333,61 @@ def estrai_margine_preliminare(output_occhi_testo):
             pass
 
     return margine, roi
+
+
+def _normalizza_emoji_decisione(testo, lunghezza_blocco=400):
+    """Il cervello a volte usa per errore le emoji del legit-check
+    dell'occhio (✅⚠️❌) invece di quelle proprie (🟢🟡🔴), specialmente
+    quando riprende la formulazione dell'analisi visiva preliminare.
+    Gestisce due casi:
+    1. Emoji sbagliata + nessuna parola di decisione: inserisce sia
+       l'emoji giusta sia la parola (es. "✅ ..." -> "🟢 COMPRA ...").
+    2. Emoji sbagliata + parola di decisione già presente (es. "✅ COMPRA
+       SUBITO"): sostituisce solo l'emoji, senza duplicare la parola."""
+    testa = testo[:lunghezza_blocco]
+    resto = testo[lunghezza_blocco:]
+
+    upper = testa.upper()
+    ha_parola_decisione = any(k in upper for k in ("COMPRA", "TRATTA", "NON COMPRARE", "CHIEDI"))
+
+    if ha_parola_decisione:
+        testa = testa.replace("✅", "🟢", 1).replace("❌", "🔴", 1).replace("⚠️", "🟡", 1)
+    else:
+        if "✅" in testa:
+            testa = testa.replace("✅", "🟢 COMPRA", 1)
+        elif "❌" in testa:
+            testa = testa.replace("❌", "🔴 NON COMPRARE", 1)
+        elif "⚠️" in testa:
+            testa = testa.replace("⚠️", "🟡 TRATTA", 1)
+
+    return testa + resto
+
+
+def normalizza_urgenza_wording(testo, lunghezza_blocco=400):
+    """Il prompt prevede solo 3 livelli di urgenza (Alta/Media/Bassa), ma il
+    modello a volte inventa varianti come 'Massima urgenza' o 'Urgenza
+    massima' che sfuggono al controllo soglia (che cerca 'Alta'). Le
+    normalizza tutte ad 'Alta urgenza' prima che declassa_urgenza_se_borderline
+    valuti se il margine/ROI la giustifica davvero."""
+    testa = testo[:lunghezza_blocco]
+    resto = testo[lunghezza_blocco:]
+
+    testa = re.sub(r"massima\s+(?:urgenza|priorit[aà])", "Alta urgenza", testa, flags=re.IGNORECASE)
+    testa = re.sub(r"(?:urgenza|priorit[aà])\s+massima", "Alta urgenza", testa, flags=re.IGNORECASE)
+
+    return testa + resto
+
+
+# ---------------------------------------------------------------------------
+# FILTRO PRE-CERVELLO e VALIDAZIONE POST-GENERAZIONE
+# ---------------------------------------------------------------------------
+
+def estrai_margine_preliminare(output_occhi_testo):
+    """Estrae margine netto e ROI dalla valutazione finanziaria preliminare
+    che l'occhio produce (best-effort: i formati variano leggermente).
+    Usato per far risparmiare token al cervello quando anche la stima
+    preliminare -- di solito ottimistica -- indica gia' una perdita."""
+    return _estrai_margine_e_roi_da_blocco(output_occhi_testo or "")
 
 
 def check_skip_pre_cervello(output_occhi_testo, listing_info=None):
@@ -1467,10 +1528,11 @@ def forza_soglia_minima_compra(testo):
     valida_contraddizioni_report funziona solo se il modello include l'emoji
     (🟢/🟡/🔴/🔵) o la dicitura "**Decisione:**" -- se il modello omette
     entrambi (capita), quella funzione non ha nulla da correggere e una
-    COMPRA sotto soglia passa inosservata. Questa funzione scansiona
-    direttamente il blocco iniziale del testo (indipendentemente dal
-    formato) e forza TRATTA se margine <20€ o ROI <100% nonostante un
-    verdetto COMPRA."""
+    COMPRA sotto soglia passa inosservata. Questa funzione normalizza prima
+    eventuali emoji sbagliate (✅⚠️❌), poi scansiona il blocco iniziale del
+    testo e forza TRATTA se margine <20€ o ROI <100% nonostante COMPRA."""
+    testo = _normalizza_emoji_decisione(testo)
+
     LUNGHEZZA_BLOCCO_VERDETTO = 400
     testa = testo[:LUNGHEZZA_BLOCCO_VERDETTO]
     resto = testo[LUNGHEZZA_BLOCCO_VERDETTO:]
@@ -1484,22 +1546,7 @@ def forza_soglia_minima_compra(testo):
     if not contiene_compra:
         return testo
 
-    margine_m = re.search(r"€\s*([\d.,]+)\s*\)?\s*\(?ROI", testa, re.IGNORECASE)
-    roi_m = re.search(r"ROI\s*~?\s*(\d+)", testa, re.IGNORECASE)
-
-    margine_valore = None
-    if margine_m:
-        try:
-            margine_valore = float(margine_m.group(1).replace(",", "."))
-        except ValueError:
-            pass
-
-    roi_valore = None
-    if roi_m:
-        try:
-            roi_valore = int(roi_m.group(1))
-        except ValueError:
-            pass
+    margine_valore, roi_valore = _estrai_margine_e_roi_da_blocco(testa)
 
     sotto_soglia = (
         (margine_valore is not None and margine_valore < 20)
@@ -1524,32 +1571,19 @@ def declassa_urgenza_se_borderline(testo):
     """Rete di sicurezza indipendente dal formato: 'Alta urgenza' deve
     riflettere un margine di sicurezza reale (>=€30 netti E ROI >=150%),
     non un semplice superamento della soglia minima per COMPRA. Se il
-    modello scrive 'Alta urgenza' con margine/ROI solo appena sopra soglia,
-    la declassa a 'Media urgenza' -- coerente con la regola nel prompt, ma
-    applicata anche quando il modello non la rispetta da solo."""
+    modello scrive 'Alta urgenza' (o sinonimi come 'Alta priorità') con
+    margine/ROI solo appena sopra soglia, la declassa a 'Media urgenza' --
+    coerente con la regola nel prompt, ma applicata anche quando il modello
+    non la rispetta da solo."""
     LUNGHEZZA_BLOCCO_VERDETTO = 400
     testa = testo[:LUNGHEZZA_BLOCCO_VERDETTO]
     resto = testo[LUNGHEZZA_BLOCCO_VERDETTO:]
 
-    if not re.search(r"alta\s+urgenza", testa, re.IGNORECASE):
+    PATTERN_ALTA_URGENZA = r"alta\s+(?:urgenza|priorit[aà]|importanza)"
+    if not re.search(PATTERN_ALTA_URGENZA, testa, re.IGNORECASE):
         return testo
 
-    margine_m = re.search(r"€\s*([\d.,]+)\s*\)?\s*\(?ROI", testa, re.IGNORECASE)
-    roi_m = re.search(r"ROI\s*~?\s*(\d+)", testa, re.IGNORECASE)
-
-    margine_valore = None
-    if margine_m:
-        try:
-            margine_valore = float(margine_m.group(1).replace(",", "."))
-        except ValueError:
-            pass
-
-    roi_valore = None
-    if roi_m:
-        try:
-            roi_valore = int(roi_m.group(1))
-        except ValueError:
-            pass
+    margine_valore, roi_valore = _estrai_margine_e_roi_da_blocco(testa)
 
     margine_insufficiente_per_urgenza = margine_valore is not None and margine_valore < 30
     roi_insufficiente_per_urgenza = roi_valore is not None and roi_valore < 150
@@ -1558,9 +1592,9 @@ def declassa_urgenza_se_borderline(testo):
         return testo
 
     testa_corretta = re.sub(
-        r"[Aa]lta\s+urgenza",
+        PATTERN_ALTA_URGENZA,
         "Media urgenza ⚠️ _declassata: margine/ROI sopra soglia minima ma non abbastanza abbondante per Alta urgenza_",
-        testa, count=1,
+        testa, count=1, flags=re.IGNORECASE,
     )
     log.info(
         "declassa_urgenza_se_borderline: Alta urgenza declassata a Media (margine=%s, ROI=%s%%).",
@@ -1570,7 +1604,7 @@ def declassa_urgenza_se_borderline(testo):
 
 
 def valida_contraddizioni_report(testo):
-    final_text = testo
+    final_text = _normalizza_emoji_decisione(testo)
 
     def _get_decisione_match(txt):
         m = re.search(r"(🟢|🟡|🔴|🔵)\s+\*?\*?([^\n*]+)\*?\*?", txt)
@@ -1892,6 +1926,7 @@ def process_listing(parsed, url, cover_photo_bytes):
 
         output_finale = valida_contraddizioni_report(output_finale_raw)
         output_finale = forza_soglia_minima_compra(output_finale)
+        output_finale = normalizza_urgenza_wording(output_finale)
         output_finale = declassa_urgenza_se_borderline(output_finale)
 
     decisione = estrai_decisione_da_testo(output_finale) or ""
