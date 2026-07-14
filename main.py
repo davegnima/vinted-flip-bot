@@ -203,16 +203,69 @@ def check_skip_pre_gemini(listing_info):
     if seller and seller in VENDITORI_BLOCKLIST:
         return True, f"[VENDITORE IN BLOCKLIST] L'utente '{seller}' è nella blocklist."
         
-    # 2. Categorie mai flippabili
-    unflippable = ["calzini", "calze", "collant", "portachiavi", "profumi", "eau de parfum", 
-                   "eau de toilette", "deodoranti", "cover per telefono", "ciondoli", "guinzagli"]
+    # 2. Categorie mai flippabili (lista minima -- volutamente corta, quelle
+    # "teoriche" aggiunte in precedenza non si verificano mai in pratica)
+    unflippable = [
+        "calzini", "calze", "collant", "portachiavi", "profumi", "eau de parfum",
+        "eau de toilette", "deodoranti", "cover per telefono", "ciondoli", "guinzagli",
+    ]
     for kw in unflippable:
         if kw in titolo or kw in descrizione:
             return True, f"[CATEGORIA GENERICA NON FLIPPABILE] Rilevata keyword: {kw}"
 
-    # 2b. Titoli con stringa di ricerca residua "gilet -blanc"
+    # 2b. Danno grave dichiarato esplicitamente dal venditore, multilingua
+    # (IT/EN/DE/FR/ES/PT -- stessa logica delle categorie: il tracker Vinted
+    # intercetta annunci in tutta Europa). Usa \b per evitare falsi positivi
+    # su sottostringhe (es. "roto" dentro un'altra parola).
+    DANNO_GRAVE_KEYWORDS = [
+        # IT
+        "rotto", "rotta", "strappato", "strappata", "bucato", "bucata",
+        "danneggiato", "danneggiata", "da riparare", "per ricambio", "per pezzi",
+        "rovinato", "rovinata", "da buttare", "irreparabile",
+        # EN
+        "broken", "torn", "ripped", "damaged", "for repair", "for parts",
+        "beyond repair", "unusable", "ruined",
+        # DE
+        "kaputt", "zerrissen", "beschädigt", "defekt", "unbrauchbar", "irreparabel",
+        # FR
+        "cassé", "cassée", "déchiré", "déchirée", "endommagé", "endommagée",
+        "abîmé", "abîmée", "à réparer", "pour pièces", "irréparable", "troué", "trouée",
+        # ES
+        "roto", "rota", "rasgado", "rasgada", "dañado", "dañada",
+        "para reparar", "para piezas", "irreparable",
+        # PT
+        "quebrado", "quebrada", "rasgado", "danificado", "danificada",
+        "para reparo", "irreparável",
+    ]
+    for kw in DANNO_GRAVE_KEYWORDS:
+        if re.search(r'\b' + re.escape(kw) + r'\b', testo_completo):
+            return True, f"[DANNO GRAVE DICHIARATO NEL TESTO] Rilevata keyword: '{kw}' -- non flippabile per regola su danni strutturali."
+
+    # 2c. Non originalità dichiarata dal venditore stesso, multilingua
+    NON_ORIGINALE_KEYWORDS = [
+        # IT
+        "non originale", "non è originale", "non e' originale", "ispirato a",
+        "replica", "imitazione", "copia non originale",
+        # EN
+        "not authentic", "not original", "inspired by", "knockoff",
+        # DE
+        "nicht original", "inspiriert von", "nachahmung", "fälschung",
+        # FR
+        "non authentique", "pas authentique", "inspiré de", "inspirée de",
+        "réplique", "contrefaçon",
+        # ES
+        "no original", "no es original", "inspirado en", "imitación",
+        # PT
+        "não original", "inspirado em", "imitação",
+    ]
+    for kw in NON_ORIGINALE_KEYWORDS:
+        if re.search(r'\b' + re.escape(kw) + r'\b', testo_completo):
+            return True, f"[NON ORIGINALE DICHIARATO] Rilevata keyword: '{kw}' -- venditore dichiara che non è un pezzo originale."
+
+    # 2d. Titoli con stringa di ricerca residua "gilet -blanc"
     if "gilet -blanc" in titolo:
         return True, "[TITOLO CON STRINGA DI RICERCA RESIDUA] Rilevato 'gilet -blanc' nel titolo."
+
 
     # 3. Regole specifiche per brand
     if "stella mccartney" in brand and "adidas" in testo_completo:
@@ -1312,6 +1365,12 @@ def build_skip_report(listing_info, motivo_skip):
     elif motivo_skip.startswith("[CATEGORIA GENERICA NON FLIPPABILE"):
         riga_legit = "Categoria strutturalmente senza mercato — nessun valore di rivendita."
         riga_rischio = "BASSO — categoria non flippabile (filtro pre-Gemini)"
+    elif motivo_skip.startswith("[DANNO GRAVE DICHIARATO NEL TESTO"):
+        riga_legit = "Non valutato — venditore dichiara esplicitamente un danno grave nel testo."
+        riga_rischio = "BASSO (autenticità) / ALTO (condizione) — danno dichiarato dal venditore (filtro pre-Gemini)"
+    elif motivo_skip.startswith("[NON ORIGINALE DICHIARATO"):
+        riga_legit = "Venditore dichiara esplicitamente che il capo non è originale."
+        riga_rischio = "MOLTO ALTO — non originale per dichiarazione diretta (filtro pre-Gemini)"
     elif motivo_skip.startswith("[TITOLO CON STRINGA DI RICERCA RESIDUA"):
         riga_legit = "Titolo contiene una stringa di ricerca residua ('gilet -blanc') — annuncio non valutato."
         riga_rischio = "BASSO — titolo malformato (filtro pre-Gemini)"
