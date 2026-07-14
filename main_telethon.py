@@ -2,6 +2,9 @@
 Vinted Flip Oracle Bot (versione Telethon / userbot) -- Scenario G con fallback F
 ====================================================================================
 Pipeline finale, basata sugli scenari di ottimizzazione dei costi e filtro.
+Include: categorie multilingua estese, niente fallback "dress" pericoloso su
+Vestiaire, e function calling FORZATO per il cervello Gemini (sostituisce
+google_search, che su Gemini non e' forzabile in modo affidabile).
 """
 
 import os
@@ -123,20 +126,30 @@ MATERIALI_TRADUZIONI = {
     "mohair": "mohair", "alpaca": "alpaca", "alpaga": "alpaca",
 }
 
+# CATEGORIE MULTILINGUA (IT / EN / DE / FR / ES / PT) -- ampliata per coprire
+# molti piu' tipi di capo e ridurre i casi di categoria non rilevata, che in
+# precedenza causavano un fallback pericoloso ("dress") nella ricerca Vestiaire.
 CATEGORIA_KEYWORDS = {
-    "abito": ["abito", "vestito", "kleid", "dress", "robe"],
+    "abito": ["abito", "vestito", "kleid", "dress", "robe", "vestido"],
     "blusa": ["blusa", "camicetta", "bluse", "blouse", "chemisier"],
-    "camicia": ["camicia", "hemd", "shirt", "chemise"],
-    "maglia": ["maglia", "maglione", "pullover", "sweater", "pull", "jumper"],
-    "t-shirt": ["t-shirt", "tshirt", "maglietta"],
-    "gonna": ["gonna", "rock", "skirt", "jupe"],
-    "pantaloni": ["pantaloni", "pantalone", "hose", "trousers", "pants", "pantalon"],
-    "giacca": ["giacca", "jacke", "jacket", "veste"],
-    "cappotto": ["cappotto", "mantel", "coat", "manteau"],
-    "borsa": ["borsa", "tasche", "bag", "sac"],
-    "scarpe": ["scarpe", "schuhe", "shoes", "chaussures"],
-    "felpa": ["felpa", "hoodie", "sweatshirt"],
-    "top": ["top"],
+    "camicia": ["camicia", "hemd", "shirt", "chemise", "camisa", "camisola"],
+    "maglia": ["maglia", "maglione", "pullover", "sweater", "pull", "jumper", "jersey", "suéter", "trui", "strick"],
+    "t-shirt": ["t-shirt", "tshirt", "maglietta", "camiseta", "playera"],
+    "canotta": ["canotta", "top", "tank top", "canotte", "débardeur", "tirantes"],
+    "felpa": ["felpa", "hoodie", "sweatshirt", "sudadera", "kapuzenpulli"],
+    "gonna": ["gonna", "rock", "skirt", "jupe", "falda", "saia"],
+    "pantaloni": ["pantaloni", "pantalone", "hose", "trousers", "pants", "pantalon", "pantalón", "calças"],
+    "jeans": ["jeans", "denim", "vaqueros", "vaquero"],
+    "giacca": ["giacca", "jacke", "jacket", "veste", "chaqueta", "casaco"],
+    "cappotto": ["cappotto", "mantel", "coat", "manteau", "abrigo", "casaco longo"],
+    "borsa": ["borsa", "tasche", "bag", "sac", "bolso", "bolsa"],
+    "scarpe": ["scarpe", "schuhe", "shoes", "chaussures", "zapatos", "sapatos"],
+    "polo": ["polo"],
+    "costume": ["costume", "bikini", "swimsuit", "maillot", "bañador"],
+    "intimo": ["intimo", "underwear", "lingerie", "ropa interior"],
+    "sciarpa": ["sciarpa", "scarf", "echarpe", "bufanda"],
+    "cintura": ["cintura", "belt", "ceinture", "cinturón"],
+    "cappello": ["cappello", "hat", "chapeau", "sombrero", "cap", "berretto"],
 }
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -204,7 +217,7 @@ def check_skip_pre_gemini(listing_info):
         return True, "[LINEA/VARIANTE ESCLUSA PER BRAND] Stella McCartney collab Adidas (basso valore)."
         
     if "yves saint laurent" in brand or "ysl" in brand or "saint laurent" in brand:
-        camicie_kw = ["camicia", "camicie", "camicetta", "shirt", "chemise", "blusa"]
+        camicie_kw = ["camicia", "camicie", "camicetta", "shirt", "chemise", "blusa", "camisa"]
         if any(kw in testo_completo for kw in camicie_kw):
             return True, "[LINEA/VARIANTE ESCLUSA PER BRAND] YSL camicie/bluse sature e scarso ROI."
         borse_moderne = ["saint laurent paris", "loulou", "sac de jour", "kate", "niki"]
@@ -332,8 +345,8 @@ Prezzo basso = vantaggio. Guarda il venditore: privato sprovveduto (fast fashion
 - Avantgarde/designer riconosciuti (Rick Owens, Yohji, Dries, Ann Demeulemeester, Raf Simons, Loewe, Cucinelli, YSL, Chloé, Stella McCartney, Totême): community fashion-insider, alta disponibilità a pagare premium per pezzi con provenienza documentata.
 - Giapponese artigianale + designer esperto (Visvim, Kapital, CCP, Haider, The Row, Alaïa, BBS, Sacai, Kiko Kostadinov, Junya, Thom Browne, McQueen, Undercover): community verticale molto informata, taglie piccole (46-48 IT/S-M) più richieste e liquide, vendita rapida se il pezzo è riconosciuto come "grail".
 
-# RICERCA WEB OBBLIGATORIA (google_search)
-Cerca comp venduti se assenti. Gerarchia: eBay SOLD > Vinted > Vestiaire.
+# RICERCA WEB OBBLIGATORIA
+Se hai dubbi sui comp pre-raccolti (assenti, insufficienti, o palesemente fuori tema rispetto alla categoria del capo), chiama la funzione cerca_comp_prezzo con una query mirata PRIMA di rispondere. Gerarchia preferita per i comp: eBay SOLD > Vinted > Vestiaire.
 
 # MARGINE E SOGLIE — CALCOLO A DUE GAMBE
 Acquisto pieno = prezzo + protezione (~5%+€0,70) + spedizione (IT 2,50€, EU 4,50-6€).
@@ -789,6 +802,155 @@ def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, grounding=Fal
 
 
 # ---------------------------------------------------------------------------
+# CERVELLO GEMINI CON FUNCTION CALLING FORZATO
+# ---------------------------------------------------------------------------
+# Il tool builtin "google_search" di Gemini NON e' forzabile in modo affidabile
+# (il modello spesso decide di non chiamarlo mai, anche se il prompt lo chiede
+# esplicitamente). Sostituiamo con una function custom che richiama Serper --
+# stesso servizio gia' usato per i comp pre-raccolti -- e la forziamo con
+# tool_config.function_calling_config.mode = "ANY", che per il function calling
+# "vero" (non il retrieval builtin) e' effettivamente vincolante.
+
+def cerca_serper_mirata(query):
+    """Ricerca aggiuntiva mirata, richiamabile dal cervello quando i comp
+    pre-raccolti sono insufficienti o fuori tema."""
+    if not SERPER_API_KEY:
+        return "Ricerca non eseguita (SERPER_API_KEY non impostata)."
+    payload = [{"q": query, "gl": "it", "hl": "it", "num": 10}]
+    try:
+        resp = requests.post(
+            "https://google.serper.dev/search",
+            headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
+            json=payload, timeout=15,
+        )
+        resp.raise_for_status()
+        results = resp.json()
+    except Exception as e:
+        return f"Ricerca fallita: {e}"
+    lines = []
+    for batch in results:
+        for r in batch.get("organic", [])[:8]:
+            titolo = r.get("title", "")
+            snippet = (r.get("snippet", "") or "")[:150]
+            lines.append(f"- {titolo}: {snippet}")
+    return "\n".join(lines) if lines else "Nessun risultato trovato per questa query."
+
+
+CERVELLO_FUNCTION_DECLARATION = {
+    "name": "cerca_comp_prezzo",
+    "description": (
+        "Cerca comp di prezzo aggiuntivi sul web quando i dati pre-raccolti sono "
+        "insufficienti, fuori tema (es. categoria sbagliata) o troppo scarsi per "
+        "stimare un prezzo di vendita affidabile."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "Query di ricerca mirata, es. 'YSL camicia vintage uomo venduto eBay'",
+            }
+        },
+        "required": ["query"],
+    },
+}
+
+
+def chiama_gemini_cervello_forzato(system_prompt, user_text, max_retries=4):
+    """Variante del cervello con function calling FORZATO. Il modello DEVE
+    chiamare cerca_comp_prezzo almeno una volta prima di rispondere in modo
+    definitivo."""
+    contents = [{"role": "user", "parts": [{"text": user_text}]}]
+
+    payload = {
+        "system_instruction": {"parts": [{"text": system_prompt}]},
+        "contents": contents,
+        "tools": [{"function_declarations": [CERVELLO_FUNCTION_DECLARATION]}],
+        "tool_config": {
+            "function_calling_config": {
+                "mode": "ANY",
+                "allowed_function_names": ["cerca_comp_prezzo"],
+            }
+        },
+        "safetySettings": [
+            {"category": c, "threshold": "BLOCK_NONE"} for c in (
+                "HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH",
+                "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT")
+        ],
+        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 3000},
+    }
+
+    costo_totale = 0.0
+    n_query_extra = 0
+    backoff_seconds = 2
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            resp = requests.post(GEMINI_API_URL, params={"key": GEMINI_API_KEY}, json=payload, timeout=90)
+            if not resp.ok:
+                log.warning("Gemini (cervello forzato) HTTP %d: %s", resp.status_code, resp.text[:500])
+                if resp.status_code in {429, 500, 502, 503, 504} and attempt < max_retries:
+                    time.sleep(backoff_seconds)
+                    backoff_seconds *= 2
+                    continue
+                resp.raise_for_status()
+
+            data = resp.json()
+            candidates = data.get("candidates", [])
+            if not candidates:
+                return "[ERRORE: risposta Gemini senza candidates]", 0.0, 0
+
+            usage = data.get("usageMetadata", {})
+            costo_totale += costo_gemini_token(usage)
+
+            parts = candidates[0].get("content", {}).get("parts", []) or []
+            function_call = next((p.get("functionCall") for p in parts if p.get("functionCall")), None)
+
+            if function_call:
+                query_richiesta = function_call.get("args", {}).get("query", "")
+                log.info("Cervello Gemini ha richiesto ricerca mirata: '%s'", query_richiesta)
+                risultato_ricerca = cerca_serper_mirata(query_richiesta)
+                n_query_extra += 1
+
+                contents.append({"role": "model", "parts": parts})
+                contents.append({
+                    "role": "user",
+                    "parts": [{
+                        "function_response": {
+                            "name": "cerca_comp_prezzo",
+                            "response": {"result": risultato_ricerca},
+                        }
+                    }]
+                })
+
+                payload["contents"] = contents
+                payload["tool_config"]["function_calling_config"]["mode"] = "AUTO"
+
+                resp2 = requests.post(GEMINI_API_URL, params={"key": GEMINI_API_KEY}, json=payload, timeout=90)
+                resp2.raise_for_status()
+                data2 = resp2.json()
+                usage2 = data2.get("usageMetadata", {})
+                costo_totale += costo_gemini_token(usage2)
+                candidates2 = data2.get("candidates", [])
+                if candidates2:
+                    text = "".join(p.get("text", "") for p in candidates2[0].get("content", {}).get("parts", []) or [])
+                    return text, costo_totale, n_query_extra
+                return "[ERRORE: risposta finale Gemini senza candidates]", costo_totale, n_query_extra
+
+            text = "".join(p.get("text", "") for p in parts)
+            return text, costo_totale, n_query_extra
+
+        except Exception as e:
+            if attempt < max_retries:
+                time.sleep(backoff_seconds)
+                backoff_seconds *= 2
+                continue
+            return f"[ERRORE: cervello forzato fallito dopo {max_retries} tentativi. Eccezione: {e}]", costo_totale, n_query_extra
+
+    return "[ERRORE: tentativi esauriti]", costo_totale, n_query_extra
+
+
+# ---------------------------------------------------------------------------
 # SERPER RICERCA
 # ---------------------------------------------------------------------------
 
@@ -921,11 +1083,23 @@ def _serper_scrape_page_diretto(label, url):
     return "  Fonte non supportata.", True
 
 def _serper_batch_query_vestiaire(brand, categoria):
+    """Query mirata su Vestiaire Collective. NON usa piu' un fallback generico
+    "dress" quando la categoria non e' rilevata: in quel caso salta la query
+    ed espone chiaramente al cervello che manca il dato, invece di restituire
+    comp completamente fuori tema (es. abiti da sera al posto di camicie)."""
     if not SERPER_API_KEY:
         return "Ricerca non eseguita (SERPER_API_KEY non impostata).", False
 
     brand_pulito = (brand or "").strip()
-    categoria_per_query = (categoria or "dress").strip()
+    categoria_per_query = (categoria or "").strip()
+
+    if not categoria_per_query:
+        return (
+            "Categoria non rilevata dal titolo dell'annuncio -- query Vestiaire "
+            "saltata per evitare risultati fuorvianti (es. abiti al posto di camicie). "
+            "Se necessario, usa la function cerca_comp_prezzo con una query piu' mirata."
+        ), False
+
     query_serper = f'site:vestiairecollective.com "{brand_pulito}" {categoria_per_query} €'.strip() if brand_pulito else f'site:vestiairecollective.com {categoria_per_query} €'
 
     payload = [{"q": query_serper, "gl": "it", "hl": "it", "num": 10}]
@@ -1354,21 +1528,21 @@ def process_listing(parsed, url, cover_photo_bytes):
                 f"--- LA TUA VALUTAZIONE PRELIMINARE ---\n"
                 f"{output_occhi}\n--- FINE ---\n\n"
                 f"--- {comps_text} ---\n\n"
-                "Usa i risultati di ricerca web PRE-RACCOLTI. Esegui INOLTRE almeno una ricerca con il tool google_search."
+                "Usa i risultati di ricerca web PRE-RACCOLTI come base. Se sono insufficienti, "
+                "assenti o palesemente fuori tema, chiama la function cerca_comp_prezzo con una "
+                "query mirata prima di dare il verdetto finale."
             )
         else:
             user_text_cervello = (
                 f"{contesto_listing}\n\n"
                 f"--- LA TUA VALUTAZIONE PRELIMINARE ---\n"
                 f"{output_occhi}\n--- FINE ---\n\n"
-                "NOTA: non ci sono risultati di ricerca pre-raccolti. DEVI usare attivamente google_search."
+                "NOTA: non ci sono risultati di ricerca pre-raccolti. Chiama la function "
+                "cerca_comp_prezzo per ottenere comp reali prima di rispondere."
             )
 
-        # === DEBUG TEMPORANEO: rimuovere dopo aver raccolto un esempio ===
-        log.info("=== DEBUG USER_TEXT_CERVELLO ===\n%s\n=== FINE DEBUG ===", user_text_cervello)
-
-        output_finale_raw, costo_cervello, n_query_grounding = chiama_gemini(
-            GEMINI_CERVELLO_SYSTEM_PROMPT, user_text_cervello, photo_bytes_list=[], grounding=True)
+        output_finale_raw, costo_cervello, n_query_grounding = chiama_gemini_cervello_forzato(
+            GEMINI_CERVELLO_SYSTEM_PROMPT, user_text_cervello)
         costo_totale += costo_cervello
 
         output_finale = valida_contraddizioni_report(output_finale_raw)
@@ -1380,8 +1554,8 @@ def process_listing(parsed, url, cover_photo_bytes):
         f"🆕 *{listing_info.get('title')}*\n"
         f"🏷️ {listing_info.get('brand') or '?'} · 💰 {listing_info.get('price') or '?'} EUR\n"
         f"🔧 Scenario {scenario_usato}"
-        + (f" ({n_query_grounding} ricerche grounding)" if scenario_usato not in ("SKIP",) and n_query_grounding else
-           " (nessuna ricerca grounding)" if scenario_usato not in ("SKIP",) else " (filtro pre-cervello)")
+        + (f" ({n_query_grounding} ricerche extra)" if scenario_usato not in ("SKIP",) and n_query_grounding else
+           " (nessuna ricerca extra)" if scenario_usato not in ("SKIP",) else " (filtro pre-cervello)")
         + f"\n{url or ''}\n{'—' * 20}\n"
     )
 
