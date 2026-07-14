@@ -836,6 +836,19 @@ def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, grounding=Fal
 # tool_config.function_calling_config.mode = "ANY", che per il function calling
 # "vero" (non il retrieval builtin) e' effettivamente vincolante.
 
+def valuta_qualita_comp(comps_text):
+    """Stima se i comp pre-raccolti da Serper sono sufficienti a dare un
+    verdetto senza bisogno di forzare una ricerca aggiuntiva. Euristica
+    semplice: conta quanti prezzi reali compaiono nel blocco, e verifica
+    che la categoria non sia stata saltata per mancata rilevazione."""
+    if not comps_text:
+        return False
+    if "Categoria non rilevata" in comps_text:
+        return False
+    n_prezzi = len(re.findall(r"€\s*\d", comps_text)) + len(re.findall(r"EUR\s*[\d.,]+", comps_text))
+    return n_prezzi >= 5
+
+
 def cerca_serper_mirata(query):
     """Ricerca aggiuntiva mirata, richiamabile dal cervello quando i comp
     pre-raccolti sono insufficienti o fuori tema."""
@@ -884,22 +897,23 @@ CERVELLO_FUNCTION_DECLARATION = {
 }
 
 
-def chiama_gemini_cervello_forzato(system_prompt, user_text, max_retries=4):
-    """Variante del cervello con function calling FORZATO. Il modello DEVE
-    chiamare cerca_comp_prezzo almeno una volta prima di rispondere in modo
-    definitivo."""
+def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca=True, max_retries=4):
+    """Variante del cervello con function calling. Se forza_ricerca=True, il
+    modello DEVE chiamare cerca_comp_prezzo almeno una volta (mode ANY). Se
+    False, il tool resta disponibile ma la scelta e' lasciata al modello
+    (mode AUTO) -- usato quando i comp pre-raccolti sono gia' sufficienti,
+    per evitare una ricerca extra ridondante su ogni singolo annuncio."""
     contents = [{"role": "user", "parts": [{"text": user_text}]}]
+
+    function_calling_config = {"mode": "ANY" if forza_ricerca else "AUTO"}
+    if forza_ricerca:
+        function_calling_config["allowed_function_names"] = ["cerca_comp_prezzo"]
 
     payload = {
         "system_instruction": {"parts": [{"text": system_prompt}]},
         "contents": contents,
         "tools": [{"function_declarations": [CERVELLO_FUNCTION_DECLARATION]}],
-        "tool_config": {
-            "function_calling_config": {
-                "mode": "ANY",
-                "allowed_function_names": ["cerca_comp_prezzo"],
-            }
-        },
+        "tool_config": {"function_calling_config": function_calling_config},
         "safetySettings": [
             {"category": c, "threshold": "BLOCK_NONE"} for c in (
                 "HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH",
@@ -1633,6 +1647,8 @@ def process_listing(parsed, url, cover_photo_bytes):
         output_finale = build_skip_report(listing_info, motivo_skip)
         n_query_grounding = 0
         scenario_usato = "SKIP"
+        forza_ricerca = None
+        comp_sufficienti = None
     else:
         titolo_annuncio = listing_info.get("title") or ""
         brand_annuncio = listing_info.get("brand") or ""
@@ -1678,6 +1694,8 @@ def process_listing(parsed, url, cover_photo_bytes):
             f"URL annuncio: {url or 'non disponibile'}"
         )
         if scenario_usato == "G":
+            comp_sufficienti = valuta_qualita_comp(comps_text)
+            forza_ricerca = not comp_sufficienti
             user_text_cervello = (
                 f"{contesto_listing}\n\n"
                 f"--- LA TUA VALUTAZIONE PRELIMINARE ---\n"
@@ -1688,6 +1706,8 @@ def process_listing(parsed, url, cover_photo_bytes):
                 "query mirata prima di dare il verdetto finale."
             )
         else:
+            forza_ricerca = True
+            comp_sufficienti = False
             user_text_cervello = (
                 f"{contesto_listing}\n\n"
                 f"--- LA TUA VALUTAZIONE PRELIMINARE ---\n"
@@ -1696,11 +1716,8 @@ def process_listing(parsed, url, cover_photo_bytes):
                 "cerca_comp_prezzo per ottenere comp reali prima di rispondere."
             )
 
-        # === DEBUG TEMPORANEO: rimuovere dopo aver verificato il caso ===
-        log.info("=== DEBUG USER_TEXT_CERVELLO ===\n%s\n=== FINE DEBUG ===", user_text_cervello)
-
         output_finale_raw, costo_cervello, n_query_grounding = chiama_gemini_cervello_forzato(
-            GEMINI_CERVELLO_SYSTEM_PROMPT, user_text_cervello)
+            GEMINI_CERVELLO_SYSTEM_PROMPT, user_text_cervello, forza_ricerca=forza_ricerca)
         costo_totale += costo_cervello
 
         output_finale = valida_contraddizioni_report(output_finale_raw)
@@ -1709,12 +1726,22 @@ def process_listing(parsed, url, cover_photo_bytes):
     decisione = estrai_decisione_da_testo(output_finale) or ""
     e_compra = any(k in decisione.upper() for k in ("COMPRA", "TRATTA", "CHIEDI ALTRE FOTO"))
 
+    if scenario_usato == "SKIP":
+        info_scenario = " · filtro pre-cervello (occhi soli)"
+    elif scenario_usato == "F":
+        info_scenario = f" · nessun comp pre-raccolto, ricerca forzata"
+        info_scenario += f" ({n_query_grounding} extra)" if n_query_grounding else ""
+    else:  # Scenario G
+        if forza_ricerca:
+            info_scenario = " · comp pre-raccolti scarsi, ricerca forzata"
+        else:
+            info_scenario = " · comp pre-raccolti sufficienti"
+        info_scenario += f" ({n_query_grounding} extra)" if n_query_grounding else " (nessuna extra)"
+
     header = (
         f"🆕 *{listing_info.get('title')}*\n"
         f"🏷️ {listing_info.get('brand') or '?'} · 💰 {listing_info.get('price') or '?'} EUR\n"
-        f"🔧 Scenario {scenario_usato}"
-        + (f" ({n_query_grounding} ricerche extra)" if scenario_usato not in ("SKIP",) and n_query_grounding else
-           " (nessuna ricerca extra)" if scenario_usato not in ("SKIP",) else " (filtro pre-cervello)")
+        f"🔧 Scenario {scenario_usato}{info_scenario}"
         + f"\n{url or ''}\n{'—' * 20}\n"
     )
 
