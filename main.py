@@ -916,7 +916,7 @@ def chiama_gemini_cervello_forzato(system_prompt, user_text, max_retries=4):
                 contents.append({
                     "role": "user",
                     "parts": [{
-                        "function_response": {
+                        "functionResponse": {
                             "name": "cerca_comp_prezzo",
                             "response": {"result": risultato_ricerca},
                         }
@@ -924,7 +924,7 @@ def chiama_gemini_cervello_forzato(system_prompt, user_text, max_retries=4):
                 })
 
                 payload["contents"] = contents
-                payload["tool_config"]["function_calling_config"]["mode"] = "AUTO"
+                payload["tool_config"] = {"function_calling_config": {"mode": "AUTO"}}
 
                 resp2 = requests.post(GEMINI_API_URL, params={"key": GEMINI_API_KEY}, json=payload, timeout=90)
                 resp2.raise_for_status()
