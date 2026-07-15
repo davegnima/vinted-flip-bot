@@ -367,6 +367,9 @@ Valuta il venditore: un privato con 0-30 recensioni che vende fast-fashion e ha 
 - "Probabilmente falso" — discrepanze evidenti
 - "Non verificabile" — zero etichette visibili
 
+# OBBLIGO DI MOTIVAZIONE ESPLICITA SU "PROBABILMENTE FALSO"
+Se il verdetto è "Probabilmente falso", la sezione **Analisi visiva** DEVE specificare ESATTAMENTE quale discrepanza ha portato a questa conclusione — non basta scrivere "falso" o "discrepanze evidenti" senza dettaglio. Indica sempre COSA è sbagliato: font dell'etichetta non corretto (e come), proporzioni del logo errate, cuciture irregolari/di bassa qualità, materiale che non corrisponde a quanto dichiarato, wash tag con codice/paese di produzione incoerente, hardware (zip/bottoni) di qualità sbagliata, ecc. Questo motivo arriva direttamente all'utente su Telegram anche quando il cervello non viene consultato (skip automatico) — se non lo scrivi qui, l'utente non saprà mai perché è stato scartato.
+
 # MAINLINE VS DIFFUSION — DISTINZIONE CRITICA PER IL MARGINE
 Distingui SEMPRE le linee/ere per i brand, è un fattore critico per il valore. Specifica sempre l'epoca/linea in base alle etichette.
 
@@ -1743,6 +1746,15 @@ def build_skip_report(listing_info, motivo_skip, output_occhi_testo=None):
         riga_rischio = "BASSO — margine insufficiente (filtro automatico, cervello non consultato)"
     elif motivo_skip.startswith("[FALSO CONCLAMATO"):
         riga_legit = "Probabilmente falso — rilevato da analisi visiva con alta confidenza."
+        if output_occhi_testo:
+            m_analisi = re.search(
+                r"\*\*Analisi visiva\*\*[^\n]*\n+(.+?)(?=\n---|\n##|\n📨|\Z)",
+                output_occhi_testo, re.IGNORECASE | re.DOTALL,
+            )
+            if m_analisi:
+                dettaglio = m_analisi.group(1).strip()
+                if dettaglio:
+                    riga_legit = f"Probabilmente falso. Motivo specifico: {dettaglio}"
         riga_rischio = "ALTO — falso conclamato (filtro automatico, cervello non consultato)"
     elif motivo_skip.startswith("[CONDIZIONE DISTRUTTA"):
         riga_legit = "Autentico ma condizione fisica gravemente compromessa — non rivendibile."
