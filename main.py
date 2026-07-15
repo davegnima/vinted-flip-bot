@@ -2042,10 +2042,30 @@ def process_listing(parsed, url, cover_photo_bytes):
         costo_totale += costo_cervello
 
         output_finale = valida_contraddizioni_report(output_finale_raw)
+        correzioni_applicate = []
+        if output_finale != output_finale_raw:
+            correzioni_applicate.append("valida_contraddizioni_report")
+
+        prev = output_finale
         output_finale = forza_soglia_minima_compra(output_finale)
+        if output_finale != prev:
+            correzioni_applicate.append("forza_soglia_minima_compra")
+        prev = output_finale
+
         output_finale = converti_tratta_senza_obiettivo_valido(output_finale)
+        if output_finale != prev:
+            correzioni_applicate.append("converti_tratta_senza_obiettivo_valido")
+        prev = output_finale
+
         output_finale = normalizza_urgenza_wording(output_finale)
+        if output_finale != prev:
+            correzioni_applicate.append("normalizza_urgenza_wording")
+        prev = output_finale
+
         output_finale = declassa_urgenza_se_borderline(output_finale)
+        if output_finale != prev:
+            correzioni_applicate.append("declassa_urgenza_se_borderline")
+        prev = output_finale
 
         prezzo_prodotto = None
         try:
@@ -2053,6 +2073,8 @@ def process_listing(parsed, url, cover_photo_bytes):
         except (ValueError, TypeError):
             pass
         output_finale = applica_soglia_trattativa_40_percento(output_finale, prezzo_prodotto)
+        if output_finale != prev:
+            correzioni_applicate.append("applica_soglia_trattativa_40_percento")
 
     decisione = estrai_decisione_da_testo(output_finale) or ""
     e_compra = any(k in decisione.upper() for k in ("COMPRA", "TRATTA", "CHIEDI ALTRE FOTO"))
@@ -2116,6 +2138,20 @@ def process_listing(parsed, url, cover_photo_bytes):
         header, output_finale, decisione, e_compra,
         scenario_usato, n_query_grounding if scenario_usato != "SKIP" else 0
     )
+
+    # Messaggio di debug separato, SOLO se una rete di sicurezza ha
+    # effettivamente modificato il verdetto -- cosi' e' facile incollarlo
+    # direttamente da Telegram per un controllo, senza dover entrare su
+    # Railway, ma senza intasare la chat sugli annunci "normali" dove non
+    # e' scattato nulla.
+    if scenario_usato != "SKIP" and correzioni_applicate:
+        debug_text = (
+            f"🔧 *DEBUG* — correzioni automatiche applicate a *{listing_info.get('title')}*:\n"
+            f"{', '.join(correzioni_applicate)}\n\n"
+            f"— OUTPUT GREZZO CERVELLO (prima delle correzioni) —\n{output_finale_raw}\n\n"
+            f"— INPUT CERVELLO (occhi + comp Serper/ricerca extra) —\n{user_text_cervello}"
+        )
+        telegram_send_message(TELEGRAM_OWNER_CHAT_ID, debug_text)
 
 
 # ---------------------------------------------------------------------------
