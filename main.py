@@ -1901,19 +1901,27 @@ def applica_soglia_trattativa_40_percento(testo, prezzo_prodotto):
     """Rete di sicurezza sulla regola: sconto massimo trattabile = 40% sul
     prezzo del PRODOTTO (mai sulla spedizione). Se il modello propone
     un'offerta totale ("Obiettivo trattativa: €X") sotto il minimo
-    consentito, la corregge al minimo effettivo -- usando una stima di
-    spedizione conservativa (il valore reale e' quasi sempre uguale o
-    superiore, quindi questo e' un limite di sicurezza, non una stima
-    esatta)."""
+    consentito, la corregge -- usando una stima di spedizione conservativa
+    (il valore reale e' quasi sempre uguale o superiore, quindi questo e'
+    un limite di sicurezza, non una stima esatta).
+
+    IMPORTANTE: sostituisce l'INTERA riga "Obiettivo trattativa: ..." fino
+    a fine riga, non solo il numero dell'offerta. In precedenza veniva
+    patchato solo il primo numero, lasciando invariato il resto della frase
+    (es. "= €17,50 totale → €14,50 (ROI 83%)") calcolato sul vecchio
+    valore -- il risultato era una frase con numeri incoerenti tra loro,
+    illeggibile. Ora la riga intera viene ricostruita in modo onesto,
+    dichiarando esplicitamente che margine/ROI non sono ricalcolati
+    automaticamente e vanno verificati manualmente se si procede."""
     if prezzo_prodotto is None:
         return testo
 
-    m = re.search(r"(Obiettivo trattativa:\s*€\s*)([\d.,]+)", testo, re.IGNORECASE)
+    m = re.search(r"Obiettivo trattativa:\s*€\s*([\d.,]+)[^\n]*", testo, re.IGNORECASE)
     if not m:
         return testo
 
     try:
-        valore_offerto = float(m.group(2).replace(",", "."))
+        valore_offerto = float(m.group(1).replace(",", "."))
     except ValueError:
         return testo
 
@@ -1924,13 +1932,17 @@ def applica_soglia_trattativa_40_percento(testo, prezzo_prodotto):
         return testo
 
     soglia_str = f"{soglia_minima:.2f}".replace(".", ",")
-    testo_corretto = (
-        testo[:m.start(2)]
-        + f"{soglia_str} ⚠️ _corretto: sconto massimo consentito 40% sul prezzo prodotto (€{prezzo_prodotto:.2f}) + spedizione, mai sotto questa soglia_"
-        + testo[m.end(2):]
+    riga_corretta = (
+        f"Obiettivo trattativa: €{soglia_str} totale (minimo consentito: 40% sconto "
+        f"su prezzo prodotto €{prezzo_prodotto:.2f} + spedizione) ⚠️ _offerta originale "
+        f"del modello (€{valore_offerto:.2f}) era sotto il limite consentito ed è stata "
+        f"corretta al minimo -- margine e ROI relativi NON sono ricalcolati automaticamente, "
+        f"verificare manualmente prima di inviare l'offerta_"
     )
+    testo_corretto = testo[:m.start()] + riga_corretta + testo[m.end():]
+
     log.info(
-        "applica_soglia_trattativa_40_percento: offerta corretta da €%.2f a €%.2f (prezzo prodotto=€%.2f).",
+        "applica_soglia_trattativa_40_percento: offerta corretta da €%.2f a €%.2f (prezzo prodotto=€%.2f), riga intera ricostruita.",
         valore_offerto, soglia_minima, prezzo_prodotto,
     )
     return testo_corretto
