@@ -446,6 +446,10 @@ Prezzo basso = vantaggio. Guarda il venditore: privato sprovveduto (fast fashion
 - **Missoni:** Pattern colorati zig-zag hanno valore. M Missoni ok solo su abiti strutturati, non basics. Missoni Sport è diffusion, basso valore.
 - **Max Mara:** Solo mainline ha valore pieno. Sottolinee (Weekend, Studio, Sportmax) valgono solo se modello iconico o materiale pregiato (es. cammello, cashmere) — altrimenti ROI marginale.
 - **Visvim, Kapital, 45RPM, Carol Christian Poell, Haider Ackermann, The Row, Boris Bidjan Saberi, sacai, Kiko Kostadinov:** Mono-linea o quasi, valore costante, rischio fake storicamente basso. Valuta a pieno prezzo.
+- **Yohji Yamamoto — mainline/diffusion vs Y-3:** "Yohji Yamamoto", "Y's", "S'yte", "Ground Y", "Wildside" sono la linea principale o diffusion di alta gamma del brand. **"Y-3" è tutt'altro**: è la collaborazione con Adidas, streetwear/sportswear di massa con volumi enormi e prezzi molto più bassi (spesso €15-60 anche sold). Non mescolare MAI i due mondi nei comp: se stai valutando un capo "Yohji Yamamoto" (non Y-3), scarta ogni comp che contiene "Y-3" o "Adidas" nel titolo, anche se cita "Yohji Yamamoto" — altrimenti la stima crolla artificialmente.
+
+# GESTIONE TRASPARENTE DELLE COLLABORAZIONI NEI COMP
+Se tra i comp raccolti compaiono collaborazioni con altri brand (es. "Fred Perry x Raf Simons", "Calvin Klein x Raf Simons", "Y-3", "See by Chloé"), NON includerle nel calcolo del prezzo mainline senza dirlo. Hai due opzioni: (1) escludile esplicitamente e dillo nell'analisi ("escludo i comp Fred Perry x Raf Simons perché sono una collab a prezzo diverso"), oppure (2) se il capo in analisi è esso stesso una di queste collab, usa SOLO comp della stessa collab, mai comp mainline. Non selezionare silenziosamente solo i comp più favorevoli senza spiegare quali hai scartato e perché.
 - **ATTENZIONE — due linee diffusion Gaultier facilmente confondibili, NON applicare la stessa regola a entrambe. Controlla SEMPRE il testo esatto dell'etichetta prima di decidere quale regola usare:**
   - **"JEAN'S PAUL GAULTIER"** (etichetta con questo testo esatto, logo con apostrofo dopo "Jean" e S stilizzata) — T-shirt e maglie manica corta o lunga in jersey semplice: tetto di prezzo di rivendita realistico **€30**. Non stimare vendite sopra questa soglia per questi capi, indipendentemente da stampe o loghi.
   - **"JPG.JEAN'S"** o **"JPG JEAN'S"** (etichetta diversa, spesso con dicitura "Collection N°..." stampata, tipica di capi in mesh/rete con stampe elaborate stile Y2K) — linea DIVERSA dalla precedente, il tetto €30 NON si applica. Valuta questi capi sui comp reali trovati (ricerca web), senza applicare la cap della linea "Jean's Paul Gaultier".
@@ -750,7 +754,22 @@ def scrape_vinted_listing(url):
             except Exception:
                 result["description"] = desc_match.group(1)
 
+        # Tentativi multipli per la data di pubblicazione: il campo esatto
+        # non è ancora stato confermato via ispezione HTML diretta (Vinted
+        # potrebbe aver rinominato il campo o caricarlo via JS). Proviamo
+        # diverse varianti note prima di arrenderci.
         created_match = re.search(r'"created_at_ts"\s*:\s*"([^"]+)"', html)
+        if not created_match:
+            created_match = re.search(r'"created_at"\s*:\s*"([^"]+)"', html)
+        if not created_match:
+            created_match = re.search(r'"createdAt"\s*:\s*"([^"]+)"', html)
+
+        epoch_match = None
+        if not created_match:
+            epoch_match = re.search(r'"created_at_ts"\s*:\s*(\d{10,13})', html)
+            if not epoch_match:
+                epoch_match = re.search(r'"createdAtTs"\s*:\s*(\d{10,13})', html)
+
         if created_match:
             result["created_at"] = created_match.group(1)
             try:
@@ -761,7 +780,25 @@ def scrape_vinted_listing(url):
                 age_days = (datetime.now(timezone.utc) - created_dt).total_seconds() / 86400
                 result["age_days"] = round(age_days, 1)
             except Exception:
-                log.warning("Impossibile calcolare l'eta' dell'annuncio.")
+                log.warning("Impossibile calcolare l'eta' dell'annuncio (formato data inatteso: %s).", created_match.group(1))
+        elif epoch_match:
+            try:
+                from datetime import datetime, timezone
+                ts = int(epoch_match.group(1))
+                if ts > 10**12:  # timestamp in millisecondi
+                    ts = ts / 1000
+                created_dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+                result["created_at"] = created_dt.isoformat()
+                age_days = (datetime.now(timezone.utc) - created_dt).total_seconds() / 86400
+                result["age_days"] = round(age_days, 1)
+            except Exception:
+                log.warning("Impossibile interpretare il timestamp epoch trovato per la data di pubblicazione.")
+        else:
+            log.warning(
+                "Data di pubblicazione non trovata con nessuno dei pattern noti (created_at_ts/created_at/createdAt) "
+                "per %s -- Vinted potrebbe aver cambiato formato pagina, serve ispezione HTML manuale.",
+                url,
+            )
 
         catalog_matches = re.findall(r'/catalog/(\d+)-[a-z0-9-]+?\?referrer=item-crumbs"', html)
         if catalog_matches:
@@ -837,8 +874,13 @@ def scrape_vinted_listing(url):
                 else f"https://www.vinted.it/member/{seller_login}"
             )
             try:
-                resp_profilo = _vinted_session.get(profilo_url, headers=VINTED_HEADERS, timeout=5)
-                if resp_profilo.ok:
+                # Prima usava un singolo tentativo con timeout 5s (troppo
+                # aggressivo per una pagina pesante come il profilo, che
+                # carica tutto il guardaroba del venditore) -- causava
+                # fallimenti silenziosi quasi sistematici, per cui
+                # "Primi articoli in vendita" non compariva quasi mai.
+                resp_profilo = _vinted_get_con_retry(profilo_url, timeout=12, max_retries=2)
+                if resp_profilo is not None and resp_profilo.ok:
                     html_profilo = resp_profilo.text
                     titoli = re.findall(
                         r'data-testid="other_user_items-\d+--description-title">([^<]+)<',
@@ -868,6 +910,10 @@ def scrape_vinted_listing(url):
                         if len(titoli_unici) >= 8:
                             break
                     result["seller_top_items"] = titoli_unici
+                    if not titoli_unici:
+                        log.info("Scraping guardaroba venditore: pagina caricata ma nessun titolo estratto per %s", profilo_url)
+                else:
+                    log.info("Scraping guardaroba venditore fallito (nessuna risposta valida) per %s", profilo_url)
             except Exception as e:
                 log.debug("Scraping guardaroba venditore fallito (non bloccante): %s", e)
 
@@ -1339,13 +1385,68 @@ ESCLUSIONI_FALSI_POSITIVI_CATEGORIA = {
 }
 
 # Rumore generico da scartare sempre, indipendentemente dalla categoria:
-# taglie bambino (non comparabili a un capo adulto) e collab diffusion
-# economiche (es. "for Target") che abbassano artificialmente la media
-# se mescolate a comp di capi mainline.
+# taglie bambino (non comparabili a un capo adulto), collab diffusion
+# economiche (es. "for Target"), e frasi che indicano che il brand è citato
+# solo come RIFERIMENTO/ispirazione, non come brand reale del prodotto
+# (es. "R&S Records Horse Logo T-Shirt – Similar Graphic to Raf Simons").
 RUMORE_GENERICO_COMP = [
+    # taglie/target bambino
     "girls age", "boys age", "kids size", "toddler", "baby size",
+    "girl's", "girls'", "girls ", " girls", "boy's", "boys'", "boys ", " boys",
+    "kids ", " kids", "kids logo", "kids cotton",
+    "years old", "age 4", "age 6", "age 8", "age 10", "age 12",
+    # collab diffusion economiche
     "for target", "x target", "for h&m", "x h&m",
+    # brand citato solo come riferimento/ispirazione, non prodotto reale
+    "similar to", "similar graphic", "similar style to", "inspired by",
+    "reference to", "in the style of", "style of", "style inspired",
+    "homage to", "tribute to",
 ]
+
+# Per ogni brand monitorato, le sue sottolinee/collaborazioni da escludere
+# SEMPRE dai comp quando si valuta la linea principale -- condividono il
+# nome brand nei titoli ma appartengono a fasce di prezzo completamente
+# diverse (es. Y-3 è streetwear di massa via Adidas, non Yohji Yamamoto
+# mainline; See by Chloé è diffusion, non Chloé mainline).
+BRAND_SOTTOLINEE_DA_ESCLUDERE = {
+    "chloé": ["see by chloé", "see by chloe"],
+    "chloe": ["see by chloé", "see by chloe"],
+    "yohji yamamoto": ["y-3", "y3 ", " y3", "y-3 adidas", "adidas y-3"],
+    "alexander mcqueen": ["mcq alexander mcqueen", " mcq "],
+    "maison margiela": ["mm6"],
+    "margiela": ["mm6"],
+    "missoni": ["missoni sport", "missoni home", "missoni mare", "missoni kids", "missoni junior"],
+    "stella mccartney": ["adidas by stella mccartney", "stella mccartney for adidas", "adidas x stella mccartney", "pour adidas"],
+    "raf simons": ["fred perry x raf simons", "raf simons x fred perry", "calvin klein x raf simons"],
+}
+
+
+def _filtra_comp_per_brand_sottolinee(testo_comp, brand):
+    """Esclude dai comp le righe che appartengono a una sottolinea/collab
+    nota del brand (vedi BRAND_SOTTOLINEE_DA_ESCLUDERE), che altrimenti
+    contamina la stima con prezzi di una fascia di mercato completamente
+    diversa pur condividendo il nome brand nel titolo."""
+    if not testo_comp or not brand:
+        return testo_comp
+
+    sottolinee = BRAND_SOTTOLINEE_DA_ESCLUDERE.get(brand.strip().lower(), [])
+    if not sottolinee:
+        return testo_comp
+
+    righe_filtrate = []
+    scartate = 0
+    for riga in testo_comp.split("\n"):
+        if riga.strip().startswith("-"):
+            riga_lower = riga.lower()
+            if any(sub in riga_lower for sub in sottolinee):
+                scartate += 1
+                continue
+        righe_filtrate.append(riga)
+
+    if scartate:
+        log.info("_filtra_comp_per_brand_sottolinee: scartate %d righe di sottolinea/collab per brand '%s'.", scartate, brand)
+
+    return "\n".join(righe_filtrate)
 
 
 def _filtra_comp_per_categoria(testo_comp, categoria):
@@ -1452,8 +1553,11 @@ def search_comps_completo(brand, categoria, query_base, catalog_id=None, materia
 
     vinted_comp_puliti = _rimuovi_comp_autoreferenziale(risultati.get("vinted"), query_base)
     vinted_comp_puliti = _filtra_comp_per_categoria(vinted_comp_puliti, categoria)
+    vinted_comp_puliti = _filtra_comp_per_brand_sottolinee(vinted_comp_puliti, brand)
     vestiaire_comp_puliti = _filtra_comp_per_categoria(risultati.get("vestiaire"), categoria)
+    vestiaire_comp_puliti = _filtra_comp_per_brand_sottolinee(vestiaire_comp_puliti, brand)
     ebay_comp_puliti = _filtra_comp_per_categoria(risultati.get("ebay"), categoria)
+    ebay_comp_puliti = _filtra_comp_per_brand_sottolinee(ebay_comp_puliti, brand)
 
     parti = [f"RICERCA WEB PRE-RACCOLTA (3 fonti, base: '{query_base}'):"]
     if nota_brand:
@@ -1821,12 +1925,20 @@ def applica_soglia_trattativa_40_percento(testo, prezzo_prodotto):
 
 
 def converti_tratta_senza_obiettivo_valido(testo):
-    """Rete di sicurezza: TRATTA ha senso solo se il proprio 'Obiettivo
-    trattativa' raggiunge davvero la soglia minima (€20/ROI 100%). Se il
-    modello propone TRATTA ma il suo stesso obiettivo negoziato resta sotto
-    soglia (es. ROI 40-70%), o non propone nessun obiettivo di trattativa,
-    la negoziazione non risolve nulla -- la decisione corretta e' NON
-    COMPRARE, non un tentativo di trattativa inutile."""
+    """Rete di sicurezza: se il modello propone esplicitamente un
+    'Obiettivo trattativa' che resta sotto soglia (es. ROI 40-70%) anche al
+    massimo sconto, la negoziazione non risolve nulla -- la decisione
+    corretta e' NON COMPRARE, non un tentativo di trattativa inutile.
+
+    IMPORTANTE: interviene SOLO se un obiettivo trattativa e' presente ed
+    e' insufficiente. Se manca del tutto (es. perche' questa TRATTA e'
+    stata generata da forza_soglia_minima_compra declassando un COMPRA
+    borderline che non prevedeva negoziazione), NON forza NON COMPRARE --
+    in quel caso la TRATTA implicita ("negozia un po', margine risicato")
+    resta valida cosi' com'e'. Prima questa funzione trattava "nessun
+    obiettivo" come motivo di conversione, causando falsi positivi su
+    COMPRA borderline declassati (es. margine 99% ROI, mai proposta
+    trattativa esplicita dal modello)."""
     testo = _normalizza_emoji_decisione(testo)
 
     LUNGHEZZA_BLOCCO_VERDETTO = 400
@@ -1843,14 +1955,13 @@ def converti_tratta_senza_obiettivo_valido(testo):
         return testo
 
     m_obiettivo = re.search(r"Obiettivo trattativa[:\s]*.{0,250}", testo, re.IGNORECASE | re.DOTALL)
-    margine_obiettivo = None
-    roi_obiettivo = None
-    if m_obiettivo:
-        margine_obiettivo, roi_obiettivo = _estrai_margine_e_roi_da_blocco(m_obiettivo.group(0))
+    if m_obiettivo is None:
+        return testo  # nessun obiettivo proposto: non e' un errore, lascia TRATTA cosi' com'e'
+
+    margine_obiettivo, roi_obiettivo = _estrai_margine_e_roi_da_blocco(m_obiettivo.group(0))
 
     obiettivo_insufficiente = (
-        m_obiettivo is None
-        or (margine_obiettivo is not None and margine_obiettivo < 20)
+        (margine_obiettivo is not None and margine_obiettivo < 20)
         or (roi_obiettivo is not None and roi_obiettivo < 100)
     )
     if not obiettivo_insufficiente:
@@ -2289,11 +2400,13 @@ def process_listing(parsed, url, cover_photo_bytes):
     )
 
     # Messaggio di debug separato, SOLO se una rete di sicurezza ha
-    # effettivamente modificato il verdetto -- cosi' e' facile incollarlo
-    # direttamente da Telegram per un controllo, senza dover entrare su
-    # Railway, ma senza intasare la chat sugli annunci "normali" dove non
-    # e' scattato nulla.
-    if scenario_usato != "SKIP" and correzioni_applicate:
+    # effettivamente modificato il verdetto -- utile per controllare da
+    # Telegram senza entrare su Railway. Disattivato su richiesta (troppo
+    # rumore ora che le correzioni sono ben rodate) -- riattivabile
+    # mettendo INVIA_DEBUG_CORREZIONI = True qui sotto, nessun'altra
+    # modifica necessaria.
+    INVIA_DEBUG_CORREZIONI = False
+    if INVIA_DEBUG_CORREZIONI and scenario_usato != "SKIP" and correzioni_applicate:
         debug_text = (
             f"🔧 *DEBUG* — correzioni automatiche applicate a *{listing_info.get('title')}*:\n"
             f"{', '.join(correzioni_applicate)}\n\n"
