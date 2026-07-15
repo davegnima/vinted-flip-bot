@@ -1362,15 +1362,24 @@ def _normalizza_emoji_decisione(testo, lunghezza_blocco=400):
     1. Emoji sbagliata + nessuna parola di decisione: inserisce sia
        l'emoji giusta sia la parola (es. "✅ ..." -> "🟢 COMPRA ...").
     2. Emoji sbagliata + parola di decisione già presente (es. "✅ COMPRA
-       SUBITO"): sostituisce solo l'emoji, senza duplicare la parola."""
+       SUBITO"): sostituisce solo l'emoji, senza duplicare la parola.
+
+    IMPORTANTE: lo swap nel caso 2 avviene SOLO nel prefisso PRIMA della
+    parola di decisione, mai dopo -- altrove nel blocco (es. dopo la
+    parola) possono comparire le annotazioni ⚠️ _..._ inserite dalle reti
+    di sicurezza (forza_soglia_minima_compra, converti_tratta_senza_
+    obiettivo_valido), che non vanno mai toccate o si generano doppioni."""
     testa = testo[:lunghezza_blocco]
     resto = testo[lunghezza_blocco:]
 
     upper = testa.upper()
-    ha_parola_decisione = any(k in upper for k in ("COMPRA", "TRATTA", "NON COMPRARE", "CHIEDI"))
+    posizioni = [upper.find(k) for k in ("COMPRA", "TRATTA", "NON COMPRARE", "CHIEDI")]
+    posizioni = [p for p in posizioni if p != -1]
 
-    if ha_parola_decisione:
-        testa = testa.replace("✅", "🟢", 1).replace("❌", "🔴", 1).replace("⚠️", "🟡", 1)
+    if posizioni:
+        idx_parola = min(posizioni)
+        prefisso = testa[:idx_parola].replace("✅", "🟢", 1).replace("❌", "🔴", 1).replace("⚠️", "🟡", 1)
+        testa = prefisso + testa[idx_parola:]
     else:
         if "✅" in testa:
             testa = testa.replace("✅", "🟢 COMPRA", 1)
@@ -1574,10 +1583,11 @@ def forza_soglia_minima_compra(testo):
     if not sotto_soglia:
         return testo
 
+    testa_corretta = testa.replace("🟢", "🟡", 1)
     testa_corretta = re.sub(
-        r"\bCOMPRA(?:\s+(?:SUBITO|FORTE|IMMEDIATAMENTE|SE CI TIENI))?\b",
+        r"\bCOMPRA(?:\s+(?:SUBITO|FORTE|IMMEDIATAMENTE|SE CI TIENI))?\b(?:\s*⚠️\s*_[^_]*_)?",
         "TRATTA ⚠️ _corretto automaticamente: sotto soglia minima (€20 netti / ROI 100%)_",
-        testa, count=1, flags=re.IGNORECASE,
+        testa_corretta, count=1, flags=re.IGNORECASE,
     )
     log.info(
         "forza_soglia_minima_compra: COMPRA declassato a TRATTA (margine=%s, ROI=%s%%) -- verdetto originale privo di emoji/formato standard.",
@@ -1699,7 +1709,7 @@ def converti_tratta_senza_obiettivo_valido(testo):
 
     testa_corretta = testa.replace("🟡", "🔴", 1)
     testa_corretta = re.sub(
-        r"\bTRATTA\b",
+        r"\bTRATTA\b(?:\s*⚠️\s*_[^_]*_)?",
         "NON COMPRARE ⚠️ _corretto: anche l'obiettivo di trattativa non raggiunge la soglia minima (€20 netti / ROI 100%), non ha senso negoziare_",
         testa_corretta, count=1, flags=re.IGNORECASE,
     )
