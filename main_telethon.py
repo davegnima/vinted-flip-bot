@@ -489,6 +489,9 @@ Non proporre MAI TRATTA se il tuo stesso "Obiettivo trattativa" — calcolato al
 # TAGLIA COME FATTORE DI LIQUIDITÀ (non ignorarla mai se nota)
 Se la taglia del capo è nota (dai dati annuncio o dalle foto), FATTORIZZALA sempre nella stima di vendita, nel Deal score e nei giorni stimati di vendita — non limitarti a valutare il brand. Taglie standard/centrali (donna IT 40-44, uomo IT 48-52) hanno il bacino di acquirenti più ampio e liquidità migliore. Taglie estreme (donna sotto IT 38 o sopra IT 46, uomo sotto 46 o sopra 54) hanno domanda strutturalmente più bassa: bacino di acquirenti ridotto, tempi di vendita più lunghi, spesso prezzo di vendita finale inferiore rispetto alla stessa taglia standard dello stesso capo. In questi casi abbassa il Deal score, allunga la stima giorni di vendita, e menzlonalo esplicitamente nell'Analisi dell'analista. Se la taglia non è nota, dillo esplicitamente come limite dell'analisi invece di ignorare il tema.
 
+# OBBLIGO DI MOTIVAZIONE ESPLICITA SU RISCHIO FAKE ALTO/FALSO
+Se scrivi "Rischio fake: Alto" o menzioni "falso"/"contraffatto"/"non autentico" nella riga Legit, DEVI specificare il motivo esatto (font etichetta, cuciture, materiale, wash tag incoerente, proporzioni logo, ecc.) — riprendi il dettaglio già fornito dall'occhio nella sua analisi visiva, non limitarti a ripetere "rischio alto" senza spiegazione. L'utente deve sempre sapere COSA lo ha insospettito.
+
 # ANCORAGGIO AI COMP REALI (non al prezzo retail scontato)
 La stima di vendita DEVE ancorarsi ai comp di VENDUTO/ASK reali trovati (pre-raccolti o dalla ricerca), non al prezzo retail originale scontato di una percentuale arbitraria. Se i comp reali mostrano un range (es. venduti €35-55, ask €40-75), la tua stima di vendita non può superare il valore più alto dei comp reali raccolti, anche se il prezzo retail del capo nuovo è molto più alto. Se non hai comp specifici per quel modello ma solo per il brand in generale, usa il valore mediano-basso della fascia trovata, mai il valore più ottimistico. Diffida di te stesso se la tua stima di vendita finale supera nettamente tutti i prezzi "venduto" effettivamente citati nei dati raccolti: in quel caso stai probabilmente ragionando sul retail, non sul second-hand — correggi verso il basso.
 
@@ -1747,14 +1750,34 @@ def build_skip_report(listing_info, motivo_skip, output_occhi_testo=None):
     elif motivo_skip.startswith("[FALSO CONCLAMATO"):
         riga_legit = "Probabilmente falso — rilevato da analisi visiva con alta confidenza."
         if output_occhi_testo:
+            dettaglio = None
+
+            # Tentativo 1: formato atteso con intestazione "**Analisi visiva**"
             m_analisi = re.search(
                 r"\*\*Analisi visiva\*\*[^\n]*\n+(.+?)(?=\n---|\n##|\n📨|\Z)",
                 output_occhi_testo, re.IGNORECASE | re.DOTALL,
             )
-            if m_analisi:
+            if m_analisi and m_analisi.group(1).strip():
                 dettaglio = m_analisi.group(1).strip()
-                if dettaglio:
-                    riga_legit = f"Probabilmente falso. Motivo specifico: {dettaglio}"
+
+            # Tentativo 2: posizionale -- qualunque cosa segua il primo
+            # separatore "---" (che nel template segue sempre il blocco
+            # Verdetto), indipendentemente da come e' intitolata la sezione.
+            if not dettaglio:
+                m_pos = re.search(r"\n---\s*\n+(.+?)(?=\n---|\n📨|\Z)", output_occhi_testo, re.DOTALL)
+                if m_pos and m_pos.group(1).strip():
+                    dettaglio = m_pos.group(1).strip()
+
+            # Tentativo 3 (ultima risorsa): mostra tutto il testo grezzo
+            # dell'occhio troncato -- sempre meglio della frase generica,
+            # l'utente ha diritto a vedere il ragionamento anche se il
+            # formato non è quello atteso.
+            if not dettaglio:
+                testo_grezzo = output_occhi_testo.strip()
+                dettaglio = testo_grezzo[:600] + ("..." if len(testo_grezzo) > 600 else "")
+
+            if dettaglio:
+                riga_legit = f"Probabilmente falso. Motivo specifico: {dettaglio}"
         riga_rischio = "ALTO — falso conclamato (filtro automatico, cervello non consultato)"
     elif motivo_skip.startswith("[CONDIZIONE DISTRUTTA"):
         riga_legit = "Autentico ma condizione fisica gravemente compromessa — non rivendibile."
@@ -2093,6 +2116,43 @@ def _estrai_item_id_da_url(url):
     return m.group(1) if m else None
 
 
+def verifica_falso_ha_motivazione(testo):
+    """Regola generale: se la parola 'falso'/'contraffatto'/'non autentico'
+    compare nel messaggio finale (sezione Legit, sia formato SKIP "## Legit
+    check" sia formato normale "🏷️ Legit:"), deve esserci una spiegazione
+    specifica vicino (font, cuciture, materiale, wash tag...). Se il testo
+    è troppo corto o coincide con una vecchia frase generica nota, aggiunge
+    un avviso visibile invece di lasciare l'utente senza motivo. Si applica
+    a QUALSIASI output finale, sia dal percorso SKIP pre-cervello sia dal
+    cervello completo -- non solo al caso specifico già corretto in
+    build_skip_report."""
+    testo_lower = testo.lower()
+    if not any(kw in testo_lower for kw in ("falso", "contraffatto", "non autentico")):
+        return testo
+
+    m_blocco = re.search(
+        r"(?:🏷️\s*Legit:|##\s*Legit check\s*\n)(.{0,500})",
+        testo, re.IGNORECASE | re.DOTALL,
+    )
+    blocco_legit = m_blocco.group(1).strip() if m_blocco else testo[:500]
+
+    troppo_corto = len(blocco_legit) < 60
+    frase_generica_nota = (
+        "rilevato da analisi visiva con alta confidenza" in blocco_legit.lower()
+        and len(blocco_legit) < 120
+    )
+
+    if troppo_corto or frase_generica_nota:
+        log.info("verifica_falso_ha_motivazione: 'falso' citato senza motivo specifico, aggiunto avviso.")
+        return testo + (
+            "\n\n⚠️ _Nota automatica: è stato rilevato un possibile falso ma non è stato fornito "
+            "un motivo specifico (font, cuciture, materiale, wash tag). Verificare manualmente le "
+            "foto prima di scartare definitivamente l'annuncio._"
+        )
+
+    return testo
+
+
 def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header, output_finale, decisione, e_compra, scenario_usato, n_query_grounding=0):
     item_id = _estrai_item_id_da_url(url)
     urgenza_alta = _e_urgenza_alta(decisione)
@@ -2249,6 +2309,11 @@ def process_listing(parsed, url, cover_photo_bytes):
     e_skip, motivo_skip = check_skip_pre_cervello(output_occhi, listing_info)
     if e_skip:
         log.info("FILTRO PRE-CERVELLO ATTIVATO. Motivo: %s", motivo_skip)
+        if motivo_skip.startswith("[FALSO CONCLAMATO"):
+            # Log leggero e sempre attivo (indipendente da INVIA_DEBUG_CORREZIONI)
+            # per poter verificare su Railway se l'estrazione del motivo
+            # specifico funziona sul formato reale che il modello produce.
+            log.info("FALSO CONCLAMATO -- output occhi grezzo per '%s':\n%s", listing_info.get("title"), output_occhi)
         output_finale = build_skip_report(listing_info, motivo_skip, output_occhi_testo=output_occhi)
         n_query_grounding = 0
         scenario_usato = "SKIP"
@@ -2381,6 +2446,8 @@ def process_listing(parsed, url, cover_photo_bytes):
         f"🔧 Scenario {scenario_usato}{info_scenario}"
         + f"\n{url or ''}\n{'—' * 20}\n"
     )
+
+    output_finale = verifica_falso_ha_motivazione(output_finale)
 
     if "NON COMPRARE" in output_finale:
         output_finale = re.sub(
