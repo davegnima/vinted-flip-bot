@@ -9,6 +9,7 @@ google_search, che su Gemini non e' forzabile in modo affidabile).
 
 import os
 import re
+import html
 import json
 import time
 import asyncio
@@ -152,6 +153,36 @@ CATEGORIA_KEYWORDS = {
     "cappello": ["cappello", "hat", "chapeau", "sombrero", "cap", "berretto"],
     "occhiali": ["occhiali", "gafas", "lunettes", "glasses", "brille", "monturas", "montatura"],
     "tuta": ["tuta", "combinaison", "combishort", "jumpsuit", "playsuit", "overall", "salopette"],
+}
+
+# Termine inglese "canonico" per ogni categoria, usato per le query eBay/
+# Vestiaire (dove i titoli sono in stragrande maggioranza in inglese anche
+# su siti localizzati IT/DE/FR). Cercare in italiano ("canotta") su questi
+# marketplace produce spesso zero match sul termine di categoria, facendo
+# collassare la query a "solo brand" e restituendo risultati fuori tema.
+CATEGORIA_TERMINE_EN = {
+    "abito": "dress",
+    "blusa": "blouse",
+    "camicia": "shirt",
+    "maglia": "sweater",
+    "t-shirt": "t-shirt",
+    "canotta": "tank top",
+    "felpa": "hoodie",
+    "gonna": "skirt",
+    "pantaloni": "trousers",
+    "jeans": "jeans",
+    "giacca": "jacket",
+    "cappotto": "coat",
+    "borsa": "bag",
+    "scarpe": "shoes",
+    "polo": "polo",
+    "costume": "swimsuit",
+    "intimo": "underwear",
+    "sciarpa": "scarf",
+    "cintura": "belt",
+    "cappello": "hat",
+    "occhiali": "glasses",
+    "tuta": "jumpsuit",
 }
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -440,6 +471,18 @@ Se la taglia del capo è nota (dai dati annuncio o dalle foto), FATTORIZZALA sem
 
 # ANCORAGGIO AI COMP REALI (non al prezzo retail scontato)
 La stima di vendita DEVE ancorarsi ai comp di VENDUTO/ASK reali trovati (pre-raccolti o dalla ricerca), non al prezzo retail originale scontato di una percentuale arbitraria. Se i comp reali mostrano un range (es. venduti €35-55, ask €40-75), la tua stima di vendita non può superare il valore più alto dei comp reali raccolti, anche se il prezzo retail del capo nuovo è molto più alto. Se non hai comp specifici per quel modello ma solo per il brand in generale, usa il valore mediano-basso della fascia trovata, mai il valore più ottimistico. Diffida di te stesso se la tua stima di vendita finale supera nettamente tutti i prezzi "venduto" effettivamente citati nei dati raccolti: in quel caso stai probabilmente ragionando sul retail, non sul second-hand — correggi verso il basso.
+
+# SOLD VS ASK — GERARCHIA OBBLIGATORIA DEI DATI
+I dati che ricevi sono etichettati esplicitamente: "ASK" (Vestiaire, Vinted — annunci attivi, NON necessariamente venduti, spesso sovrastimati o mai venduti a quel prezzo) vs "SOLD" (eBay — venduti confermati, il dato più vicino alla realtà). Regole:
+1. Se hai comp SOLD (eBay), usali come base primaria per la stima di vendita. I comp ASK servono solo a confermare che il prezzo SOLD sia plausibile, mai a sostituirlo.
+2. Se hai SOLO comp ASK (nessun SOLD disponibile o pertinente), applica uno sconto del 20-30% rispetto al valore ASK medio prima di usarlo come stima di vendita — gli annunci attivi restano spesso invenduti proprio perché il prezzo chiesto è troppo alto.
+3. NON citare mai un prezzo ASK come se fosse un prezzo di vendita realistico senza applicare questo sconto.
+
+# CITA I COMP SPECIFICI USATI (non stime generiche a memoria)
+Nella sezione "Analisi dell'analista", cita almeno 1-2 prezzi specifici dai dati raccolti (es. "eBay: Black Tank Top venduto €85") che hanno determinato la tua stima. Una frase generica tipo "il brand mantiene un valore tra €40 e €60" SENZA citare nessun comp specifico dai dati ricevuti è un segnale che ti stai affidando alla memoria generale del brand invece che ai dati effettivamente raccolti — non farlo mai se i comp sono disponibili.
+
+# DISTINGUI VARIANTI QUANDO I COMP HANNO RANGE AMPIO
+Se i comp per lo stesso brand mostrano un range di prezzo molto ampio (es. da €25 a €200), è quasi sempre perché il set contiene sia capi basic (tinta unita, jersey semplice) sia capi lavorati/decorati/stampati (molto più costosi). Identifica lo stile del capo in analisi dalla descrizione/foto e usa SOLO i comp dello stesso tipo di capo, non la media di tutto il range.
 
 # FORMATO RIGIDO — NON DEVIARE
 Usa ESCLUSIVAMENTE queste 4 emoji per il verdetto: 🟢 (COMPRA) 🟡 (TRATTA) 🔴 (NON COMPRARE) 🔵 (CHIEDI ALTRE FOTO). NON usare mai ✅ ⚠️ ❌ nel tuo verdetto finale: sono riservate al legit check dell'occhio, non al tuo output. La parola urgenza deve essere ESATTAMENTE "Alta urgenza", "Media urgenza" o "Bassa urgenza" — mai sinonimi come "priorità", "importanza" o simili.
@@ -1119,7 +1162,8 @@ def build_vinted_search_url(brand, categoria, materiale=None, catalog_id=None):
     return url, False
 
 def search_comps_ebay_sold_url(brand, categoria):
-    query_base = f"{brand} {categoria}".strip()
+    termine_en = CATEGORIA_TERMINE_EN.get(categoria, categoria)
+    query_base = f'{brand} "{termine_en}"'.strip() if termine_en else (brand or "").strip()
     if not query_base:
         return None
     return f"https://www.ebay.it/sch/i.html?_nkw={quote(query_base)}&_sacat=0&_from=R40&LH_Sold=1&rt=nc&LH_PrefLoc=2"
@@ -1243,7 +1287,8 @@ def _serper_batch_query_vestiaire(brand, categoria):
             "Se necessario, usa la function cerca_comp_prezzo con una query piu' mirata."
         ), False
 
-    query_serper = f'site:vestiairecollective.com "{brand_pulito}" {categoria_per_query} €'.strip() if brand_pulito else f'site:vestiairecollective.com {categoria_per_query} €'
+    termine_en = CATEGORIA_TERMINE_EN.get(categoria_per_query, categoria_per_query)
+    query_serper = f'site:vestiairecollective.com "{brand_pulito}" "{termine_en}" €'.strip() if brand_pulito else f'site:vestiairecollective.com "{termine_en}" €'
 
     payload = [{"q": query_serper, "gl": "it", "hl": "it", "num": 10}]
     try:
@@ -1272,6 +1317,58 @@ def _serper_batch_query_vestiaire(brand, categoria):
                 snippet_troncato += "..."
             lines.append(f"- {titolo}\n  {snippet_troncato}")
     return ("\n".join(lines) if lines else "Nessun risultato trovato."), True
+
+def _filtra_comp_per_categoria(testo_comp, categoria):
+    """Filtra le righe comp che non contengono nessuna keyword della
+    categoria rilevata (in nessuna lingua tra quelle coperte da
+    CATEGORIA_KEYWORDS). Necessario perché eBay/Vestiaire a volte
+    restituiscono risultati "correlati al brand" fuori categoria (es.
+    collane, pantaloni, libri quando si cerca una canotta) nonostante la
+    query includa la categoria -- il motore di ricerca della fonte non la
+    rispetta rigidamente, quindi il filtro va fatto sui risultati, non solo
+    sulla query in ingresso."""
+    if not testo_comp or not categoria:
+        return testo_comp
+
+    keywords = CATEGORIA_KEYWORDS.get(categoria, [])
+    if not keywords:
+        return testo_comp
+
+    righe_filtrate = []
+    scartate = 0
+    for riga in testo_comp.split("\n"):
+        if riga.strip().startswith("-"):
+            riga_lower = riga.lower()
+            if any(kw in riga_lower for kw in keywords):
+                righe_filtrate.append(riga)
+            else:
+                scartate += 1
+        else:
+            righe_filtrate.append(riga)
+
+    if scartate:
+        log.info("_filtra_comp_per_categoria: scartate %d righe fuori categoria '%s'.", scartate, categoria)
+
+    return "\n".join(righe_filtrate)
+
+
+def _rimuovi_comp_autoreferenziale(testo_comp_vinted, titolo_annuncio):
+    """Filtra dai comp Vinted l'annuncio stesso in valutazione, che spesso
+    compare tra i risultati di ricerca (stesso titolo) senza essere un dato
+    di mercato indipendente -- rischia di essere scambiato per un comp
+    reale invece che per l'oggetto stesso."""
+    if not testo_comp_vinted or not titolo_annuncio:
+        return testo_comp_vinted
+
+    titolo_norm = _normalizza_titolo_per_dedup(html.unescape(titolo_annuncio))
+    righe_filtrate = []
+    for riga in testo_comp_vinted.split("\n"):
+        m = re.match(r"-\s*(.+?)\s*—\s*€", riga)
+        if m and _normalizza_titolo_per_dedup(html.unescape(m.group(1))) == titolo_norm:
+            continue
+        righe_filtrate.append(riga)
+    return "\n".join(righe_filtrate)
+
 
 def search_comps_completo(brand, categoria, query_base, catalog_id=None, material_per_ricerca=None):
     vinted_url, vinted_per_id = build_vinted_search_url(brand, categoria, material_per_ricerca, catalog_id)
@@ -1317,12 +1414,28 @@ def search_comps_completo(brand, categoria, query_base, catalog_id=None, materia
         "(meno precisa, possibili falsi positivi)."
     )
 
+    vinted_comp_puliti = _rimuovi_comp_autoreferenziale(risultati.get("vinted"), query_base)
+    vinted_comp_puliti = _filtra_comp_per_categoria(vinted_comp_puliti, categoria)
+    vestiaire_comp_puliti = _filtra_comp_per_categoria(risultati.get("vestiaire"), categoria)
+    ebay_comp_puliti = _filtra_comp_per_categoria(risultati.get("ebay"), categoria)
+
     parti = [f"RICERCA WEB PRE-RACCOLTA (3 fonti, base: '{query_base}'):"]
     if nota_brand:
         parti.append(nota_brand)
-    parti.append(f"\n📍 FONTE: VESTIAIRE COLLECTIVE\n{risultati.get('vestiaire', 'Nessun risultato')}")
-    parti.append(f"\n📍 FONTE: VINTED (scrape diretto)\n{risultati.get('vinted', 'Nessun risultato')}")
-    parti.append(f"\n📍 FONTE: EBAY SOLD (scrape diretto)\n{risultati.get('ebay', 'Nessun risultato')}")
+    if categoria:
+        parti.append(f"(Comp filtrati per categoria rilevata: '{categoria}' -- risultati fuori tema già scartati.)")
+    parti.append(
+        "\n📍 FONTE: VESTIAIRE COLLECTIVE (prezzi ASK — annunci attivi, NON necessariamente venduti)\n"
+        f"{vestiaire_comp_puliti or 'Nessun risultato'}"
+    )
+    parti.append(
+        "\n📍 FONTE: VINTED (prezzi ASK — annunci attivi, NON necessariamente venduti; annuncio in analisi già escluso)\n"
+        f"{vinted_comp_puliti or 'Nessun risultato'}"
+    )
+    parti.append(
+        "\n📍 FONTE: EBAY SOLD (prezzi SOLD — venduti confermati, il dato PIÙ affidabile per stimare il prezzo di vendita reale)\n"
+        f"{ebay_comp_puliti or 'Nessun risultato'}"
+    )
 
     return "\n".join(parti), serper_ha_funzionato
 
