@@ -2121,16 +2121,16 @@ def process_listing(parsed, url, cover_photo_bytes):
     )
     if e_compra_puro:
         output_finale = re.sub(
-            r"(📨\s*\*\*Messaggio da inviare[:\*]*\*?\*?)\s*\n[^\n#🧠❓]{1,300}",
+            r"(📨\s*\*\*Messaggio da inviare[:\*]*\*?\*?)\s*\n.*?(?=\n---|\n#|\n❓|\n🧠|\Z)",
             r"\1\nNon necessario.",
             output_finale,
-            flags=re.IGNORECASE
+            flags=re.IGNORECASE | re.DOTALL
         )
         output_finale = re.sub(
-            r"(❓\s*\*\*Da chiedere[:\*]*\*?\*?)\s*\n[^\n#🧠]{1,300}",
+            r"(❓\s*\*\*Da chiedere[:\*]*\*?\*?)\s*\n.*?(?=\n---|\n#|\n🧠|\Z)",
             r"\1\nNon necessario.",
             output_finale,
-            flags=re.IGNORECASE
+            flags=re.IGNORECASE | re.DOTALL
         )
 
     _invia_risultato_telegram(
