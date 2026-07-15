@@ -135,7 +135,7 @@ CATEGORIA_KEYWORDS = {
     "blusa": ["blusa", "camicetta", "bluse", "blouse", "chemisier"],
     "camicia": ["camicia", "hemd", "shirt", "chemise", "camisa", "camisola"],
     "maglia": ["maglia", "maglione", "pullover", "sweater", "pull", "jumper", "jersey", "suéter", "trui", "strick"],
-    "t-shirt": ["t-shirt", "tshirt", "maglietta", "camiseta", "playera"],
+    "t-shirt": ["t-shirt", "tshirt", "t shirt", "maglietta", "camiseta", "playera"],
     "canotta": ["canotta", "canottiera", "top", "tank top", "canotte", "débardeur", "tirantes"],
     "felpa": ["felpa", "hoodie", "sweatshirt", "sudadera", "kapuzenpulli"],
     "gonna": ["gonna", "rock", "skirt", "jupe", "falda", "saia"],
@@ -207,14 +207,27 @@ def scegli_materiale_per_ricerca(material_value_raw):
 
 
 def estrai_categoria_da_titolo(titolo):
+    """Trova la categoria del capo cercando tutte le keyword multilingua nel
+    titolo, e sceglie quella con il match PIÙ LUNGO/specifico -- non la
+    prima trovata nell'ordine del dizionario. Necessario perché altrimenti
+    keyword generiche possono "vincere" per errore su keyword più
+    specifiche che le contengono come sottostringa: es. "shirt" (categoria
+    camicia) è una sottostringa di "t-shirt" (categoria t-shirt), quindi
+    con un semplice "primo match" un titolo come "T shirt uomo" veniva
+    categorizzato come camicia invece che t-shirt, portando a comp di
+    camicie eleganti al posto di magliette basic -- due fasce di prezzo
+    completamente diverse."""
     if not titolo:
         return None
     titolo_lower = titolo.lower()
+    migliore_categoria = None
+    migliore_lunghezza = 0
     for categoria_it, parole_chiave in CATEGORIA_KEYWORDS.items():
         for parola in parole_chiave:
-            if parola in titolo_lower:
-                return categoria_it
-    return None
+            if parola in titolo_lower and len(parola) > migliore_lunghezza:
+                migliore_categoria = categoria_it
+                migliore_lunghezza = len(parola)
+    return migliore_categoria
 
 
 # ---------------------------------------------------------------------------
@@ -478,8 +491,8 @@ I dati che ricevi sono etichettati esplicitamente: "ASK" (Vestiaire, Vinted — 
 2. Se hai SOLO comp ASK (nessun SOLD disponibile o pertinente), applica uno sconto del 20-30% rispetto al valore ASK medio prima di usarlo come stima di vendita — gli annunci attivi restano spesso invenduti proprio perché il prezzo chiesto è troppo alto.
 3. NON citare mai un prezzo ASK come se fosse un prezzo di vendita realistico senza applicare questo sconto.
 
-# CITA I COMP SPECIFICI USATI (non stime generiche a memoria)
-Nella sezione "Analisi dell'analista", cita almeno 1-2 prezzi specifici dai dati raccolti (es. "eBay: Black Tank Top venduto €85") che hanno determinato la tua stima. Una frase generica tipo "il brand mantiene un valore tra €40 e €60" SENZA citare nessun comp specifico dai dati ricevuti è un segnale che ti stai affidando alla memoria generale del brand invece che ai dati effettivamente raccolti — non farlo mai se i comp sono disponibili.
+# CITA I COMP SPECIFICI USATI (non stime generiche a memoria, MAI inventare range)
+Nella sezione "Analisi dell'analista", cita ALMENO 2 prezzi ESATTI copiati verbatim dai dati SOLD/ASK ricevuti (es. "eBay SOLD: 'Missoni Long Dress Chevron Pattern Size 40' venduto a €160,25"), non un range parafrasato a memoria. Se scrivi un range tipo "tra €X e €Y", quei due estremi devono corrispondere a due prezzi realmente presenti nei dati ricevuti, non a una tua stima approssimativa del "prezzo tipico" del brand. Prima di scrivere qualsiasi range di prezzo, controlla che entrambi gli estremi siano effettivamente citabili dai dati che hai ricevuto — se non lo sono, non li hai calcolati correttamente e devi ricontrollare i dati invece di scrivere un numero plausibile ma non verificato.
 
 # DISTINGUI VARIANTI QUANDO I COMP HANNO RANGE AMPIO
 Se i comp per lo stesso brand mostrano un range di prezzo molto ampio (es. da €25 a €200), è quasi sempre perché il set contiene sia capi basic (tinta unita, jersey semplice) sia capi lavorati/decorati/stampati (molto più costosi). Identifica lo stile del capo in analisi dalla descrizione/foto e usa SOLO i comp dello stesso tipo di capo, non la media di tutto il range.
@@ -1318,15 +1331,33 @@ def _serper_batch_query_vestiaire(brand, categoria):
             lines.append(f"- {titolo}\n  {snippet_troncato}")
     return ("\n".join(lines) if lines else "Nessun risultato trovato."), True
 
+# Falsi positivi idiomatici: "dress" in "dress shirt"/"dress pants" e' un
+# aggettivo (capo elegante), non indica un abito. Senza questa esclusione,
+# il filtro categoria "abito" li fa passare per errore.
+ESCLUSIONI_FALSI_POSITIVI_CATEGORIA = {
+    "abito": ["dress shirt", "dress pants", "dress code", "dress shoes"],
+}
+
+# Rumore generico da scartare sempre, indipendentemente dalla categoria:
+# taglie bambino (non comparabili a un capo adulto) e collab diffusion
+# economiche (es. "for Target") che abbassano artificialmente la media
+# se mescolate a comp di capi mainline.
+RUMORE_GENERICO_COMP = [
+    "girls age", "boys age", "kids size", "toddler", "baby size",
+    "for target", "x target", "for h&m", "x h&m",
+]
+
+
 def _filtra_comp_per_categoria(testo_comp, categoria):
     """Filtra le righe comp che non contengono nessuna keyword della
     categoria rilevata (in nessuna lingua tra quelle coperte da
-    CATEGORIA_KEYWORDS). Necessario perché eBay/Vestiaire a volte
-    restituiscono risultati "correlati al brand" fuori categoria (es.
-    collane, pantaloni, libri quando si cerca una canotta) nonostante la
-    query includa la categoria -- il motore di ricerca della fonte non la
-    rispetta rigidamente, quindi il filtro va fatto sui risultati, non solo
-    sulla query in ingresso."""
+    CATEGORIA_KEYWORDS), scartando anche falsi positivi idiomatici e
+    rumore generico (taglie bambino, collab diffusion economiche).
+    Necessario perché eBay/Vestiaire a volte restituiscono risultati
+    "correlati al brand" fuori categoria (es. collane, pantaloni, libri
+    quando si cerca una canotta) nonostante la query includa la categoria
+    -- il motore di ricerca della fonte non la rispetta rigidamente, quindi
+    il filtro va fatto sui risultati, non solo sulla query in ingresso."""
     if not testo_comp or not categoria:
         return testo_comp
 
@@ -1334,12 +1365,17 @@ def _filtra_comp_per_categoria(testo_comp, categoria):
     if not keywords:
         return testo_comp
 
+    esclusioni = ESCLUSIONI_FALSI_POSITIVI_CATEGORIA.get(categoria, [])
+
     righe_filtrate = []
     scartate = 0
     for riga in testo_comp.split("\n"):
         if riga.strip().startswith("-"):
             riga_lower = riga.lower()
-            if any(kw in riga_lower for kw in keywords):
+            e_rumore = any(kw in riga_lower for kw in RUMORE_GENERICO_COMP)
+            e_falso_positivo = any(kw in riga_lower for kw in esclusioni)
+            match_categoria = any(kw in riga_lower for kw in keywords)
+            if match_categoria and not e_rumore and not e_falso_positivo:
                 righe_filtrate.append(riga)
             else:
                 scartate += 1
@@ -1347,7 +1383,7 @@ def _filtra_comp_per_categoria(testo_comp, categoria):
             righe_filtrate.append(riga)
 
     if scartate:
-        log.info("_filtra_comp_per_categoria: scartate %d righe fuori categoria '%s'.", scartate, categoria)
+        log.info("_filtra_comp_per_categoria: scartate %d righe fuori categoria/rumore '%s'.", scartate, categoria)
 
     return "\n".join(righe_filtrate)
 
