@@ -908,6 +908,27 @@ def scrape_vinted_listing(url):
                     )
                     if not titoli:
                         titoli = re.findall(r'"title"\s*:\s*"([^"]{5,80})"', html_profilo)
+                    if not titoli:
+                        # Fallback per blob JSON con virgolette escapate, tipico
+                        # di stato iniziale incorporato come stringa JS (React/
+                        # Next.js): \"title\":\"...\" invece di "title":"..."
+                        titoli = re.findall(r'\\"title\\"\s*:\s*\\"([^"\\]{5,80})\\"', html_profilo)
+
+                    # Diagnostico mirato: se ancora zero titoli, verifica se la
+                    # stringa chiave "other_user_items" compare DA QUALCHE
+                    # PARTE nella pagina, anche fuori dal pattern regex atteso
+                    # -- distingue "markup presente ma in formato diverso" da
+                    # "il contenuto non è proprio nella risposta" (probabile
+                    # rendering lato client via JavaScript, non catturabile
+                    # con una semplice richiesta HTTP senza esecuzione JS).
+                    diagnostica_markup = ""
+                    if not titoli:
+                        idx = html_profilo.find("other_user_items")
+                        if idx == -1:
+                            diagnostica_markup = " [stringa 'other_user_items' assente dalla risposta HTTP grezza -- probabile rendering lato client via JS, non catturabile senza browser headless]"
+                        else:
+                            estratto = html_profilo[max(0, idx-50):idx+150].replace("\n", " ")
+                            diagnostica_markup = f" [stringa presente, contesto: ...{estratto}...]"
 
                     ELEMENTI_UI_DA_SCARTARE = {
                         "vinted", "facebook", "instagram", "linkedin", "twitter", "x",
@@ -931,7 +952,7 @@ def scrape_vinted_listing(url):
                             break
                     result["seller_top_items"] = titoli_unici
                     if not titoli_unici:
-                        result["seller_wardrobe_debug"] = f"pagina caricata (status {resp_profilo.status_code}, {len(html_profilo)} char) ma 0 titoli estratti dalla regex -- possibile markup diverso o pagina 'challenge'"
+                        result["seller_wardrobe_debug"] = f"pagina caricata (status {resp_profilo.status_code}, {len(html_profilo)} char) ma 0 titoli estratti.{diagnostica_markup}"
                         log.info("Scraping guardaroba venditore: pagina caricata ma nessun titolo estratto per %s", profilo_url)
                     else:
                         result["seller_wardrobe_debug"] = f"ok: {len(titoli_unici)} titoli trovati"
