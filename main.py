@@ -902,19 +902,24 @@ def scrape_vinted_listing(url):
                 resp_profilo = _vinted_get_con_retry(profilo_url, timeout=12, max_retries=2)
                 if resp_profilo is not None and resp_profilo.ok:
                     html_profilo = resp_profilo.text
+                    # SOLO questo pattern è verificato su HTML reale (schermate
+                    # dell'utente): data-testid="other_user_items-N--description-
+                    # title">Brand</p>. I fallback generici su "title":"..." che
+                    # avevamo aggiunto si sono rivelati un problema serio: su un
+                    # caso reale hanno estratto nomi di CATEGORIE del menu
+                    # ("Cappe e poncho", "Montgomery", perfino un artefatto
+                    # "$undefined" da un template JS rotto) invece degli
+                    # articoli reali del venditore -- dato sbagliato ma
+                    # plausibile, più pericoloso di nessun dato perché alimenta
+                    # il giudizio sull'affidabilità del venditore con
+                    # informazioni false. Meglio "non disponibile" onesto che
+                    # un guardaroba inventato.
                     titoli = re.findall(
                         r'data-testid="other_user_items-\d+--description-title">([^<]+)<',
                         html_profilo
                     )
-                    if not titoli:
-                        titoli = re.findall(r'"title"\s*:\s*"([^"]{5,80})"', html_profilo)
-                    if not titoli:
-                        # Fallback per blob JSON con virgolette escapate, tipico
-                        # di stato iniziale incorporato come stringa JS (React/
-                        # Next.js): \"title\":\"...\" invece di "title":"..."
-                        titoli = re.findall(r'\\"title\\"\s*:\s*\\"([^"\\]{5,80})\\"', html_profilo)
 
-                    # Diagnostico mirato: se ancora zero titoli, verifica se la
+                    # Diagnostico mirato: se zero titoli, verifica se la
                     # stringa chiave "other_user_items" compare DA QUALCHE
                     # PARTE nella pagina, anche fuori dal pattern regex atteso
                     # -- distingue "markup presente ma in formato diverso" da
