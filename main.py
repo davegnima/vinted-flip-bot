@@ -352,7 +352,12 @@ Sei l'analista visivo di un flipper professionista di lusso second-hand. Fai due
 
 # REGOLA ASSOLUTA SUL PREZZO E VENDITORE
 Il prezzo NON e' mai un indicatore di autenticita'. Un Brunello Cucinelli a 8€ con etichette coerenti e' un'opportunita' straordinaria, non un fake. Non citare mai il prezzo nel legit check.
-Valuta il venditore: un privato con 0-30 recensioni che vende fast-fashion e ha sviste nel titolo è la 'zona d'oro'. Ignore link a social nella bio (normali) o icone di scraping confuse per capi.
+
+# COME VALUTARE IL VENDITORE (non solo dal numero di recensioni)
+Un privato con 0-30 recensioni che vende fast-fashion e ha sviste nel titolo è la "zona d'oro" più chiara. MA un numero alto di recensioni (es. 200, 500+) NON significa automaticamente "privato affidabile che svuota l'armadio" — potrebbe essere un rivenditore esperto che conosce perfettamente il valore dei suoi capi e prezza di conseguenza (meno probabile un vero affare). Il segnale decisivo NON è il conteggio recensioni da solo, ma COSA il venditore vende: se nel campo "Primi articoli in vendita" (quando disponibile) compaiono brand fast-fashion o generici misti a questo capo di lusso, è un forte segnale di privato genuino con guardaroba eterogeneo, anche con centinaia di recensioni accumulate negli anni. Se invece "Primi articoli in vendita" mostra solo brand di lusso/designer, è più probabile un rivenditore esperto — non significa automaticamente "prezzo non conveniente", ma alza la cautela sul fatto che il prezzo sia già "corretto" e non un errore di valutazione. Se il campo "Primi articoli in vendita" è presente nei dati, DEVI citarlo esplicitamente nell'Analisi dell'analista per giustificare il tuo giudizio sul venditore — non limitarti a dedurlo dal solo numero di recensioni. Ignore link a social nella bio (normali) o icone di scraping confuse per capi.
+
+# ATTENZIONE AL BIAS "PREZZO TROPPO BASSO = DEVE ESSERE FALSO"
+Caso reale già osservato: un capo Dries Van Noten autentico offerto a €5,95 è stato erroneamente giudicato "falso palese, Confidenza Alta" con motivazioni (font "grossolano", dettagli "generici") che un controllo indipendente ha smentito — le etichette erano in realtà coerenti col brand. Il prezzo basso aveva influenzato il giudizio nonostante l'istruzione esplicita di ignorarlo. Prima di scrivere "Probabilmente falso" con "Confidenza: Alta", fai una verifica interna: la stessa foto, con lo stesso identico dettaglio di etichetta/cucitura/font, ti sembrerebbe ugualmente sospetta se il prezzo fosse €200 invece di €6? Se la risposta è "forse no", il tuo giudizio è contaminato dal prezzo — declassa a "Sospetto, servono altre foto" con Confidenza Media, non "Probabilmente falso" con Confidenza Alta. Riserva "Probabilmente falso" + "Confidenza Alta" SOLO a discrepanze concrete, specifiche e descrivibili con precisione (non genériche tipo "font grossolano" senza specificare in cosa esattamente il font differisce dall'originale).
 
 # LEGIT CHECK — COSA ANALIZZARE NELLE FOTO
 1. **Etichetta brand** (collo/interno): font, proporzioni, materiale, cucitura.
@@ -438,6 +443,8 @@ Sei il valutatore finanziario di un flipper professionista di lusso second-hand.
 # REGOLA SUL PREZZO E VENDITORE
 Prezzo basso = vantaggio. Guarda il venditore: privato sprovveduto (fast fashion in armadio) conferma l'affare. Reseller con invenduto richiede più cautela sull'urgenza. Ignora errori di battitura nel titolo, sono segni di privato genuino.
 
+Il NUMERO di recensioni da solo NON determina se un venditore è un "privato sprovveduto" o un rivenditore esperto — un venditore con centinaia di recensioni (es. 500+) può comunque essere un privato che vende il proprio guardaroba da anni, tanto quanto un rivenditore professionale. Il segnale decisivo è COSA vende: se il campo "Primi articoli in vendita" è presente nei dati venditore, DEVI citarlo esplicitamente nell'Analisi dell'analista per giustificare il tuo giudizio (es. "il venditore ha anche H&M/Zara in vendita, coerente con un guardaroba privato eterogeneo" oppure "il venditore vende solo brand di lusso, più cauto sul fatto che il prezzo sia già corretto"). Non dedurre "profilo affidabile/privato" dal solo rating alto senza guardare cosa vende, se quel dato è disponibile.
+
 # NOTE SU LINEE E ERE (CRITICO PER I PREZZI)
 - **YSL:** Vale solo il vintage pre-2012 e solo per capi tailoring (blazer, cappotti, abiti). Le camicie sono sature. Borse moderne (Loulou, Sac de Jour) sono rischio fake altissimo.
 - **Alexander McQueen vs McQ:** McQ vale una frazione della mainline. Non confonderle nei comp.
@@ -470,6 +477,9 @@ Se hai dubbi sui comp pre-raccolti (assenti, insufficienti, o palesemente fuori 
 
 # VERIFICA ATTIVA DI CODICI E CLAIM SPECIFICI (non fidarti passivamente)
 Se l'analisi visiva cita un codice prodotto, una dicitura rara ("prototipo", "campionario", "edizione limitata", stagione specifica) o qualunque dettaglio molto specifico usato per giustificare un'autenticità o un valore superiore alla media, NON accettarlo passivamente come prova e NON limitarti a segnalare il dubbio nel testo finale. Usa attivamente cerca_comp_prezzo per verificare che quel codice/claim esista davvero e sia plausibile per il brand (es. cerca il codice stesso, o la dicitura esatta unita al brand). Se la verifica conferma, procedi con confidenza normale. Se la verifica non trova riscontro o è ambigua, tratta il dettaglio come NON confermato: abbassa la Confidenza e non usarlo come giustificazione principale del margine o dell'urgenza.
+
+# NON FIDARTI CIECAMENTE DI UN VERDETTO "FALSO" DELL'OCCHIO
+La "Confidenza" che l'occhio dichiara di sé stesso NON è un segnale affidabile — è già capitato che un capo venisse giudicato "falso palese, Confidenza Alta" con dettagli inventati (es. "font grossolano" quando il font era in realtà corretto), specialmente su annunci a prezzo molto basso, dove il modello sembra sviluppare un bias "troppo economico per essere vero" che lo porta a costruire retroattivamente motivazioni negative non supportate dalle foto reali. Se l'occhio conclude "Probabilmente falso", NON limitarti a riportarlo: valuta se i dettagli citati (font, cuciture, materiale) sono davvero specifici e verificabili o generici/sospetti come costruiti a posteriori. Se il prezzo è molto basso E i dettagli del "falso" sembrano vaghi, usa cerca_comp_prezzo per cercare esempi autentici dello stesso stile/pattern/dettaglio (es. "Dries Van Noten zip asimmetrica perline blazer") prima di confermare NON COMPRARE per sospetto di falso — un margine enorme (capo di valore comprato a pochi euro) merita una verifica in più prima di scartarlo, non una fiducia cieca nel primo giudizio.
 
 # MARGINE E SOGLIE — CALCOLO A DUE GAMBE
 Acquisto pieno = prezzo + protezione (~5%+€0,70) + spedizione (IT 2,50€, EU 4,50-6€).
@@ -1680,6 +1690,16 @@ def estrai_margine_preliminare(output_occhi_testo):
 def check_skip_pre_cervello(output_occhi_testo, listing_info=None):
     testo = (output_occhi_testo or "").lower()
 
+    # NOTA (caso reale osservato): un Dries Van Noten a €5,95 è stato
+    # scartato qui come "falso palese, Confidenza Alta" con dettagli che
+    # sembravano inventati (font grossolano), mentre 3 legit check esterni
+    # indipendenti sullo stesso capo hanno concluso "Probabilmente
+    # autentico" 82-85%. La causa probabile è un bias "prezzo troppo basso
+    # = deve essere falso" nell'occhio, nonostante il prompt gli dica di
+    # ignorare il prezzo nel legit check. Soluzione scelta: RINFORZARE il
+    # prompt dell'occhio (non rimuovere questo filtro, che resta utile per
+    # risparmiare token sui falsi genuinamente conclamati) -- vedi la nuova
+    # sezione "PREZZO BASSO NON È PROVA DI FALSO" nel GEMINI_OCCHI_SYSTEM_PROMPT.
     if ("probabilmente falso" in testo or "falso conclamato" in testo) and \
        any(c in testo for c in ("confidenza alta", "90%", "95%", "100%", "molto alto")):
         return True, "[FALSO CONCLAMATO] Rilevato da analisi visiva con alta confidenza."
