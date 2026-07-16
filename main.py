@@ -490,6 +490,9 @@ Soglia minima per COMPRA: €20 netti E ROI 100%+.
 # LIMITE MASSIMO DI SCONTO IN TRATTATIVA (regola rigida)
 Quando proponi un "Obiettivo trattativa", puoi chiedere al massimo il 40% di sconto sul PREZZO DEL PRODOTTO (non sul totale con spedizione), e solo se il venditore accetta — la spedizione non è mai scontabile. Esempio: prodotto €10 + spedizione €5 = totale €15. Sconto massimo: 40% di €10 = €4, quindi l'offerta minima proponibile è €6 (prodotto) + €5 (spedizione) = €11 totale, mai meno.
 
+# COERENZA DELL'INCASSO TRA VERDETTO PRINCIPALE E TRATTATIVA (errore frequente)
+L'incasso reale (prezzo di vendita stimato × 0,80) NON cambia tra lo scenario "acquisto a prezzo pieno" e lo scenario "acquisto in trattativa" — cambia SOLO il costo di acquisto, mai la stima di vendita. Se nel verdetto principale hai scritto "€X → €Y (incasso) → €Z", l'Obiettivo trattativa DEVE usare lo STESSO €Y, mostrato esplicitamente nello stesso formato "€[costo trattato] → €Y (incasso, IDENTICO al verdetto principale) → €[margine] (ROI)". Non scrivere MAI un margine di trattativa che implica un incasso diverso da quello già dichiarato sopra — è un errore di calcolo silenzioso che rende il numero finale inaffidabile. Prima di scrivere il margine dell'obiettivo trattativa, verifica: margine = incasso_principale − costo_trattato. Se il numero che stai per scrivere non torna con questa formula usando lo STESSO incasso di sopra, hai sbagliato — ricalcola.
+
 # TRATTA SOLO SE L'OBIETTIVO DI TRATTATIVA FUNZIONA DAVVERO (regola critica, spesso violata)
 Non proporre MAI TRATTA se il tuo stesso "Obiettivo trattativa" — calcolato al massimo sconto consentito (40% sul prodotto) — non raggiunge margine ≥€20 E ROI ≥100%. Prima di scrivere TRATTA, calcola il margine e il ROI dell'obiettivo di trattativa che stai per proporre: se anche a sconto massimo il margine resta <€20 o il ROI <100%, non ha senso negoziare — la decisione corretta è NON COMPRARE, non TRATTA con un obiettivo che comunque non risolve il problema. Un "Obiettivo trattativa" con ROI 40-70% è un errore: la trattativa deve portare l'affare SOPRA soglia, non semplicemente più vicino.
 
@@ -533,7 +536,7 @@ Verifica che i calcoli (Margine e ROI) supportino la tua Decisione. Se margine <
 🕐 ~[Z] giorni · Deal [X]/10 · Rischio fake: [B/M/A/MA] · Confidenza: [A/M/B]
 
 [Solo se TRATTA]
-🤝 Obiettivo trattativa: €[prezzo target] → €[margine netto trattato] (ROI [X]%)
+🤝 Obiettivo trattativa: €[costo totale trattato] → €[incasso — DEVE essere identico all'incasso del verdetto principale sopra] → €[margine netto] (ROI [X]%)
 
 ---
 📨 **Messaggio da inviare:**
@@ -2460,10 +2463,17 @@ def process_listing(parsed, url, cover_photo_bytes):
             info_scenario = " · comp pre-raccolti sufficienti"
         info_scenario += f" ({n_query_grounding} extra)" if n_query_grounding else " (nessuna extra)"
 
+    seller_top_items = listing_info.get("seller_top_items") or []
+    if seller_top_items:
+        info_guardaroba = f"\n👗 Guardaroba letto: {', '.join(seller_top_items[:5])}" + (f" (+{len(seller_top_items)-5})" if len(seller_top_items) > 5 else "")
+    else:
+        info_guardaroba = "\n👗 Guardaroba: non disponibile (scraping profilo fallito o vuoto)"
+
     header = (
         f"🆕 *{listing_info.get('title')}*\n"
         f"🏷️ {listing_info.get('brand') or '?'} · 💰 {listing_info.get('price') or '?'} EUR\n"
         f"🔧 Scenario {scenario_usato}{info_scenario}"
+        f"{info_guardaroba}"
         + f"\n{url or ''}\n{'—' * 20}\n"
     )
 
