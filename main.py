@@ -724,6 +724,7 @@ def scrape_vinted_listing(url):
         "seller_feedback_count": None, "seller_feedback_reputation": None,
         "seller_items_count": None, "seller_country": None,
         "seller_top_items": [],
+        "seller_wardrobe_debug": "non tentato",
     }
     try:
         resp = _vinted_get_con_retry(url, timeout=15, max_retries=3)
@@ -930,11 +931,19 @@ def scrape_vinted_listing(url):
                             break
                     result["seller_top_items"] = titoli_unici
                     if not titoli_unici:
+                        result["seller_wardrobe_debug"] = f"pagina caricata (status {resp_profilo.status_code}, {len(html_profilo)} char) ma 0 titoli estratti dalla regex -- possibile markup diverso o pagina 'challenge'"
                         log.info("Scraping guardaroba venditore: pagina caricata ma nessun titolo estratto per %s", profilo_url)
+                    else:
+                        result["seller_wardrobe_debug"] = f"ok: {len(titoli_unici)} titoli trovati"
                 else:
+                    result["seller_wardrobe_debug"] = "fetch fallito dopo i retry (nessuna risposta valida)"
                     log.info("Scraping guardaroba venditore fallito (nessuna risposta valida) per %s", profilo_url)
             except Exception as e:
-                log.debug("Scraping guardaroba venditore fallito (non bloccante): %s", e)
+                result["seller_wardrobe_debug"] = f"eccezione durante il parsing: {e}"
+                log.warning("Scraping guardaroba venditore fallito (eccezione): %s", e)
+        else:
+            result["seller_wardrobe_debug"] = "nessun seller_id/seller_login trovato nella pagina annuncio -- profilo mai contattato"
+            log.warning("Guardaroba venditore non tentato: né seller_id né seller_login trovati per %s", url)
 
     except Exception as e:
         log.warning("Scraping Vinted fallito per %s: %s", url, e)
@@ -2242,6 +2251,7 @@ def process_listing(parsed, url, cover_photo_bytes):
             "seller_items_count": scraped.get("seller_items_count"),
             "seller_country": scraped.get("seller_country"),
             "seller_top_items": scraped.get("seller_top_items") or [],
+            "seller_wardrobe_debug": scraped.get("seller_wardrobe_debug") or "n/d",
         })
         
         # NUOVO FILTRO PRE-GEMINI
@@ -2467,7 +2477,8 @@ def process_listing(parsed, url, cover_photo_bytes):
     if seller_top_items:
         info_guardaroba = f"\n👗 Guardaroba letto: {', '.join(seller_top_items[:5])}" + (f" (+{len(seller_top_items)-5})" if len(seller_top_items) > 5 else "")
     else:
-        info_guardaroba = "\n👗 Guardaroba: non disponibile (scraping profilo fallito o vuoto)"
+        motivo_debug = listing_info.get("seller_wardrobe_debug") or "n/d"
+        info_guardaroba = f"\n👗 Guardaroba: non disponibile — {motivo_debug}"
 
     header = (
         f"🆕 *{listing_info.get('title')}*\n"
