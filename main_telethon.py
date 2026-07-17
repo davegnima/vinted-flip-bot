@@ -2499,18 +2499,10 @@ def process_listing(parsed, url, cover_photo_bytes):
             info_scenario = " · comp pre-raccolti sufficienti"
         info_scenario += f" ({n_query_grounding} extra)" if n_query_grounding else " (nessuna extra)"
 
-    seller_top_items = listing_info.get("seller_top_items") or []
-    if seller_top_items:
-        info_guardaroba = f"\n👗 Guardaroba letto: {', '.join(seller_top_items[:5])}" + (f" (+{len(seller_top_items)-5})" if len(seller_top_items) > 5 else "")
-    else:
-        motivo_debug = listing_info.get("seller_wardrobe_debug") or "n/d"
-        info_guardaroba = f"\n👗 Guardaroba: non disponibile — {motivo_debug}"
-
     header = (
         f"🆕 *{listing_info.get('title')}*\n"
         f"🏷️ {listing_info.get('brand') or '?'} · 💰 {listing_info.get('price') or '?'} EUR\n"
         f"🔧 Scenario {scenario_usato}{info_scenario}"
-        f"{info_guardaroba}"
         + f"\n{url or ''}\n{'—' * 20}\n"
     )
 
