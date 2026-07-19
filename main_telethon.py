@@ -266,6 +266,14 @@ def check_skip_pre_gemini(listing_info):
     unflippable = [
         "calzini", "calze", "collant", "portachiavi", "profumi", "eau de parfum",
         "eau de toilette", "deodoranti", "cover per telefono", "ciondoli", "guinzagli",
+        # calzini/calze/collant multilingua -- lo stesso bug di copertura
+        # linguistica gia' visto altrove: l'italiano da solo lascia passare
+        # titoli in altre lingue, sprecando foto+token fino all'occhio
+        "socken", "strumpfhose", "strümpfe",
+        "socks", "tights", "stockings", "pantyhose",
+        "chaussettes", "collants", "bas",
+        "calcetines", "medias",
+        "meias",
         # occhiali/occhialeria (vista o sole), montature, lenti, astucci -- basso
         # ROI ricorrente e mercato saturo, escluso a monte su richiesta esplicita
         "occhiali", "montatura", "montature", "lenti da vista", "occhiale da sole",
