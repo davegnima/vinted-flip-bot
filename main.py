@@ -283,6 +283,12 @@ def check_skip_pre_gemini(listing_info):
         "lunettes", "monture de lunettes",
         "gafas", "monturas de gafas", "lentes de sol",
         "óculos", "armação de óculos",
+        # Collab mass-market note per brand monitorati -- diluiscono il
+        # valore, capi economici e molto diffusi rispetto al mainline.
+        # "uniqlo" e "h&m" da soli sono termini rari in un annuncio di
+        # moda di lusso, rischio di falso positivo basso.
+        "uniqlo", "h&m",
+        "missoni for target", "missoni x target",
     ]
     for kw in unflippable:
         if kw in titolo or kw in descrizione:
