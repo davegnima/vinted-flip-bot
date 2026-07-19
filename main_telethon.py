@@ -93,6 +93,20 @@ VINTED_BRAND_IDS = {
     "stella mccartney": "13893",
     "totême": "546105",
     "toteme": "546105",
+    "ermenegildo zegna": "174480",
+    "zegna": "174480",
+    "our legacy": "218132",
+    "loro piana": "219848",
+    "lemaire": "295938",
+    "the frankie shop": "378382",
+    "frankie shop": "378382",
+    "number (n)ine": "505614",
+    "number nine": "505614",
+    "takahiromiyashita thesoloist": "1726469",
+    "takahiromiyashita the soloist": "1726469",
+    "thesoloist": "1726469",
+    "the soloist": "1726469",
+    "engineered garments": "609050",
     "undercover": "59974",
     "visvim": "276225",
     "45rpm": "464091",
@@ -457,6 +471,7 @@ Il NUMERO di recensioni da solo NON determina se un venditore è un "privato spr
 - **Vivienne Westwood:** "Gold Label" = alta sartoria/couture, valore molto alto. "Anglomania" è tecnicamente una linea diffusion MA NON va trattata come "economica" — è una linea riconosciuta e molto ricercata dai collezionisti del brand. Comp reali (The RealReal, eBay) mostrano top Anglomania anche basic tra €120-250+ usati; pezzi metallici, corsetteria o comunque "statement" (non semplici t-shirt/basic) valgono ancora di più — non stimare mai un top Anglomania metallico/decorato sotto questa fascia senza comp specifici che lo giustifichino. "Red Label"/linee più commerciali (es. collab con retailer) restano invece più economiche, quelle sì trattabili con cautela sui prezzi.
 - **Max Mara:** Solo mainline ha valore pieno. Sottolinee (Weekend, Studio, Sportmax) valgono solo se modello iconico o materiale pregiato (es. cammello, cashmere) — altrimenti ROI marginale.
 - **Visvim, Kapital, 45RPM, Carol Christian Poell, Haider Ackermann, The Row, Boris Bidjan Saberi, sacai, Kiko Kostadinov:** Mono-linea o quasi, valore costante, rischio fake storicamente basso. Valuta a pieno prezzo.
+- **Arc'teryx — Veilance vs mainline outdoor:** "Veilance" è la linea urban/minimal di fascia alta (etichetta specifica "VEILANCE", non solo "Arc'teryx"), con valore di rivendita molto superiore al mainline. Il mainline Arc'teryx outdoor/tecnico (giacche a vento, hardshell da montagna generiche) è molto riconosciuto e diffuso, con margine di flip molto più basso — non trattarlo come Veilance solo perché il brand è lo stesso. Controlla sempre l'etichetta specifica prima di stimare il valore: se non trovi la scritta "Veilance" da nessuna parte, tratta il capo come mainline, non come statement piece.
 - **Yohji Yamamoto — mainline/diffusion vs Y-3:** "Yohji Yamamoto", "Y's", "S'yte", "Ground Y", "Wildside" sono la linea principale o diffusion di alta gamma del brand. **"Y-3" è tutt'altro**: è la collaborazione con Adidas, streetwear/sportswear di massa con volumi enormi e prezzi molto più bassi (spesso €15-60 anche sold). Non mescolare MAI i due mondi nei comp: se stai valutando un capo "Yohji Yamamoto" (non Y-3), scarta ogni comp che contiene "Y-3" o "Adidas" nel titolo, anche se cita "Yohji Yamamoto" — altrimenti la stima crolla artificialmente.
 
 # GESTIONE TRASPARENTE DELLE COLLABORAZIONI NEI COMP
