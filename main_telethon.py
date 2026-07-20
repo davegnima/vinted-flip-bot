@@ -59,6 +59,13 @@ SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO = 3
 RAFFREDDAMENTO_SERPER_SECONDI = 3600 * 6
 _serper_notifica_esaurimento_inviata = [False]
 
+# Rate-limiter tra richieste Vinted consecutive: dopo ~13h di attività
+# continua Vinted ha iniziato a rispondere 403 Forbidden (probabile blocco
+# per volume di richieste). Impone una pausa minima tra una scrape e la
+# successiva per restare sotto la soglia che scatena il blocco.
+_vinted_timestamp_ultima_richiesta = [0.0]
+PAUSA_MINIMA_TRA_RICHIESTE_VINTED_SECONDI = 3.0
+
 # BLOCKLIST VENDITORI
 VENDITORI_BLOCKLIST = {"valeryepippo", "firmadonna98", "cicciodonna779", "hadourif"}
 
@@ -729,17 +736,32 @@ _vinted_session.headers.update(VINTED_HEADERS)
 def _vinted_get_con_retry(url, timeout=15, max_retries=3):
     """GET con retry per lo scraping Vinted. In precedenza un singolo timeout
     faceva fallire l'intero scraping (foto, descrizione, venditore tutti
-    vuoti), costringendo il cervello a lavorare quasi alla cieca."""
+    vuoti), costringendo il cervello a lavorare quasi alla cieca.
+
+    Impone anche una pausa minima rispetto alla richiesta Vinted precedente
+    (qualunque essa fosse): dopo ~13h di attività continua, Vinted ha
+    iniziato a rispondere 403 Forbidden in modo ricorrente, probabile
+    rate-limit per volume di richieste troppo fitte."""
+    tempo_trascorso = time.time() - _vinted_timestamp_ultima_richiesta[0]
+    if tempo_trascorso < PAUSA_MINIMA_TRA_RICHIESTE_VINTED_SECONDI:
+        time.sleep(PAUSA_MINIMA_TRA_RICHIESTE_VINTED_SECONDI - tempo_trascorso)
+
     ultimo_errore = None
     for tentativo in range(1, max_retries + 1):
         try:
+            _vinted_timestamp_ultima_richiesta[0] = time.time()
             resp = _vinted_session.get(url, headers=VINTED_HEADERS, timeout=timeout)
             resp.raise_for_status()
             return resp
         except Exception as e:
             ultimo_errore = e
             if tentativo < max_retries:
-                time.sleep(1.5 * tentativo)
+                # Su 403 (probabile rate-limit) attende piu' a lungo del
+                # normale backoff, dando al blocco lato Vinted il tempo di
+                # attenuarsi prima del prossimo tentativo.
+                e_403 = "403" in str(e)
+                attesa = (6.0 * tentativo) if e_403 else (1.5 * tentativo)
+                time.sleep(attesa)
                 continue
     log.warning("Scraping Vinted fallito dopo %d tentativi per %s: %s", max_retries, url, ultimo_errore)
     return None
@@ -2347,8 +2369,16 @@ def process_listing(parsed, url, cover_photo_bytes):
                         len(photo_urls) - len(photo_bytes_list), len(photo_urls), url,
                     )
 
+    fallback_solo_cover_photo = False
     if not photo_bytes_list and cover_photo_bytes:
         photo_bytes_list = [cover_photo_bytes]
+        fallback_solo_cover_photo = True
+        log.warning(
+            "Scraping foto fallito del tutto per %s -- uso solo la cover photo Telegram come fallback. "
+            "L'analisi visiva sara' basata su una sola immagine, possibile falso 'nessuna etichetta visibile'.",
+            url,
+        )
+    listing_info["fallback_solo_cover_photo"] = fallback_solo_cover_photo
     if not photo_bytes_list:
         telegram_send_message(TELEGRAM_OWNER_CHAT_ID,
             f"⚠️ Niente foto per: {listing_info.get('title')}\nURL: {url or 'non trovato'}\nSalto valutazione.")
@@ -2529,10 +2559,20 @@ def process_listing(parsed, url, cover_photo_bytes):
             info_scenario = " · comp pre-raccolti sufficienti"
         info_scenario += f" ({n_query_grounding} extra)" if n_query_grounding else " (nessuna extra)"
 
+    info_foto = ""
+    if listing_info.get("fallback_solo_cover_photo"):
+        info_foto = (
+            "\n⚠️ *Scraping foto Vinted fallito* (probabile blocco/rate-limit) — "
+            "analisi basata SOLO sulla cover photo Telegram, non sulle foto reali "
+            "dell'annuncio. Un eventuale 'nessuna etichetta visibile' potrebbe "
+            "essere un falso negativo dovuto a questo, non ai capi reali."
+        )
+
     header = (
         f"🆕 *{listing_info.get('title')}*\n"
         f"🏷️ {listing_info.get('brand') or '?'} · 💰 {listing_info.get('price') or '?'} EUR\n"
         f"🔧 Scenario {scenario_usato}{info_scenario}"
+        f"{info_foto}"
         + f"\n{url or ''}\n{'—' * 20}\n"
     )
 
