@@ -914,6 +914,14 @@ def scrape_vinted_listing(url):
             seller_id_m2 = re.search(r'"user_id"\s*:\s*(\d+)', html)
             if seller_id_m2:
                 result["seller_id"] = seller_id_m2.group(1)
+            else:
+                # Formato React Server Components scoperto in produzione:
+                # \"seller_id\":49465070 -- chiave diversa da "user_id" E
+                # valore numerico puro (non tra virgolette). Gestisce sia
+                # la variante con virgolette escapate (\") sia quella normale.
+                seller_id_m3 = re.search(r'\\?"seller_id\\?"\s*:\s*(\d+)', html)
+                if seller_id_m3:
+                    result["seller_id"] = seller_id_m3.group(1)
 
         rating_m = re.search(r'valutazione di\s+([\d.,]+)\s+su\s+5\s+stelle', html, re.IGNORECASE)
         if rating_m:
