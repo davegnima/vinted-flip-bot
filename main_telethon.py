@@ -298,8 +298,8 @@ def check_skip_pre_gemini(listing_info):
         "missoni for target", "missoni x target",
     ]
     for kw in unflippable:
-        if kw in titolo or kw in descrizione:
-            return True, f"[CATEGORIA GENERICA NON FLIPPABILE] Rilevata keyword: {kw}"
+    if re.search(r'\b' + re.escape(kw) + r'\b', testo_completo):
+        return True, f"[CATEGORIA GENERICA NON FLIPPABILE] Rilevata keyword: {kw}"
 
     # 2b. Danno grave dichiarato esplicitamente dal venditore, multilingua
     # (IT/EN/DE/FR/ES/PT -- stessa logica delle categorie: il tracker Vinted
@@ -544,9 +544,6 @@ Se scrivi "Rischio fake: Alto" o menzioni "falso"/"contraffatto"/"non autentico"
 
 # ANCORAGGIO AI COMP REALI (non al prezzo retail scontato)
 La stima di vendita DEVE ancorarsi ai comp di VENDUTO/ASK reali trovati (pre-raccolti o dalla ricerca), non al prezzo retail originale scontato di una percentuale arbitraria. Se i comp reali mostrano un range (es. venduti €35-55, ask €40-75), la tua stima di vendita non può superare il valore più alto dei comp reali raccolti, anche se il prezzo retail del capo nuovo è molto più alto. Se non hai comp specifici per quel modello ma solo per il brand in generale, usa il valore mediano-basso della fascia trovata, mai il valore più ottimistico. Diffida di te stesso se la tua stima di vendita finale supera nettamente tutti i prezzi "venduto" effettivamente citati nei dati raccolti: in quel caso stai probabilmente ragionando sul retail, non sul second-hand — correggi verso il basso.
-
-# CONTROLLO NUMERICO OBBLIGATORIO SUL PREZZO DI LISTING (violazione già osservata in produzione)
-Caso reale già accaduto: comp SOLD citati di €34,80 e €81,89, ma il modello ha scelto un prezzo di listing di €100 chiamandolo "prudente" — un prezzo SUPERIORE al miglior venduto reale citato, il contrario di prudente. Prima di scrivere il prezzo di listing (quello che poi moltiplichi ×0,80 per l'incasso), fai questo controllo esplicito: il prezzo di listing che stai per scrivere è MAI superiore al valore più alto tra tutti i comp SOLD che hai citato in questa stessa analisi? Se lo è, è un errore — abbassalo. Inoltre, se i comp coprono un range ampio (es. "pezzo semplice" vs "modello strutturato"), devi indicare esplicitamente in quale fascia rientra QUESTO capo specifico (in base a titolo/foto/descrizione) prima di scegliere il numero — se il titolo/descrizione non specifica lo stile e non puoi distinguerlo, usa la fascia bassa del range, mai quella alta.
 
 # SOLD VS ASK — GERARCHIA OBBLIGATORIA DEI DATI
 I dati che ricevi sono etichettati esplicitamente: "ASK" (Vestiaire, Vinted — annunci attivi, NON necessariamente venduti, spesso sovrastimati o mai venduti a quel prezzo) vs "SOLD" (eBay — venduti confermati, il dato più vicino alla realtà). Regole:
