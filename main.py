@@ -298,8 +298,8 @@ def check_skip_pre_gemini(listing_info):
         "missoni for target", "missoni x target",
     ]
     for kw in unflippable:
-        if kw in titolo or kw in descrizione:
-            return True, f"[CATEGORIA GENERICA NON FLIPPABILE] Rilevata keyword: {kw}"
+    if re.search(r'\b' + re.escape(kw) + r'\b', testo_completo):
+        return True, f"[CATEGORIA GENERICA NON FLIPPABILE] Rilevata keyword: {kw}"
 
     # 2b. Danno grave dichiarato esplicitamente dal venditore, multilingua
     # (IT/EN/DE/FR/ES/PT -- stessa logica delle categorie: il tracker Vinted
