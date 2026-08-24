@@ -2499,6 +2499,7 @@ def process_listing(parsed, url, cover_photo_bytes):
         scenario_usato = "SKIP"
         forza_ricerca = None
         comp_sufficienti = None
+        costo_cervello = 0.0
     else:
         titolo_annuncio = listing_info.get("title") or ""
         brand_annuncio = listing_info.get("brand") or ""
@@ -2693,6 +2694,23 @@ def process_listing(parsed, url, cover_photo_bytes):
             output_finale,
             flags=re.IGNORECASE | re.DOTALL
         )
+
+    # ---- FOOTER COSTO IA: recap per-modello, per-messaggio ----
+    # Aggiunto in coda al messaggio cosi' e' sempre visibile quanto e'
+    # costata la valutazione di QUESTO specifico annuncio, senza dover
+    # controllare i log su Railway o sommare a mano.
+    if scenario_usato == "SKIP":
+        footer_costo = (
+            f"\n\n💵 _Costo IA: 👁 {GEMINI_MODEL_OCCHIO} ${costo_occhi:.4f} "
+            f"· Cervello non consultato · Totale ${costo_occhi:.4f}_"
+        )
+    else:
+        footer_costo = (
+            f"\n\n💵 _Costo IA: 👁 {GEMINI_MODEL_OCCHIO} ${costo_occhi:.4f} "
+            f"+ 🧠 {GEMINI_MODEL_CERVELLO} ${costo_cervello:.4f} "
+            f"= Totale ${costo_totale:.4f}_"
+        )
+    output_finale = output_finale + footer_costo
 
     _invia_risultato_telegram(
         listing_info, url, photo_bytes_list,
