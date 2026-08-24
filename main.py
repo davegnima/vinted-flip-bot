@@ -452,6 +452,13 @@ Caso reale già osservato: un capo Dries Van Noten autentico offerto a €5,95 �
 # OBBLIGO DI MOTIVAZIONE ESPLICITA SU "PROBABILMENTE FALSO"
 Se il verdetto è "Probabilmente falso", la sezione **Analisi visiva** DEVE specificare ESATTAMENTE quale discrepanza ha portato a questa conclusione — non basta scrivere "falso" o "discrepanze evidenti" senza dettaglio. Indica sempre COSA è sbagliato: font dell'etichetta non corretto (e come), proporzioni del logo errate, cuciture irregolari/di bassa qualità, materiale che non corrisponde a quanto dichiarato, wash tag con codice/paese di produzione incoerente, hardware (zip/bottoni) di qualità sbagliata, ecc. Questo motivo arriva direttamente all'utente su Telegram anche quando il cervello non viene consultato (skip automatico) — se non lo scrivi qui, l'utente non saprà mai perché è stato scartato.
 
+# BRAND COMPLETAMENTE ESTRANEO (non una sottolinea/diffusion — un marchio diverso)
+Distingui SEMPRE due casi molto diversi quando l'etichetta reale non corrisponde al brand dichiarato nell'annuncio:
+1. **Sottolinea/diffusion della stessa maison** (es. MM6 invece di Margiela mainline, See by Chloé invece di Chloé, Weekend Max Mara invece di Max Mara) — questo NON è un brand estraneo, ha ancora un valore (minore) e il Cervello deve valutarlo normalmente. Non usare il flag sotto per questi casi.
+2. **Marchio completamente diverso e non correlato** (es. l'annuncio dichiara "Kapital" ma l'etichetta reale mostra "Kapitales", un brand francese di souvenir personalizzati senza alcun legame col Kapital giapponese; oppure l'annuncio dichiara un brand di lusso ma l'etichetta mostra un marchio fast-fashion generico) — qui il capo non ha alcun valore nel segmento che stai valutando, indipendentemente da condizione o prezzo.
+
+Per il caso 2, scrivi ESPLICITAMENTE nella riga "🏷️ Legit:" la frase **"BRAND NON CORRISPONDENTE"** seguita dal nome del brand reale letto sull'etichetta, così il sistema può risparmiare la chiamata al Cervello (verdetto già scontato: NON COMPRARE, senza bisogno di comp di mercato). Usa questa frase SOLO quando sei sicuro che sia un marchio diverso e non correlato, non per semplici dubbi o quando il brand reale è comunque leggibile con Confidenza Bassa — in caso di dubbio, lascia decidere al Cervello.
+
 # MAINLINE VS DIFFUSION — DISTINZIONE CRITICA PER IL MARGINE
 Distingui SEMPRE le linee/ere per i brand, è un fattore critico per il valore. Specifica sempre l'epoca/linea in base alle etichette.
 
@@ -1288,7 +1295,28 @@ def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca=True,
                     "HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH",
                     "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT")
             ],
-            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 3000},
+            # thinkingConfig esplicito + maxOutputTokens alzato a 6000 (era
+            # 3000, senza thinkingConfig). Bug reale osservato in produzione:
+            # con gemini-3.7-flash (a differenza del 3.1-flash-lite
+            # originale) un budget di 3000 token non basta a coprire sia il
+            # "pensiero" interno sia il verdetto finale su un compito pesante
+            # come il Cervello (system prompt lunghissimo, piu' giri di
+            # function calling, verdetto strutturato lungo) -- risultato:
+            # "il modello non ha prodotto una risposta testuale", credito
+            # Gemini speso, nessun verdetto.
+            #
+            # thinkingLevel="medium" (non "low"): e' il default consigliato
+            # da Google per gemini-3.7-flash su task complessi/agentici, con
+            # maggiore accuratezza al primo tentativo -- esattamente il tipo
+            # di compito del Cervello. "low" e' pensato per casi dove la
+            # latenza conta piu' della qualita' del ragionamento (chat in
+            # tempo reale), non per decisioni di prezzo. Il fix per l'errore
+            # e' il maxOutputTokens piu' alto, non abbassare il pensiero.
+            "generationConfig": {
+                "temperature": 0.2,
+                "maxOutputTokens": 6000,
+                "thinkingConfig": {"thinkingLevel": "medium"},
+            },
         }
         if tools_abilitati:
             payload["tools"] = [{"function_declarations": [CERVELLO_FUNCTION_DECLARATION]}]
@@ -1871,6 +1899,24 @@ def check_skip_pre_cervello(output_occhi_testo, listing_info=None):
        any(c in testo for c in ("confidenza alta", "90%", "95%", "100%", "molto alto")):
         return True, "[FALSO CONCLAMATO] Rilevato da analisi visiva con alta confidenza."
 
+    # Skip su brand completamente estraneo (non una sottolinea/diffusion --
+    # un marchio diverso e non correlato, es. l'annuncio dichiara "Kapital"
+    # ma l'etichetta reale e' "Kapitales", brand francese di souvenir senza
+    # alcun legame col Kapital giapponese monitorato). Il prompt dell'occhio
+    # istruisce a scrivere la frase esatta "BRAND NON CORRISPONDENTE" solo
+    # quando e' sicuro che sia un marchio diverso, non per semplici dubbi --
+    # quindi qui e' sicuro fidarsi del match testuale senza ulteriori
+    # controlli di confidenza (a differenza del "falso conclamato" sopra,
+    # dove il bias prezzo-basso rendeva la sola dichiarazione del modello
+    # inaffidabile). Risparmia la ricerca comp del cervello: il verdetto
+    # e' gia' scontato (NON COMPRARE) indipendentemente da prezzo/comp.
+    if "brand non corrispondente" in testo:
+        return True, (
+            "[BRAND NON CORRISPONDENTE] L'analisi visiva ha rilevato un marchio diverso "
+            "e non correlato rispetto a quello dichiarato nell'annuncio -- cervello non "
+            "consultato, il capo non ha valore nel segmento monitorato indipendentemente dal prezzo."
+        )
+
     segnali_danno_fisico = sum([
         "buchi" in testo or "buco" in testo,
         "strappi gravi" in testo or "strappo grave" in testo,
@@ -1966,6 +2012,13 @@ def build_skip_report(listing_info, motivo_skip, output_occhi_testo=None):
             if dettaglio:
                 riga_legit = f"Probabilmente falso. Motivo specifico: {dettaglio}"
         riga_rischio = "ALTO — falso conclamato (filtro automatico, cervello non consultato)"
+    elif motivo_skip.startswith("[BRAND NON CORRISPONDENTE"):
+        riga_legit = "Brand non corrispondente — marchio reale sull'etichetta diverso e non correlato a quello dichiarato."
+        if output_occhi_testo:
+            m_legit = re.search(r"🏷️\s*Legit:\s*([^\n]+)", output_occhi_testo, re.IGNORECASE)
+            if m_legit and m_legit.group(1).strip():
+                riga_legit = m_legit.group(1).strip()
+        riga_rischio = "N/A — brand estraneo al segmento monitorato (filtro automatico, cervello non consultato)"
     elif motivo_skip.startswith("[CONDIZIONE DISTRUTTA"):
         riga_legit = "Autentico ma condizione fisica gravemente compromessa — non rivendibile."
         riga_rischio = "BASSO (autenticita') / ALTO (condizione) — cervello non consultato"
