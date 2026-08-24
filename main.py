@@ -74,6 +74,12 @@ PREZZO_GROUNDING_PER_QUERY = 14 / 1000
 
 MAX_GALLERY_PHOTOS = 10
 
+# Marker di versione, loggato all'avvio -- serve SOLO a verificare in modo
+# inequivocabile quale codice sta girando su Railway dopo un deploy, senza
+# doverlo dedurre dai timestamp dei log. Aggiorna la data quando fai una
+# modifica significativa (facoltativo, ma utile per il debug futuro).
+BOT_VERSION = "2026-08-24-cervello-thinking-fix"
+
 # GATE MARGINE ASSOLUTO (nuovo): soglia di qualita' del deal, separata dalla
 # soglia minima di sicurezza (EUR 20 / ROI 100%) gia' presente nei prompt e
 # nelle reti di sicurezza. Serve ad alzare il valore medio dei deal notificati
@@ -1295,27 +1301,36 @@ def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca=True,
                     "HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH",
                     "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT")
             ],
-            # thinkingConfig esplicito + maxOutputTokens alzato a 6000 (era
-            # 3000, senza thinkingConfig). Bug reale osservato in produzione:
-            # con gemini-3.7-flash (a differenza del 3.1-flash-lite
-            # originale) un budget di 3000 token non basta a coprire sia il
-            # "pensiero" interno sia il verdetto finale su un compito pesante
-            # come il Cervello (system prompt lunghissimo, piu' giri di
-            # function calling, verdetto strutturato lungo) -- risultato:
-            # "il modello non ha prodotto una risposta testuale", credito
-            # Gemini speso, nessun verdetto.
-            #
-            # thinkingLevel="medium" (non "low"): e' il default consigliato
-            # da Google per gemini-3.7-flash su task complessi/agentici, con
-            # maggiore accuratezza al primo tentativo -- esattamente il tipo
-            # di compito del Cervello. "low" e' pensato per casi dove la
-            # latenza conta piu' della qualita' del ragionamento (chat in
-            # tempo reale), non per decisioni di prezzo. Il fix per l'errore
-            # e' il maxOutputTokens piu' alto, non abbassare il pensiero.
+            # thinkingConfig esplicito + maxOutputTokens alzato a 10000 (era
+            # 3000 senza thinkingConfig; poi 6000 -- ANCORA insufficiente in
+            # produzione: bug ripetuto su Loro Piana con 2 giri di ricerca
+            # anche a 6000, quindi alzato di nuovo). Bug reale: con
+            # gemini-3.7-flash (a differenza del 3.1-flash-lite originale)
+            # il "pensiero" interno + il verdetto strutturato finale possono
+            # insieme superare budget piu' bassi su casi complessi (piu' giri
+            # di ricerca, comp multipli da citare) -- risultato: "il modello
+            # non ha prodotto una risposta testuale", credito Gemini speso,
+            # nessun verdetto. Vedi il log diagnostico su finishReason/
+            # thoughtsTokenCount piu' sotto se ricapita anche a 10000: dira'
+            # se e' ancora un problema di budget (finishReason=MAX_TOKENS) o
+            # qualcos'altro.
+            # thinkingLevel="low" (non il default "medium"): scelta
+            # deliberata su costo/velocita' -- i token di pensiero sono
+            # fatturati come output e a "medium" possono essere ~6x i token
+            # della risposta finale (dato da benchmark indipendenti sul
+            # modello gemello 3.6 Flash). "low" e' significativamente piu'
+            # economico e piu' veloce, e benchmark indipendenti non mostrano
+            # un guadagno di accuratezza affidabile sopra "low" per molti
+            # task -- ma non e' stato specificamente testato sul compito di
+            # questo Cervello (valutazione prezzi second-hand). Se dopo
+            # qualche giorno tornano quotazioni incoerenti come il caso
+            # Kapital/Kapitales o le due camicie Our Legacy, il primo
+            # tentativo e' alzare questo a "medium", non aggiungere altre
+            # reti di sicurezza.
             "generationConfig": {
                 "temperature": 0.2,
-                "maxOutputTokens": 6000,
-                "thinkingConfig": {"thinkingLevel": "medium"},
+                "maxOutputTokens": 10000,
+                "thinkingConfig": {"thinkingLevel": "low"},
             },
         }
         if tools_abilitati:
@@ -1387,10 +1402,31 @@ def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca=True,
         testo = "".join(p.get("text", "") for p in parts)
         if testo.strip():
             return testo, costo_totale, n_query_extra
+
+        # DIAGNOSTICA per capire perche' il testo e' vuoto (bug ricorrente
+        # osservato in produzione anche dopo aver alzato maxOutputTokens):
+        # finishReason dice se e' un troncamento per limite token (MAX_TOKENS,
+        # il sospetto principale: il "pensiero" ha consumato tutto il budget)
+        # o altro (SAFETY, RECITATION, ecc.). thoughtsTokenCount (se presente
+        # nella risposta) mostra quanti token sono stati usati per il
+        # pensiero interno, non fatturati come testo ma sì come costo.
+        finish_reason = candidates[0].get("finishReason", "?")
+        thoughts_tokens = usage.get("thoughtsTokenCount", "?")
+        output_tokens = usage.get("candidatesTokenCount", "?")
+        log.warning(
+            "Cervello: testo vuoto al giro %d/%d -- finishReason=%s, thoughtsTokenCount=%s, "
+            "candidatesTokenCount=%s, maxOutputTokens configurato=%s",
+            round_idx + 1, MAX_ROUNDS_FUNZIONE + 1, finish_reason, thoughts_tokens,
+            output_tokens, 10000,
+        )
+
         if not ultimo_giro:
             # Nessun testo e nessuna function call valida (raro): un altro giro
             continue
-        return "[ERRORE: il modello non ha prodotto una risposta testuale dopo i tentativi di ricerca]", costo_totale, n_query_extra
+        return (
+            f"[ERRORE: il modello non ha prodotto una risposta testuale dopo i tentativi di ricerca "
+            f"-- finishReason={finish_reason}, thinking={thoughts_tokens} token]"
+        ), costo_totale, n_query_extra
 
     return "[ERRORE: tentativi esauriti]", costo_totale, n_query_extra
 
@@ -2860,7 +2896,7 @@ async def on_new_message(event):
 
 
 async def main():
-    log.info("Vinted Oracle avviato su Telethon.")
+    log.info("Vinted Oracle avviato su Telethon. Versione: %s", BOT_VERSION)
     await client.start()
     await client.run_until_disconnected()
 
