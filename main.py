@@ -42,11 +42,34 @@ SERPER_API_KEY = os.environ.get("SERPER_API_KEY")
 
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 
-GEMINI_MODEL = "gemini-3.1-flash-lite"
-GEMINI_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
+# Due modelli distinti per i due ruoli della pipeline (aggiornato Ago 2026,
+# gemini-3.1-flash-lite era l'unico disponibile quando il bot e' stato
+# costruito -- da allora Google ha rilasciato la famiglia 3.5/3.6/3.7).
+#
+# OCCHIO (legit-check visivo, prima passata): resta su un modello Lite --
+# compito piu' meccanico (leggere etichette, descrivere condizione), poco
+# da guadagnare da un modello piu' pesante qui.
+#
+# CERVELLO (verdetto finale: prezzo di vendita, margine, ROI): upgrade a un
+# Flash "pieno", non Lite. Questa e' la parte che ha prodotto quotazioni
+# incoerenti su capi quasi identici (es. due camicie Our Legacy valutate
+# €40 e €60) -- il ragionamento sui comp e l'ancoraggio ai prezzi reali
+# beneficiano di piu' capacita' rispetto al filtro visivo. Costa di piu' per
+# token, ma il Cervello viene chiamato una sola volta per annuncio (non ha
+# senso risparmiare li' se il risultato e' il numero che decide l'acquisto).
+GEMINI_MODEL_OCCHIO = "gemini-3.5-flash-lite"
+GEMINI_MODEL_CERVELLO = "gemini-3.7-flash"
+GEMINI_API_URL_OCCHIO = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL_OCCHIO}:generateContent"
+GEMINI_API_URL_CERVELLO = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL_CERVELLO}:generateContent"
 
-PREZZO_GEMINI_INPUT = 0.25
-PREZZO_GEMINI_OUTPUT = 1.50
+# Prezzi per milione di token, paid tier standard (Ago 2026) -- verificare su
+# https://ai.google.dev/gemini-api/docs/pricing se cambiano.
+PREZZO_OCCHIO_INPUT = 0.30
+PREZZO_OCCHIO_OUTPUT = 2.50
+# Prezzo scontato di lancio, valido fino al 31/12/2026 (poi raddoppia a
+# $1.50/$7.50 -- verificare su ai.google.dev/gemini-api/docs/pricing).
+PREZZO_CERVELLO_INPUT = 0.75
+PREZZO_CERVELLO_OUTPUT = 3.75
 PREZZO_GROUNDING_PER_QUERY = 14 / 1000
 
 MAX_GALLERY_PHOTOS = 10
@@ -1106,13 +1129,14 @@ def costruisci_parts_foto(photo_bytes_list):
     return parts
 
 
-def costo_gemini_token(usage):
+def costo_gemini_token(usage, prezzo_input=PREZZO_OCCHIO_INPUT, prezzo_output=PREZZO_OCCHIO_OUTPUT):
     inp = usage.get("promptTokenCount", 0) or 0
     out = usage.get("candidatesTokenCount", 0) or 0
-    return (inp * PREZZO_GEMINI_INPUT + out * PREZZO_GEMINI_OUTPUT) / 1_000_000
+    return (inp * prezzo_input + out * prezzo_output) / 1_000_000
 
 
-def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, grounding=False, max_retries=4):
+def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, grounding=False, max_retries=4,
+                  api_url=GEMINI_API_URL_OCCHIO, prezzo_input=PREZZO_OCCHIO_INPUT, prezzo_output=PREZZO_OCCHIO_OUTPUT):
     photo_bytes_list = photo_bytes_list or []
     parts = [{"text": user_text}] + costruisci_parts_foto(photo_bytes_list)
 
@@ -1132,7 +1156,7 @@ def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, grounding=Fal
     backoff_seconds = 2
     for attempt in range(1, max_retries + 1):
         try:
-            resp = requests.post(GEMINI_API_URL, params={"key": GEMINI_API_KEY}, json=payload, timeout=90)
+            resp = requests.post(api_url, params={"key": GEMINI_API_KEY}, json=payload, timeout=90)
             if not resp.ok:
                 log.warning("Gemini HTTP %d: %s", resp.status_code, resp.text[:500])
             if resp.ok:
@@ -1143,7 +1167,7 @@ def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, grounding=Fal
                     usage = data.get("usageMetadata", {})
                     grounding_metadata = candidates[0].get("groundingMetadata", {}) if candidates else {}
                     n_query = len(grounding_metadata.get("webSearchQueries", []) or [])
-                    costo = costo_gemini_token(usage) + n_query * PREZZO_GROUNDING_PER_QUERY
+                    costo = costo_gemini_token(usage, prezzo_input, prezzo_output) + n_query * PREZZO_GROUNDING_PER_QUERY
                     return text, costo, n_query
                 return "[ERRORE: risposta Gemini senza candidates]", 0.0, 0
             if resp.status_code in {429, 500, 502, 503, 504}:
@@ -1231,7 +1255,8 @@ CERVELLO_FUNCTION_DECLARATION = {
 }
 
 
-def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca=True, max_retries=4):
+def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca=True, max_retries=4,
+                                    api_url=GEMINI_API_URL_CERVELLO, prezzo_input=PREZZO_CERVELLO_INPUT, prezzo_output=PREZZO_CERVELLO_OUTPUT):
     """Variante del cervello con function calling. Se forza_ricerca=True, il
     primo giro DEVE chiamare cerca_comp_prezzo (mode ANY). Se False, il tool
     resta disponibile ma la scelta e' lasciata al modello (mode AUTO).
@@ -1272,7 +1297,7 @@ def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca=True,
         backoff_seconds = 2
         for attempt in range(1, tentativi_rimasti + 1):
             try:
-                resp = requests.post(GEMINI_API_URL, params={"key": GEMINI_API_KEY}, json=payload, timeout=90)
+                resp = requests.post(api_url, params={"key": GEMINI_API_KEY}, json=payload, timeout=90)
                 if not resp.ok:
                     log.warning("Gemini (cervello forzato) HTTP %d: %s", resp.status_code, resp.text[:500])
                     if resp.status_code in {429, 500, 502, 503, 504} and attempt < tentativi_rimasti:
@@ -1307,7 +1332,7 @@ def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca=True,
             return "[ERRORE: risposta Gemini senza candidates]", costo_totale, n_query_extra
 
         usage = data.get("usageMetadata", {})
-        costo_totale += costo_gemini_token(usage)
+        costo_totale += costo_gemini_token(usage, prezzo_input, prezzo_output)
 
         parts = candidates[0].get("content", {}).get("parts", []) or []
         function_call = next((p.get("functionCall") for p in parts if p.get("functionCall")), None)
