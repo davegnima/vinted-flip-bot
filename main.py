@@ -2435,6 +2435,78 @@ def verifica_falso_ha_motivazione(testo):
     return testo
 
 
+def verifica_ancoraggio_prezzo_comp(testo):
+    """Rete di sicurezza per una violazione osservata DUE VOLTE in produzione
+    nonostante la regola sia gia' esplicita nel prompt ("CONTROLLO NUMERICO
+    OBBLIGATORIO SUL PREZZO DI LISTING"): il modello a volte fissa un prezzo
+    di listing SUPERIORE al comp piu' alto che lui stesso cita nell'Analisi
+    dell'analista, spesso chiamandolo "prudenziale" -- l'opposto della
+    prudenza. Caso reale che ha motivato questa funzione: comp citati
+    Vinted €215 e eBay SOLD €200, listing fissato a €225 ("prudenzialmente").
+
+    A differenza di altre reti di sicurezza in questo file, qui NON si
+    ricalcola automaticamente margine/ROI/decisione (rischioso via regex,
+    servirebbe rifare tutta la matematica a valle) -- si aggiunge solo un
+    avviso visibile, cosi' l'utente vede subito la violazione invece di
+    fidarsi della parola "prudente" nel testo."""
+    m_verdetto = re.search(
+        r"💰\s*€\s*([\d.,]+)\s*→\s*€\s*([\d.,]+)\s*→",
+        testo[:400],
+    )
+    if not m_verdetto:
+        return testo
+
+    try:
+        incasso_reale = float(m_verdetto.group(2).replace(",", "."))
+    except ValueError:
+        return testo
+
+    if incasso_reale <= 0:
+        return testo
+
+    prezzo_listing_stimato = incasso_reale / 0.80
+
+    m_analisi = re.search(
+        r"Analisi dell'analista:?\**\s*\n(.+)", testo, re.IGNORECASE | re.DOTALL,
+    )
+    if not m_analisi:
+        return testo
+    blocco_analisi = m_analisi.group(1)
+
+    comp_citati = []
+    for m in re.finditer(r"€\s*([\d]+(?:[.,]\d+)?)|([\d]+(?:[.,]\d+)?)\s*€", blocco_analisi):
+        # Esclude i numeri che sono il modello stesso che ripete la SUA
+        # stima (es. "posizionando il listing a 225€, incasso netto 180€")
+        # -- altrimenti questi vengono scambiati per comp esterni citati,
+        # innalzando artificialmente il "massimo" e mascherando proprio la
+        # violazione che questa funzione deve rilevare.
+        finestra_precedente = blocco_analisi[max(0, m.start() - 40):m.start()].lower()
+        if re.search(r"\b(listing|incasso)\b", finestra_precedente):
+            continue
+        valore = m.group(1) or m.group(2)
+        comp_citati.append(float(valore.replace(",", ".")))
+    if not comp_citati:
+        return testo
+
+    comp_massimo = max(comp_citati)
+
+    TOLLERANZA = 1.02  # 2% di margine per arrotondamenti, non e' una soglia rigida
+    if prezzo_listing_stimato <= comp_massimo * TOLLERANZA:
+        return testo
+
+    log.info(
+        "verifica_ancoraggio_prezzo_comp: prezzo di listing stimato €%.2f supera il comp piu' alto "
+        "citato nell'analisi (€%.2f) -- aggiunto avviso.",
+        prezzo_listing_stimato, comp_massimo,
+    )
+    return testo + (
+        f"\n\n⚠️ _Nota automatica: il prezzo di listing stimato (~€{prezzo_listing_stimato:.2f}, "
+        f"ricavato dall'incasso €{incasso_reale:.2f}÷0.80) supera il comp piu' alto citato "
+        f"nell'Analisi dell'analista (€{comp_massimo:.2f}) -- possibile violazione della regola "
+        f"di ancoraggio ai comp reali. Verificare manualmente prima di fidarsi della stima._"
+    )
+
+
 def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header, output_finale, decisione, e_compra, scenario_usato, n_query_grounding=0):
     item_id = _estrai_item_id_da_url(url)
     urgenza_alta = _e_urgenza_alta(decisione)
@@ -2778,6 +2850,7 @@ def process_listing(parsed, url, cover_photo_bytes):
     )
 
     output_finale = verifica_falso_ha_motivazione(output_finale)
+    output_finale = verifica_ancoraggio_prezzo_comp(output_finale)
 
     if "NON COMPRARE" in output_finale:
         output_finale = re.sub(
