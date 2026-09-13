@@ -78,7 +78,7 @@ MAX_GALLERY_PHOTOS = 10
 # inequivocabile quale codice sta girando su Railway dopo un deploy, senza
 # doverlo dedurre dai timestamp dei log. Aggiorna la data quando fai una
 # modifica significativa (facoltativo, ma utile per il debug futuro).
-BOT_VERSION = "2026-08-24-cervello-thinking-fix"
+BOT_VERSION = "2026-09-13-parser-tracker-flessibile"
 
 # GATE MARGINE ASSOLUTO (nuovo): soglia di qualita' del deal, separata dalla
 # soglia minima di sicurezza (EUR 20 / ROI 100%) gia' presente nei prompt e
@@ -755,7 +755,7 @@ URL_REGEX = re.compile(r"https?://(?:www\.)?vinted\.[a-z]+/items/\S+", re.IGNORE
 # Tollerante sia al vecchio formato del servizio a pagamento (parole "Price"/
 # "Brand" letterali) sia al nuovo formato solo-emoji di Vinted-Notifications
 # (💰/🏷️ senza parole) -- prima riconosceva SOLO il vecchio formato, quindi
-# passando al nuovo tracker prezzo e brand risultavano sempre vuoti ("?").
+# passando a un tracker diverso prezzo e brand risultavano sempre vuoti ("?").
 PRICE_REGEX = re.compile(
     r"(?:Price\s*:\s*|Prezzo\s*:\s*|💰\s*|💶\s*)([\d]+(?:[.,]\d+)?)\s*(?:EUR|€)?",
     re.IGNORECASE,
@@ -771,16 +771,17 @@ def parse_vinted_tracker_message(text):
     title = None
     for line in lines:
         line_lower = line.lower()
-        # Salta le righe di prezzo/brand in ENTRAMBI i formati, cosi' non
-        # vengono scambiate per titolo.
+        # Salta le righe di prezzo/brand in ENTRAMBI i formati (vecchio a
+        # parole, nuovo a emoji), cosi' non vengono scambiate per titolo.
         e_riga_prezzo = line_lower.startswith(("price", "prezzo")) or "price" in line_lower or line.startswith(("💰", "💶"))
         e_riga_brand = line_lower.startswith(("brand", "marca")) or line.startswith(("🏷️", "🛍️"))
         if e_riga_prezzo or e_riga_brand:
             continue
         # Rimuove QUALSIASI emoji iniziale (non solo "📌" come prima) -- il
-        # bug del "🆕 🆕" veniva da qui: il vecchio codice toglieva solo
-        # "📌 ", quindi con "🆕 Titolo" quell'emoji restava nel titolo salvato
-        # e l'header ne aggiungeva un'altra sopra.
+        # bug del titolo con emoji duplicata (es. "🆕 🆕 Titolo") veniva da
+        # qui: il vecchio codice toglieva solo "📌 ", quindi con un titolo
+        # tracker che iniziava per "🆕 " quell'emoji restava nel testo salvato
+        # e l'header del bot ne aggiungeva un'altra sopra.
         cleaned = re.sub(r"^[\U0001F000-\U0001FFFF\u2600-\u27BF\u2190-\u21FF\u2B00-\u2BFF]+\s*", "", line).strip()
         if cleaned and title is None:
             title = cleaned
@@ -1423,21 +1424,30 @@ def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca=True,
         if testo.strip():
             return testo, costo_totale, n_query_extra
 
-        # DIAGNOSTICA per capire perche' il testo e' vuoto (bug ricorrente
-        # osservato in produzione anche dopo aver alzato maxOutputTokens):
-        # finishReason dice se e' un troncamento per limite token (MAX_TOKENS,
-        # il sospetto principale: il "pensiero" ha consumato tutto il budget)
-        # o altro (SAFETY, RECITATION, ecc.). thoughtsTokenCount (se presente
-        # nella risposta) mostra quanti token sono stati usati per il
-        # pensiero interno, non fatturati come testo ma sì come costo.
+        # DIAGNOSTICA per capire perche' il testo e' vuoto. Bug ricorrente
+        # osservato in produzione con DUE varianti distinte finora:
+        # 1. finishReason=MAX_TOKENS -- budget di pensiero+output esaurito
+        #    (gia' mitigato alzando maxOutputTokens e limitando thinkingLevel).
+        # 2. finishReason=STOP (completamento NORMALE, non troncato) con
+        #    thoughtsTokenCount assente e testo comunque vuoto -- causa
+        #    diversa e non ancora capita, il fix del budget non basta qui.
+        # Loggato ora il JSON grezzo completo di parts/candidate (troncato)
+        # cosi' se ricapita abbiamo la struttura esatta (es. se "parts" e'
+        # una lista vuota, se contiene un part con "thought": true senza
+        # "text", se c'e' un safetyRatings che blocca in silenzio, ecc.)
+        # invece di dover indovinare di nuovo con solo due numeri.
         finish_reason = candidates[0].get("finishReason", "?")
         thoughts_tokens = usage.get("thoughtsTokenCount", "?")
         output_tokens = usage.get("candidatesTokenCount", "?")
+        safety_ratings = candidates[0].get("safetyRatings", "assenti")
         log.warning(
             "Cervello: testo vuoto al giro %d/%d -- finishReason=%s, thoughtsTokenCount=%s, "
-            "candidatesTokenCount=%s, maxOutputTokens configurato=%s",
+            "candidatesTokenCount=%s, maxOutputTokens configurato=%s, n_parts=%d, "
+            "safetyRatings=%s\nDUMP GREZZO parts: %s\nDUMP GREZZO candidate (senza content): %s",
             round_idx + 1, MAX_ROUNDS_FUNZIONE + 1, finish_reason, thoughts_tokens,
-            output_tokens, 10000,
+            output_tokens, 10000, len(parts), safety_ratings,
+            json.dumps(parts, ensure_ascii=False)[:1500],
+            json.dumps({k: v for k, v in candidates[0].items() if k != "content"}, ensure_ascii=False)[:800],
         )
 
         if not ultimo_giro:
