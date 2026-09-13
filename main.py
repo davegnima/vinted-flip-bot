@@ -752,19 +752,39 @@ def telegram_send_with_buttons(chat_id, text, url_annuncio, item_id=None):
 # ---------------------------------------------------------------------------
 
 URL_REGEX = re.compile(r"https?://(?:www\.)?vinted\.[a-z]+/items/\S+", re.IGNORECASE)
-PRICE_REGEX = re.compile(r"Price\s*:\s*([\d.,]+)\s*EUR", re.IGNORECASE)
-BRAND_REGEX = re.compile(r"Brand\s*:\s*(.+)", re.IGNORECASE)
+# Tollerante sia al vecchio formato del servizio a pagamento (parole "Price"/
+# "Brand" letterali) sia al nuovo formato solo-emoji di Vinted-Notifications
+# (💰/🏷️ senza parole) -- prima riconosceva SOLO il vecchio formato, quindi
+# passando al nuovo tracker prezzo e brand risultavano sempre vuoti ("?").
+PRICE_REGEX = re.compile(
+    r"(?:Price\s*:\s*|Prezzo\s*:\s*|💰\s*|💶\s*)([\d]+(?:[.,]\d+)?)\s*(?:EUR|€)?",
+    re.IGNORECASE,
+)
+BRAND_REGEX = re.compile(
+    r"(?:Brand\s*:\s*|Marca\s*:\s*|🏷️\s*|🛍️\s*)(.+)",
+    re.IGNORECASE,
+)
 
 
 def parse_vinted_tracker_message(text):
     lines = [l.strip() for l in text.splitlines() if l.strip()]
     title = None
     for line in lines:
-        if not line.lower().startswith(("price", "brand")) and "price" not in line.lower():
-            cleaned = line.lstrip("📌 ").strip()
-            if cleaned and title is None:
-                title = cleaned
-                break
+        line_lower = line.lower()
+        # Salta le righe di prezzo/brand in ENTRAMBI i formati, cosi' non
+        # vengono scambiate per titolo.
+        e_riga_prezzo = line_lower.startswith(("price", "prezzo")) or "price" in line_lower or line.startswith(("💰", "💶"))
+        e_riga_brand = line_lower.startswith(("brand", "marca")) or line.startswith(("🏷️", "🛍️"))
+        if e_riga_prezzo or e_riga_brand:
+            continue
+        # Rimuove QUALSIASI emoji iniziale (non solo "📌" come prima) -- il
+        # bug del "🆕 🆕" veniva da qui: il vecchio codice toglieva solo
+        # "📌 ", quindi con "🆕 Titolo" quell'emoji restava nel titolo salvato
+        # e l'header ne aggiungeva un'altra sopra.
+        cleaned = re.sub(r"^[\U0001F000-\U0001FFFF\u2600-\u27BF\u2190-\u21FF\u2B00-\u2BFF]+\s*", "", line).strip()
+        if cleaned and title is None:
+            title = cleaned
+            break
     price_match = PRICE_REGEX.search(text)
     brand_match = BRAND_REGEX.search(text)
     return {
