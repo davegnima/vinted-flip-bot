@@ -1308,9 +1308,16 @@ def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca=True,
     rispondere, i giri precedenti lasciavano il messaggio Telegram vuoto
     (solo header, verdetto assente) perche' la seconda risposta veniva letta
     come testo finale anche quando conteneva solo un'altra richiesta di
-    funzione. Ora, all'ultimo giro consentito, i tool vengono disabilitati
-    (mode NONE) per costringere il modello a rispondere con un verdetto
-    testuale usando qualunque dato abbia gia' raccolto."""
+    funzione. All'ultimo giro consentito, il tool viene dichiarato con
+    "mode: NONE" esplicito (non piu' omesso del tutto: omettere "tools" non
+    disattivava davvero il function calling quando la conversazione conteneva
+    gia' uno scambio functionCall/functionResponse precedente -- bug
+    osservato in produzione su quasi ogni item il 2026-09-13) per costringere
+    il modello a rispondere con un verdetto testuale usando qualunque dato
+    abbia gia' raccolto. Se anche cosi' il modello insiste con una
+    functionCall, un ultimo tentativo di fallback (senza "tools" nel payload
+    e con un turno "user" esplicito) prova a recuperare comunque un
+    verdetto testuale prima di arrendersi."""
     contents = [{"role": "user", "parts": [{"text": user_text}]}]
     costo_totale = 0.0
     n_query_extra = 0
@@ -1329,7 +1336,13 @@ def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca=True,
                              # scarsi, il primo tentativo e' rialzare questo
                              # a 2, non altro.
 
-    def _chiama_gemini_raw(tool_mode, tools_abilitati, tentativi_rimasti):
+    def _chiama_gemini_raw(tool_mode, tools_abilitati, tentativi_rimasti, omit_tools=False):
+        # NOTA: "tools_abilitati" e' ora vestigiale per i giri normali (le
+        # funzioni vengono sempre dichiarate, con mode esplicito -- vedi fix
+        # sotto). "omit_tools" resta per il SOLO tentativo di fallback finale,
+        # dove vogliamo omettere "tools" e "tool_config" del tutto (zero
+        # ambiguita' possibile), a differenza del fix normale che dichiara
+        # sempre la funzione con mode "NONE".
         function_calling_config = {"mode": tool_mode}
         if tool_mode == "ANY":
             function_calling_config["allowed_function_names"] = ["cerca_comp_prezzo"]
@@ -1374,7 +1387,20 @@ def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca=True,
                 "thinkingConfig": {"thinkingLevel": "low"},
             },
         }
-        if tools_abilitati:
+        # FIX: la funzione va sempre dichiarata (anche quando tool_mode=="NONE"),
+        # altrimenti "mode: NONE" non viene mai comunicato a Gemini -- prima
+        # venivano omessi sia "tools" sia "tool_config" quando tools_abilitati
+        # era False, e il modello, avendo gia' in "contents" uno scambio
+        # model->functionCall / user->functionResponse dal giro precedente,
+        # continuava a restituire un'altra functionCall invece di testo anche
+        # senza funzioni dichiarate in quel turno (bug osservato in produzione
+        # su quasi ogni item: Lemaire, Max Mara, Mugler, Miu Miu, Cucinelli,
+        # Jil Sander, Loewe, Toteme, Rick Owens, Helmut Lang, JPG -- log
+        # 2026-09-13). Dichiarare sempre "tools" ma con mode "NONE" esplicito
+        # e' il meccanismo ufficiale Gemini per vietare la chiamata pur
+        # lasciando la funzione visibile, e rimuove l'ambiguita' che il
+        # modello aveva quando le funzioni sparivano di colpo dallo schema.
+        if not omit_tools:
             payload["tools"] = [{"function_declarations": [CERVELLO_FUNCTION_DECLARATION]}]
             payload["tool_config"] = {"function_calling_config": function_calling_config}
 
@@ -1439,6 +1465,55 @@ def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca=True,
             })
             tool_mode = "AUTO"  # i giri successivi non sono piu' forzati
             continue
+
+        if function_call and ultimo_giro:
+            # RETE DI SICUREZZA RESIDUA: anche con "tools" dichiarato e mode
+            # "NONE" esplicito (fix sopra), se il modello dovesse ANCORA
+            # restituire una functionCall invece di testo (bug lato Gemini
+            # non escludibile del tutto vista la ricorrenza osservata), non
+            # buttiamo via i comp gia' raccolti. Un solo tentativo extra,
+            # esplicito, senza alcuna dichiarazione di funzioni nel payload
+            # (nessuna ambiguita' possibile) e con un turno "user" che dice
+            # chiaramente di smettere di cercare e rispondere con i dati
+            # disponibili.
+            log.warning(
+                "Cervello: functionCall ricevuta anche all'ultimo giro nonostante mode=NONE "
+                "esplicito -- tentativo fallback forzato senza tools dichiarati."
+            )
+            contents.append({"role": "model", "parts": parts})
+            contents.append({
+                "role": "user",
+                "parts": [{
+                    "text": (
+                        "Le ricerche sono terminate: non puoi e non devi chiamare "
+                        "nessuna funzione. Rispondi ORA con il verdetto testuale "
+                        "completo, usando esclusivamente i dati e i comp gia' "
+                        "raccolti in questa conversazione."
+                    )
+                }]
+            })
+            try:
+                data_fallback = _chiama_gemini_raw(
+                    tool_mode="NONE", tools_abilitati=False, tentativi_rimasti=max_retries,
+                    omit_tools=True,
+                )
+            except Exception as e:
+                return (
+                    f"[ERRORE: cervello forzato fallito nel tentativo fallback. Eccezione: {e}]",
+                    costo_totale, n_query_extra,
+                )
+            candidates_fb = data_fallback.get("candidates", [])
+            usage_fb = data_fallback.get("usageMetadata", {})
+            costo_totale += costo_gemini_token(usage_fb, prezzo_input, prezzo_output)
+            parts_fb = (candidates_fb[0].get("content", {}).get("parts", []) if candidates_fb else []) or []
+            testo_fb = "".join(p.get("text", "") for p in parts_fb)
+            if testo_fb.strip():
+                return testo_fb, costo_totale, n_query_extra
+            finish_reason_fb = candidates_fb[0].get("finishReason", "?") if candidates_fb else "?"
+            return (
+                f"[ERRORE: il modello ha insistito con una function call anche nel tentativo "
+                f"fallback finale -- finishReason={finish_reason_fb}]"
+            ), costo_totale, n_query_extra
 
         testo = "".join(p.get("text", "") for p in parts)
         if testo.strip():
