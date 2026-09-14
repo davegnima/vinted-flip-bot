@@ -1321,20 +1321,27 @@ def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca=True,
     contents = [{"role": "user", "parts": [{"text": user_text}]}]
     costo_totale = 0.0
     n_query_extra = 0
-    MAX_ROUNDS_FUNZIONE = 1  # Ridotto da 2 a 1 per controllo costi (Pareto):
-                             # ogni giro extra rimanda l'intero prompt del
-                             # Cervello (migliaia di token) piu' costa la
-                             # ricerca Serper -- e' la voce di costo piu'
-                             # cara e piu' variabile del bot. Il primo giro
-                             # trova comp sufficienti nella stragrande
-                             # maggioranza dei casi (vedi valuta_qualita_comp);
-                             # il secondo giro serviva soprattutto per i casi
-                             # limite, dove il guadagno di qualita' non
-                             # giustificava il raddoppio di costo su OGNI
-                             # valutazione che finiva a chiedere ricerca extra.
-                             # Se noti verdetti peggiorati su casi con comp
-                             # scarsi, il primo tentativo e' rialzare questo
-                             # a 2, non altro.
+    MAX_ROUNDS_FUNZIONE = 2  # Rialzato da 1 a 2 il 2026-09-14. Con 1, i log
+                             # mostravano che ~1 item su 2 finiva comunque nel
+                             # fallback forzato (vedi sotto), che nel caso
+                             # peggiore costa quanto il vecchio "2 giri" (3
+                             # chiamate totali), ma senza dare al modello la
+                             # seconda ricerca reale che chiedeva -- lo
+                             # zittisce e basta, verdetto su comp che il
+                             # modello stesso riteneva insufficienti. Con
+                             # MAX_ROUNDS_FUNZIONE=2 il caso "un giro basta"
+                             # costa uguale a prima (2 chiamate), il caso
+                             # "serve una seconda ricerca" costa uguale al
+                             # fallback di oggi (3 chiamate) ma con una
+                             # ricerca vera al posto del rifiuto secco --
+                             # stesso costo nel caso peggiore, qualita'
+                             # probabilmente migliore. Se il costo medio reale
+                             # sale sensibilmente rispetto a questa attesa
+                             # (monitorare il footer costo su Telegram),
+                             # il primo sospetto e' che il modello chieda
+                             # ricerca extra anche quando non servirebbe --
+                             # in quel caso riconsiderare, non tornare a 1
+                             # alla cieca.
 
     def _chiama_gemini_raw(tool_mode, tools_abilitati, tentativi_rimasti, omit_tools=False):
         # NOTA: "tools_abilitati" e' ora vestigiale per i giri normali (le
