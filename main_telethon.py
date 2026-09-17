@@ -1127,14 +1127,24 @@ def scrape_vinted_listing(url):
 def download_image_bytes(url, referer="https://www.vinted.it/", max_retries=3):
     headers = dict(IMAGE_DOWNLOAD_HEADERS)
     headers["Referer"] = referer
+    # TEMP DIAGNOSTIC: this used to swallow every failure silently (bare
+    # "except Exception: pass" and no logging even on a non-ok status), so
+    # there was no way to tell a 403/429 rate-limit apart from a timeout or
+    # a proxy connection failure from the logs alone. Remove once diagnosed.
+    ultimo_dettaglio = None
     for attempt in range(1, max_retries + 1):
         try:
             resp = _vinted_session.get(url, headers=headers, timeout=18, proxies=_prossimo_proxy())
             if resp.ok:
                 return resp.content
-        except Exception:
-            pass
+            ultimo_dettaglio = f"HTTP {resp.status_code}"
+        except Exception as e:
+            ultimo_dettaglio = f"{type(e).__name__}: {e}"
         time.sleep(0.6 * attempt)
+    log.warning(
+        "download_image_bytes: fallito dopo %d tentativi per %s -- ultimo errore: %s",
+        max_retries, url, ultimo_dettaglio,
+    )
     return None
 
 
@@ -2690,6 +2700,17 @@ def process_listing(parsed, url, cover_photo_bytes):
             return
 
         photo_urls = scraped.get("photo_urls", [])
+        # TEMP DIAGNOSTIC: distinguishes "the listing page itself yielded zero
+        # photo URLs" (regex extraction failed / page fetch failed upstream in
+        # scrape_vinted_listing) from "photo URLs were found but every single
+        # download attempt failed" -- the two have different causes and the
+        # existing logs never separated them. Remove once diagnosed.
+        if not photo_urls:
+            log.warning(
+                "scrape_vinted_listing non ha restituito nessun photo_url per %s "
+                "(pagina annuncio non raggiunta o regex di estrazione foto non ha trovato match).",
+                url,
+            )
         if photo_urls:
             with ThreadPoolExecutor(max_workers=5) as pool:
                 risultati_download = list(pool.map(
