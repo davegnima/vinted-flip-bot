@@ -591,7 +591,7 @@ Archivio eclettico (Missoni, JPG, Pucci, Westwood, Mugler, Montana, Marni, Courr
 **Stagionalità**: capo fuori stagione (invernale pesante in estate, o viceversa) = STESSO valore ma tempo di vendita più lungo — mai abbassare il prezzo per questo. Dichiara il mese consigliato per pubblicare (capispalla invernali da settembre, capi estivi da aprile).
 
 # RICERCA E VERIFICA (usa cerca_comp_prezzo)
-Comp pre-raccolti scarsi/assenti/fuori tema → cerca_comp_prezzo con query mirata prima di rispondere. Gerarchia fonti: eBay SOLD > Vinted > Vestiaire.
+Comp pre-raccolti scarsi/assenti/fuori tema → cerca_comp_prezzo con query mirata prima di rispondere. Gerarchia fonti: eBay SOLD > Vinted — Ricerca visuale per foto (quando presente: e' lo stesso capo/modello, non solo lo stesso brand, il comp piu' affidabile tra gli ASK) > Vinted testo > Vestiaire.
 Codici prodotto o diciture rare citati dall'occhio ("prototipo", "edizione limitata", ecc.) → verifica che esistano davvero con cerca_comp_prezzo prima di trattarli come prova di valore; se non confermati, tratta come non verificati e abbassa Confidenza, non usarli come giustificazione principale del margine.
 La "Confidenza" che l'occhio dichiara su un verdetto "Probabilmente falso" NON è affidabile da sola (bias noto: prezzo molto basso può contaminare il giudizio con dettagli vaghi costruiti a posteriori) — se i dettagli citati sono generici e il prezzo è molto basso, verifica con cerca_comp_prezzo prima di confermare NON COMPRARE per sospetto falso.
 
@@ -897,7 +897,7 @@ def _vinted_get_con_retry(url, timeout=15, max_retries=3):
 
 def scrape_vinted_listing(url):
     result = {
-        "photo_urls": [], "size": None, "condition": None, "description": None,
+        "photo_urls": [], "cover_photo_id": None, "size": None, "condition": None, "description": None,
         "created_at": None, "age_days": None, "catalog_id": None,
         "material_raw": None, "material_per_ricerca": None, "color_raw": None,
         "seller_login": None, "seller_id": None,
@@ -938,6 +938,16 @@ def scrape_vinted_listing(url):
             best_url_by_photo_id = foto_complete
 
         result["photo_urls"] = list(best_url_by_photo_id.values())[:MAX_GALLERY_PHOTOS]
+        # Il photo_id della cover (prima foto) e' potenzialmente lo stesso ID
+        # accettato dal parametro "search_by_image_id" del bottone Vinted
+        # "Cerca articoli simili" (stesso formato osservato in produzione:
+        # es. "02_015a4_6DEmrNgrJhNwjhWvNPecp79k"). NON confermato in modo
+        # definitivo (nessun accesso di rete a Vinted da qui per testarlo),
+        # ma se corretto permette di ottenere comp per-foto (non solo per
+        # brand/categoria testuale) riusando tutta l'infrastruttura Serper
+        # gia' esistente, senza browser. Vedi build_vinted_visual_search_url.
+        if best_url_by_photo_id:
+            result["cover_photo_id"] = next(iter(best_url_by_photo_id.keys()), None)
 
         size_match = re.search(r'"size_title"\s*:\s*"([^"]+)"', html_pagina)
         if size_match:
@@ -1793,6 +1803,65 @@ def build_vinted_search_url(brand, categoria, materiale=None, catalog_id=None):
     return url, False
 
 
+def _risolvi_search_by_image_id(item_id, photo_id):
+    """Il photo_id della foto (estratto dall'URL CDN, es. "06_00506_...")
+    NON e' l'ID accettato da search_by_image_id nel catalogo -- verificato
+    empiricamente confrontando tre URL reali forniti dall'utente il
+    2026-09-18: foto con photo_id "06_00506_96X4vjNZUPdRFP3X2B6rTJMR",
+    endpoint "/items/{id}/search_by_image?photo_id=06_00506_..." (stesso
+    photo_id in input), che REDIRIGE (HTTP 302, l'utente ha confermato che
+    il browser si sposta da solo senza altri click) a
+    "/catalog?search_by_image_id=05_020ea_SjsgDv3J1EKG941GCMipbmQc" -- un ID
+    completamente diverso, calcolato lato server (probabile embedding
+    visivo). Questa funzione replica quel passaggio con una singola GET che
+    segue il redirect (requests lo fa di default), poi legge l'ID vero
+    dall'URL finale (resp.url). Nessun browser necessario.
+
+    Passa per lo stesso canale "Vinted diretto" di scrape_vinted_listing
+    (via _vinted_get_con_retry, stessa pausa minima anti-rate-limit), quindi
+    aggiunge una richiesta extra a quel budget -- se in futuro tornano i 403
+    osservati in produzione, questa e' una delle prime cose da rivedere o
+    rendere disattivabile."""
+    if not item_id or not photo_id:
+        return None
+    url_intermedio = f"https://www.vinted.it/items/{item_id}/search_by_image?photo_id={quote(photo_id)}"
+    resp = _vinted_get_con_retry(url_intermedio, timeout=12, max_retries=2)
+    if resp is None:
+        return None
+    m = re.search(r"search_by_image_id=([A-Za-z0-9_]+)", resp.url)
+    if not m:
+        log.info(
+            "_risolvi_search_by_image_id: redirect non ha prodotto un search_by_image_id "
+            "nell'URL finale (%s) -- fonte visuale saltata per questo item.",
+            resp.url,
+        )
+        return None
+    return m.group(1)
+
+
+def build_vinted_visual_search_url(item_id, photo_id, brand):
+    """URL equivalente al bottone Vinted "Cerca articoli simili" + filtro
+    per brand. Risolve prima il vero search_by_image_id (vedi
+    _risolvi_search_by_image_id -- il photo_id della foto da solo NON
+    basta), poi vi aggiunge il filtro brand. Richiede SEMPRE un brand_id
+    mappato: senza filtro brand la ricerca visuale pura e' troppo ampia per
+    essere un comp utile (l'utente ha verificato che il filtro brand e'
+    quello che rende i risultati "molto verosimili"). Ritorna None se manca
+    un ingrediente o la risoluzione fallisce -- il chiamante deve trattarlo
+    come fonte assente, non come errore."""
+    brand_id = VINTED_BRAND_IDS.get((brand or "").strip().lower())
+    if not brand_id:
+        return None
+    search_by_image_id = _risolvi_search_by_image_id(item_id, photo_id)
+    if not search_by_image_id:
+        return None
+    return (
+        f"https://www.vinted.it/catalog?search_by_image_id={quote(search_by_image_id)}"
+        f"&brand_ids[]={brand_id}"
+        "&order=newest_first&status_ids[]=1&status_ids[]=2&status_ids[]=3"
+    )
+
+
 def search_comps_ebay_sold_url(brand, categoria):
     termine_en = CATEGORIA_TERMINE_EN.get(categoria, categoria)
     query_base = f'{brand} "{termine_en}"'.strip() if termine_en else (brand or "").strip()
@@ -2096,17 +2165,41 @@ def _rimuovi_comp_autoreferenziale(testo_comp_vinted, titolo_annuncio):
     return "\n".join(righe_filtrate)
 
 
-def search_comps_completo(brand, categoria, query_base, catalog_id=None, material_per_ricerca=None):
+def _recupera_comp_visuali_vinted(item_id, photo_id, brand):
+    """Wrapper per la fonte visuale, pensato per essere sottomesso come UN
+    solo future nello stesso executor delle altre 3 fonti (vedi
+    search_comps_completo) cosi' la risoluzione dell'ID (chiamata di rete
+    verso Vinted, non istantanea) corre IN PARALLELO alle altre ricerche
+    invece di bloccarne l'avvio. Fa due passi in sequenza al suo interno
+    (risolvi ID -> scrape del catalogo con quell'ID), ma dal punto di vista
+    dell'executor e' un solo task con lo stesso contratto di ritorno
+    (testo, ok) degli altri. ok=False (non un'eccezione) quando manca un
+    ingrediente o la risoluzione fallisce, cosi' il chiamante lo tratta come
+    fonte assente senza differenziare i log dalle altre query fallite."""
+    url = build_vinted_visual_search_url(item_id, photo_id, brand)
+    if not url:
+        return "  Fonte non disponibile (photo_id/brand mancante o risoluzione ID falsa).", False
+    return _serper_scrape_page_diretto("VINTED", url)
+
+
+def search_comps_completo(brand, categoria, query_base, catalog_id=None, material_per_ricerca=None, cover_photo_id=None, item_id=None):
     vinted_url, vinted_per_id = build_vinted_search_url(brand, categoria, material_per_ricerca, catalog_id)
     ebay_url = search_comps_ebay_sold_url(brand, categoria)
+    # Se manca l'ingrediente minimo (photo_id o brand mappato) la fonte
+    # visuale e' inutile: lo sappiamo gia' qui senza fare rete, quindi non la
+    # sottomettiamo affatto all'executor invece di sprecare uno slot/tempo.
+    tentare_ricerca_visuale = bool(cover_photo_id) and bool(VINTED_BRAND_IDS.get((brand or "").strip().lower()))
 
     risultati = {}
     successi = {}
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    with ThreadPoolExecutor(max_workers=4) as executor:
         future_vestiaire = executor.submit(_serper_batch_query_vestiaire, brand, categoria)
         future_vinted = executor.submit(_serper_scrape_page_diretto, "VINTED", vinted_url)
         future_ebay = executor.submit(_serper_scrape_page_diretto, "EBAY SOLD", ebay_url)
         futures = {future_vestiaire: "vestiaire", future_vinted: "vinted", future_ebay: "ebay"}
+        if tentare_ricerca_visuale:
+            future_visuale = executor.submit(_recupera_comp_visuali_vinted, item_id, cover_photo_id, brand)
+            futures[future_visuale] = "vinted_visuale"
 
         try:
             for future in as_completed(futures, timeout=15):
@@ -2147,12 +2240,33 @@ def search_comps_completo(brand, categoria, query_base, catalog_id=None, materia
     vestiaire_comp_puliti = _filtra_comp_per_brand_sottolinee(vestiaire_comp_puliti, brand)
     ebay_comp_puliti = _filtra_comp_per_categoria(risultati.get("ebay"), categoria)
     ebay_comp_puliti = _filtra_comp_per_brand_sottolinee(ebay_comp_puliti, brand)
+    # La fonte visuale conta come "presente" solo se ha davvero prodotto un
+    # risultato (successi["vinted_visuale"] True) -- se photo_id/brand
+    # mancavano non e' nemmeno stata sottomessa (tentare_ricerca_visuale
+    # False), se e' stata sottomessa ma la risoluzione ID o lo scrape sono
+    # falliti risulta un fallimento come le altre query, non un errore raro.
+    fonte_visuale_riuscita = tentare_ricerca_visuale and successi.get("vinted_visuale")
+    visual_comp_puliti = None
+    if fonte_visuale_riuscita:
+        visual_comp_puliti = _rimuovi_comp_autoreferenziale(risultati.get("vinted_visuale"), query_base)
+        visual_comp_puliti = _filtra_comp_per_brand_sottolinee(visual_comp_puliti, brand)
+        # NIENTE _filtra_comp_per_categoria qui: la ricerca e' gia' ristretta
+        # dalla similarita' visiva con la foto reale, un filtro testuale sulla
+        # categoria rischierebbe solo di scartare match validi con titoli
+        # atipici.
 
-    parti = [f"RICERCA WEB PRE-RACCOLTA (3 fonti, base: '{query_base}'):"]
+    n_fonti = 4 if fonte_visuale_riuscita else 3
+    parti = [f"RICERCA WEB PRE-RACCOLTA ({n_fonti} fonti, base: '{query_base}'):"]
     if nota_brand:
         parti.append(nota_brand)
     if categoria:
         parti.append(f"(Comp filtrati per categoria rilevata: '{categoria}' -- risultati fuori tema gia' scartati.)")
+    if fonte_visuale_riuscita:
+        parti.append(
+            "\n📍 FONTE: VINTED — RICERCA VISUALE PER FOTO (stesso identikit visivo dell'annuncio, "
+            "filtrato per brand — la piu' precisa delle 4, prezzi ASK)\n"
+            f"{visual_comp_puliti or 'Nessun risultato'}"
+        )
     parti.append(
         "\n📍 FONTE: VESTIAIRE COLLECTIVE (prezzi ASK — annunci attivi, NON necessariamente venduti)\n"
         f"{vestiaire_comp_puliti or 'Nessun risultato'}"
@@ -3048,7 +3162,8 @@ def process_listing(parsed, url, cover_photo_bytes):
         listing_info.update({
             "size": scraped.get("size"), "condition": scraped.get("condition"),
             "description": scraped.get("description"), "age_days": scraped.get("age_days"),
-            "catalog_id": scraped.get("catalog_id"), "material_raw": scraped.get("material_raw"),
+            "catalog_id": scraped.get("catalog_id"), "cover_photo_id": scraped.get("cover_photo_id"),
+            "material_raw": scraped.get("material_raw"),
             "material_per_ricerca": scraped.get("material_per_ricerca"),
             "color_raw": scraped.get("color_raw"),
             "seller_login": scraped.get("seller_login"),
@@ -3191,6 +3306,8 @@ def process_listing(parsed, url, cover_photo_bytes):
         categoria_per_ricerca = estrai_categoria_da_titolo(titolo_annuncio) or ""
         catalog_id = listing_info.get("catalog_id")
         material_per_ricerca = listing_info.get("material_per_ricerca")
+        cover_photo_id = listing_info.get("cover_photo_id")
+        item_id_annuncio = _estrai_item_id_da_url(url)
 
         scenario_usato = "F"
         comps_text = None
@@ -3206,6 +3323,7 @@ def process_listing(parsed, url, cover_photo_bytes):
             comps_text, serper_ok = search_comps_completo(
                 brand_annuncio, categoria_per_ricerca, titolo_annuncio,
                 catalog_id=catalog_id, material_per_ricerca=material_per_ricerca,
+                cover_photo_id=cover_photo_id, item_id=item_id_annuncio,
             )
             if serper_ok:
                 scenario_usato = "G"
