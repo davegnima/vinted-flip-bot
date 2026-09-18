@@ -1357,6 +1357,10 @@ def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca=True,
     contents = [{"role": "user", "parts": [{"text": user_text}]}]
     costo_totale = 0.0
     n_query_extra = 0
+    ricerche_extra_raw = []  # testo grezzo di ogni cerca_serper_mirata riuscita in
+                              # questa chiamata -- usato da verifica_comp_citati_sono_reali
+                              # per controllare che i prezzi citati in Analisi provengano
+                              # davvero dai dati di ricerca, non da una stima "a memoria".
     MAX_ROUNDS_FUNZIONE = 2  # Rialzato da 1 a 2 il 2026-09-14. Con 1, i log
                              # mostravano che ~1 item su 2 finiva comunque nel
                              # fallback forzato (vedi sotto), che nel caso
@@ -1478,11 +1482,11 @@ def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca=True,
                 tentativi_rimasti=max_retries,
             )
         except Exception as e:
-            return f"[ERRORE: cervello forzato fallito. Eccezione: {e}]", costo_totale, n_query_extra
+            return f"[ERRORE: cervello forzato fallito. Eccezione: {e}]", costo_totale, n_query_extra, ricerche_extra_raw
 
         candidates = data.get("candidates", [])
         if not candidates:
-            return "[ERRORE: risposta Gemini senza candidates]", costo_totale, n_query_extra
+            return "[ERRORE: risposta Gemini senza candidates]", costo_totale, n_query_extra, ricerche_extra_raw
 
         usage = data.get("usageMetadata", {})
         costo_totale += costo_gemini_token(usage, prezzo_input, prezzo_output)
@@ -1495,6 +1499,7 @@ def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca=True,
             log.info("Cervello Gemini ha richiesto ricerca mirata (giro %d/%d): '%s'", round_idx + 1, MAX_ROUNDS_FUNZIONE, query_richiesta)
             risultato_ricerca = cerca_serper_mirata(query_richiesta)
             n_query_extra += 1
+            ricerche_extra_raw.append(risultato_ricerca)
 
             contents.append({"role": "model", "parts": parts})
             contents.append({
@@ -1543,7 +1548,7 @@ def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca=True,
             except Exception as e:
                 return (
                     f"[ERRORE: cervello forzato fallito nel tentativo fallback. Eccezione: {e}]",
-                    costo_totale, n_query_extra,
+                    costo_totale, n_query_extra, ricerche_extra_raw,
                 )
             candidates_fb = data_fallback.get("candidates", [])
             usage_fb = data_fallback.get("usageMetadata", {})
@@ -1551,16 +1556,16 @@ def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca=True,
             parts_fb = (candidates_fb[0].get("content", {}).get("parts", []) if candidates_fb else []) or []
             testo_fb = "".join(p.get("text", "") for p in parts_fb)
             if testo_fb.strip():
-                return testo_fb, costo_totale, n_query_extra
+                return testo_fb, costo_totale, n_query_extra, ricerche_extra_raw
             finish_reason_fb = candidates_fb[0].get("finishReason", "?") if candidates_fb else "?"
             return (
                 f"[ERRORE: il modello ha insistito con una function call anche nel tentativo "
                 f"fallback finale -- finishReason={finish_reason_fb}]"
-            ), costo_totale, n_query_extra
+            ), costo_totale, n_query_extra, ricerche_extra_raw
 
         testo = "".join(p.get("text", "") for p in parts)
         if testo.strip():
-            return testo, costo_totale, n_query_extra
+            return testo, costo_totale, n_query_extra, ricerche_extra_raw
 
         # DIAGNOSTICA per capire perche' il testo e' vuoto. Bug ricorrente
         # osservato in produzione con DUE varianti distinte finora:
@@ -1594,9 +1599,9 @@ def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca=True,
         return (
             f"[ERRORE: il modello non ha prodotto una risposta testuale dopo i tentativi di ricerca "
             f"-- finishReason={finish_reason}, thinking={thoughts_tokens} token]"
-        ), costo_totale, n_query_extra
+        ), costo_totale, n_query_extra, ricerche_extra_raw
 
-    return "[ERRORE: tentativi esauriti]", costo_totale, n_query_extra
+    return "[ERRORE: tentativi esauriti]", costo_totale, n_query_extra, ricerche_extra_raw
 
 
 # ---------------------------------------------------------------------------
@@ -1661,14 +1666,15 @@ def _chiama_openai_raw(messages, tool_choice, tentativi_rimasti, max_retries=4):
 
 def chiama_openai_cervello_forzato(system_prompt, user_text, forza_ricerca=True, max_retries=4):
     """Equivalente OpenAI di chiama_gemini_cervello_forzato. Stessa firma di
-    ritorno (testo, costo_totale, n_query_extra) per restare intercambiabile
-    nel punto di chiamata via CERVELLO_PROVIDER."""
+    ritorno (testo, costo_totale, n_query_extra, ricerche_extra_raw) per
+    restare intercambiabile nel punto di chiamata via CERVELLO_PROVIDER."""
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_text},
     ]
     costo_totale = 0.0
     n_query_extra = 0
+    ricerche_extra_raw = []  # vedi commento gemello in chiama_gemini_cervello_forzato
     MAX_ROUNDS_FUNZIONE = 2  # stesso limite del gemello Gemini, per parita' di costo massimo
 
     tool_choice = "required" if forza_ricerca else "auto"
@@ -1682,11 +1688,11 @@ def chiama_openai_cervello_forzato(system_prompt, user_text, forza_ricerca=True,
                 tentativi_rimasti=max_retries,
             )
         except Exception as e:
-            return f"[ERRORE: cervello OpenAI fallito. Eccezione: {e}]", costo_totale, n_query_extra
+            return f"[ERRORE: cervello OpenAI fallito. Eccezione: {e}]", costo_totale, n_query_extra, ricerche_extra_raw
 
         choices = data.get("choices", [])
         if not choices:
-            return "[ERRORE: risposta OpenAI senza choices]", costo_totale, n_query_extra
+            return "[ERRORE: risposta OpenAI senza choices]", costo_totale, n_query_extra, ricerche_extra_raw
 
         usage = data.get("usage", {})
         costo_totale += costo_openai_token(usage)
@@ -1703,6 +1709,7 @@ def chiama_openai_cervello_forzato(system_prompt, user_text, forza_ricerca=True,
             log.info("Cervello OpenAI ha richiesto ricerca mirata (giro %d/%d): '%s'", round_idx + 1, MAX_ROUNDS_FUNZIONE, query_richiesta)
             risultato_ricerca = cerca_serper_mirata(query_richiesta)
             n_query_extra += 1
+            ricerche_extra_raw.append(risultato_ricerca)
 
             messages.append({"role": "assistant", "content": msg.get("content"), "tool_calls": tool_calls})
             messages.append({
@@ -1730,26 +1737,26 @@ def chiama_openai_cervello_forzato(system_prompt, user_text, forza_ricerca=True,
             try:
                 data_fb = _chiama_openai_raw(messages, tool_choice="none", tentativi_rimasti=max_retries)
             except Exception as e:
-                return f"[ERRORE: cervello OpenAI fallito nel tentativo fallback. Eccezione: {e}]", costo_totale, n_query_extra
+                return f"[ERRORE: cervello OpenAI fallito nel tentativo fallback. Eccezione: {e}]", costo_totale, n_query_extra, ricerche_extra_raw
             choices_fb = data_fb.get("choices", [])
             usage_fb = data_fb.get("usage", {})
             costo_totale += costo_openai_token(usage_fb)
             testo_fb = (choices_fb[0].get("message", {}).get("content") or "") if choices_fb else ""
             if testo_fb.strip():
-                return testo_fb, costo_totale, n_query_extra
-            return "[ERRORE: il modello ha insistito con una tool_call anche nel tentativo fallback finale]", costo_totale, n_query_extra
+                return testo_fb, costo_totale, n_query_extra, ricerche_extra_raw
+            return "[ERRORE: il modello ha insistito con una tool_call anche nel tentativo fallback finale]", costo_totale, n_query_extra, ricerche_extra_raw
 
         testo = msg.get("content") or ""
         if testo.strip():
-            return testo, costo_totale, n_query_extra
+            return testo, costo_totale, n_query_extra, ricerche_extra_raw
 
         finish_reason = choices[0].get("finish_reason", "?")
         log.warning("Cervello OpenAI: testo vuoto al giro %d/%d -- finish_reason=%s", round_idx + 1, MAX_ROUNDS_FUNZIONE + 1, finish_reason)
         if not ultimo_giro:
             continue
-        return f"[ERRORE: il modello OpenAI non ha prodotto una risposta testuale -- finish_reason={finish_reason}]", costo_totale, n_query_extra
+        return f"[ERRORE: il modello OpenAI non ha prodotto una risposta testuale -- finish_reason={finish_reason}]", costo_totale, n_query_extra, ricerche_extra_raw
 
-    return "[ERRORE: tentativi esauriti]", costo_totale, n_query_extra
+    return "[ERRORE: tentativi esauriti]", costo_totale, n_query_extra, ricerche_extra_raw
 
 
 # ---------------------------------------------------------------------------
@@ -2727,19 +2734,27 @@ def verifica_falso_ha_motivazione(testo):
 
 
 def verifica_ancoraggio_prezzo_comp(testo):
-    """Rete di sicurezza per una violazione osservata DUE VOLTE in produzione
+    """Rete di sicurezza per una violazione osservata piu' volte in produzione
     nonostante la regola sia gia' esplicita nel prompt ("CONTROLLO NUMERICO
     OBBLIGATORIO SUL PREZZO DI LISTING"): il modello a volte fissa un prezzo
     di listing SUPERIORE al comp piu' alto che lui stesso cita nell'Analisi
     dell'analista, spesso chiamandolo "prudenziale" -- l'opposto della
-    prudenza. Caso reale che ha motivato questa funzione: comp citati
-    Vinted €215 e eBay SOLD €200, listing fissato a €225 ("prudenzialmente").
+    prudenza. Casi reali che hanno motivato questa funzione:
+    - comp citati Vinted €215 e eBay SOLD €200, listing fissato a €225
+      ("prudenzialmente");
+    - maglioncino Brunello Cucinelli €90, comp citati fino a €180, listing
+      stimato €225 con verdetto "COMPRA SUBITO".
 
-    A differenza di altre reti di sicurezza in questo file, qui NON si
-    ricalcola automaticamente margine/ROI/decisione (rischioso via regex,
-    servirebbe rifare tutta la matematica a valle) -- si aggiunge solo un
-    avviso visibile, cosi' l'utente vede subito la violazione invece di
-    fidarsi della parola "prudente" nel testo."""
+    Versione precedente di questa funzione aggiungeva solo una nota di
+    avviso in fondo al messaggio, lasciando il verdetto (COMPRA/TRATTA)
+    intatto in testa -- rischio concreto che l'utente si fidi del verdetto
+    senza scorrere fino alla nota. Ora la violazione DECLASSA il verdetto
+    stesso, con lo stesso meccanismo (sostituzione di emoji + testo nel
+    blocco dei primi 400 caratteri) usato dalle altre reti di sicurezza
+    del file (forza_soglia_minima_compra, converti_tratta_senza_obiettivo_valido).
+    Margine/ROI numerici NON vengono ricalcolati (troppo rischioso via
+    regex): si declassa solo l'etichetta di decisione, ed e' comunque
+    responsabilita' dell'utente verificare manualmente il caso."""
     m_verdetto = re.search(
         r"💰\s*€\s*([\d.,]+)\s*→\s*€\s*([\d.,]+)\s*→",
         testo[:400],
@@ -2785,17 +2800,185 @@ def verifica_ancoraggio_prezzo_comp(testo):
     if prezzo_listing_stimato <= comp_massimo * TOLLERANZA:
         return testo
 
+    sforamento_percento = (prezzo_listing_stimato / comp_massimo - 1) * 100
+
     log.info(
         "verifica_ancoraggio_prezzo_comp: prezzo di listing stimato €%.2f supera il comp piu' alto "
-        "citato nell'analisi (€%.2f) -- aggiunto avviso.",
-        prezzo_listing_stimato, comp_massimo,
+        "citato nell'analisi (€%.2f, sforamento %.0f%%) -- declassato il verdetto.",
+        prezzo_listing_stimato, comp_massimo, sforamento_percento,
     )
-    return testo + (
-        f"\n\n⚠️ _Nota automatica: il prezzo di listing stimato (~€{prezzo_listing_stimato:.2f}, "
-        f"ricavato dall'incasso €{incasso_reale:.2f}÷0.80) supera il comp piu' alto citato "
-        f"nell'Analisi dell'analista (€{comp_massimo:.2f}) -- possibile violazione della regola "
-        f"di ancoraggio ai comp reali. Verificare manualmente prima di fidarsi della stima._"
+
+    nota_calcolo = (
+        f"il prezzo di listing stimato (~€{prezzo_listing_stimato:.2f}, ricavato "
+        f"dall'incasso €{incasso_reale:.2f}÷0.80) supera del {sforamento_percento:.0f}% "
+        f"il comp piu' alto citato nell'Analisi dell'analista (€{comp_massimo:.2f}) -- "
+        f"violazione della regola di ancoraggio ai comp reali"
     )
+
+    testo = _normalizza_emoji_decisione(testo)
+    LUNGHEZZA_BLOCCO_VERDETTO = 400
+    testa = testo[:LUNGHEZZA_BLOCCO_VERDETTO]
+    resto = testo[LUNGHEZZA_BLOCCO_VERDETTO:]
+    testa_upper = testa.upper()
+
+    # Sforamento grosso (>20% sopra il comp massimo): la stima e' cosi'
+    # lontana dal comp reale che anche trattare non ha senso -- NON COMPRARE.
+    # Sforamento piu' contenuto: declassa a TRATTA (o resta NON COMPRARE se
+    # gia' tale, non c'e' nulla sotto a cui declassare).
+    SOGLIA_SFORAMENTO_NON_COMPRARE = 20.0
+
+    if "NON COMPRARE" in testa_upper:
+        # Gia' al livello minimo: aggiunge solo la motivazione, senza toccare
+        # l'emoji/decisione che e' gia' quella corretta.
+        testa_corretta = re.sub(
+            r"(NON COMPRARE)(\s*⚠️\s*_[^_]*_)?",
+            lambda m: f"{m.group(1)} ⚠️ _corretto: {nota_calcolo}_",
+            testa, count=1, flags=re.IGNORECASE,
+        )
+    elif sforamento_percento > SOGLIA_SFORAMENTO_NON_COMPRARE:
+        testa_corretta = testa.replace("🟢", "🔴", 1).replace("🟡", "🔴", 1)
+        testa_corretta = re.sub(
+            r"\b(?:COMPRA(?:\s+(?:SUBITO|FORTE|IMMEDIATAMENTE|SE CI TIENI))?|TRATTA)\b(?:\s*⚠️\s*_[^_]*_)?",
+            f"NON COMPRARE ⚠️ _corretto: {nota_calcolo}_",
+            testa_corretta, count=1, flags=re.IGNORECASE,
+        )
+    else:
+        testa_corretta = testa.replace("🟢", "🟡", 1)
+        testa_corretta = re.sub(
+            r"\bCOMPRA(?:\s+(?:SUBITO|FORTE|IMMEDIATAMENTE|SE CI TIENI))?\b(?:\s*⚠️\s*_[^_]*_)?",
+            f"TRATTA ⚠️ _corretto: {nota_calcolo}_",
+            testa_corretta, count=1, flags=re.IGNORECASE,
+        )
+
+    return testa_corretta + resto
+
+
+def _estrai_prezzi_da_pool_ricerca(pool_ricerca_grezzo):
+    """Estrae tutti i numeri che compaiono vicino a un simbolo di prezzo
+    (€ prima o dopo, o 'EUR') nel testo grezzo dei risultati di ricerca
+    (comp pre-raccolti + eventuali cerca_comp_prezzo on-demand). Sono gli
+    UNICI numeri che il cervello puo' legittimamente citare come prezzi nel
+    blocco Analisi -- qualunque altro prezzo citato non ha una fonte
+    verificabile in questa conversazione."""
+    prezzi = set()
+    for m in re.finditer(r"€\s*([\d]+(?:[.,]\d+)?)|([\d]+(?:[.,]\d+)?)\s*(?:€|EUR)\b", pool_ricerca_grezzo, re.IGNORECASE):
+        valore = m.group(1) or m.group(2)
+        try:
+            prezzi.add(round(float(valore.replace(",", ".")), 2))
+        except ValueError:
+            continue
+    return prezzi
+
+
+def verifica_comp_citati_sono_reali(testo, pool_ricerca_grezzo):
+    """Rete di sicurezza per una violazione distinta da quella di
+    verifica_ancoraggio_prezzo_comp: qui il cervello non sfora un comp reale
+    che cita, ma CITA COMP CHE NON ESISTONO nei dati di ricerca effettivamente
+    ricevuti -- una stima "a memoria del brand" (es. "vendite recenti tra
+    €150 e €280" per una t-shirt Undercover, quando la ricerca web reale non
+    conteneva quei numeri da nessuna parte) presentata come se venisse dai
+    dati. Il prompt lo vieta esplicitamente ("Cita SEMPRE almeno 2 prezzi
+    ESATTI verbatim dai dati ricevuti... mai un range parafrasato a memoria")
+    ma nessun controllo automatico lo verificava finora.
+
+    Se NESSUNO dei prezzi citati nel blocco Analisi trova corrispondenza
+    (con una piccola tolleranza per arrotondamenti) tra i numeri realmente
+    presenti nel pool di ricerca, il verdetto non ha base verificabile:
+    declassa allo stesso modo di verifica_ancoraggio_prezzo_comp (COMPRA/
+    TRATTA -> declassati, NON COMPRARE lasciato con nota)."""
+    if not pool_ricerca_grezzo or not pool_ricerca_grezzo.strip():
+        return testo  # nessun dato di ricerca disponibile: non c'e' nulla da verificare
+
+    m_analisi = re.search(
+        r"Analisi dell'analista:?\**\s*\n(.+)", testo, re.IGNORECASE | re.DOTALL,
+    )
+    if not m_analisi:
+        return testo
+    blocco_analisi = m_analisi.group(1)
+
+    # Il prezzo RICHIESTO dell'annuncio (es. "💰 €50.00 → ...") non e' un comp
+    # e va escluso dal confronto: e' normalissimo che l'Analisi lo ripeta, e
+    # non e' una prova di ricerca -- includerlo indebolirebbe la verifica.
+    prezzo_richiesto = None
+    m_richiesto = re.search(r"💰\s*€\s*([\d.,]+)\s*→", testo[:400])
+    if m_richiesto:
+        try:
+            prezzo_richiesto = round(float(m_richiesto.group(1).replace(",", ".")), 2)
+        except ValueError:
+            pass
+
+    prezzi_citati = []
+    for m in re.finditer(r"€\s*([\d]+(?:[.,]\d+)?)|([\d]+(?:[.,]\d+)?)\s*€", blocco_analisi):
+        finestra_precedente = blocco_analisi[max(0, m.start() - 40):m.start()].lower()
+        if re.search(r"\b(listing|incasso)\b", finestra_precedente):
+            continue  # e' la stima del modello stesso, non un comp citato
+        valore = m.group(1) or m.group(2)
+        try:
+            prezzo = round(float(valore.replace(",", ".")), 2)
+        except ValueError:
+            continue
+        if prezzo_richiesto is not None and abs(prezzo - prezzo_richiesto) < 0.01:
+            continue  # e' solo la ripetizione del prezzo richiesto, non un comp
+        prezzi_citati.append(prezzo)
+    if not prezzi_citati:
+        return testo  # nessun comp citato in Analisi: altre reti coprono questo caso
+
+    prezzi_pool = _estrai_prezzi_da_pool_ricerca(pool_ricerca_grezzo)
+
+    TOLLERANZA_ASSOLUTA = 1.0  # euro, per arrotondamenti (es. 89.99 vs 90)
+    almeno_uno_verificato = prezzi_pool and any(
+        any(abs(citato - reale) <= TOLLERANZA_ASSOLUTA for reale in prezzi_pool)
+        for citato in prezzi_citati
+    )
+    if almeno_uno_verificato:
+        return testo
+    # Se prezzi_pool e' vuoto (la ricerca non ha restituito nessun prezzo
+    # numerico estraibile) MA l'Analisi cita comp con numeri precisi, questo
+    # E' il caso piu' chiaro di stima "a memoria" invece che dai dati -- non
+    # va escluso dalla verifica, va trattato come violazione (caso reale:
+    # T-shirt Undercover, ricerca web senza prezzi utili, cervello che cita
+    # comunque "vendite recenti tra €150 e €280").
+
+    log.info(
+        "verifica_comp_citati_sono_reali: nessuno dei prezzi citati in Analisi (%s) trova "
+        "corrispondenza nei dati di ricerca realmente ricevuti (%s) -- declassato il verdetto.",
+        prezzi_citati, sorted(prezzi_pool),
+    )
+
+    nota_calcolo = (
+        f"i prezzi citati nell'Analisi dell'analista ({', '.join(f'€{p:.2f}' for p in prezzi_citati)}) "
+        f"non corrispondono a nessun prezzo presente nei dati di ricerca realmente raccolti per "
+        f"questo annuncio -- possibile stima 'a memoria del brand' invece che dai comp reali"
+    )
+
+    testo = _normalizza_emoji_decisione(testo)
+    LUNGHEZZA_BLOCCO_VERDETTO = 400
+    testa = testo[:LUNGHEZZA_BLOCCO_VERDETTO]
+    resto = testo[LUNGHEZZA_BLOCCO_VERDETTO:]
+    testa_upper = testa.upper()
+
+    if "NON COMPRARE" in testa_upper:
+        testa_corretta = re.sub(
+            r"(NON COMPRARE)(\s*⚠️\s*_[^_]*_)?",
+            lambda m: f"{m.group(1)} ⚠️ _corretto: {nota_calcolo}_",
+            testa, count=1, flags=re.IGNORECASE,
+        )
+    elif "TRATTA" in testa_upper:
+        testa_corretta = testa.replace("🟡", "🔴", 1)
+        testa_corretta = re.sub(
+            r"\bTRATTA\b(?:\s*⚠️\s*_[^_]*_)?",
+            f"NON COMPRARE ⚠️ _corretto: {nota_calcolo}_",
+            testa_corretta, count=1, flags=re.IGNORECASE,
+        )
+    else:
+        testa_corretta = testa.replace("🟢", "🟡", 1)
+        testa_corretta = re.sub(
+            r"\bCOMPRA(?:\s+(?:SUBITO|FORTE|IMMEDIATAMENTE|SE CI TIENI))?\b(?:\s*⚠️\s*_[^_]*_)?",
+            f"TRATTA ⚠️ _corretto: {nota_calcolo}_",
+            testa_corretta, count=1, flags=re.IGNORECASE,
+        )
+
+    return testa_corretta + resto
 
 
 def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header, output_finale, decisione, e_compra, scenario_usato, n_query_grounding=0):
@@ -2993,6 +3176,7 @@ def process_listing(parsed, url, cover_photo_bytes):
         forza_ricerca = None
         comp_sufficienti = None
         costo_cervello = 0.0
+        pool_ricerca_grezzo = ""  # SKIP: nessuna ricerca comp eseguita, nulla da verificare
     else:
         titolo_annuncio = listing_info.get("title") or ""
         brand_annuncio = listing_info.get("brand") or ""
@@ -3061,12 +3245,19 @@ def process_listing(parsed, url, cover_photo_bytes):
             )
 
         if CERVELLO_PROVIDER == "openai":
-            output_finale_raw, costo_cervello, n_query_grounding = chiama_openai_cervello_forzato(
+            output_finale_raw, costo_cervello, n_query_grounding, ricerche_extra_raw = chiama_openai_cervello_forzato(
                 GEMINI_CERVELLO_SYSTEM_PROMPT, user_text_cervello, forza_ricerca=forza_ricerca)
         else:
-            output_finale_raw, costo_cervello, n_query_grounding = chiama_gemini_cervello_forzato(
+            output_finale_raw, costo_cervello, n_query_grounding, ricerche_extra_raw = chiama_gemini_cervello_forzato(
                 GEMINI_CERVELLO_SYSTEM_PROMPT, user_text_cervello, forza_ricerca=forza_ricerca)
         costo_totale += costo_cervello
+
+        # Pool di TUTTO il testo grezzo di ricerca visto dal cervello per
+        # questo item -- comp pre-raccolti (Scenario G) + eventuali ricerche
+        # on-demand (cerca_comp_prezzo). Usato da verifica_comp_citati_sono_reali
+        # per controllare che i prezzi scritti in Analisi provengano davvero
+        # da qui, non da una stima "a memoria del brand" del modello.
+        pool_ricerca_grezzo = "\n".join(filter(None, [comps_text] + ricerche_extra_raw))
 
         output_finale = valida_contraddizioni_report(output_finale_raw)
         if output_finale != output_finale_raw:
@@ -3156,7 +3347,20 @@ def process_listing(parsed, url, cover_photo_bytes):
     )
 
     output_finale = verifica_falso_ha_motivazione(output_finale)
+
+    prev_ancoraggio = output_finale
     output_finale = verifica_ancoraggio_prezzo_comp(output_finale)
+    output_finale = verifica_comp_citati_sono_reali(output_finale, pool_ricerca_grezzo)
+    if output_finale != prev_ancoraggio:
+        # Una delle due reti sopra ha cambiato l'emoji/decisione in testa:
+        # ricalcola 'decisione' ed 'e_compra' sul testo aggiornato, altrimenti
+        # la logica sotto (soppressione "Messaggio da inviare"/"Da chiedere",
+        # normalizzazione "NON COMPRARE · N/A", alert su TELEGRAM_ALERT_CHAT_ID)
+        # continuerebbe a ragionare sul verdetto originale non piu' valido --
+        # es. un COMPRA declassato a NON COMPRARE non deve piu' triggerare
+        # l'alert "AZIONE RICHIESTA".
+        decisione = estrai_decisione_da_testo(output_finale) or decisione
+        e_compra = any(k in decisione.upper() for k in ("COMPRA", "TRATTA", "CHIEDI ALTRE FOTO"))
 
     if "NON COMPRARE" in output_finale:
         output_finale = re.sub(
