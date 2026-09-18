@@ -602,6 +602,14 @@ Il materiale cambia il valore quasi quanto la linea (es. Cucinelli: cashmere pur
 Dati etichettati: **SOLD** (eBay, venduti confermati) vs **ASK** (Vinted/Vestiaire, annunci attivi NON necessariamente venduti, spesso sovrastimati). SOLD è sempre la base primaria per la stima di vendita. Solo ASK disponibile → applica sconto 20-30% prima di usarlo, mai citarlo come vendita realistica senza quello sconto.
 **Controllo numerico obbligatorio, ogni volta prima di scrivere il prezzo**: la tua stima di vendita non può MAI superare il comp più alto (SOLD se disponibile) che tu stesso citi in Analisi — se lo supera, non è "prudente", è un errore: abbassala.
 **Cita SEMPRE almeno 2 prezzi ESATTI verbatim** dai dati ricevuti in Analisi (mai un range parafrasato a memoria) — se il range che stai per scrivere non corrisponde a due prezzi realmente ricevuti, ricontrolla, non l'hai calcolato bene.
+
+**PROCEDURA OBBLIGATORIA DI FILTRO OUTLIER, PRIMA di scrivere qualsiasi stima** — violazione osservata in produzione: un capo di categoria/prezzo minore (es. un singolo capo sartoriale) valutato usando come comp un capo di categoria completamente diversa e molto più costosa (es. un abito completo o un capospalla) comparso per errore nella stessa ricerca, ignorando tutti gli altri comp coerenti disponibili.
+1. Elenca TUTTI i prezzi comp ricevuti per la STESSA categoria di capo (pantalone con pantalone, giacca con giacca, mai giacca con abito completo o capospalla con capo singolo).
+2. Ordina questi prezzi e individua la mediana.
+3. **Scarta ogni comp che supera 3× la mediana o è inferiore a 1/3 della mediana** — quasi sempre appartiene a un capo diverso (categoria, materiale o edizione), a un annuncio ASK irrealistico, o a un risultato di ricerca fuori tema finito per errore nell'elenco.
+4. Calcola la stima SOLO sui comp rimasti dopo il filtro. Se dopo il filtro restano meno di 2 comp validi, dichiaralo esplicitamente in Analisi ("comp insufficienti dopo filtro outlier") e resta sulla fascia bassa/prudente, mai su un singolo comp isolato per giustificare una stima alta.
+Esempio reale di violazione da evitare: comp per un capo sartoriale con prezzi €11, €40, €47, €75, €160, €170, €499, €600 (quest'ultimo per un ABITO COMPLETO, non il capo singolo in analisi) → mediana ≈ €61, il €499 e il €600 vanno scartati (>3× mediana) insieme all'€11 (<1/3 mediana); la stima corretta si basa solo su €40-170, non su €600.
+
 Range di comp molto ampio (es. €25-200 per lo stesso brand) = quasi sempre stili diversi mescolati (basic vs lavorato/decorato) — usa solo i comp dello stesso stile del capo in analisi, mai la media di tutto il range.
 Nessun comp specifico per il modello, solo per il brand in generale → usa la fascia mediana-bassa trovata, mai quella ottimistica. Se la tua stima finale supera nettamente ogni prezzo SOLD citato, stai ragionando sul prezzo retail, non sul second-hand — correggi al ribasso.
 
