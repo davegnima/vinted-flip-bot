@@ -40,6 +40,24 @@ TELEGRAM_ALERT_CHAT_ID = os.environ.get("TELEGRAM_ALERT_CHAT_ID")
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 SERPER_API_KEY = os.environ.get("SERPER_API_KEY")
 
+# CERVELLO_PROVIDER: "gemini" (default, comportamento storico) oppure
+# "openai" per usare GPT-4o-mini al posto di Gemini-3.7-flash sul solo step
+# Cervello (verdetto/margine/ROI). L'Occhio (legit-check visivo) resta
+# SEMPRE Gemini in entrambi i casi -- non e' toccato da questo flag: un
+# test A/B su 12+ item reali (Set 2026-09) ha mostrato che Gemini resta
+# nettamente piu' affidabile su OCR di etichette e rischio di dettagli
+# allucinati, mentre sul solo ragionamento testuale (stesso identico input
+# occhio) GPT-4o-mini e' risultato comparabile in qualita' e ~5x piu' veloce.
+# Cambiare provider non richiede modifiche al codice: basta questa env var,
+# quindi si puo' tornare a Gemini all'istante (senza deploy) se qualcosa si
+# comporta male in produzione.
+CERVELLO_PROVIDER = os.environ.get("CERVELLO_PROVIDER", "gemini").strip().lower()
+if CERVELLO_PROVIDER not in ("gemini", "openai"):
+    raise ValueError(f"CERVELLO_PROVIDER deve essere 'gemini' o 'openai', ricevuto: '{CERVELLO_PROVIDER}'")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+if CERVELLO_PROVIDER == "openai" and not OPENAI_API_KEY:
+    raise ValueError("CERVELLO_PROVIDER=openai richiede OPENAI_API_KEY nell'ambiente.")
+
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 
 # Due modelli distinti per i due ruoli della pipeline (aggiornato Ago 2026,
@@ -71,6 +89,14 @@ PREZZO_OCCHIO_OUTPUT = 2.50
 PREZZO_CERVELLO_INPUT = 0.75
 PREZZO_CERVELLO_OUTPUT = 3.75
 PREZZO_GROUNDING_PER_QUERY = 14 / 1000
+
+# Cervello alternativo via OpenAI (attivo solo con CERVELLO_PROVIDER=openai).
+# Prezzi per milione di token, verificare su https://openai.com/api/pricing/
+# se cambiano.
+OPENAI_MODEL_CERVELLO = "gpt-4o-mini"
+OPENAI_API_URL_CERVELLO = "https://api.openai.com/v1/chat/completions"
+PREZZO_CERVELLO_OPENAI_INPUT = 0.15
+PREZZO_CERVELLO_OPENAI_OUTPUT = 0.60
 
 MAX_GALLERY_PHOTOS = 10
 
@@ -1574,6 +1600,159 @@ def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca=True,
 
 
 # ---------------------------------------------------------------------------
+# CERVELLO OPENAI CON FUNCTION CALLING (equivalente GPT-4o-mini)
+# ---------------------------------------------------------------------------
+# Stessa logica del cervello Gemini sopra (multi-round di ricerca via
+# cerca_serper_mirata, poi verdetto testuale finale), ma nel formato Chat
+# Completions di OpenAI. Molto piu' semplice del gemello Gemini perche'
+# "tool_choice": "required" e' vincolante in modo affidabile in OpenAI -- non
+# servono i workaround osservati con Gemini (mode "NONE" dichiarato sempre,
+# fallback senza tools, diagnostica su testo vuoto): qui un tool_choice
+# esplicito basta, e un messaggio senza tool_calls e' sempre una risposta
+# testuale vera. Stessa firma di ritorno (testo, costo_totale, n_query_extra)
+# della funzione Gemini, per restare intercambiabile nel punto di chiamata.
+
+OPENAI_CERVELLO_TOOL = {
+    "type": "function",
+    "function": {
+        "name": CERVELLO_FUNCTION_DECLARATION["name"],
+        "description": CERVELLO_FUNCTION_DECLARATION["description"],
+        "parameters": CERVELLO_FUNCTION_DECLARATION["parameters"],
+    },
+}
+
+
+def costo_openai_token(usage, prezzo_input=PREZZO_CERVELLO_OPENAI_INPUT, prezzo_output=PREZZO_CERVELLO_OPENAI_OUTPUT):
+    inp = usage.get("prompt_tokens", 0) or 0
+    out = usage.get("completion_tokens", 0) or 0
+    return (inp * prezzo_input + out * prezzo_output) / 1_000_000
+
+
+def _chiama_openai_raw(messages, tool_choice, tentativi_rimasti, max_retries=4):
+    payload = {
+        "model": OPENAI_MODEL_CERVELLO,
+        "messages": messages,
+        "temperature": 0.2,
+        "max_tokens": 2000,
+        "tools": [OPENAI_CERVELLO_TOOL],
+        "tool_choice": tool_choice,  # "required" | "auto" | "none"
+    }
+    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
+    backoff_seconds = 2
+    for attempt in range(1, tentativi_rimasti + 1):
+        try:
+            resp = requests.post(OPENAI_API_URL_CERVELLO, headers=headers, json=payload, timeout=90)
+            if not resp.ok:
+                log.warning("OpenAI (cervello) HTTP %d: %s", resp.status_code, resp.text[:500])
+                if resp.status_code in {429, 500, 502, 503, 504} and attempt < tentativi_rimasti:
+                    time.sleep(backoff_seconds)
+                    backoff_seconds *= 2
+                    continue
+                resp.raise_for_status()
+            return resp.json()
+        except Exception:
+            if attempt < tentativi_rimasti:
+                time.sleep(backoff_seconds)
+                backoff_seconds *= 2
+                continue
+            raise
+    raise RuntimeError("tentativi esauriti")
+
+
+def chiama_openai_cervello_forzato(system_prompt, user_text, forza_ricerca=True, max_retries=4):
+    """Equivalente OpenAI di chiama_gemini_cervello_forzato. Stessa firma di
+    ritorno (testo, costo_totale, n_query_extra) per restare intercambiabile
+    nel punto di chiamata via CERVELLO_PROVIDER."""
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_text},
+    ]
+    costo_totale = 0.0
+    n_query_extra = 0
+    MAX_ROUNDS_FUNZIONE = 2  # stesso limite del gemello Gemini, per parita' di costo massimo
+
+    tool_choice = "required" if forza_ricerca else "auto"
+
+    for round_idx in range(MAX_ROUNDS_FUNZIONE + 1):
+        ultimo_giro = round_idx == MAX_ROUNDS_FUNZIONE
+        try:
+            data = _chiama_openai_raw(
+                messages,
+                tool_choice="none" if ultimo_giro else tool_choice,
+                tentativi_rimasti=max_retries,
+            )
+        except Exception as e:
+            return f"[ERRORE: cervello OpenAI fallito. Eccezione: {e}]", costo_totale, n_query_extra
+
+        choices = data.get("choices", [])
+        if not choices:
+            return "[ERRORE: risposta OpenAI senza choices]", costo_totale, n_query_extra
+
+        usage = data.get("usage", {})
+        costo_totale += costo_openai_token(usage)
+
+        msg = choices[0].get("message", {})
+        tool_calls = msg.get("tool_calls") or []
+
+        if tool_calls and not ultimo_giro:
+            call = tool_calls[0]
+            try:
+                query_richiesta = json.loads(call.get("function", {}).get("arguments", "{}")).get("query", "")
+            except (json.JSONDecodeError, TypeError):
+                query_richiesta = ""
+            log.info("Cervello OpenAI ha richiesto ricerca mirata (giro %d/%d): '%s'", round_idx + 1, MAX_ROUNDS_FUNZIONE, query_richiesta)
+            risultato_ricerca = cerca_serper_mirata(query_richiesta)
+            n_query_extra += 1
+
+            messages.append({"role": "assistant", "content": msg.get("content"), "tool_calls": tool_calls})
+            messages.append({
+                "role": "tool",
+                "tool_call_id": call.get("id", ""),
+                "content": risultato_ricerca,
+            })
+            tool_choice = "auto"  # i giri successivi non sono piu' forzati
+            continue
+
+        if tool_calls and ultimo_giro:
+            # Non dovrebbe succedere quasi mai (tool_choice="none" all'ultimo
+            # giro impedisce esplicitamente la tool_call), ma per simmetria
+            # con il fallback Gemini gestiamo comunque il caso senza perdere
+            # i comp gia' raccolti.
+            log.warning("Cervello OpenAI: tool_call ricevuta anche all'ultimo giro nonostante tool_choice=none.")
+            messages.append({
+                "role": "user",
+                "content": (
+                    "Le ricerche sono terminate: non puoi e non devi chiamare nessuna "
+                    "funzione. Rispondi ORA con il verdetto testuale completo, usando "
+                    "esclusivamente i dati e i comp gia' raccolti in questa conversazione."
+                ),
+            })
+            try:
+                data_fb = _chiama_openai_raw(messages, tool_choice="none", tentativi_rimasti=max_retries)
+            except Exception as e:
+                return f"[ERRORE: cervello OpenAI fallito nel tentativo fallback. Eccezione: {e}]", costo_totale, n_query_extra
+            choices_fb = data_fb.get("choices", [])
+            usage_fb = data_fb.get("usage", {})
+            costo_totale += costo_openai_token(usage_fb)
+            testo_fb = (choices_fb[0].get("message", {}).get("content") or "") if choices_fb else ""
+            if testo_fb.strip():
+                return testo_fb, costo_totale, n_query_extra
+            return "[ERRORE: il modello ha insistito con una tool_call anche nel tentativo fallback finale]", costo_totale, n_query_extra
+
+        testo = msg.get("content") or ""
+        if testo.strip():
+            return testo, costo_totale, n_query_extra
+
+        finish_reason = choices[0].get("finish_reason", "?")
+        log.warning("Cervello OpenAI: testo vuoto al giro %d/%d -- finish_reason=%s", round_idx + 1, MAX_ROUNDS_FUNZIONE + 1, finish_reason)
+        if not ultimo_giro:
+            continue
+        return f"[ERRORE: il modello OpenAI non ha prodotto una risposta testuale -- finish_reason={finish_reason}]", costo_totale, n_query_extra
+
+    return "[ERRORE: tentativi esauriti]", costo_totale, n_query_extra
+
+
+# ---------------------------------------------------------------------------
 # SERPER RICERCA
 # ---------------------------------------------------------------------------
 
@@ -2881,8 +3060,12 @@ def process_listing(parsed, url, cover_photo_bytes):
                 "cerca_comp_prezzo per ottenere comp reali prima di rispondere."
             )
 
-        output_finale_raw, costo_cervello, n_query_grounding = chiama_gemini_cervello_forzato(
-            GEMINI_CERVELLO_SYSTEM_PROMPT, user_text_cervello, forza_ricerca=forza_ricerca)
+        if CERVELLO_PROVIDER == "openai":
+            output_finale_raw, costo_cervello, n_query_grounding = chiama_openai_cervello_forzato(
+                GEMINI_CERVELLO_SYSTEM_PROMPT, user_text_cervello, forza_ricerca=forza_ricerca)
+        else:
+            output_finale_raw, costo_cervello, n_query_grounding = chiama_gemini_cervello_forzato(
+                GEMINI_CERVELLO_SYSTEM_PROMPT, user_text_cervello, forza_ricerca=forza_ricerca)
         costo_totale += costo_cervello
 
         output_finale = valida_contraddizioni_report(output_finale_raw)
