@@ -72,6 +72,30 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 if CERVELLO_PROVIDER == "openai" and not OPENAI_API_KEY:
     raise ValueError("CERVELLO_PROVIDER=openai richiede OPENAI_API_KEY nell'ambiente.")
 
+# RETI_SICUREZZA_ATTIVE: interruttore diagnostico temporaneo. Log di
+# produzione del 18-19/09/2026 hanno mostrato che con CERVELLO_PROVIDER=openai
+# le reti di sicurezza post-processing (verifica_ancoraggio_prezzo_comp,
+# verifica_comp_citati_sono_reali, forza_soglia_minima_compra,
+# converti_tratta_senza_obiettivo_valido, declassa_urgenza_se_borderline,
+# applica_soglia_trattativa_40_percento) intervengono su ~94% degli item
+# (61/65), contro 0/43 con Gemini nello stesso periodo -- troppo alto per
+# essere solo "casi limite corretti", serve vedere l'output NUDO del
+# cervello per capire se il problema e' nel prompt o nel provider stesso.
+# A False, process_listing salta tutte le correzioni automatiche e manda
+# il verdetto cosi' come lo scrive il cervello -- SOLO per diagnosi
+# mirata, mai lasciare a False in modo permanente (nessuna rete a
+# protezione di falsi COMPRA basati su comp inventati).
+RETI_SICUREZZA_ATTIVE = os.environ.get("RETI_SICUREZZA_ATTIVE", "true").strip().lower() == "true"
+
+# DEBUG_CONFRONTO_COMP_TELEGRAM: quando True, aggiunge in fondo a OGNI
+# messaggio Telegram (non solo quelli corretti) un blocco con i prezzi
+# effettivamente presenti nei dati di ricerca ricevuti dal cervello per
+# quell'item, cosi' si puo' confrontare a colpo d'occhio dal telefono cosa
+# il cervello ha scritto in Analisi contro cosa gli e' stato davvero dato
+# in pasto. Pensato per lo stesso esperimento diagnostico di cui sopra;
+# messaggi piu' lunghi, disattivare quando la diagnosi e' conclusa.
+DEBUG_CONFRONTO_COMP_TELEGRAM = os.environ.get("DEBUG_CONFRONTO_COMP_TELEGRAM", "false").strip().lower() == "true"
+
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 
 # Due modelli distinti per i due ruoli della pipeline (aggiornato Ago 2026,
@@ -1538,7 +1562,13 @@ def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca=True,
             log.info("Cervello Gemini ha richiesto ricerca mirata (giro %d/%d): '%s'", round_idx + 1, MAX_ROUNDS_FUNZIONE, query_richiesta)
             risultato_ricerca = cerca_serper_mirata(query_richiesta)
             n_query_extra += 1
-            ricerche_extra_raw.append(risultato_ricerca)
+            # Tagga il risultato con la query usata (Serper/google.serper.dev
+            # search, non uno scrape di pagina) -- senza questo la query resta
+            # visibile solo nei log, non nel pool che finisce nel messaggio
+            # Telegram di debug (DEBUG_CONFRONTO_COMP_TELEGRAM).
+            ricerche_extra_raw.append(
+                f"\n📍 FONTE: RICERCA ON-DEMAND CERVELLO (Serper google search, query: '{query_richiesta}')\n{risultato_ricerca}"
+            )
 
             contents.append({"role": "model", "parts": parts})
             contents.append({
@@ -1748,7 +1778,11 @@ def chiama_openai_cervello_forzato(system_prompt, user_text, forza_ricerca=True,
             log.info("Cervello OpenAI ha richiesto ricerca mirata (giro %d/%d): '%s'", round_idx + 1, MAX_ROUNDS_FUNZIONE, query_richiesta)
             risultato_ricerca = cerca_serper_mirata(query_richiesta)
             n_query_extra += 1
-            ricerche_extra_raw.append(risultato_ricerca)
+            # Vedi commento gemello in chiama_gemini_cervello_forzato: tagga
+            # il risultato con la query usata per il blocco debug Telegram.
+            ricerche_extra_raw.append(
+                f"\n📍 FONTE: RICERCA ON-DEMAND CERVELLO (Serper google search, query: '{query_richiesta}')\n{risultato_ricerca}"
+            )
 
             messages.append({"role": "assistant", "content": msg.get("content"), "tool_calls": tool_calls})
             messages.append({
@@ -2343,7 +2377,7 @@ def search_comps_completo(brand, categoria, query_base, catalog_id=None, materia
         f"{ebay_comp_puliti or 'Nessun risultato'}"
     )
 
-    return "\n".join(parti), serper_ha_funzionato
+    return "\n".join(parti), serper_ha_funzionato, tentare_ricerca_visuale, fonte_visuale_riuscita
 
 
 def _estrai_margine_e_roi_da_blocco(blocco_testo):
@@ -3374,6 +3408,12 @@ def process_listing(parsed, url, cover_photo_bytes):
 
         scenario_usato = "F"
         comps_text = None
+        # Default per lo scenario "Serper non disponibile" (raffreddamento o
+        # API key assente): nessuna ricerca comp e' stata neppure tentata,
+        # quindi la fonte visuale non e' stata ne' tentata ne' riuscita --
+        # usati dal blocco debug DEBUG_CONFRONTO_COMP_TELEGRAM piu' avanti.
+        tentare_ricerca_visuale = False
+        fonte_visuale_riuscita = False
 
         tempo_trascorso = time.time() - _serper_timestamp_ultimo_fallimento[0]
         in_raffreddamento = (
@@ -3383,7 +3423,7 @@ def process_listing(parsed, url, cover_photo_bytes):
         serper_disponibile = bool(SERPER_API_KEY) and not in_raffreddamento
 
         if serper_disponibile:
-            comps_text, serper_ok = search_comps_completo(
+            comps_text, serper_ok, tentare_ricerca_visuale, fonte_visuale_riuscita = search_comps_completo(
                 brand_annuncio, categoria_per_ricerca, titolo_annuncio,
                 catalog_id=catalog_id, material_per_ricerca=material_per_ricerca,
                 cover_photo_id=cover_photo_id, item_id=item_id_annuncio,
@@ -3452,33 +3492,38 @@ def process_listing(parsed, url, cover_photo_bytes):
         if output_finale != output_finale_raw:
             correzioni_applicate.append("valida_contraddizioni_report")
 
+        # normalizza_urgenza_wording resta SEMPRE attiva anche con
+        # RETI_SICUREZZA_ATTIVE=False: e' solo normalizzazione di wording
+        # (mai un declassamento), e serve al parsing di estrai_decisione_da_testo
+        # a valle -- disattivarla romperebbe il parsing, non l'esperimento.
         prev = output_finale
-        output_finale = forza_soglia_minima_compra(output_finale)
-        if output_finale != prev:
-            correzioni_applicate.append("forza_soglia_minima_compra")
-        prev = output_finale
-
-        output_finale = converti_tratta_senza_obiettivo_valido(output_finale)
-        if output_finale != prev:
-            correzioni_applicate.append("converti_tratta_senza_obiettivo_valido")
-        prev = output_finale
-
         output_finale = normalizza_urgenza_wording(output_finale)
         if output_finale != prev:
             correzioni_applicate.append("normalizza_urgenza_wording")
         prev = output_finale
 
-        output_finale = declassa_urgenza_se_borderline(output_finale)
-        if output_finale != prev:
-            correzioni_applicate.append("declassa_urgenza_se_borderline")
-        prev = output_finale
+        if RETI_SICUREZZA_ATTIVE:
+            output_finale = forza_soglia_minima_compra(output_finale)
+            if output_finale != prev:
+                correzioni_applicate.append("forza_soglia_minima_compra")
+            prev = output_finale
 
-        prezzo_prodotto = None
-        try:
-            prezzo_prodotto = float(str(listing_info.get("price") or "").replace(",", "."))
-        except (ValueError, TypeError):
-            pass
-        output_finale = applica_soglia_trattativa_40_percento(output_finale, prezzo_prodotto)
+            output_finale = converti_tratta_senza_obiettivo_valido(output_finale)
+            if output_finale != prev:
+                correzioni_applicate.append("converti_tratta_senza_obiettivo_valido")
+            prev = output_finale
+
+            output_finale = declassa_urgenza_se_borderline(output_finale)
+            if output_finale != prev:
+                correzioni_applicate.append("declassa_urgenza_se_borderline")
+            prev = output_finale
+
+            prezzo_prodotto = None
+            try:
+                prezzo_prodotto = float(str(listing_info.get("price") or "").replace(",", "."))
+            except (ValueError, TypeError):
+                pass
+            output_finale = applica_soglia_trattativa_40_percento(output_finale, prezzo_prodotto)
         if output_finale != prev:
             correzioni_applicate.append("applica_soglia_trattativa_40_percento")
 
@@ -3538,8 +3583,9 @@ def process_listing(parsed, url, cover_photo_bytes):
     output_finale = verifica_falso_ha_motivazione(output_finale)
 
     prev_ancoraggio = output_finale
-    output_finale = verifica_ancoraggio_prezzo_comp(output_finale)
-    output_finale = verifica_comp_citati_sono_reali(output_finale, pool_ricerca_grezzo)
+    if RETI_SICUREZZA_ATTIVE:
+        output_finale = verifica_ancoraggio_prezzo_comp(output_finale)
+        output_finale = verifica_comp_citati_sono_reali(output_finale, pool_ricerca_grezzo)
     if output_finale != prev_ancoraggio:
         # Una delle due reti sopra ha cambiato l'emoji/decisione in testa:
         # ricalcola 'decisione' ed 'e_compra' sul testo aggiornato, altrimenti
@@ -3584,6 +3630,41 @@ def process_listing(parsed, url, cover_photo_bytes):
             r"\1\nNon necessario.",
             output_finale,
             flags=re.IGNORECASE | re.DOTALL
+        )
+
+    # ---- BLOCCO DIAGNOSTICO: da dove vengono i comp REALMENTE ricevuti ----
+    # Attivo solo con DEBUG_CONFRONTO_COMP_TELEGRAM=true (esperimento sul
+    # tasso di "comp inventati a memoria" osservato con CERVELLO_PROVIDER=
+    # openai, log 2026-09-18/19). Non mostra solo i prezzi (gia' disponibile
+    # come riepilogo rapido), ma anche LA PROVENIENZA di ciascuno: quale
+    # fonte pre-raccolta (Vinted visuale/testo, eBay SOLD, Vestiaire -- gia'
+    # etichettate "📍 FONTE: ..." dentro comps_text) oppure quale query
+    # Serper on-demand del cervello (etichettata allo stesso modo quando
+    # aggiunta a ricerche_extra_raw, vedi chiama_gemini_cervello_forzato/
+    # chiama_openai_cervello_forzato) -- inclusa la conferma esplicita se la
+    # ricerca visuale Vinted (search_by_image) ha prodotto risultati per
+    # QUESTO item o e' stata saltata. Va in coda al messaggio principale
+    # invece che in un messaggio separato per essere visibile anche quando
+    # RETI_SICUREZZA_ATTIVE=False sopprime le note automatiche.
+    if DEBUG_CONFRONTO_COMP_TELEGRAM and scenario_usato != "SKIP":
+        prezzi_pool_debug = sorted(set(_estrai_prezzi_da_pool_ricerca(pool_ricerca_grezzo)))
+        if prezzi_pool_debug:
+            prezzi_fmt = ", ".join(f"€{p:.2f}".replace(".00", "") for p in prezzi_pool_debug)
+        else:
+            prezzi_fmt = "nessuno estratto (pool vuoto o senza risultati numerici)"
+
+        if fonte_visuale_riuscita:
+            nota_visuale = "✅ riuscita, comp inclusi sotto (fonte 'VINTED — RICERCA VISUALE PER FOTO')"
+        elif tentare_ricerca_visuale:
+            nota_visuale = "❌ tentata ma fallita per questo item (vedi log: redirect/timeout/nessun ID risolto)"
+        else:
+            nota_visuale = "— non tentata (VISUAL_SEARCH_ATTIVA=false, o brand/cover_photo_id mancante)"
+
+        output_finale += (
+            f"\n\n🔬 *DEBUG provenienza comp* — riepilogo prezzi ({len(prezzi_pool_debug)}): {prezzi_fmt}\n"
+            f"Ricerca visuale Vinted: {nota_visuale}\n"
+            f"— Dettaglio completo per fonte (pre-raccolti + ricerche on-demand del cervello) —\n"
+            f"{pool_ricerca_grezzo or '(pool vuoto)'}"
         )
 
     # ---- FOOTER COSTO IA: recap per-modello, per-messaggio ----
