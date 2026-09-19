@@ -295,6 +295,7 @@ CATEGORIA_KEYWORDS = {
     "pantaloni": ["pantaloni", "pantalone", "hose", "trousers", "pants", "pantalon", "pantalón", "calças"],
     "jeans": ["jeans", "denim", "vaqueros", "vaquero"],
     "giacca": ["giacca", "jacke", "jacket", "veste", "chaqueta", "casaco"],
+    "gilet": ["gilet", "smanicato", "weste", "vest", "waistcoat", "chaleco", "colete"],
     "cappotto": ["cappotto", "mantel", "coat", "manteau", "abrigo", "casaco longo"],
     "borsa": ["borsa", "tasche", "bag", "sac", "bolso", "bolsa"],
     "scarpe": ["scarpe", "schuhe", "shoes", "chaussures", "zapatos", "sapatos"],
@@ -325,6 +326,7 @@ CATEGORIA_TERMINE_EN = {
     "pantaloni": "trousers",
     "jeans": "jeans",
     "giacca": "jacket",
+    "gilet": "vest",
     "cappotto": "coat",
     "borsa": "bag",
     "scarpe": "shoes",
@@ -389,10 +391,34 @@ def estrai_categoria_da_titolo(titolo, descrizione=None):
     discorsive. Risolto usando confini di parola (\\b) invece di sottostringa
     libera, mantenendo intatta la logica "match piu' lungo vince" (che
     resta necessaria per casi come "t-shirt" vs "shirt", dove entrambe le
-    keyword rispettano il confine di parola)."""
-    if not titolo and not descrizione:
+    keyword rispettano il confine di parola).
+
+    IMPORTANTE (bug trovato in test il 2026-09-19, stesso giorno
+    dell'estensione alla descrizione): concatenare titolo e descrizione in
+    un unico testo prima di cercare il match piu' lungo dava PRIORITA'
+    ALLA LUNGHEZZA DELLA KEYWORD invece che alla fonte. Caso reale: annuncio
+    "Gilet Max Mara elegante", descrizione "da abbinare con una camicia
+    bianca sotto" -- "camicia" (7 char, ma e' solo un capo da ABBINAMENTO
+    citato nella descrizione) batteva "gilet" (5 char, ma e' il capo
+    IN VENDITA, dichiarato nel titolo dal venditore). Il titolo e' un
+    segnale molto piu' affidabile di cosa sia il capo della descrizione
+    (che spesso menziona altri capi solo come contesto di stile). Per
+    questo ora si cerca PRIMA solo nel titolo, e si usa la descrizione
+    SOLO come fallback quando il titolo non da' nessun match -- niente
+    piu' concatenazione con pari peso tra le due fonti."""
+    migliore_dal_titolo = _cerca_categoria_in_testo(titolo)
+    if migliore_dal_titolo:
+        return migliore_dal_titolo
+    return _cerca_categoria_in_testo(descrizione)
+
+
+def _cerca_categoria_in_testo(testo):
+    """Cerca la categoria con match piu' lungo/specifico in UN SOLO testo
+    (vedi estrai_categoria_da_titolo per il perche' titolo e descrizione
+    non vengono piu' concatenati)."""
+    if not testo:
         return None
-    testo_lower = f"{titolo or ''} {descrizione or ''}".lower()
+    testo_lower = testo.lower()
     migliore_categoria = None
     migliore_lunghezza = 0
     for categoria_it, parole_chiave in CATEGORIA_KEYWORDS.items():
