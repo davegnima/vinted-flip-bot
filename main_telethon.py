@@ -40,6 +40,20 @@ TELEGRAM_ALERT_CHAT_ID = os.environ.get("TELEGRAM_ALERT_CHAT_ID")
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 SERPER_API_KEY = os.environ.get("SERPER_API_KEY")
 
+# VISUAL_SEARCH_ATTIVA: la 4a fonte comp "ricerca visuale Vinted" (equivalente
+# al bottone "Cerca articoli simili" + filtro brand, vedi
+# _risolvi_search_by_image_id/build_vinted_visual_search_url). Il 2026-09-18
+# una prima versione senza Referer veniva rediretta a /member/register --
+# NON per mancanza di login (l'utente ha confermato che il bottone funziona
+# anche in navigazione anonima), ma perche' la richiesta arrivava "a
+# freddo" senza il contesto di un click interno alla pagina dell'annuncio.
+# _risolvi_search_by_image_id ora imposta Referer/Sec-Fetch-* corretti;
+# resta comunque disattivata di default finche' questo fix non e'
+# verificato in produzione su un nuovo giro di item reali. Riattivare con
+# VISUAL_SEARCH_ATTIVA=true una volta confermato che il redirect di
+# login/registrazione non si presenta piu'.
+VISUAL_SEARCH_ATTIVA = os.environ.get("VISUAL_SEARCH_ATTIVA", "false").strip().lower() == "true"
+
 # CERVELLO_PROVIDER: "gemini" (default, comportamento storico) oppure
 # "openai" per usare GPT-4o-mini al posto di Gemini-3.7-flash sul solo step
 # Cervello (verdetto/margine/ROI). L'Occhio (legit-check visivo) resta
@@ -861,7 +875,7 @@ def _prossimo_proxy():
     return {"http": proxy_url, "https": proxy_url}
 
 
-def _vinted_get_con_retry(url, timeout=15, max_retries=3):
+def _vinted_get_con_retry(url, timeout=15, max_retries=3, headers_extra=None):
     """GET con retry per lo scraping Vinted. In precedenza un singolo timeout
     faceva fallire l'intero scraping (foto, descrizione, venditore tutti
     vuoti), costringendo il cervello a lavorare quasi alla cieca.
@@ -869,16 +883,23 @@ def _vinted_get_con_retry(url, timeout=15, max_retries=3):
     Impone anche una pausa minima rispetto alla richiesta Vinted precedente
     (qualunque essa fosse): dopo ~13h di attivita' continua, Vinted ha
     iniziato a rispondere 403 Forbidden in modo ricorrente, probabile
-    rate-limit per volume di richieste troppo fitte."""
+    rate-limit per volume di richieste troppo fitte.
+
+    headers_extra: header aggiuntivi/di override per questa singola chiamata
+    (es. Referer/Sec-Fetch-Site per simulare un click interno al sito invece
+    di un arrivo diretto dall'esterno) -- fusi sopra VINTED_HEADERS, non
+    toccano le altre chiamate."""
     tempo_trascorso = time.time() - _vinted_timestamp_ultima_richiesta[0]
     if tempo_trascorso < PAUSA_MINIMA_TRA_RICHIESTE_VINTED_SECONDI:
         time.sleep(PAUSA_MINIMA_TRA_RICHIESTE_VINTED_SECONDI - tempo_trascorso)
+
+    headers_richiesta = VINTED_HEADERS if not headers_extra else {**VINTED_HEADERS, **headers_extra}
 
     ultimo_errore = None
     for tentativo in range(1, max_retries + 1):
         try:
             _vinted_timestamp_ultima_richiesta[0] = time.time()
-            resp = _vinted_session.get(url, headers=VINTED_HEADERS, timeout=timeout, proxies=_prossimo_proxy())
+            resp = _vinted_session.get(url, headers=headers_richiesta, timeout=timeout, proxies=_prossimo_proxy())
             resp.raise_for_status()
             return resp
         except Exception as e:
@@ -1821,12 +1842,50 @@ def _risolvi_search_by_image_id(item_id, photo_id):
     (via _vinted_get_con_retry, stessa pausa minima anti-rate-limit), quindi
     aggiunge una richiesta extra a quel budget -- se in futuro tornano i 403
     osservati in produzione, questa e' una delle prime cose da rivedere o
-    rendere disattivabile."""
+    rendere disattivabile.
+
+    OSSERVATO IN PRODUZIONE IL 2026-09-18: con una richiesta "a freddo" senza
+    Referer, questo endpoint reindirizza a /member/register/select_type
+    invece che al catalogo. L'utente ha confermato che in un browser reale,
+    anche in navigazione anonima/senza login, il bottone funziona -- la
+    differenza non e' il login ma il CONTESTO della richiesta: nel browser
+    il click parte dalla pagina dell'annuncio stesso (Referer =
+    /items/{id}, Sec-Fetch-Site=same-origin), mentre la chiamata del bot
+    arrivava "da fuori" (nessun Referer, Sec-Fetch-Site=none, gli header di
+    default pensati per un URL digitato in barra). Questa funzione ora
+    imposta esplicitamente Referer + Sec-Fetch-* per imitare un click
+    interno al sito. La sessione (_vinted_session, condivisa e persistente)
+    ha comunque gia' visitato /items/{item_id} poco prima via
+    scrape_vinted_listing, quindi porta gia' con se' gli eventuali cookie
+    anonimi che Vinted assegna a qualunque visitatore.
+
+    Il controllo sul redirect di login resta come rete di sicurezza: se
+    dovesse ripresentarsi (es. Vinted introduce un controllo piu' stretto),
+    la fonte visuale viene semplicemente saltata per quell'item invece di
+    rompere il resto della pipeline."""
+    if not VISUAL_SEARCH_ATTIVA:
+        return None
     if not item_id or not photo_id:
         return None
     url_intermedio = f"https://www.vinted.it/items/{item_id}/search_by_image?photo_id={quote(photo_id)}"
-    resp = _vinted_get_con_retry(url_intermedio, timeout=12, max_retries=2)
+    headers_referer_annuncio = {
+        "Referer": f"https://www.vinted.it/items/{item_id}",
+        "Sec-Fetch-Site": "same-origin",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-User": "?1",
+    }
+    resp = _vinted_get_con_retry(
+        url_intermedio, timeout=12, max_retries=2, headers_extra=headers_referer_annuncio
+    )
     if resp is None:
+        return None
+    if "/member/register" in resp.url or "/member/login" in resp.url:
+        log.info(
+            "_risolvi_search_by_image_id: redirect a login/registrazione anche con "
+            "Referer impostato (%s) -- fonte visuale saltata per questo item.",
+            resp.url,
+        )
         return None
     m = re.search(r"search_by_image_id=([A-Za-z0-9_]+)", resp.url)
     if not m:
@@ -2188,7 +2247,11 @@ def search_comps_completo(brand, categoria, query_base, catalog_id=None, materia
     # Se manca l'ingrediente minimo (photo_id o brand mappato) la fonte
     # visuale e' inutile: lo sappiamo gia' qui senza fare rete, quindi non la
     # sottomettiamo affatto all'executor invece di sprecare uno slot/tempo.
-    tentare_ricerca_visuale = bool(cover_photo_id) and bool(VINTED_BRAND_IDS.get((brand or "").strip().lower()))
+    tentare_ricerca_visuale = (
+        VISUAL_SEARCH_ATTIVA
+        and bool(cover_photo_id)
+        and bool(VINTED_BRAND_IDS.get((brand or "").strip().lower()))
+    )
 
     risultati = {}
     successi = {}
