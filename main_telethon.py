@@ -2277,16 +2277,19 @@ def _query_resellbot_raw(query_testo, timeout):
             "(KHTML, like Gecko) Chrome/153.0.0.0 Mobile Safari/537.36"
         ),
     }
+    log.info("Resellbot: richiesta in corso -- query='%s'", query_testo)
     try:
         resp = requests.post(
             "https://scan-api.resellbot.com/api/search",
             headers=headers, json=payload, timeout=timeout,
         )
         if resp.status_code in (401, 403, 429):
+            log.info("Resellbot: bloccato/rate-limited (HTTP %d) per query='%s' -- uso fallback Google.", resp.status_code, query_testo)
             return f"  Resellbot bloccato/rate-limited (HTTP {resp.status_code}) -- uso fallback Google.", False
         resp.raise_for_status()
         data = resp.json()
     except Exception as e:
+        log.info("Resellbot: fallito per query='%s' -- %s -- uso fallback Google.", query_testo, e)
         return f"  Resellbot fallito: {e} -- uso fallback Google.", False
 
     risultati_per_piattaforma = data.get("results") or []
@@ -2313,7 +2316,9 @@ def _query_resellbot_raw(query_testo, timeout):
             righe.append(" ".join(pezzi))
 
     if not righe:
+        log.info("Resellbot: risposta OK ma 0 listing per query='%s'.", query_testo)
         return None, True  # successo ma zero righe -- distinto da "fallito"
+    log.info("Resellbot: risposta OK, %d listing trovati per query='%s'.", len(righe), query_testo)
     return "\n".join(righe[:20]), True
 
 
@@ -2370,6 +2375,10 @@ def _cerca_ebay_sold_via_resellbot(brand, categoria, material_per_ricerca=None, 
         if testo is not None:
             return testo, True  # trovato qualcosa con il materiale incluso
         # Zero risultati con il materiale -- riprova con la query piu' ampia.
+        log.info(
+            "Resellbot: 0 risultati con materiale ('%s') -- retry senza materiale ('%s').",
+            query_con_materiale, query_base,
+        )
         testo_ampio, ok_ampio = _query_resellbot_raw(query_base, timeout)
         if not ok_ampio:
             return testo_ampio, False
