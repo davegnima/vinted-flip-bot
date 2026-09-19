@@ -2104,6 +2104,19 @@ def _estrai_articoli_ebay(content, max_articoli=15):
         if righe_non_vuote == 0:
             return "  Nessun articolo trovato (pagina scrapata vuota/senza contenuto -- probabile scrape fallito o pagina bloccata)."
         if not titoli and not prezzi:
+            # DIAGNOSTICA TEMPORANEA (2026-09-19): il pattern HTML/markdown non
+            # ha trovato NULLA per due item diversi con lo stesso identico
+            # conteggio di "217 righe di contenuto scrapate" -- sospetto che
+            # Serper stia restituendo sempre la stessa pagina fissa (banner
+            # cookie/consenso, captcha o blocco anti-bot) invece del vero
+            # risultato di ricerca eBay, indipendentemente dalla query. Questo
+            # log va SOLO nei log Railway (mai su Telegram) e stampa un
+            # estratto del content grezzo per confermare l'ipotesi al prossimo
+            # fallimento. Da rimuovere una volta identificata la causa.
+            log.warning(
+                "_estrai_articoli_ebay fallita (0 titoli, 0 prezzi, %d righe) -- content grezzo (primi 500 char): %r",
+                righe_non_vuote, content[:500],
+            )
             return f"  Nessun articolo trovato ({righe_non_vuote} righe di contenuto scrapate, ma nessun tag titolo/prezzo eBay riconosciuto -- probabile layout eBay cambiato)."
         return "  Nessun articolo con titolo+prezzo riconosciuto in questa pagina (titoli o prezzi trovati singolarmente, ma non abbinabili)."
     return "\n".join(righe_pulite)
