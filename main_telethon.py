@@ -711,7 +711,7 @@ Archivio eclettico (Missoni, JPG, Pucci, Westwood, Mugler, Montana, Marni, Courr
 **Stagionalità**: capo fuori stagione (invernale pesante in estate, o viceversa) = STESSO valore ma tempo di vendita più lungo — mai abbassare il prezzo per questo. Dichiara il mese consigliato per pubblicare (capispalla invernali da settembre, capi estivi da aprile).
 
 # RICERCA E VERIFICA (usa cerca_comp_prezzo)
-Comp pre-raccolti scarsi/assenti/fuori tema → cerca_comp_prezzo con query mirata prima di rispondere. Gerarchia fonti: eBay SOLD > Vinted — Ricerca visuale per foto (quando presente: e' lo stesso capo/modello, non solo lo stesso brand, il comp piu' affidabile tra gli ASK) > Vinted testo > Vestiaire.
+Comp pre-raccolti scarsi/assenti/fuori tema → cerca_comp_prezzo con query mirata prima di rispondere. Unica fonte comp: Vinted. Gerarchia interna: Ricerca visuale per foto (quando presente: e' lo stesso capo/modello, non solo lo stesso brand, il comp piu' affidabile) > Vinted testo.
 Codici prodotto o diciture rare citati dall'occhio ("prototipo", "edizione limitata", ecc.) → verifica che esistano davvero con cerca_comp_prezzo prima di trattarli come prova di valore; se non confermati, tratta come non verificati e abbassa Confidenza, non usarli come giustificazione principale del margine.
 La "Confidenza" che l'occhio dichiara su un verdetto "Probabilmente falso" NON è affidabile da sola (bias noto: prezzo molto basso può contaminare il giudizio con dettagli vaghi costruiti a posteriori) — se i dettagli citati sono generici e il prezzo è molto basso, verifica con cerca_comp_prezzo prima di confermare NON COMPRARE per sospetto falso.
 
@@ -719,8 +719,8 @@ La "Confidenza" che l'occhio dichiara su un verdetto "Probabilmente falso" NON �
 Il materiale cambia il valore quasi quanto la linea (es. Cucinelli: cashmere puro >> lana/cotone). Materiale noto (dati annuncio, etichetta leggibile) → scarta o segnala esplicitamente i comp di materiale diverso. Materiale IGNOTO (descrizione generica, nessuna etichetta leggibile) → usa il comp più ECONOMICO disponibile, mai il più caro, e dichiara in Analisi che è una stima prudente per materiale non confermato. Comp di materiali diversi con prezzi molto distanti → non fare la media, sono capi diversi.
 
 # ANCORAGGIO PREZZI — la regola più violata in produzione, massima attenzione
-Dati etichettati: **SOLD** (eBay, venduti confermati) vs **ASK** (Vinted/Vestiaire, annunci attivi NON necessariamente venduti, spesso sovrastimati). SOLD è sempre la base primaria per la stima di vendita. Solo ASK disponibile → applica sconto 20-30% prima di usarlo, mai citarlo come vendita realistica senza quello sconto.
-**Controllo numerico obbligatorio, ogni volta prima di scrivere il prezzo**: la tua stima di vendita non può MAI superare il comp più alto (SOLD se disponibile) che tu stesso citi in Analisi — se lo supera, non è "prudente", è un errore: abbassala.
+Tutti i comp Vinted sono **ASK** (annunci attivi, NON necessariamente venduti, spesso sovrastimati rispetto al prezzo di vendita reale) — non hai dati SOLD/venduti confermati per nessuna fonte. Applica SEMPRE uno sconto prudente del 20-30% sul comp ASK scelto prima di trattarlo come stima di vendita realistica, mai citare un ASK come se fosse il prezzo di vendita atteso senza quello sconto.
+**Controllo numerico obbligatorio, ogni volta prima di scrivere il prezzo**: la tua stima di vendita non può MAI superare il comp ASK più alto (già scontato 20-30%) che tu stesso citi in Analisi — se lo supera, non è "prudente", è un errore: abbassala.
 **Cita SEMPRE almeno 2 prezzi ESATTI verbatim** dai dati ricevuti in Analisi (mai un range parafrasato a memoria) — se il range che stai per scrivere non corrisponde a due prezzi realmente ricevuti, ricontrolla, non l'hai calcolato bene.
 
 **PROCEDURA OBBLIGATORIA DI FILTRO OUTLIER, PRIMA di scrivere qualsiasi stima** — violazione osservata in produzione: un capo di categoria/prezzo minore (es. un singolo capo sartoriale) valutato usando come comp un capo di categoria completamente diversa e molto più costosa (es. un abito completo o un capospalla) comparso per errore nella stessa ricerca, ignorando tutti gli altri comp coerenti disponibili.
@@ -2754,19 +2754,26 @@ def search_comps_completo(brand, categoria, query_base, catalog_id=None, materia
         and bool(VINTED_BRAND_IDS.get((brand or "").strip().lower()))
     )
 
+    # Corretto il 2026-09-19: eBay (via Resellbot) e Vestiaire Collective
+    # rimosse dalla pipeline. Causa root: confermato (dall'utente + verifica
+    # web su resellbot.com/ebay-sold-listings) che Resellbot interroga
+    # eBay.com US in DOLLARI, ma il codice stampava ogni prezzo col simbolo
+    # € senza alcuna conversione -- un $150 USD diventava letteralmente
+    # "€150.00" nel pool, sballando ogni comp eBay di circa il 10-15% (cambio)
+    # oltre a mescolare un mercato (USA, vintage/resale) con dinamiche di
+    # prezzo diverse da quello italiano/europeo. Questo spiegava anche
+    # perche' Gemini "sembrava" sottostimare rispetto a eBay/Vestiaire nei
+    # log osservati (Loro Piana, Missoni, Jil Sander): non stava sbagliando,
+    # stava ragionando su comp gonfiati da un bug di dati a monte. Decisione
+    # operativa: tenere solo Vinted (gia' in EUR, mercato italiano reale) +
+    # la conoscenza generale di Gemini (grounding). Se in futuro si vuole
+    # reintrodurre eBay, va prima risolta la conversione valuta in
+    # _cerca_ebay_sold_via_resellbot.
     risultati = {}
     successi = {}
     with ThreadPoolExecutor(max_workers=4) as executor:
-        future_vestiaire = executor.submit(_serper_batch_query_vestiaire, brand, categoria)
         future_vinted = executor.submit(_serper_scrape_page_diretto, "VINTED", vinted_url)
-        # eBay: fonte primaria Resellbot (API reale con vendite confermate,
-        # vedi _cerca_ebay_sold_via_resellbot) con fallback automatico a
-        # Google (_serper_batch_query_ebay_sold) se Resellbot fallisce --
-        # niente scrape diretto della pagina ricerca eBay, bloccata
-        # sistematicamente dal suo anti-bot (confermato in produzione il
-        # 2026-09-19, vedi docstring di _serper_batch_query_ebay_sold).
-        future_ebay = executor.submit(_cerca_ebay_sold_con_fallback, brand, categoria, material_per_ricerca)
-        futures = {future_vestiaire: "vestiaire", future_vinted: "vinted", future_ebay: "ebay"}
+        futures = {future_vinted: "vinted"}
         if tentare_ricerca_visuale:
             future_visuale = executor.submit(_recupera_comp_visuali_vinted, item_id, cover_photo_id, brand)
             futures[future_visuale] = "vinted_visuale"
@@ -2806,10 +2813,6 @@ def search_comps_completo(brand, categoria, query_base, catalog_id=None, materia
     vinted_comp_puliti = _rimuovi_comp_autoreferenziale(risultati.get("vinted"), query_base)
     vinted_comp_puliti = _filtra_comp_per_categoria(vinted_comp_puliti, categoria)
     vinted_comp_puliti = _filtra_comp_per_brand_sottolinee(vinted_comp_puliti, brand)
-    vestiaire_comp_puliti = _filtra_comp_per_categoria(risultati.get("vestiaire"), categoria)
-    vestiaire_comp_puliti = _filtra_comp_per_brand_sottolinee(vestiaire_comp_puliti, brand)
-    ebay_comp_puliti = _filtra_comp_per_categoria(risultati.get("ebay"), categoria)
-    ebay_comp_puliti = _filtra_comp_per_brand_sottolinee(ebay_comp_puliti, brand)
     # La fonte visuale conta come "presente" solo se ha davvero prodotto un
     # risultato (successi["vinted_visuale"] True) -- se photo_id/brand
     # mancavano non e' nemmeno stata sottomessa (tentare_ricerca_visuale
@@ -2825,7 +2828,7 @@ def search_comps_completo(brand, categoria, query_base, catalog_id=None, materia
         # categoria rischierebbe solo di scartare match validi con titoli
         # atipici.
 
-    n_fonti = 4 if fonte_visuale_riuscita else 3
+    n_fonti = 2 if fonte_visuale_riuscita else 1
     parti = [f"RICERCA WEB PRE-RACCOLTA ({n_fonti} fonti, base: '{query_base}'):"]
     if nota_brand:
         parti.append(nota_brand)
@@ -2834,24 +2837,12 @@ def search_comps_completo(brand, categoria, query_base, catalog_id=None, materia
     if fonte_visuale_riuscita:
         parti.append(
             "\n📍 FONTE: VINTED — RICERCA VISUALE PER FOTO (stesso identikit visivo dell'annuncio, "
-            "filtrato per brand — la piu' precisa delle 4, prezzi ASK)\n"
+            "filtrato per brand — la piu' precisa delle fonti, prezzi ASK)\n"
             f"{visual_comp_puliti or 'Nessun risultato'}"
         )
     parti.append(
-        "\n📍 FONTE: VESTIAIRE COLLECTIVE (prezzi ASK — annunci attivi, NON necessariamente venduti)\n"
-        f"{vestiaire_comp_puliti or 'Nessun risultato'}"
-    )
-    parti.append(
         "\n📍 FONTE: VINTED (prezzi ASK — annunci attivi, NON necessariamente venduti; annuncio in analisi gia' escluso)\n"
         f"{vinted_comp_puliti or 'Nessun risultato'}"
-    )
-    parti.append(
-        "\n📍 FONTE: EBAY SOLD (dati di vendita CONFERMATI via Resellbot, con data di vendita — il dato "
-        "PIU' affidabile per stimare il prezzo di vendita reale; SE il blocco sotto contiene la nota "
-        "'fonte primaria Resellbot fallita', invece, i risultati vengono da una ricerca Google testuale "
-        "di fallback e possono includere annunci ancora attivi che citano 'sold' fuori contesto — in tal "
-        "caso verifica dal testo/snippet prima di trattarli come venduti confermati)\n"
-        f"{ebay_comp_puliti or 'Nessun risultato'}"
     )
 
     return "\n".join(parti), serper_ha_funzionato, tentare_ricerca_visuale, fonte_visuale_riuscita
@@ -2955,8 +2946,36 @@ def check_skip_pre_cervello(output_occhi_testo, listing_info=None):
     # nell'occhio. Soluzione scelta: RINFORZARE il prompt dell'occhio (non
     # rimuovere questo filtro, che resta utile per risparmiare token sui
     # falsi genuinamente conclamati).
-    if ("probabilmente falso" in testo or "falso conclamato" in testo) and \
-       any(c in testo for c in ("confidenza alta", "90%", "95%", "100%", "molto alto")):
+    # Corretto il 2026-09-19 (caso reale Miu Miu pull cour): DUE bug distinti
+    # facevano si' che questo skip non scattasse mai per il formato che
+    # l'occhio produce davvero in produzione.
+    # 1. Il prompt canonizza solo "Probabilmente falso" tra i 4 verdetti
+    #    possibili, ma il modello a volte scrive varianti equivalenti
+    #    ("Falso palese", "Falso evidente") per enfatizzare la certezza --
+    #    non matchavano nessuna delle stringhe cercate qui sotto.
+    # 2. Il template del prompt per la riga finale e' sempre "Confidenza:
+    #    [A/M/B]" (vedi riga "Confidenza: [B]"/"Confidenza: [A/M/B]" nel
+    #    prompt), cioe' CON i due punti -- "Confidenza: Alta" nel testo
+    #    reale, mentre il filtro cercava "confidenza alta" SENZA i due
+    #    punti. Il pattern non ha mai potuto matchare il formato standard,
+    #    a meno che il testo non contenesse anche "molto alto" o una
+    #    percentuale esplicita altrove (raro). Questo era il bug root:
+    #    anche un "Probabilmente falso" testuale puro con "Confidenza: Alta"
+    #    non veniva riconosciuto. Risultato pratico osservato in produzione:
+    #    il cervello veniva comunque consultato e tutte le ricerche di
+    #    prezzo (Resellbot/Serper) partivano inutilmente su un verdetto
+    #    gia' scontato (NON COMPRARE), sprecando query a pagamento.
+    ha_falso_alta_confidenza = (
+        "probabilmente falso" in testo
+        or "falso conclamato" in testo
+        or "falso palese" in testo
+        or "falso evidente" in testo
+    )
+    ha_confidenza_alta = any(c in testo for c in (
+        "confidenza alta", "confidenza: alta", "confidenza:alta",
+        "90%", "95%", "100%", "molto alto",
+    ))
+    if ha_falso_alta_confidenza and ha_confidenza_alta:
         return True, "[FALSO CONCLAMATO] Rilevato da analisi visiva con alta confidenza."
 
     # Skip su brand completamente estraneo (non una sottolinea/diffusion --
@@ -3612,7 +3631,22 @@ def _prezzi_per_fonte_da_pool(pool_ricerca_grezzo):
     formattazione ('eBay SOLD' vs 'ebay sold' vs 'eBay-SOLD'). Usato da
     verifica_comp_citati_sono_reali per il controllo di secondo livello
     'la fonte dichiarata dal cervello corrisponde a dove il prezzo si trova
-    davvero nel pool'."""
+    davvero nel pool'.
+
+    Corretto il 2026-09-19 (caso reale Jil Sander): un blocco 'RICERCA
+    ON-DEMAND CERVELLO' e' sempre una query Google generica (Serper), mai
+    taggata col nome di un marketplace specifico -- ma i suoi risultati
+    spesso SONO risultati eBay/Vestiaire/Vinted/Depop/Grailed (lo snippet
+    cita il dominio, es. 'ebay.it', o il titolo lo rende ovvio). Quando il
+    cervello scrive nell'Analisi 'comp eBay SOLD €100.00' basandosi su un
+    risultato che ha visto in quella ricerca on-demand, l'attribuzione e'
+    corretta nella sostanza -- ma il controllo di secondo livello la
+    respingeva sempre come 'fonte mal attribuita' perche' il prezzo era
+    presente solo sotto la chiave 'ricercaondemandcervello', mai sotto
+    'ebaysold'. Ora ogni riga del pool (non solo i blocchi RICERCA
+    ON-DEMAND) viene scansionata anche per menzioni esplicite di dominio
+    marketplace vicino a un prezzo, e quel prezzo viene aggiunto ANCHE
+    alla fonte del dominio, in aggiunta alla fonte del blocco."""
     risultato = {}
     if not pool_ricerca_grezzo or not pool_ricerca_grezzo.strip():
         return risultato
@@ -3626,10 +3660,32 @@ def _prezzi_per_fonte_da_pool(pool_ricerca_grezzo):
             continue
         nome_fonte = prima_riga.split("(")[0].strip().rstrip(":—-").strip() or prima_riga.strip()
         chiave = re.sub(r"[^a-z0-9]", "", nome_fonte.lower())
-        if not chiave:
-            continue
-        prezzi_fonte = _estrai_prezzi_da_pool_ricerca(resto or blocco)
-        risultato.setdefault(chiave, set()).update(prezzi_fonte)
+        blocco_dati = resto or blocco
+        if chiave:
+            prezzi_fonte = _estrai_prezzi_da_pool_ricerca(blocco_dati)
+            risultato.setdefault(chiave, set()).update(prezzi_fonte)
+
+        # Riconoscimento dominio per-riga (vedi nota sopra): per ogni riga
+        # del blocco, se compare un dominio marketplace esplicito, i prezzi
+        # DI QUELLA RIGA vanno anche sotto la chiave del dominio, non solo
+        # sotto la chiave del blocco.
+        for riga in blocco_dati.split("\n"):
+            riga_lower = riga.lower()
+            chiave_dominio = None
+            if "ebay." in riga_lower or "ebay.it" in riga_lower or "ebay.com" in riga_lower:
+                chiave_dominio = "ebaysold"
+            elif "vestiairecollective." in riga_lower:
+                chiave_dominio = "vestiairecollective"
+            elif "vinted." in riga_lower:
+                chiave_dominio = "vinted"
+            elif "depop." in riga_lower:
+                chiave_dominio = "depop"
+            elif "grailed." in riga_lower:
+                chiave_dominio = "grailed"
+            if chiave_dominio:
+                prezzi_riga = _estrai_prezzi_da_pool_ricerca(riga)
+                if prezzi_riga:
+                    risultato.setdefault(chiave_dominio, set()).update(prezzi_riga)
     return risultato
 
 
@@ -3715,7 +3771,7 @@ def _riepilogo_comp_per_fonte(pool_ricerca_grezzo):
     return "\n".join(righe) if righe else "(nessuna fonte con prezzi)"
 
 
-def verifica_comp_citati_sono_reali(testo, pool_ricerca_grezzo):
+def verifica_comp_citati_sono_reali(testo, pool_ricerca_grezzo, prezzo_annuncio_originale=None):
     """Rete di sicurezza per una violazione distinta da quella di
     verifica_ancoraggio_prezzo_comp: qui il cervello non sfora un comp reale
     che cita, ma CITA COMP CHE NON ESISTONO nei dati di ricerca effettivamente
@@ -3749,7 +3805,18 @@ def verifica_comp_citati_sono_reali(testo, pool_ricerca_grezzo):
     senza che nessuna rete se ne accorga, dato che il numero di per se' e'
     verificabile nel pool complessivo. Riconosce le fonti eBay/Vestiaire/
     Vinted/Depop/Grailed (vedi ALIAS_FONTE); un prezzo senza fonte dichiarata
-    vicino continua a passare col solo controllo di primo livello."""
+    vicino continua a passare col solo controllo di primo livello.
+
+    Corretto il 2026-09-19 (caso Dries Van Noten): il prezzo escluso qui
+    sotto (prezzo_richiesto) e' SOLO il "prezzo pieno" ricalcolato dal
+    cervello nella riga verdetto ("💰 €31.45 → ..."), che puo' includere
+    commissioni/spedizione ed essere quindi diverso dal prezzo Vinted grezzo
+    dell'annuncio (es. €25.00, mostrato nell'header del messaggio). Quando
+    l'Analisi cita quest'ultimo come contesto ("prezzo d'acquisto di €25.00
+    eccezionale per...") non e' un comp inventato, ma senza questo secondo
+    valore la rete lo trattava come tale -- falso positivo che declassava un
+    verdetto corretto. prezzo_annuncio_originale (listing_info['price'],
+    passato dal chiamante) copre questo secondo caso."""
     if not pool_ricerca_grezzo or not pool_ricerca_grezzo.strip():
         return testo  # nessun dato di ricerca disponibile: non c'e' nulla da verificare
 
@@ -3771,6 +3838,16 @@ def verifica_comp_citati_sono_reali(testo, pool_ricerca_grezzo):
         except ValueError:
             pass
 
+    # Secondo valore escluso: il prezzo Vinted grezzo dell'annuncio (diverso
+    # dal "prezzo pieno" sopra quando quest'ultimo include commissioni/
+    # spedizione). Vedi nota nel docstring.
+    prezzo_annuncio_originale_norm = None
+    if prezzo_annuncio_originale is not None:
+        try:
+            prezzo_annuncio_originale_norm = round(float(str(prezzo_annuncio_originale).replace(",", ".")), 2)
+        except (ValueError, TypeError):
+            pass
+
     # Nomi di fonte riconosciuti quando compaiono vicino a un prezzo citato
     # nell'Analisi -- usati per il controllo di secondo livello "la fonte
     # dichiarata corrisponde a dove il prezzo si trova davvero nel pool".
@@ -3788,12 +3865,43 @@ def verifica_comp_citati_sono_reali(testo, pool_ricerca_grezzo):
         (r"grailed", "grailed"),
     ]
 
+    # Corretto il 2026-09-19 (casi reali Dries Van Noten + Jil Sander): il
+    # blocco Analisi non contiene SOLO comp di mercato citati -- contiene
+    # anche l'aritmetica del calcolo economico del cervello stesso (fee,
+    # spedizione, costo d'acquisto totale, margine netto, incasso, importi
+    # scontati per la trattativa). Finora solo "listing"/"incasso" erano
+    # escluse dalla finestra precedente, ma i log reali mostravano frasi
+    # come "€1,95 fee", "€3,50 spedizione", "margine netto di €37,55",
+    # "sconto massimo negoziabile del 40% sul capo (€72.00 + fee +
+    # spedizione = €81.30)", "costo d'acquisto totale di €30,45" -- nessuna
+    # di queste e' un comp, sono tutte derivate dal prezzo dell'annuncio +
+    # aritmetica, ma venivano trattate come "prezzo citato senza riscontro
+    # nel pool" e declassavano verdetti corretti. Lista ampliata per
+    # coprire l'intero vocabolario di calcolo usato dal prompt.
+    # Corretto il 2026-09-19 (caso reale Gonna Pucci): DUE fix distinti.
+    # 1. Aggiunta "protezione" -- il cervello a volte chiama la fee di
+    #    Vinted "protezione acquisti" invece di "fee", variante mancante.
+    # 2. BUG: le keyword troncate a radice (es. "protezion", "spediz",
+    #    "scontat") erano scritte dentro un gruppo racchiuso da \b...\b
+    #    SENZA un \w* di seguito -- \b e' un confine di parola, e non
+    #    esiste tra "protezion" e la "e" successiva di "protezione" (sono
+    #    entrambi caratteri di parola, quindi nessun confine li' in mezzo).
+    #    La radice quindi non matchava MAI la parola completa che il
+    #    cervello scrive davvero, solo un'improbabile forma tronca
+    #    letterale. Aggiunto \w* a ogni radice per assorbire il suffisso.
+    KEYWORD_CALCOLO_NON_COMP = (
+        r"listing|incasso|fee|protezion\w*|spediz\w*|costo\s+d.acquisto|margine|"
+        r"acquisto\s+(?:iniziale|totale)|sconto|scontat\w*|trattativ\w*|negoziabil\w*|"
+        r"ricalcol\w*|prezzo\s+pieno|netto|costo\s+total\w*"
+    )
     prezzi_citati = []
     fonte_dichiarata_per_prezzo = {}  # indice in prezzi_citati -> chiave fonte pool o None
     for m in re.finditer(r"€\s*([\d]+(?:[.,]\d+)?)|([\d]+(?:[.,]\d+)?)\s*€", blocco_analisi):
-        finestra_precedente = blocco_analisi[max(0, m.start() - 40):m.start()].lower()
-        if re.search(r"\b(listing|incasso)\b", finestra_precedente):
-            continue  # e' la stima del modello stesso, non un comp citato
+        finestra_precedente = blocco_analisi[max(0, m.start() - 60):m.start()].lower()
+        finestra_dopo_calcolo = blocco_analisi[m.end():m.end() + 20].lower()
+        if re.search(r"\b(?:" + KEYWORD_CALCOLO_NON_COMP + r")\b", finestra_precedente) or \
+           re.search(r"\b(?:" + KEYWORD_CALCOLO_NON_COMP + r")\b", finestra_dopo_calcolo):
+            continue  # e' un termine del calcolo economico del cervello, non un comp citato
         valore = m.group(1) or m.group(2)
         try:
             prezzo = round(float(valore.replace(",", ".")), 2)
@@ -3801,13 +3909,55 @@ def verifica_comp_citati_sono_reali(testo, pool_ricerca_grezzo):
             continue
         if prezzo_richiesto is not None and abs(prezzo - prezzo_richiesto) < 0.01:
             continue  # e' solo la ripetizione del prezzo richiesto, non un comp
+        if prezzo_annuncio_originale_norm is not None and abs(prezzo - prezzo_annuncio_originale_norm) < 0.01:
+            continue  # e' solo il prezzo Vinted grezzo dell'annuncio ripetuto, non un comp
 
         # Cerca un nome di fonte esplicito vicino al prezzo citato (finestra
         # stretta, prima o dopo il numero: "€103.66 su eBay SOLD", "eBay:
         # €103.66", "venduto a €103 (Vestiaire)"). Se trovato, lo normalizza
         # nella stessa chiave usata per i blocchi del pool.
-        finestra_dopo = blocco_analisi[m.end():m.end() + 40].lower()
-        finestra_fonte = finestra_precedente + " " + finestra_dopo
+        #
+        # Corretto il 2026-09-19 (casi reali Dries Van Noten + Jil Sander):
+        # questa finestra era la STESSA usata sopra per le keyword di
+        # calcolo (fee/spedizione/margine), allargata a 60 caratteri -- ma
+        # una finestra cosi' larga cattura anche menzioni di fonte generiche
+        # e non specifiche, es. "comp ASK/venduto documentati su Vinted ed
+        # eBay tra €47,95 e €85,00": qui "eBay" introduce collettivamente
+        # UN RANGE di due prezzi, non attribuisce specificamente €47,95a
+        # eBay -- ma la finestra larga lo faceva sembrare cosi', causando
+        # un falso "fonte dichiarata non corrispondente". La finestra per
+        # l'attribuzione di fonte resta quindi STRETTA (20 char) e, in piu',
+        # si ferma al primo simbolo € incontrato PRIMA del nome fonte (se
+        # c'e' un altro prezzo di mezzo, la fonte non e' specifica per
+        # questo numero).
+        finestra_fonte_precedente = blocco_analisi[max(0, m.start() - 20):m.start()]
+        if "€" in finestra_fonte_precedente:
+            finestra_fonte_precedente = finestra_fonte_precedente.rsplit("€", 1)[1]
+        # Se tra il nome fonte e il prezzo compare una congiunzione di range
+        # ("tra", " e ", "-", "/") la fonte introduce collettivamente PIU'
+        # prezzi (es. "su Vinted ed eBay tra €47,95 e €85,00") e non e'
+        # un'attribuzione specifica a QUESTO prezzo -- va ignorata, non
+        # trattata come dichiarazione di fonte puntuale.
+        if re.search(r"\b(?:tra|fra)\b|\be\b|[-/]", finestra_fonte_precedente.lower()):
+            finestra_fonte_precedente = ""
+        # Stessa esclusione anche sulla finestra DOPO: "€58.00 e comp eBay
+        # SOLD €62.50" ha la congiunzione "e" subito dopo il primo prezzo e
+        # prima del nome fonte -- la fonte introduce il prezzo SUCCESSIVO
+        # (62.50), non 58.00, quindi non va trattata come dichiarazione per
+        # questo numero.
+        finestra_fonte_dopo = blocco_analisi[m.end():m.end() + 20]
+        if re.search(r"^\s*(?:e|,\s*e|\be\b|[-/])", finestra_fonte_dopo.lower()):
+            finestra_fonte_dopo = ""
+        # Corretto il 2026-09-19 (caso reale Gonna Pucci): un punto fermo
+        # chiude la frase -- "...a €99,80. Su Vinted i prezzi ASK..." e' una
+        # frase NUOVA che parla d'altro, non un'attribuzione di fonte per
+        # €99,80. Senza questo taglio la finestra "dopo" catturava "Vinted"
+        # da una frase successiva scollegata, generando un falso "fonte
+        # dichiarata non corrispondente" (il prezzo era davvero eBay SOLD,
+        # ma veniva confrontato contro il blocco Vinted del pool).
+        if "." in finestra_fonte_dopo:
+            finestra_fonte_dopo = finestra_fonte_dopo.split(".", 1)[0]
+        finestra_fonte = (finestra_fonte_precedente + " " + finestra_fonte_dopo).lower()
         chiave_fonte_citata = None
         for pattern_alias, chiave_pool in ALIAS_FONTE:
             if re.search(pattern_alias, finestra_fonte):
@@ -4318,10 +4468,24 @@ def process_listing(parsed, url, cover_photo_bytes):
 
     output_finale = verifica_falso_ha_motivazione(output_finale)
 
+    # Disattivate il 2026-09-19 su decisione esplicita dell'utente:
+    # verifica_ancoraggio_prezzo_comp e verifica_comp_citati_sono_reali
+    # restano DISATTIVATE indipendentemente da RETI_SICUREZZA_ATTIVE. Motivo:
+    # 4 falsi positivi consecutivi osservati con Gemini in poche ore (Dries
+    # Van Noten, Jil Sander, Gonna Pucci, Loro Piana), tutti causati dal modo
+    # in cui queste reti interpretano rigidamente il posizionamento testuale
+    # dei numeri nell'Analisi (aritmetica di calcolo scambiata per comp,
+    # attribuzioni di fonte per pura vicinanza in prosa densa) -- un problema
+    # strutturale nel design delle reti, non nella qualita' del giudizio di
+    # Gemini sui prezzi. Inoltre, la causa root di molte discrepanze
+    # prezzo-comp osservate era un bug a monte nella fonte eBay (Resellbot
+    # restituiva prezzi USD ristampati col simbolo €, ora rimossa dalla
+    # pipeline, vedi search_comps_completo) -- Gemini non stava sbagliando,
+    # stava (correttamente) diffidando di comp gonfiati da un bug di dati.
+    # Il codice resta nel file, funzionante e testato (vedi
+    # scratchpad/test_fonte2/run_tests_verifica_comp.py), nel caso servisse
+    # riattivarlo in futuro con un provider meno affidabile di Gemini.
     prev_ancoraggio = output_finale
-    if RETI_SICUREZZA_ATTIVE:
-        output_finale = verifica_ancoraggio_prezzo_comp(output_finale, pool_ricerca_grezzo)
-        output_finale = verifica_comp_citati_sono_reali(output_finale, pool_ricerca_grezzo)
     if output_finale != prev_ancoraggio:
         # Una delle due reti sopra ha cambiato l'emoji/decisione in testa:
         # ricalcola 'decisione' ed 'e_compra' sul testo aggiornato, altrimenti
