@@ -359,25 +359,47 @@ def scegli_materiale_per_ricerca(material_value_raw):
     return None
 
 
-def estrai_categoria_da_titolo(titolo):
+def estrai_categoria_da_titolo(titolo, descrizione=None):
     """Trova la categoria del capo cercando tutte le keyword multilingua nel
-    titolo, e sceglie quella con il match PIU' LUNGO/specifico -- non la
-    prima trovata nell'ordine del dizionario. Necessario perche' altrimenti
-    keyword generiche possono "vincere" per errore su keyword piu'
-    specifiche che le contengono come sottostringa: es. "shirt" (categoria
-    camicia) e' una sottostringa di "t-shirt" (categoria t-shirt), quindi
-    con un semplice "primo match" un titolo come "T shirt uomo" veniva
-    categorizzato come camicia invece che t-shirt, portando a comp di
-    camicie eleganti al posto di magliette basic -- due fasce di prezzo
-    completamente diverse."""
-    if not titolo:
+    titolo (e, se fornita, nella descrizione), e sceglie quella con il match
+    PIU' LUNGO/specifico -- non la prima trovata nell'ordine del dizionario.
+    Necessario perche' altrimenti keyword generiche possono "vincere" per
+    errore su keyword piu' specifiche che le contengono come sottostringa:
+    es. "shirt" (categoria camicia) e' una sottostringa di "t-shirt"
+    (categoria t-shirt), quindi con un semplice "primo match" un titolo come
+    "T shirt uomo" veniva categorizzato come camicia invece che t-shirt,
+    portando a comp di camicie eleganti al posto di magliette basic -- due
+    fasce di prezzo completamente diverse.
+
+    La descrizione e' stata aggiunta il 2026-09-19 dopo un caso reale (The
+    Row "Ophelia", maglione da oltre 800 EUR di listino) in cui il titolo
+    dell'annuncio era solo il nome del modello, senza nessuna parola che
+    indicasse il tipo di capo -- la categoria restava "non rilevata" e
+    Vestiaire/eBay venivano saltati del tutto, anche se la descrizione
+    conteneva "sweater"/"maglione" e l'occhio/cervello lo scoprivano comunque
+    in ricerca on-demand, troppo tardi per alimentare la rete di sicurezza
+    sui comp.
+
+    Estendere il match alla descrizione (testo libero, molto piu' lungo del
+    titolo) ha reso subito evidente in test un bug gia' latente ma raro sul
+    solo titolo: alcune keyword corte in CATEGORIA_KEYWORDS sono sottostringhe
+    di parole italiane comunissime -- "cap" (cappello) dentro "capo",
+    "top" (canotta) dentro "soprattutto", "rock" (gonna) dentro "barocco",
+    ecc. Un semplice `in` le faceva scattare per errore su descrizioni
+    discorsive. Risolto usando confini di parola (\\b) invece di sottostringa
+    libera, mantenendo intatta la logica "match piu' lungo vince" (che
+    resta necessaria per casi come "t-shirt" vs "shirt", dove entrambe le
+    keyword rispettano il confine di parola)."""
+    if not titolo and not descrizione:
         return None
-    titolo_lower = titolo.lower()
+    testo_lower = f"{titolo or ''} {descrizione or ''}".lower()
     migliore_categoria = None
     migliore_lunghezza = 0
     for categoria_it, parole_chiave in CATEGORIA_KEYWORDS.items():
         for parola in parole_chiave:
-            if parola in titolo_lower and len(parola) > migliore_lunghezza:
+            if len(parola) <= migliore_lunghezza:
+                continue
+            if re.search(r'\b' + re.escape(parola) + r'\b', testo_lower):
                 migliore_categoria = categoria_it
                 migliore_lunghezza = len(parola)
     return migliore_categoria
@@ -2227,40 +2249,10 @@ def _serper_batch_query_vestiaire(brand, categoria):
     return ("\n".join(lines) if lines else "Nessun risultato trovato."), True
 
 
-def _cerca_ebay_sold_via_resellbot(brand, categoria, timeout=6):
-    """Fonte PRIMARIA per eBay SOLD, aggiunta il 2026-09-19: interroga
-    direttamente l'API pubblica di Resellbot (scan-api.resellbot.com/api/search),
-    lo stesso endpoint usato dalla pagina https://resellbot.com/ebay-sold-listings/
-    -- individuato ispezionando manualmente il tab Network del browser durante
-    una ricerca reale (la pagina in se' non mostra risultati nell'HTML statico,
-    li carica via fetch() asincrono dopo il caricamento, per questo uno scrape
-    HTML classico -- sia il nostro WebFetch che, presumibilmente, Serper senza
-    rendering JS -- vede solo la shell vuota).
-
-    A differenza della query Google (_serper_batch_query_ebay_sold, tenuta
-    sotto come fallback), questa e' l'API REALE che alimenta il tool: prezzi
-    di vendita CONFERMATI con data (soldAt), non uno snippet testuale con la
-    parola "sold" che puo' riferirsi a un annuncio ancora attivo.
-
-    Nessuna autenticazione richiesta (verificato via DevTools: solo header
-    CORS standard, Origin/Referer che imitano il browser). Rate limit
-    dichiarato dal servizio stesso via header di risposta: 700 richieste/5min,
-    140/min -- ampiamente sufficiente per l'uso di questo bot (poche decine
-    di item/ora). Se Cloudflare (che protegge l'endpoint) dovesse iniziare a
-    bloccare le richieste dirette da Railway (mancando il fingerprint TLS/JS
-    di un vero browser), ok=False fa scattare comunque il fallback Google
-    sotto -- questa fonte non e' un punto di fallimento singolo."""
-    brand_pulito = (brand or "").strip()
-    categoria_per_query = (categoria or "").strip()
-    if not categoria_per_query:
-        return (
-            "Categoria non rilevata dal titolo dell'annuncio -- query eBay "
-            "(Resellbot) saltata per evitare risultati fuorvianti."
-        ), False
-
-    termine_en = CATEGORIA_TERMINE_EN.get(categoria_per_query, categoria_per_query)
-    query_testo = f'{brand_pulito} {termine_en}'.strip() if brand_pulito else termine_en
-
+def _query_resellbot_raw(query_testo, timeout):
+    """Esegue UNA chiamata a Resellbot con la query testuale gia' costruita e
+    ritorna (righe_di_testo, ok). Estratta da _cerca_ebay_sold_via_resellbot
+    il 2026-09-19 per permettere il retry senza materiale (vedi sopra)."""
     payload = {
         "searchId": str(uuid.uuid4()),
         "queries": [{"query": query_testo, "specificity": "exact"}],
@@ -2312,14 +2304,89 @@ def _cerca_ebay_sold_via_resellbot(brand, categoria, timeout=6):
             righe.append(" ".join(pezzi))
 
     if not righe:
-        return "  Nessun venduto trovato su Resellbot per questa query.", True
+        return None, True  # successo ma zero righe -- distinto da "fallito"
     return "\n".join(righe[:20]), True
 
 
-def _serper_batch_query_ebay_sold(brand, categoria):
+def _cerca_ebay_sold_via_resellbot(brand, categoria, material_per_ricerca=None, timeout=6):
+    """Fonte PRIMARIA per eBay SOLD, aggiunta il 2026-09-19: interroga
+    direttamente l'API pubblica di Resellbot (scan-api.resellbot.com/api/search),
+    lo stesso endpoint usato dalla pagina https://resellbot.com/ebay-sold-listings/
+    -- individuato ispezionando manualmente il tab Network del browser durante
+    una ricerca reale (la pagina in se' non mostra risultati nell'HTML statico,
+    li carica via fetch() asincrono dopo il caricamento, per questo uno scrape
+    HTML classico -- sia il nostro WebFetch che, presumibilmente, Serper senza
+    rendering JS -- vede solo la shell vuota).
+
+    A differenza della query Google (_serper_batch_query_ebay_sold, tenuta
+    sotto come fallback), questa e' l'API REALE che alimenta il tool: prezzi
+    di vendita CONFERMATI con data (soldAt), non uno snippet testuale con la
+    parola "sold" che puo' riferirsi a un annuncio ancora attivo.
+
+    Nessuna autenticazione richiesta (verificato via DevTools: solo header
+    CORS standard, Origin/Referer che imitano il browser). Rate limit
+    dichiarato dal servizio stesso via header di risposta: 700 richieste/5min,
+    140/min -- ampiamente sufficiente per l'uso di questo bot (poche decine
+    di item/ora). Se Cloudflare (che protegge l'endpoint) dovesse iniziare a
+    bloccare le richieste dirette da Railway (mancando il fingerprint TLS/JS
+    di un vero browser), ok=False fa scattare comunque il fallback Google
+    sotto -- questa fonte non e' un punto di fallimento singolo.
+
+    material_per_ricerca (aggiunto il 2026-09-19) restringe la query
+    aggiungendo il materiale dichiarato (es. "cashmere", "lana") quando
+    disponibile -- utile soprattutto sui brand di lusso dove il materiale
+    sposta molto il prezzo (un maglione Brunello Cucinelli in cashmere vale
+    parecchio piu' di uno in cotone). Include un retry automatico SENZA
+    materiale se la prima query non trova nulla: la specificity "exact" di
+    Resellbot puo' azzerare i risultati quando la query e' troppo stretta,
+    soprattutto su brand di nicchia con pochi listing totali -- meglio
+    allargare che restituire zero comp per un dettaglio in piu'."""
+    brand_pulito = (brand or "").strip()
+    categoria_per_query = (categoria or "").strip()
+    if not categoria_per_query:
+        return (
+            "Categoria non rilevata dal titolo dell'annuncio -- query eBay "
+            "(Resellbot) saltata per evitare risultati fuorvianti."
+        ), False
+
+    termine_en = CATEGORIA_TERMINE_EN.get(categoria_per_query, categoria_per_query)
+    query_base = f'{brand_pulito} {termine_en}'.strip() if brand_pulito else termine_en
+    materiale_pulito = (material_per_ricerca or "").strip()
+
+    if materiale_pulito:
+        query_con_materiale = f'{query_base} {materiale_pulito}'
+        testo, ok = _query_resellbot_raw(query_con_materiale, timeout)
+        if not ok:
+            return testo, False  # errore di rete/rate-limit: nessun retry, va al fallback Google
+        if testo is not None:
+            return testo, True  # trovato qualcosa con il materiale incluso
+        # Zero risultati con il materiale -- riprova con la query piu' ampia.
+        testo_ampio, ok_ampio = _query_resellbot_raw(query_base, timeout)
+        if not ok_ampio:
+            return testo_ampio, False
+        if testo_ampio is not None:
+            return testo_ampio, True
+        return "  Nessun venduto trovato su Resellbot per questa query.", True
+
+    testo, ok = _query_resellbot_raw(query_base, timeout)
+    if not ok:
+        return testo, False
+    if testo is None:
+        return "  Nessun venduto trovato su Resellbot per questa query.", True
+    return testo, True
+
+
+def _serper_batch_query_ebay_sold(brand, categoria, material_per_ricerca=None):
     """FALLBACK per eBay SOLD (fonte primaria: _cerca_ebay_sold_via_resellbot
     sopra) -- stesso schema di _serper_batch_query_vestiaire (Google search
     via Serper, non scrape diretto della pagina eBay).
+
+    material_per_ricerca (aggiunto il 2026-09-19, per coerenza con la fonte
+    primaria Resellbot) viene aggiunto tra virgolette come termine di
+    ricerca aggiuntivo quando disponibile -- qui non serve un retry "senza
+    materiale" come per Resellbot: Google gestisce query piu' lunghe senza
+    azzerare i risultati come farebbe una specificity "exact" letterale, si
+    limita a pesarlo come termine di rilevanza in piu'.
 
     Sostituisce il vecchio approccio (_serper_scrape_page_diretto +
     _estrai_articoli_ebay) che scrapava direttamente l'URL di ricerca eBay
@@ -2361,6 +2428,9 @@ def _serper_batch_query_ebay_sold(brand, categoria):
     # applicare il vincolo site:ebay.* solo a un ramo della query invece che
     # a tutta la ricerca, con risultati fuori da eBay.
     base = f'{brand_pulito} "{termine_en}"'.strip() if brand_pulito else f'"{termine_en}"'
+    materiale_pulito = (material_per_ricerca or "").strip()
+    if materiale_pulito:
+        base = f'{base} "{materiale_pulito}"'
     query_serper = f'{base} (venduto OR sold) (site:ebay.it OR site:ebay.com)'
 
     payload = [{"q": query_serper, "gl": "it", "hl": "it", "num": 10}]
@@ -2555,19 +2625,24 @@ def _recupera_comp_visuali_vinted(item_id, photo_id, brand):
     return _serper_scrape_page_diretto("VINTED", url)
 
 
-def _cerca_ebay_sold_con_fallback(brand, categoria):
+def _cerca_ebay_sold_con_fallback(brand, categoria, material_per_ricerca=None):
     """Wrapper per l'executor: prova prima Resellbot (dati di vendita
     confermati, veri, vedi _cerca_ebay_sold_via_resellbot), e solo se fallisce
     (bloccato, rate-limited, errore di rete, o semplicemente 'nessun venduto
     trovato' con ok=True viene comunque accettato cosi' com'e' -- il fallback
     scatta solo su ok=False) prova la query Google di riserva. Tenute
     sequenziali (non in parallelo) per non raddoppiare le chiamate quando la
-    prima fonte funziona, che e' il caso comune."""
-    testo, ok = _cerca_ebay_sold_via_resellbot(brand, categoria)
+    prima fonte funziona, che e' il caso comune.
+
+    material_per_ricerca (aggiunto il 2026-09-19) viene inoltrato a entrambe
+    le fonti per restringere la query quando il materiale e' noto (vedi
+    docstring di _cerca_ebay_sold_via_resellbot per il dettaglio sul retry
+    automatico senza materiale se la query ristretta non trova nulla)."""
+    testo, ok = _cerca_ebay_sold_via_resellbot(brand, categoria, material_per_ricerca)
     if ok:
         return testo, ok
     log.info("_cerca_ebay_sold_con_fallback: Resellbot fallito (%s), tento fallback Google.", testo)
-    testo_fallback, ok_fallback = _serper_batch_query_ebay_sold(brand, categoria)
+    testo_fallback, ok_fallback = _serper_batch_query_ebay_sold(brand, categoria, material_per_ricerca)
     if ok_fallback:
         return f"{testo_fallback}\n(Nota: fonte primaria Resellbot fallita, questi risultati vengono da Google/eBay.)", True
     return f"{testo} | fallback Google anch'esso fallito: {testo_fallback}", False
@@ -2595,7 +2670,7 @@ def search_comps_completo(brand, categoria, query_base, catalog_id=None, materia
         # niente scrape diretto della pagina ricerca eBay, bloccata
         # sistematicamente dal suo anti-bot (confermato in produzione il
         # 2026-09-19, vedi docstring di _serper_batch_query_ebay_sold).
-        future_ebay = executor.submit(_cerca_ebay_sold_con_fallback, brand, categoria)
+        future_ebay = executor.submit(_cerca_ebay_sold_con_fallback, brand, categoria, material_per_ricerca)
         futures = {future_vestiaire: "vestiaire", future_vinted: "vinted", future_ebay: "ebay"}
         if tentare_ricerca_visuale:
             future_visuale = executor.submit(_recupera_comp_visuali_vinted, item_id, cover_photo_id, brand)
@@ -3940,7 +4015,8 @@ def process_listing(parsed, url, cover_photo_bytes):
     else:
         titolo_annuncio = listing_info.get("title") or ""
         brand_annuncio = listing_info.get("brand") or ""
-        categoria_per_ricerca = estrai_categoria_da_titolo(titolo_annuncio) or ""
+        categoria_per_ricerca = estrai_categoria_da_titolo(
+            titolo_annuncio, listing_info.get("description")) or ""
         catalog_id = listing_info.get("catalog_id")
         material_per_ricerca = listing_info.get("material_per_ricerca")
         cover_photo_id = listing_info.get("cover_photo_id")
