@@ -12,6 +12,7 @@ import re
 import html
 import json
 import time
+import uuid
 import asyncio
 import base64
 import logging
@@ -1990,12 +1991,12 @@ def build_vinted_visual_search_url(item_id, photo_id, brand):
     )
 
 
-def search_comps_ebay_sold_url(brand, categoria):
-    termine_en = CATEGORIA_TERMINE_EN.get(categoria, categoria)
-    query_base = f'{brand} "{termine_en}"'.strip() if termine_en else (brand or "").strip()
-    if not query_base:
-        return None
-    return f"https://www.ebay.it/sch/i.html?_nkw={quote(query_base)}&_sacat=0&_from=R40&LH_Sold=1&rt=nc&LH_PrefLoc=2"
+# search_comps_ebay_sold_url (URL diretto www.ebay.it/sch/i.html?...&LH_Sold=1)
+# RIMOSSA il 2026-09-19: costruiva l'URL per lo scrape diretto della pagina
+# eBay, abbandonato dopo conferma che eBay blocca sistematicamente Serper su
+# quell'endpoint con la pagina anti-bot "Misura di sicurezza" (vedi
+# _serper_batch_query_ebay_sold, che l'ha sostituita passando da una query
+# Google invece dello scrape diretto).
 
 
 def _estrai_articoli_vinted(content, max_articoli=15):
@@ -2058,70 +2059,6 @@ def _estrai_articoli_vinted(content, max_articoli=15):
     return f"  Nessun articolo trovato ({righe_con_simbolo_prezzo} righe con simbolo di prezzo trovate, ma titolo non estraibile/troppo corto per ciascuna)."
 
 
-def _estrai_articoli_ebay(content, max_articoli=15):
-    """Aggiunto lo stesso giorno del fix Vinted: quando non trova nulla,
-    distingue nel testo restituito se la pagina scrapata era vuota, se
-    aveva HTML ma senza i tag titolo/prezzo attesi (probabile layout eBay
-    cambiato o pagina senza risultati sold), o se il fallback su markdown/
-    link trovava titoli ma senza prezzo vicino -- stessa logica di
-    _estrai_articoli_vinted, per la stessa ragione (distinguere "Serper non
-    ha trovato nulla" da "Serper ha trovato qualcosa ma non e' un prezzo
-    utilizzabile")."""
-    pattern_titolo = re.compile(r'<span[^>]*class="su-styled-text primary default"[^>]*>([^<]+)</span>', re.IGNORECASE)
-    pattern_prezzo = re.compile(r'<span[^>]*class="[^"]*s-card__price[^"]*"[^>]*>([^<]+)</span>', re.IGNORECASE)
-    titoli = [(m.start(), m.group(1).strip()) for m in pattern_titolo.finditer(content)]
-    prezzi = [(m.start(), m.group(1).strip()) for m in pattern_prezzo.finditer(content)]
-    righe_pulite = []
-    if titoli and prezzi:
-        for pos_titolo, titolo in titoli:
-            prezzo_vicino = min((p for p in prezzi if p[0] >= pos_titolo), key=lambda p: p[0] - pos_titolo, default=None)
-            if prezzo_vicino and (prezzo_vicino[0] - pos_titolo) < 2000:
-                righe_pulite.append(f"- {titolo} — {prezzo_vicino[1]}")
-            if len(righe_pulite) >= max_articoli:
-                break
-    if righe_pulite:
-        return "\n".join(righe_pulite)
-    blocchi = re.split(r"\n{1,2}", content)
-    for i, blocco in enumerate(blocchi):
-        match_titolo = re.search(r"\[([^\]]{15,150})\]\(https?://[^)]*ebay[^)]*\)", blocco, re.IGNORECASE)
-        if not match_titolo:
-            continue
-        titolo = match_titolo.group(1).strip()
-        prezzo = None
-        for b_vicino in blocchi[i:i + 3]:
-            match_prezzo = re.search(r"EUR\s*([\d.,]+)|€\s*([\d.,]+)", b_vicino)
-            if match_prezzo:
-                prezzo = match_prezzo.group(1) or match_prezzo.group(2)
-                break
-        if prezzo:
-            righe_pulite.append(f"- {titolo} — €{prezzo}")
-        if len(righe_pulite) >= max_articoli:
-            break
-    if not righe_pulite:
-        if "nessun risultato" in content.lower() or "nessuna corrispondenza" in content.lower():
-            return "  Nessun risultato sold trovato per questa query specifica su eBay (eBay stesso dichiara 0 match)."
-        righe_non_vuote = sum(1 for r in content.split("\n") if r.strip())
-        if righe_non_vuote == 0:
-            return "  Nessun articolo trovato (pagina scrapata vuota/senza contenuto -- probabile scrape fallito o pagina bloccata)."
-        if not titoli and not prezzi:
-            # DIAGNOSTICA TEMPORANEA (2026-09-19): il pattern HTML/markdown non
-            # ha trovato NULLA per due item diversi con lo stesso identico
-            # conteggio di "217 righe di contenuto scrapate" -- sospetto che
-            # Serper stia restituendo sempre la stessa pagina fissa (banner
-            # cookie/consenso, captcha o blocco anti-bot) invece del vero
-            # risultato di ricerca eBay, indipendentemente dalla query. Questo
-            # log va SOLO nei log Railway (mai su Telegram) e stampa un
-            # estratto del content grezzo per confermare l'ipotesi al prossimo
-            # fallimento. Da rimuovere una volta identificata la causa.
-            log.warning(
-                "_estrai_articoli_ebay fallita (0 titoli, 0 prezzi, %d righe) -- content grezzo (primi 500 char): %r",
-                righe_non_vuote, content[:500],
-            )
-            return f"  Nessun articolo trovato ({righe_non_vuote} righe di contenuto scrapate, ma nessun tag titolo/prezzo eBay riconosciuto -- probabile layout eBay cambiato)."
-        return "  Nessun articolo con titolo+prezzo riconosciuto in questa pagina (titoli o prezzi trovati singolarmente, ma non abbinabili)."
-    return "\n".join(righe_pulite)
-
-
 def _e_errore_crediti_serper(resp):
     if resp.status_code in (400, 401, 402, 403, 429):
         testo_body = (resp.text or "").lower()
@@ -2150,22 +2087,7 @@ def _serper_scrape_page_diretto(label, url):
     except Exception as e:
         return f"  Scrape fallito: {e}", False
 
-    # DIAGNOSTICA TEMPORANEA (2026-09-19): sospetto confermato che eBay
-    # restituisca la home (favicon pages.ebay.com, non ebaystatic.com) invece
-    # della pagina risultati -- probabile redirect (consent-wall EU o
-    # geoblocco) che Serper segue silenziosamente prima di scrapare. Loggo i
-    # metadati della risposta Serper (escluso il body, gia' loggato altrove)
-    # per vedere se espone l'URL finale raggiunto dopo eventuali redirect o
-    # un codice di stato interno diverso da 200. Da rimuovere una volta
-    # confermata la causa.
-    if "EBAY" in label.upper():
-        meta_utili = {k: v for k, v in data.items() if k not in ("html", "rawHtml", "raw_html", "content", "markdown", "text")}
-        log.warning("_serper_scrape_page_diretto[EBAY]: url richiesto=%s -- metadati risposta Serper (senza body): %r", url, meta_utili)
-
-    if "EBAY" in label.upper():
-        content = data.get("html") or data.get("rawHtml") or data.get("raw_html") or data.get("content") or data.get("markdown") or ""
-        return _estrai_articoli_ebay(content), True
-    elif "VINTED" in label.upper():
+    if "VINTED" in label.upper():
         content = data.get("markdown") or data.get("text") or ""
         return _estrai_articoli_vinted(content), True
     return "  Fonte non supportata.", True
@@ -2198,6 +2120,177 @@ def _serper_batch_query_vestiaire(brand, categoria):
             "https://google.serper.dev/search",
             headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
             json=payload, timeout=15,
+        )
+        if _e_errore_crediti_serper(resp):
+            return f"  Serper fallito (HTTP {resp.status_code}).", False
+        resp.raise_for_status()
+        results = resp.json()
+    except Exception as e:
+        return f"Ricerca fallita: {e}", False
+
+    lines = []
+    for batch in results:
+        for r in batch.get("organic", [])[:10]:
+            titolo = r.get("title", "")
+            snippet = r.get("snippet", "")
+            match_prezzo = re.search(r"€\s*[\d.,]+|\d+(?:[.,]\d+)?\s*€|EUR\s*[\d.,]+", snippet, re.IGNORECASE)
+            snippet_troncato = snippet[:100].rstrip()
+            if match_prezzo and match_prezzo.group(0) not in snippet_troncato:
+                snippet_troncato += f"... [PREZZO: {match_prezzo.group(0)}]"
+            elif len(snippet) > 100:
+                snippet_troncato += "..."
+            lines.append(f"- {titolo}\n  {snippet_troncato}")
+    return ("\n".join(lines) if lines else "Nessun risultato trovato."), True
+
+
+def _cerca_ebay_sold_via_resellbot(brand, categoria, timeout=6):
+    """Fonte PRIMARIA per eBay SOLD, aggiunta il 2026-09-19: interroga
+    direttamente l'API pubblica di Resellbot (scan-api.resellbot.com/api/search),
+    lo stesso endpoint usato dalla pagina https://resellbot.com/ebay-sold-listings/
+    -- individuato ispezionando manualmente il tab Network del browser durante
+    una ricerca reale (la pagina in se' non mostra risultati nell'HTML statico,
+    li carica via fetch() asincrono dopo il caricamento, per questo uno scrape
+    HTML classico -- sia il nostro WebFetch che, presumibilmente, Serper senza
+    rendering JS -- vede solo la shell vuota).
+
+    A differenza della query Google (_serper_batch_query_ebay_sold, tenuta
+    sotto come fallback), questa e' l'API REALE che alimenta il tool: prezzi
+    di vendita CONFERMATI con data (soldAt), non uno snippet testuale con la
+    parola "sold" che puo' riferirsi a un annuncio ancora attivo.
+
+    Nessuna autenticazione richiesta (verificato via DevTools: solo header
+    CORS standard, Origin/Referer che imitano il browser). Rate limit
+    dichiarato dal servizio stesso via header di risposta: 700 richieste/5min,
+    140/min -- ampiamente sufficiente per l'uso di questo bot (poche decine
+    di item/ora). Se Cloudflare (che protegge l'endpoint) dovesse iniziare a
+    bloccare le richieste dirette da Railway (mancando il fingerprint TLS/JS
+    di un vero browser), ok=False fa scattare comunque il fallback Google
+    sotto -- questa fonte non e' un punto di fallimento singolo."""
+    brand_pulito = (brand or "").strip()
+    categoria_per_query = (categoria or "").strip()
+    if not categoria_per_query:
+        return (
+            "Categoria non rilevata dal titolo dell'annuncio -- query eBay "
+            "(Resellbot) saltata per evitare risultati fuorvianti."
+        ), False
+
+    termine_en = CATEGORIA_TERMINE_EN.get(categoria_per_query, categoria_per_query)
+    query_testo = f'{brand_pulito} {termine_en}'.strip() if brand_pulito else termine_en
+
+    payload = {
+        "searchId": str(uuid.uuid4()),
+        "queries": [{"query": query_testo, "specificity": "exact"}],
+        "resultMode": "raw",
+    }
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "*/*",
+        "Origin": "https://resellbot.com",
+        "Referer": "https://resellbot.com/",
+        "User-Agent": (
+            "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/153.0.0.0 Mobile Safari/537.36"
+        ),
+    }
+    try:
+        resp = requests.post(
+            "https://scan-api.resellbot.com/api/search",
+            headers=headers, json=payload, timeout=timeout,
+        )
+        if resp.status_code in (401, 403, 429):
+            return f"  Resellbot bloccato/rate-limited (HTTP {resp.status_code}) -- uso fallback Google.", False
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:
+        return f"  Resellbot fallito: {e} -- uso fallback Google.", False
+
+    risultati_per_piattaforma = data.get("results") or []
+    righe = []
+    for blocco_piattaforma in risultati_per_piattaforma:
+        piattaforma = (blocco_piattaforma.get("platform") or "").strip()
+        for item in blocco_piattaforma.get("listings") or []:
+            titolo = (item.get("title") or "").strip()
+            prezzo = item.get("price")
+            if not titolo or prezzo is None:
+                continue
+            spedizione = item.get("shipping") or 0
+            sold_at = (item.get("soldAt") or "")[:10]  # solo YYYY-MM-DD
+            condizione = (item.get("condition") or "").strip()
+            pezzi = [f"- {titolo} — €{prezzo:.2f}"]
+            if spedizione:
+                pezzi.append(f"(+€{spedizione:.2f} spedizione)")
+            if sold_at:
+                pezzi.append(f"[venduto: {sold_at}]")
+            if piattaforma:
+                pezzi.append(f"[{piattaforma}]")
+            if condizione:
+                pezzi.append(f"[cond: {condizione}]")
+            righe.append(" ".join(pezzi))
+
+    if not righe:
+        return "  Nessun venduto trovato su Resellbot per questa query.", True
+    return "\n".join(righe[:20]), True
+
+
+def _serper_batch_query_ebay_sold(brand, categoria):
+    """FALLBACK per eBay SOLD (fonte primaria: _cerca_ebay_sold_via_resellbot
+    sopra) -- stesso schema di _serper_batch_query_vestiaire (Google search
+    via Serper, non scrape diretto della pagina eBay).
+
+    Sostituisce il vecchio approccio (_serper_scrape_page_diretto +
+    _estrai_articoli_ebay) che scrapava direttamente l'URL di ricerca eBay
+    con LH_Sold=1. Abbandonato il 2026-09-19 dopo conferma diretta nei log
+    Railway: OGNI scrape, su item diversi con query diverse, restituiva la
+    stessa identica pagina eBay ('metadata': {'title': 'Misura di sicurezza
+    | eBay'}, sempre 217 righe di contenuto) -- non un problema di selettori
+    CSS o layout cambiato, ma il muro anti-bot di eBay che intercetta
+    sistematicamente lo scraper di Serper su quell'endpoint, prima ancora
+    che la pagina risultati venga generata. Nessun fix ai selettori
+    avrebbe mai funzionato.
+
+    Interrogando invece Google (site:ebay.it/ebay.com) tramite l'endpoint
+    /search di Serper, la richiesta non tocca mai eBay direttamente: e' lo
+    stesso principio gia' usato per Vestiaire, che infatti non ha mai
+    avuto questo problema. Perso il filtro nativo LH_Sold=1 (non
+    disponibile fuori dall'URL di ricerca eBay), compensato aggiungendo
+    "venduto"/"sold" in query -- lo stesso schema gia' usato con successo
+    dalle ricerche on-demand del cervello (cerca_serper_mirata), che infatti
+    su eBay trovano spesso dati reali (vedi log 'NWT Brunello Cucinelli...
+    1 venduto' nei risultati on-demand) proprio perche' passano da Google
+    e non dallo scrape diretto."""
+    if not SERPER_API_KEY:
+        return "Ricerca non eseguita (SERPER_API_KEY non impostata).", False
+
+    brand_pulito = (brand or "").strip()
+    categoria_per_query = (categoria or "").strip()
+
+    if not categoria_per_query:
+        return (
+            "Categoria non rilevata dal titolo dell'annuncio -- query eBay "
+            "saltata per evitare risultati fuorvianti. Se necessario, usa la "
+            "function cerca_comp_prezzo con una query piu' mirata."
+        ), False
+
+    termine_en = CATEGORIA_TERMINE_EN.get(categoria_per_query, categoria_per_query)
+    # Parentesi esplicite sui due OR: senza raggruppamento la sintassi Google
+    # ("A OR B OR C" senza parentesi ha precedenza ambigua) rischia di
+    # applicare il vincolo site:ebay.* solo a un ramo della query invece che
+    # a tutta la ricerca, con risultati fuori da eBay.
+    base = f'{brand_pulito} "{termine_en}"'.strip() if brand_pulito else f'"{termine_en}"'
+    query_serper = f'{base} (venduto OR sold) (site:ebay.it OR site:ebay.com)'
+
+    payload = [{"q": query_serper, "gl": "it", "hl": "it", "num": 10}]
+    try:
+        resp = requests.post(
+            "https://google.serper.dev/search",
+            headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
+            # timeout ridotto a 8s (era 15s): questa funzione e' anche il
+            # FALLBACK di _cerca_ebay_sold_con_fallback, chiamato DOPO il
+            # tentativo Resellbot (fino a 6s) -- il budget totale deve restare
+            # sotto i 15s del timeout dell'executor in search_comps_completo,
+            # altrimenti la fonte eBay verrebbe scartata come "troppo lenta"
+            # anche quando il fallback stava per riuscire.
+            json=payload, timeout=8,
         )
         if _e_errore_crediti_serper(resp):
             return f"  Serper fallito (HTTP {resp.status_code}).", False
@@ -2378,9 +2471,26 @@ def _recupera_comp_visuali_vinted(item_id, photo_id, brand):
     return _serper_scrape_page_diretto("VINTED", url)
 
 
+def _cerca_ebay_sold_con_fallback(brand, categoria):
+    """Wrapper per l'executor: prova prima Resellbot (dati di vendita
+    confermati, veri, vedi _cerca_ebay_sold_via_resellbot), e solo se fallisce
+    (bloccato, rate-limited, errore di rete, o semplicemente 'nessun venduto
+    trovato' con ok=True viene comunque accettato cosi' com'e' -- il fallback
+    scatta solo su ok=False) prova la query Google di riserva. Tenute
+    sequenziali (non in parallelo) per non raddoppiare le chiamate quando la
+    prima fonte funziona, che e' il caso comune."""
+    testo, ok = _cerca_ebay_sold_via_resellbot(brand, categoria)
+    if ok:
+        return testo, ok
+    log.info("_cerca_ebay_sold_con_fallback: Resellbot fallito (%s), tento fallback Google.", testo)
+    testo_fallback, ok_fallback = _serper_batch_query_ebay_sold(brand, categoria)
+    if ok_fallback:
+        return f"{testo_fallback}\n(Nota: fonte primaria Resellbot fallita, questi risultati vengono da Google/eBay.)", True
+    return f"{testo} | fallback Google anch'esso fallito: {testo_fallback}", False
+
+
 def search_comps_completo(brand, categoria, query_base, catalog_id=None, material_per_ricerca=None, cover_photo_id=None, item_id=None):
     vinted_url, vinted_per_id = build_vinted_search_url(brand, categoria, material_per_ricerca, catalog_id)
-    ebay_url = search_comps_ebay_sold_url(brand, categoria)
     # Se manca l'ingrediente minimo (photo_id o brand mappato) la fonte
     # visuale e' inutile: lo sappiamo gia' qui senza fare rete, quindi non la
     # sottomettiamo affatto all'executor invece di sprecare uno slot/tempo.
@@ -2395,7 +2505,13 @@ def search_comps_completo(brand, categoria, query_base, catalog_id=None, materia
     with ThreadPoolExecutor(max_workers=4) as executor:
         future_vestiaire = executor.submit(_serper_batch_query_vestiaire, brand, categoria)
         future_vinted = executor.submit(_serper_scrape_page_diretto, "VINTED", vinted_url)
-        future_ebay = executor.submit(_serper_scrape_page_diretto, "EBAY SOLD", ebay_url)
+        # eBay: fonte primaria Resellbot (API reale con vendite confermate,
+        # vedi _cerca_ebay_sold_via_resellbot) con fallback automatico a
+        # Google (_serper_batch_query_ebay_sold) se Resellbot fallisce --
+        # niente scrape diretto della pagina ricerca eBay, bloccata
+        # sistematicamente dal suo anti-bot (confermato in produzione il
+        # 2026-09-19, vedi docstring di _serper_batch_query_ebay_sold).
+        future_ebay = executor.submit(_cerca_ebay_sold_con_fallback, brand, categoria)
         futures = {future_vestiaire: "vestiaire", future_vinted: "vinted", future_ebay: "ebay"}
         if tentare_ricerca_visuale:
             future_visuale = executor.submit(_recupera_comp_visuali_vinted, item_id, cover_photo_id, brand)
@@ -2476,7 +2592,11 @@ def search_comps_completo(brand, categoria, query_base, catalog_id=None, materia
         f"{vinted_comp_puliti or 'Nessun risultato'}"
     )
     parti.append(
-        "\n📍 FONTE: EBAY SOLD (prezzi SOLD — venduti confermati, il dato PIU' affidabile per stimare il prezzo di vendita reale)\n"
+        "\n📍 FONTE: EBAY SOLD (dati di vendita CONFERMATI via Resellbot, con data di vendita — il dato "
+        "PIU' affidabile per stimare il prezzo di vendita reale; SE il blocco sotto contiene la nota "
+        "'fonte primaria Resellbot fallita', invece, i risultati vengono da una ricerca Google testuale "
+        "di fallback e possono includere annunci ancora attivi che citano 'sold' fuori contesto — in tal "
+        "caso verifica dal testo/snippet prima di trattarli come venduti confermati)\n"
         f"{ebay_comp_puliti or 'Nessun risultato'}"
     )
 
