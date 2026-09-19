@@ -1999,17 +1999,30 @@ def search_comps_ebay_sold_url(brand, categoria):
 
 
 def _estrai_articoli_vinted(content, max_articoli=15):
+    """Estrae righe 'titolo — prezzo' dal markdown scrapato di una pagina
+    catalogo Vinted. Fix 2026-09-19: il pattern prezzo riconosceva solo
+    '€105' (simbolo prima del numero), mai '105€'/'105 €' -- se Vinted
+    scrive il prezzo in quel secondo formato (comune altrove, es. Vestiaire),
+    questa funzione tornava sistematicamente 'Nessun articolo trovato' anche
+    con una pagina piena di risultati validi. Ora riconosce entrambi."""
     righe_pulite, visti = [], set()
     for riga in content.split("\n"):
         riga_dec = riga.replace("&#x20AC;", "€").replace("&#x20ac;", "€")
-        match_prezzo = re.search(r"€\s*([\d]+(?:\.\d+)?)", riga_dec)
+        match_prezzo = re.search(r"€\s*([\d]+(?:\.\d+)?)|([\d]+(?:\.\d+)?)\s*€", riga_dec)
         if not match_prezzo:
             continue
-        prezzo = match_prezzo.group(1)
+        prezzo = match_prezzo.group(1) or match_prezzo.group(2)
         riga_pulita = re.sub(r'!\[([^\]]*)\]\([^)]*\)', r'\1', riga_dec)
         riga_pulita = re.sub(r'!\[', '', riga_pulita)
         riga_pulita = re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', riga_pulita).replace('"', '').strip().lstrip('-').strip()
+        # Prova entrambi i formati di prezzo ('€105' e '105€'/'105 €') nella
+        # riga gia' ripulita dal markdown -- niente calcoli di posizione
+        # incrociati tra riga_dec e riga_pulita (fragili: la pulizia
+        # markdown cambia le lunghezze/offset in modo non prevedibile).
         pos_prezzo = riga_pulita.find(f"€{prezzo}")
+        if pos_prezzo == -1:
+            m_dopo = re.search(re.escape(prezzo) + r"\s*€", riga_pulita)
+            pos_prezzo = m_dopo.start() if m_dopo else -1
         if pos_prezzo == -1:
             pos_prezzo = riga_pulita.find("€")
         titolo = riga_pulita[:pos_prezzo].rstrip(", ").strip() if pos_prezzo > 0 else riga_pulita
@@ -3183,11 +3196,18 @@ def verifica_comp_citati_sono_reali(testo, pool_ricerca_grezzo):
     ESATTI verbatim dai dati ricevuti... mai un range parafrasato a memoria")
     ma nessun controllo automatico lo verificava finora.
 
-    Se NESSUNO dei prezzi citati nel blocco Analisi trova corrispondenza
-    (con una piccola tolleranza per arrotondamenti) tra i numeri realmente
-    presenti nel pool di ricerca, il verdetto non ha base verificabile:
-    declassa allo stesso modo di verifica_ancoraggio_prezzo_comp (COMPRA/
-    TRATTA -> declassati, NON COMPRARE lasciato con nota)."""
+    Se ANCHE SOLO UNO dei prezzi citati nel blocco Analisi non trova
+    corrispondenza (con una piccola tolleranza per arrotondamenti) tra i
+    numeri realmente presenti nel pool di ricerca, il verdetto non ha base
+    interamente verificabile: declassa allo stesso modo di
+    verifica_ancoraggio_prezzo_comp (COMPRA/TRATTA -> declassati, NON
+    COMPRARE lasciato con nota). Corretto il 2026-09-19: la versione
+    precedente richiedeva che TUTTI i prezzi citati fossero senza riscontro
+    prima di declassare (bastava un solo numero vero per far passare
+    l'intera Analisi) -- troppo permissivo per il pattern osservato in
+    produzione di un'Analisi che mescola un comp reale con uno inventato e
+    attribuito a una fonte piu' autorevole di quella vera (es. taggato
+    "eBay SOLD" quando eBay era vuoto nel pool)."""
     if not pool_ricerca_grezzo or not pool_ricerca_grezzo.strip():
         return testo  # nessun dato di ricerca disponibile: non c'e' nulla da verificare
 
@@ -3228,30 +3248,44 @@ def verifica_comp_citati_sono_reali(testo, pool_ricerca_grezzo):
     prezzi_pool = _estrai_prezzi_da_pool_ricerca(pool_ricerca_grezzo)
 
     TOLLERANZA_ASSOLUTA = 1.0  # euro, per arrotondamenti (es. 89.99 vs 90)
-    almeno_uno_verificato = prezzi_pool and any(
-        any(abs(citato - reale) <= TOLLERANZA_ASSOLUTA for reale in prezzi_pool)
-        for citato in prezzi_citati
-    )
-    if almeno_uno_verificato:
-        return testo
-    # Se prezzi_pool e' vuoto (la ricerca non ha restituito nessun prezzo
-    # numerico estraibile) MA l'Analisi cita comp con numeri precisi, questo
-    # E' il caso piu' chiaro di stima "a memoria" invece che dai dati -- non
-    # va escluso dalla verifica, va trattato come violazione (caso reale:
-    # T-shirt Undercover, ricerca web senza prezzi utili, cervello che cita
-    # comunque "vendite recenti tra €150 e €280").
+    prezzi_non_verificati = [
+        citato for citato in prezzi_citati
+        if not any(abs(citato - reale) <= TOLLERANZA_ASSOLUTA for reale in prezzi_pool)
+    ]
+    if not prezzi_non_verificati:
+        return testo  # OGNI prezzo citato ha riscontro nel pool: nessuna violazione
 
+    # BUG corretto il 2026-09-19: la versione precedente lasciava passare
+    # l'intera Analisi appena UN SOLO prezzo citato risultava verificato,
+    # anche se altri citati nello stesso paragrafo erano inventati -- caso
+    # reale osservato: Analisi che cita "eBay SOLD €103.66" (fonte eBay
+    # completamente vuota nel pool -- numero senza alcun riscontro) insieme
+    # a "Vestiaire €132.00" (questo si', presente nel pool), il prezzo vero
+    # dava credibilita' a tutto il paragrafo e la violazione sul primo
+    # passava inosservata. Ora la verifica e' PER OGNI prezzo citato: anche
+    # un solo numero senza riscontro fa scattare la rete, perche' e'
+    # comunque un dato presentato come verificato quando non lo e' (nel
+    # caso Miu Miu, proprio quel numero non verificato era la base
+    # dell'attribuzione "venduto confermato" che giustificava il COMPRA).
     log.info(
-        "verifica_comp_citati_sono_reali: nessuno dei prezzi citati in Analisi (%s) trova "
-        "corrispondenza nei dati di ricerca realmente ricevuti (%s) -- declassato il verdetto.",
-        prezzi_citati, sorted(prezzi_pool),
+        "verifica_comp_citati_sono_reali: %d/%d prezzi citati in Analisi senza corrispondenza "
+        "nei dati di ricerca realmente ricevuti -- non verificati: %s (citati: %s, pool: %s) "
+        "-- declassato il verdetto.",
+        len(prezzi_non_verificati), len(prezzi_citati), prezzi_non_verificati, prezzi_citati, sorted(prezzi_pool),
     )
 
-    nota_calcolo = (
-        f"i prezzi citati nell'Analisi dell'analista ({', '.join(f'€{p:.2f}' for p in prezzi_citati)}) "
-        f"non corrispondono a nessun prezzo presente nei dati di ricerca realmente raccolti per "
-        f"questo annuncio -- possibile stima 'a memoria del brand' invece che dai comp reali"
-    )
+    if len(prezzi_non_verificati) == len(prezzi_citati):
+        nota_calcolo = (
+            f"i prezzi citati nell'Analisi dell'analista ({', '.join(f'€{p:.2f}' for p in prezzi_citati)}) "
+            f"non corrispondono a nessun prezzo presente nei dati di ricerca realmente raccolti per "
+            f"questo annuncio -- possibile stima 'a memoria del brand' invece che dai comp reali"
+        )
+    else:
+        nota_calcolo = (
+            f"parte dei prezzi citati nell'Analisi dell'analista non corrisponde ai dati di ricerca "
+            f"realmente raccolti (non verificati: {', '.join(f'€{p:.2f}' for p in prezzi_non_verificati)}) "
+            f"-- possibile mix di comp reali e stime 'a memoria del brand' o attribuiti alla fonte sbagliata"
+        )
 
     testo = _normalizza_emoji_decisione(testo)
     LUNGHEZZA_BLOCCO_VERDETTO = 400
