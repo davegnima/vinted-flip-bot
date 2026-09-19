@@ -42,16 +42,26 @@ SERPER_API_KEY = os.environ.get("SERPER_API_KEY")
 
 # VISUAL_SEARCH_ATTIVA: la 4a fonte comp "ricerca visuale Vinted" (equivalente
 # al bottone "Cerca articoli simili" + filtro brand, vedi
-# _risolvi_search_by_image_id/build_vinted_visual_search_url). Il 2026-09-18
-# una prima versione senza Referer veniva rediretta a /member/register --
-# NON per mancanza di login (l'utente ha confermato che il bottone funziona
-# anche in navigazione anonima), ma perche' la richiesta arrivava "a
-# freddo" senza il contesto di un click interno alla pagina dell'annuncio.
-# _risolvi_search_by_image_id ora imposta Referer/Sec-Fetch-* corretti;
-# resta comunque disattivata di default finche' questo fix non e'
-# verificato in produzione su un nuovo giro di item reali. Riattivare con
-# VISUAL_SEARCH_ATTIVA=true una volta confermato che il redirect di
-# login/registrazione non si presenta piu'.
+# _risolvi_search_by_image_id/build_vinted_visual_search_url).
+#
+# STATO: ABBANDONATA per ora (verificato in produzione il 2026-09-19).
+# Tentativo 1 (senza Referer): redirect a /member/register per ogni item.
+# Tentativo 2 (con Referer=/items/{id} e Sec-Fetch-* da navigazione interna,
+# sessione persistente che ha gia' visitato la pagina annuncio): STESSO
+# identico redirect a /member/register su ogni item testato -- il fix non
+# ha cambiato nulla. Quindi il problema non e' (solo) l'header Referer:
+# Vinted sta probabilmente distinguendo il bot per qualcos'altro che
+# 'requests' non replica (cookie di sessione anonima impostati via
+# JavaScript lato client anziche' header Set-Cookie puro, un token
+# CSRF che il bottone reale legge dal DOM prima della chiamata, o
+# fingerprinting TLS/anti-bot) -- nessuna di queste e' risolvibile senza un
+# browser vero (rendering JS), che vorrebbe dire uscire dall'approccio "solo
+# richieste HTTP" per cui questa funzionalita' era stata pensata.
+# Decisione: non investire altro tempo qui finche' non emerge un motivo
+# concreto per riconsiderarla (es. disponibilita' di un browser headless nel
+# bot). Il flag resta com'e' (default False, funzione gia' pronta e
+# innocua se riattivata) solo per non buttare il codice, non perche' ci si
+# aspetti che torni utile a breve.
 VISUAL_SEARCH_ATTIVA = os.environ.get("VISUAL_SEARCH_ATTIVA", "false").strip().lower() == "true"
 
 # CERVELLO_PROVIDER: "gemini" (default, comportamento storico) oppure
@@ -761,6 +771,36 @@ def telegram_send_media_group(chat_id, photos_bytes_list, caption=None):
 
 
 def telegram_send_with_buttons(chat_id, text, url_annuncio, item_id=None):
+    """Manda 'text' con i bottoni inline in fondo. Bug corretto il 2026-09-19:
+    a differenza di telegram_send_message, questa funzione non spezzava mai
+    il testo -- oltre 4096 caratteri (limite Telegram per sendMessage) la
+    richiesta falliva con lo STESSO errore sia col tentativo Markdown sia col
+    retry senza parse_mode (il limite di lunghezza non c'entra col parse_mode),
+    quindi l'intero messaggio testuale spariva silenziosamente: le foto
+    (mandate prima, in una chiamata separata) arrivavano, il verdetto/analisi
+    no. Osservato in produzione con DEBUG_CONFRONTO_COMP_TELEGRAM=true (il
+    pool di ricerca grezzo in coda al messaggio spingeva facilmente oltre
+    4096), ma il bug esisteva a prescindere per qualunque messaggio
+    abbastanza lungo. Ora usa lo stesso chunking di telegram_send_message,
+    con i bottoni spostati sull'ULTIMO chunk (dove servono davvero: aprire
+    l'annuncio/scrivere al venditore dopo aver letto tutto)."""
+    MAX_LEN = 3500
+    chunks = []
+    remaining = text
+    while remaining:
+        if len(remaining) <= MAX_LEN:
+            chunks.append(remaining)
+            break
+        split_at = remaining.rfind("\n\n", 0, MAX_LEN)
+        if split_at == -1:
+            split_at = remaining.rfind("\n", 0, MAX_LEN)
+        if split_at == -1:
+            split_at = MAX_LEN
+        chunks.append(remaining[:split_at])
+        remaining = remaining[split_at:]
+    if not chunks:
+        chunks = [text]
+
     keyboard = {"inline_keyboard": [[
         {"text": "🔗 Apri su Vinted", "url": url_annuncio},
     ]]}
@@ -768,28 +808,23 @@ def telegram_send_with_buttons(chat_id, text, url_annuncio, item_id=None):
         keyboard["inline_keyboard"].append([
             {"text": "💬 Scrivi venditore", "url": f"https://www.vinted.it/items/{item_id}"},
         ])
-    resp = requests.post(
-        f"{TELEGRAM_API}/sendMessage",
-        json={
-            "chat_id": chat_id,
-            "text": text,
-            "parse_mode": "Markdown",
-            "disable_web_page_preview": True,
-            "reply_markup": keyboard,
-        },
-        timeout=20,
-    )
-    if not resp.ok:
-        requests.post(
+
+    for i, chunk in enumerate(chunks):
+        e_ultimo_chunk = (i == len(chunks) - 1)
+        payload_base = {"chat_id": chat_id, "text": chunk, "disable_web_page_preview": True}
+        if e_ultimo_chunk:
+            payload_base["reply_markup"] = keyboard
+        resp = requests.post(
             f"{TELEGRAM_API}/sendMessage",
-            json={
-                "chat_id": chat_id,
-                "text": text,
-                "disable_web_page_preview": True,
-                "reply_markup": keyboard,
-            },
+            json={**payload_base, "parse_mode": "Markdown"},
             timeout=20,
         )
+        if not resp.ok:
+            log.warning(
+                "telegram_send_with_buttons: Markdown fallita -- HTTP %d: %s -- ritento senza parse_mode",
+                resp.status_code, resp.text[:300],
+            )
+            requests.post(f"{TELEGRAM_API}/sendMessage", json=payload_base, timeout=20)
 
 
 # ---------------------------------------------------------------------------
@@ -3660,11 +3695,22 @@ def process_listing(parsed, url, cover_photo_bytes):
         else:
             nota_visuale = "— non tentata (VISUAL_SEARCH_ATTIVA=false, o brand/cover_photo_id mancante)"
 
+        # Troncato a un tetto ragionevole: con RETI_SICUREZZA_ATTIVE=False
+        # questo blocco va in coda a un messaggio che puo' gia' essere lungo
+        # (Analisi + Messaggio da inviare + Da chiedere), e telegram_send_
+        # with_buttons ora spezza correttamente sopra 4096 caratteri -- ma
+        # 3-4 messaggi Telegram per ogni singolo item resterebbero comunque
+        # scomodi da leggere dal telefono durante l'esperimento diagnostico.
+        MAX_DETTAGLIO_DEBUG = 1200
+        dettaglio_debug = pool_ricerca_grezzo or "(pool vuoto)"
+        if len(dettaglio_debug) > MAX_DETTAGLIO_DEBUG:
+            dettaglio_debug = dettaglio_debug[:MAX_DETTAGLIO_DEBUG] + "\n… (troncato, vedi log Railway per il pool completo)"
+
         output_finale += (
             f"\n\n🔬 *DEBUG provenienza comp* — riepilogo prezzi ({len(prezzi_pool_debug)}): {prezzi_fmt}\n"
             f"Ricerca visuale Vinted: {nota_visuale}\n"
-            f"— Dettaglio completo per fonte (pre-raccolti + ricerche on-demand del cervello) —\n"
-            f"{pool_ricerca_grezzo or '(pool vuoto)'}"
+            f"— Dettaglio per fonte (pre-raccolti + ricerche on-demand del cervello) —\n"
+            f"{dettaglio_debug}"
         )
 
     # ---- FOOTER COSTO IA: recap per-modello, per-messaggio ----
