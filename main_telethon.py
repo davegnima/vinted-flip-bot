@@ -3148,6 +3148,37 @@ def _estrai_prezzi_da_pool_ricerca(pool_ricerca_grezzo):
     return prezzi
 
 
+def _prezzi_per_fonte_da_pool(pool_ricerca_grezzo):
+    """Come _riepilogo_comp_per_fonte ma restituisce i dati grezzi invece del
+    testo: dict {chiave_fonte_normalizzata: set(prezzi)}, dove chiave_fonte
+    e' il nome della fonte in minuscolo senza spazi/punteggiatura (es.
+    'ebaysold', 'vestiairecollective', 'vinted') -- pensato per essere
+    confrontato con un nome di fonte estratto dal testo del cervello con la
+    stessa normalizzazione, cosi' da tollerare piccole differenze di
+    formattazione ('eBay SOLD' vs 'ebay sold' vs 'eBay-SOLD'). Usato da
+    verifica_comp_citati_sono_reali per il controllo di secondo livello
+    'la fonte dichiarata dal cervello corrisponde a dove il prezzo si trova
+    davvero nel pool'."""
+    risultato = {}
+    if not pool_ricerca_grezzo or not pool_ricerca_grezzo.strip():
+        return risultato
+    blocchi = re.split(r"\n?📍\s*FONTE:\s*", pool_ricerca_grezzo)
+    for blocco in blocchi:
+        blocco = blocco.strip()
+        if not blocco:
+            continue
+        prima_riga, _, resto = blocco.partition("\n")
+        if prima_riga.upper().startswith("RICERCA WEB PRE-RACCOLTA"):
+            continue
+        nome_fonte = prima_riga.split("(")[0].strip().rstrip(":—-").strip() or prima_riga.strip()
+        chiave = re.sub(r"[^a-z0-9]", "", nome_fonte.lower())
+        if not chiave:
+            continue
+        prezzi_fonte = _estrai_prezzi_da_pool_ricerca(resto or blocco)
+        risultato.setdefault(chiave, set()).update(prezzi_fonte)
+    return risultato
+
+
 def _riepilogo_comp_per_fonte(pool_ricerca_grezzo):
     """Riassume pool_ricerca_grezzo in UNA riga per fonte (conteggio + range
     di prezzo), invece di riportare gli snippet grezzi Serper per intero --
@@ -3207,7 +3238,19 @@ def verifica_comp_citati_sono_reali(testo, pool_ricerca_grezzo):
     l'intera Analisi) -- troppo permissivo per il pattern osservato in
     produzione di un'Analisi che mescola un comp reale con uno inventato e
     attribuito a una fonte piu' autorevole di quella vera (es. taggato
-    "eBay SOLD" quando eBay era vuoto nel pool)."""
+    "eBay SOLD" quando eBay era vuoto nel pool).
+
+    SECONDO LIVELLO aggiunto lo stesso giorno: non basta che un prezzo
+    citato esista DA QUALCHE PARTE nel pool complessivo -- se il cervello
+    dichiara esplicitamente una fonte vicino al prezzo (es. "€103.66 su
+    eBay SOLD"), quel prezzo deve trovarsi PROPRIO nel blocco di quella
+    fonte nel pool, non altrove. Senza questo controllo un numero vero preso
+    da una fonte debole (es. Vestiaire) puo' essere rietichettato come
+    proveniente da una fonte piu' autorevole (es. "eBay SOLD confermato")
+    senza che nessuna rete se ne accorga, dato che il numero di per se' e'
+    verificabile nel pool complessivo. Riconosce le fonti eBay/Vestiaire/
+    Vinted/Depop/Grailed (vedi ALIAS_FONTE); un prezzo senza fonte dichiarata
+    vicino continua a passare col solo controllo di primo livello."""
     if not pool_ricerca_grezzo or not pool_ricerca_grezzo.strip():
         return testo  # nessun dato di ricerca disponibile: non c'e' nulla da verificare
 
@@ -3229,7 +3272,25 @@ def verifica_comp_citati_sono_reali(testo, pool_ricerca_grezzo):
         except ValueError:
             pass
 
+    # Nomi di fonte riconosciuti quando compaiono vicino a un prezzo citato
+    # nell'Analisi -- usati per il controllo di secondo livello "la fonte
+    # dichiarata corrisponde a dove il prezzo si trova davvero nel pool".
+    # Ogni variante testuale mappa alla stessa chiave normalizzata usata da
+    # _prezzi_per_fonte_da_pool (nome fonte pool in minuscolo, senza spazi/
+    # punteggiatura), cosi' "eBay SOLD", "eBay" e "ebay" puntano tutte allo
+    # stesso blocco pool.
+    ALIAS_FONTE = [
+        (r"ebay\s*sold", "ebaysold"),
+        (r"ebay", "ebaysold"),
+        (r"vestiaire\s*collective", "vestiairecollective"),
+        (r"vestiaire", "vestiairecollective"),
+        (r"vinted", "vinted"),
+        (r"depop", "depop"),
+        (r"grailed", "grailed"),
+    ]
+
     prezzi_citati = []
+    fonte_dichiarata_per_prezzo = {}  # indice in prezzi_citati -> chiave fonte pool o None
     for m in re.finditer(r"€\s*([\d]+(?:[.,]\d+)?)|([\d]+(?:[.,]\d+)?)\s*€", blocco_analisi):
         finestra_precedente = blocco_analisi[max(0, m.start() - 40):m.start()].lower()
         if re.search(r"\b(listing|incasso)\b", finestra_precedente):
@@ -3241,19 +3302,51 @@ def verifica_comp_citati_sono_reali(testo, pool_ricerca_grezzo):
             continue
         if prezzo_richiesto is not None and abs(prezzo - prezzo_richiesto) < 0.01:
             continue  # e' solo la ripetizione del prezzo richiesto, non un comp
+
+        # Cerca un nome di fonte esplicito vicino al prezzo citato (finestra
+        # stretta, prima o dopo il numero: "€103.66 su eBay SOLD", "eBay:
+        # €103.66", "venduto a €103 (Vestiaire)"). Se trovato, lo normalizza
+        # nella stessa chiave usata per i blocchi del pool.
+        finestra_dopo = blocco_analisi[m.end():m.end() + 40].lower()
+        finestra_fonte = finestra_precedente + " " + finestra_dopo
+        chiave_fonte_citata = None
+        for pattern_alias, chiave_pool in ALIAS_FONTE:
+            if re.search(pattern_alias, finestra_fonte):
+                chiave_fonte_citata = chiave_pool
+                break
+
+        indice = len(prezzi_citati)
         prezzi_citati.append(prezzo)
+        fonte_dichiarata_per_prezzo[indice] = chiave_fonte_citata
     if not prezzi_citati:
         return testo  # nessun comp citato in Analisi: altre reti coprono questo caso
 
     prezzi_pool = _estrai_prezzi_da_pool_ricerca(pool_ricerca_grezzo)
+    prezzi_per_fonte = _prezzi_per_fonte_da_pool(pool_ricerca_grezzo)
 
     TOLLERANZA_ASSOLUTA = 1.0  # euro, per arrotondamenti (es. 89.99 vs 90)
-    prezzi_non_verificati = [
-        citato for citato in prezzi_citati
-        if not any(abs(citato - reale) <= TOLLERANZA_ASSOLUTA for reale in prezzi_pool)
-    ]
-    if not prezzi_non_verificati:
-        return testo  # OGNI prezzo citato ha riscontro nel pool: nessuna violazione
+
+    prezzi_non_verificati = []
+    prezzi_fonte_sbagliata = []  # (prezzo, chiave_fonte_citata) -- esiste nel pool ma non in quella fonte
+    for indice, citato in enumerate(prezzi_citati):
+        esiste_nel_pool = any(abs(citato - reale) <= TOLLERANZA_ASSOLUTA for reale in prezzi_pool)
+        if not esiste_nel_pool:
+            prezzi_non_verificati.append(citato)
+            continue
+
+        chiave_fonte_citata = fonte_dichiarata_per_prezzo.get(indice)
+        if chiave_fonte_citata is None:
+            continue  # verificato nel pool, nessuna fonte specifica dichiarata: ok cosi'
+
+        prezzi_di_quella_fonte = prezzi_per_fonte.get(chiave_fonte_citata, set())
+        esiste_nella_fonte_dichiarata = any(
+            abs(citato - reale) <= TOLLERANZA_ASSOLUTA for reale in prezzi_di_quella_fonte
+        )
+        if not esiste_nella_fonte_dichiarata:
+            prezzi_fonte_sbagliata.append((citato, chiave_fonte_citata))
+
+    if not prezzi_non_verificati and not prezzi_fonte_sbagliata:
+        return testo  # OGNI prezzo citato ha riscontro nel pool, nella fonte giusta: nessuna violazione
 
     # BUG corretto il 2026-09-19: la versione precedente lasciava passare
     # l'intera Analisi appena UN SOLO prezzo citato risultava verificato,
@@ -3267,23 +3360,49 @@ def verifica_comp_citati_sono_reali(testo, pool_ricerca_grezzo):
     # comunque un dato presentato come verificato quando non lo e' (nel
     # caso Miu Miu, proprio quel numero non verificato era la base
     # dell'attribuzione "venduto confermato" che giustificava il COMPRA).
-    log.info(
-        "verifica_comp_citati_sono_reali: %d/%d prezzi citati in Analisi senza corrispondenza "
-        "nei dati di ricerca realmente ricevuti -- non verificati: %s (citati: %s, pool: %s) "
-        "-- declassato il verdetto.",
-        len(prezzi_non_verificati), len(prezzi_citati), prezzi_non_verificati, prezzi_citati, sorted(prezzi_pool),
-    )
+    #
+    # SECONDO LIVELLO aggiunto lo stesso giorno: un prezzo puo' esistere DA
+    # QUALCHE PARTE nel pool ma essere attribuito dal cervello a una fonte
+    # diversa e piu' autorevole di quella reale (es. un prezzo che nel pool
+    # sta solo nel blocco Vestiaire, ma il cervello lo cita come "eBay SOLD
+    # €X" -- il numero e' vero, la fonte no). Caso osservato: Robe Missoni,
+    # "€66 eBay" mentre la query on-demand eBay per quell'item non aveva
+    # ancora dati confermati nel pool. prezzi_fonte_sbagliata isola questi
+    # casi separandoli da quelli senza riscontro nel pool (prezzi_non_verificati).
+    if prezzi_non_verificati:
+        log.info(
+            "verifica_comp_citati_sono_reali: %d/%d prezzi citati in Analisi senza corrispondenza "
+            "nei dati di ricerca realmente ricevuti -- non verificati: %s (citati: %s, pool: %s) "
+            "-- declassato il verdetto.",
+            len(prezzi_non_verificati), len(prezzi_citati), prezzi_non_verificati, prezzi_citati, sorted(prezzi_pool),
+        )
+    if prezzi_fonte_sbagliata:
+        log.info(
+            "verifica_comp_citati_sono_reali: %d prezzi citati con fonte dichiarata non corrispondente "
+            "al blocco pool reale -- fonte_sbagliata: %s -- declassato il verdetto.",
+            len(prezzi_fonte_sbagliata), prezzi_fonte_sbagliata,
+        )
 
-    if len(prezzi_non_verificati) == len(prezzi_citati):
+    if prezzi_non_verificati and len(prezzi_non_verificati) == len(prezzi_citati):
         nota_calcolo = (
             f"i prezzi citati nell'Analisi dell'analista ({', '.join(f'€{p:.2f}' for p in prezzi_citati)}) "
             f"non corrispondono a nessun prezzo presente nei dati di ricerca realmente raccolti per "
             f"questo annuncio -- possibile stima 'a memoria del brand' invece che dai comp reali"
         )
+    elif prezzi_fonte_sbagliata and not prezzi_non_verificati:
+        dettaglio_fonti = ', '.join(f"€{p:.2f} (non e' in {fonte})" for p, fonte in prezzi_fonte_sbagliata)
+        nota_calcolo = (
+            f"nell'Analisi dell'analista alcuni prezzi sono attribuiti a una fonte che non li contiene "
+            f"davvero nei dati di ricerca raccolti ({dettaglio_fonti}) -- il numero esiste nel pool ma "
+            f"in una fonte diversa da quella dichiarata, probabile fonte mal attribuita"
+        )
     else:
+        pezzi_non_ok = [f"€{p:.2f}" for p in prezzi_non_verificati] + [
+            f"€{p:.2f} (fonte errata: dichiarato {fonte})" for p, fonte in prezzi_fonte_sbagliata
+        ]
         nota_calcolo = (
             f"parte dei prezzi citati nell'Analisi dell'analista non corrisponde ai dati di ricerca "
-            f"realmente raccolti (non verificati: {', '.join(f'€{p:.2f}' for p in prezzi_non_verificati)}) "
+            f"realmente raccolti (problemi su: {', '.join(pezzi_non_ok)}) "
             f"-- possibile mix di comp reali e stime 'a memoria del brand' o attribuiti alla fonte sbagliata"
         )
 
