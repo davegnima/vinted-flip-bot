@@ -737,7 +737,7 @@ Nessun comp specifico per il modello, solo per il brand in generale → usa la f
 Acquisto pieno = prezzo + protezione(~5%+€0,70) + spedizione (IT €2,50, EU €4,50-6). Incasso reale = prezzo listing stimato×0,80. Margine netto = incasso reale − acquisto pieno.
 **COMPRA**: margine ≥€20 E ROI ≥100%. Sotto soglia → TRATTA o NON COMPRARE.
 **Obiettivo operativo margine ≥€50** (calibrazione, non soglia rigida): se molto sotto, abbassa il Deal score e dichiaralo in Analisi ("margine sotto l'obiettivo operativo"), ma la Decisione resta guidata solo da €20/100%.
-**Alta urgenza**: SOLO se margine ≥€30 E ROI ≥150% E comp specifici verificabili citati (mai per stime generiche di valore del brand senza comp). Altrimenti Media o Bassa, mai Alta.
+**Urgenza — riflette la DOMANDA di mercato per QUESTO item a questo prezzo, non solo margine/ROI**: un affare col margine giusto ma su un capo/taglia/modello poco ricercato (bacino ristretto, community verticale piccola, taglia estrema, categoria a bassa rotazione) non è "Alta urgenza" solo perché i numeri tornano — è un buon margine su un item che può aspettare. Alta urgenza richiede TUTTI questi elementi insieme: margine ≥€30 E ROI ≥150% E comp specifici verificabili citati E segnali concreti di domanda alta per questo modello specifico (più annunci simili venduti di recente nei comp, brand/pezzo in un segmento ad alta liquidità secondo la sezione LIQUIDITÀ PER SEGMENTO, taglia standard/centrale, pezzo iconico o particolarmente ricercato dichiarato come tale). Mancando anche solo la domanda di mercato (es. taglia estrema, categoria a bassa rotazione, nessun segnale che altri lo cerchino) → Media urgenza anche con margine/ROI alti, dichiarando esplicitamente in Analisi perché ("margine alto ma domanda di mercato limitata: taglia estrema/bacino ristretto"). Altrimenti Media o Bassa, mai Alta.
 **Trattativa**: sconto massimo 40% sul PREZZO PRODOTTO (mai sulla spedizione). TRATTA solo se l'Obiettivo trattativa, calcolato a quello sconto massimo, raggiunge DA SOLO ≥€20/≥100% — se anche a sconto massimo non ci arriva, la decisione corretta è NON COMPRARE, non ha senso negoziare per un obiettivo che comunque non risolve nulla. L'incasso nell'Obiettivo trattativa deve essere IDENTICO a quello del verdetto principale (cambia solo il costo d'acquisto, mai la stima di vendita): verifica margine_trattativa = incasso_principale − costo_trattato prima di scriverlo.
 
 # TRASPARENZA OBBLIGATORIA
@@ -749,10 +749,11 @@ Emoji verdetto ESCLUSIVE: 🟢 COMPRA · 🟡 TRATTA · 🔴 NON COMPRARE · �
 # PRIMA DI RISPONDERE — verifica in ordine, correggi se necessario
 1. Margine/ROI supportano la Decisione (soglia €20/100%)?
 2. Se TRATTA: l'Obiettivo trattativa raggiunge DA SOLO €20/100%? Se no → NON COMPRARE.
-3. Se "Alta urgenza": margine ≥€30 E ROI ≥150% E comp specifici citati? Se no → Media urgenza.
+3. Se "Alta urgenza": margine ≥€30 E ROI ≥150% E comp specifici citati E domanda di mercato concreta per QUESTO modello/taglia (non solo margine alto su un item a bacino ristretto)? Se manca anche solo la domanda → Media urgenza.
 4. La stima di vendita supera il comp più alto (SOLD) citato in Analisi? Se sì → abbassala.
 5. Il materiale dei comp usati corrisponde al capo? Se materiale ignoto, hai usato il comp più economico?
 6. L'Obiettivo trattativa rispetta il 40% massimo sul prodotto (mai sulla spedizione)?
+7. Decisione = COMPRA o NON COMPRARE puro (nessuna trattativa, nessuna foto/info mancante per legit-check)? Se sì → NON includere i blocchi "Messaggio da inviare" e "Da chiedere".
 
 # OUTPUT — Verdetto in cima.
 
@@ -766,12 +767,16 @@ Emoji verdetto ESCLUSIVE: 🟢 COMPRA · 🟡 TRATTA · 🔴 NON COMPRARE · �
 [Solo se TRATTA]
 🤝 Obiettivo trattativa: €[costo totale trattato] → €[incasso — DEVE essere identico all'incasso del verdetto principale sopra] → €[margine netto] (ROI [X]%)
 
+[Blocco "Messaggio da inviare" + "Da chiedere" — SOLO in questi due casi, altrimenti ometti ENTRAMBI i blocchi interamente (niente "Non necessario", niente placeholder: se il caso non si applica, i blocchi non compaiono affatto nel messaggio):
+1. Decisione = TRATTA (serve un'offerta da inviare, e volendo domande di supporto).
+2. Servono davvero altre foto o informazioni dal venditore per completare legit-check o valutare un difetto — non per curiosità o dettagli che non cambierebbero la decisione.
+Su COMPRA (prezzo già conveniente, nessuna trattativa necessaria) o NON COMPRARE (l'operazione non regge indipendentemente da taglia/composizione/altri dettagli) NON includere questi blocchi.]
 ---
 📨 **Messaggio da inviare:**
-"[testo pronto]"
+"[testo pronto, con offerta se TRATTA]"
 
 ---
-❓ **Da chiedere**: [max 2 domande]
+❓ **Da chiedere**: [max 2 domande brevi, solo se davvero necessarie per legit-check/difetti/trattativa]
 
 ---
 🧠 **Analisi dell'analista:**
@@ -4511,41 +4516,53 @@ def process_listing(parsed, url, cover_photo_bytes):
         flags=re.IGNORECASE
     )
 
+    # Corretto il 2026-09-19 su richiesta esplicita dell'utente: i blocchi
+    # "Messaggio da inviare" e "Da chiedere" hanno senso solo su TRATTA
+    # (serve un'offerta) o quando servono davvero altre foto/info per
+    # legit-check o valutare un difetto -- su COMPRA puro (gia' conveniente,
+    # nessuna trattativa) o NON COMPRARE puro (l'operazione non regge a
+    # prescindere da taglia/composizione/altri dettagli) sono rumore. Prima
+    # venivano solo svuotati con "Non necessario." e solo su COMPRA puro;
+    # ora vengono RIMOSSI interamente (header + contenuto + i due separatori
+    # "---" che li isolano) anche su NON COMPRARE puro -- il prompt istruisce
+    # gia' il cervello a ometterli da solo quando non servono, questo e' il
+    # backstop lato codice per quando non lo fa.
     decisione_upper = decisione.upper()
-    e_compra_puro = (
-        re.search(r"\bCOMPRA\b", decisione_upper)
+    blocchi_domanda_superflui = (
+        ("COMPRA" in decisione_upper or "NON COMPRARE" in decisione_upper)
         and "TRATTA" not in decisione_upper
         and "CHIEDI" not in decisione_upper
-        and "NON COMPRARE" not in decisione_upper
     )
-    if e_compra_puro:
+    if blocchi_domanda_superflui:
         output_finale = re.sub(
-            r"(📨\s*\*\*Messaggio da inviare[:\*]*\*?\*?)\s*\n.*?(?=\n---|\n#|\n❓|\n🧠|\Z)",
-            r"\1\nNon necessario.",
+            r"\n?---\s*\n📨\s*\*\*Messaggio da inviare[:\*]*\*?\*?\s*\n.*?(?=\n---|\n#|\n❓|\n🧠|\Z)",
+            "",
             output_finale,
             flags=re.IGNORECASE | re.DOTALL
         )
         output_finale = re.sub(
-            r"(❓\s*\*\*Da chiedere[:\*]*\*?\*?)\s*\n.*?(?=\n---|\n#|\n🧠|\Z)",
-            r"\1\nNon necessario.",
+            r"\n?---\s*\n❓\s*\*\*Da chiedere[:\*]*\*?\*?\s*\n.*?(?=\n---|\n#|\n🧠|\Z)",
+            "",
             output_finale,
             flags=re.IGNORECASE | re.DOTALL
         )
 
     # ---- BLOCCO DIAGNOSTICO: da dove vengono i comp REALMENTE ricevuti ----
-    # Attivo solo con DEBUG_CONFRONTO_COMP_TELEGRAM=true (esperimento sul
-    # tasso di "comp inventati a memoria" osservato con CERVELLO_PROVIDER=
-    # openai, log 2026-09-18/19). Non mostra solo i prezzi (gia' disponibile
-    # come riepilogo rapido), ma anche LA PROVENIENZA di ciascuno: quale
-    # fonte pre-raccolta (Vinted visuale/testo, eBay SOLD, Vestiaire -- gia'
-    # etichettate "📍 FONTE: ..." dentro comps_text) oppure quale query
-    # Serper on-demand del cervello (etichettata allo stesso modo quando
-    # aggiunta a ricerche_extra_raw, vedi chiama_gemini_cervello_forzato/
-    # chiama_openai_cervello_forzato) -- inclusa la conferma esplicita se la
-    # ricerca visuale Vinted (search_by_image) ha prodotto risultati per
-    # QUESTO item o e' stata saltata. Va in coda al messaggio principale
-    # invece che in un messaggio separato per essere visibile anche quando
-    # RETI_SICUREZZA_ATTIVE=False sopprime le note automatiche.
+    # Attivo solo con DEBUG_CONFRONTO_COMP_TELEGRAM=true (default false,
+    # nessun costo AI aggiuntivo: e' puro post-processing su testo gia'
+    # generato, non genera nessuna chiamata Gemini/OpenAI in piu'). Mostra
+    # non solo i prezzi ma anche LA PROVENIENZA di ciascuno: quale fonte
+    # pre-raccolta (Vinted visuale/testo, gia' etichettata "📍 FONTE: ..."
+    # dentro comps_text) oppure quale query Serper on-demand del cervello
+    # (etichettata allo stesso modo quando aggiunta a ricerche_extra_raw,
+    # vedi chiama_gemini_cervello_forzato/chiama_openai_cervello_forzato) --
+    # inclusa la conferma esplicita se la ricerca visuale Vinted
+    # (search_by_image) ha prodotto risultati per QUESTO item o e' stata
+    # saltata. Va in coda al messaggio principale invece che in un messaggio
+    # separato per essere visibile anche quando RETI_SICUREZZA_ATTIVE=False
+    # sopprime le note automatiche. Lasciato disattivabile via env var
+    # (non rimosso dal codice) su richiesta esplicita dell'utente il
+    # 2026-09-19 -- gia' spento su Railway, riattivabile a costo zero.
     if DEBUG_CONFRONTO_COMP_TELEGRAM and scenario_usato != "SKIP":
         n_prezzi_pool_debug = len(_estrai_prezzi_da_pool_ricerca(pool_ricerca_grezzo))
 
