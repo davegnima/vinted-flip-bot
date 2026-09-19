@@ -1879,26 +1879,35 @@ def chiama_openai_cervello_forzato(system_prompt, user_text, forza_ricerca=True,
         tool_calls = msg.get("tool_calls") or []
 
         if tool_calls and not ultimo_giro:
-            call = tool_calls[0]
-            try:
-                query_richiesta = json.loads(call.get("function", {}).get("arguments", "{}")).get("query", "")
-            except (json.JSONDecodeError, TypeError):
-                query_richiesta = ""
-            log.info("Cervello OpenAI ha richiesto ricerca mirata (giro %d/%d): '%s'", round_idx + 1, MAX_ROUNDS_FUNZIONE, query_richiesta)
-            risultato_ricerca = cerca_serper_mirata(query_richiesta)
-            n_query_extra += 1
-            # Vedi commento gemello in chiama_gemini_cervello_forzato: tagga
-            # il risultato con la query usata per il blocco debug Telegram.
-            ricerche_extra_raw.append(
-                f"\n📍 FONTE: RICERCA ON-DEMAND CERVELLO (Serper google search, query: '{query_richiesta}')\n{risultato_ricerca}"
-            )
-
+            # OpenAI puo' restituire PIU' tool_calls nello stesso turno
+            # (parallel tool calling, attivo di default) anche con un solo
+            # tool dichiarato -- il modello puo' scegliere di lanciare 2+
+            # ricerche mirate insieme. BUG corretto il 2026-09-19: prima si
+            # processava solo tool_calls[0] ma si rimandava indietro l'intera
+            # lista `tool_calls` nel messaggio assistant, lasciando gli altri
+            # tool_call_id senza risposta -- OpenAI rifiuta la history al
+            # giro successivo con HTTP 400 ("did not have response
+            # messages"), osservato ripetutamente in produzione su annunci
+            # diversi. Ora si risponde a OGNI tool_call ricevuta.
             messages.append({"role": "assistant", "content": msg.get("content"), "tool_calls": tool_calls})
-            messages.append({
-                "role": "tool",
-                "tool_call_id": call.get("id", ""),
-                "content": risultato_ricerca,
-            })
+            for call in tool_calls:
+                try:
+                    query_richiesta = json.loads(call.get("function", {}).get("arguments", "{}")).get("query", "")
+                except (json.JSONDecodeError, TypeError):
+                    query_richiesta = ""
+                log.info("Cervello OpenAI ha richiesto ricerca mirata (giro %d/%d): '%s'", round_idx + 1, MAX_ROUNDS_FUNZIONE, query_richiesta)
+                risultato_ricerca = cerca_serper_mirata(query_richiesta)
+                n_query_extra += 1
+                # Vedi commento gemello in chiama_gemini_cervello_forzato: tagga
+                # il risultato con la query usata per il blocco debug Telegram.
+                ricerche_extra_raw.append(
+                    f"\n📍 FONTE: RICERCA ON-DEMAND CERVELLO (Serper google search, query: '{query_richiesta}')\n{risultato_ricerca}"
+                )
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": call.get("id", ""),
+                    "content": risultato_ricerca,
+                })
             tool_choice = "auto"  # i giri successivi non sono piu' forzati
             continue
 
