@@ -2150,6 +2150,18 @@ def _serper_scrape_page_diretto(label, url):
     except Exception as e:
         return f"  Scrape fallito: {e}", False
 
+    # DIAGNOSTICA TEMPORANEA (2026-09-19): sospetto confermato che eBay
+    # restituisca la home (favicon pages.ebay.com, non ebaystatic.com) invece
+    # della pagina risultati -- probabile redirect (consent-wall EU o
+    # geoblocco) che Serper segue silenziosamente prima di scrapare. Loggo i
+    # metadati della risposta Serper (escluso il body, gia' loggato altrove)
+    # per vedere se espone l'URL finale raggiunto dopo eventuali redirect o
+    # un codice di stato interno diverso da 200. Da rimuovere una volta
+    # confermata la causa.
+    if "EBAY" in label.upper():
+        meta_utili = {k: v for k, v in data.items() if k not in ("html", "rawHtml", "raw_html", "content", "markdown", "text")}
+        log.warning("_serper_scrape_page_diretto[EBAY]: url richiesto=%s -- metadati risposta Serper (senza body): %r", url, meta_utili)
+
     if "EBAY" in label.upper():
         content = data.get("html") or data.get("rawHtml") or data.get("raw_html") or data.get("content") or data.get("markdown") or ""
         return _estrai_articoli_ebay(content), True
