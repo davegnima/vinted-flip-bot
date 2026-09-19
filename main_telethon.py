@@ -2004,7 +2004,18 @@ def _estrai_articoli_vinted(content, max_articoli=15):
     '€105' (simbolo prima del numero), mai '105€'/'105 €' -- se Vinted
     scrive il prezzo in quel secondo formato (comune altrove, es. Vestiaire),
     questa funzione tornava sistematicamente 'Nessun articolo trovato' anche
-    con una pagina piena di risultati validi. Ora riconosce entrambi."""
+    con una pagina piena di risultati validi. Ora riconosce entrambi.
+
+    Aggiunto lo stesso giorno: quando non trova nulla, distingue nel testo
+    restituito TRE scenari diversi invece del generico "Nessun articolo
+    trovato" -- (a) la pagina scrapata era vuota/senza righe di contenuto,
+    (b) c'erano righe di contenuto ma nessuna con un simbolo di prezzo
+    riconoscibile, (c) c'era un simbolo € ma la riga e' stata scartata dopo
+    (titolo troppo corto o assente). Serve per capire, guardando il debug
+    Telegram, se Serper ha davvero trovato la pagina/i risultati oppure no
+    -- 'nessun prezzo' da solo non lo diceva."""
+    righe_non_vuote = sum(1 for r in content.split("\n") if r.strip())
+    righe_con_simbolo_prezzo = sum(1 for r in content.split("\n") if "€" in r or re.search(r"\bEUR\b", r, re.IGNORECASE))
     righe_pulite, visti = [], set()
     for riga in content.split("\n"):
         riga_dec = riga.replace("&#x20AC;", "€").replace("&#x20ac;", "€")
@@ -2038,10 +2049,24 @@ def _estrai_articoli_vinted(content, max_articoli=15):
         righe_pulite.append(f"- {titolo} — €{prezzo}")
         if len(righe_pulite) >= max_articoli:
             break
-    return "\n".join(righe_pulite) if righe_pulite else "  Nessun articolo trovato."
+    if righe_pulite:
+        return "\n".join(righe_pulite)
+    if righe_non_vuote == 0:
+        return "  Nessun articolo trovato (pagina scrapata vuota/senza contenuto -- probabile scrape fallito o pagina bloccata)."
+    if righe_con_simbolo_prezzo == 0:
+        return f"  Nessun articolo trovato ({righe_non_vuote} righe di contenuto scrapate, ma NESSUNA conteneva un simbolo di prezzo -- probabile pagina senza risultati catalogo, o layout cambiato)."
+    return f"  Nessun articolo trovato ({righe_con_simbolo_prezzo} righe con simbolo di prezzo trovate, ma titolo non estraibile/troppo corto per ciascuna)."
 
 
 def _estrai_articoli_ebay(content, max_articoli=15):
+    """Aggiunto lo stesso giorno del fix Vinted: quando non trova nulla,
+    distingue nel testo restituito se la pagina scrapata era vuota, se
+    aveva HTML ma senza i tag titolo/prezzo attesi (probabile layout eBay
+    cambiato o pagina senza risultati sold), o se il fallback su markdown/
+    link trovava titoli ma senza prezzo vicino -- stessa logica di
+    _estrai_articoli_vinted, per la stessa ragione (distinguere "Serper non
+    ha trovato nulla" da "Serper ha trovato qualcosa ma non e' un prezzo
+    utilizzabile")."""
     pattern_titolo = re.compile(r'<span[^>]*class="su-styled-text primary default"[^>]*>([^<]+)</span>', re.IGNORECASE)
     pattern_prezzo = re.compile(r'<span[^>]*class="[^"]*s-card__price[^"]*"[^>]*>([^<]+)</span>', re.IGNORECASE)
     titoli = [(m.start(), m.group(1).strip()) for m in pattern_titolo.finditer(content)]
@@ -2074,8 +2099,13 @@ def _estrai_articoli_ebay(content, max_articoli=15):
             break
     if not righe_pulite:
         if "nessun risultato" in content.lower() or "nessuna corrispondenza" in content.lower():
-            return "  Nessun risultato sold trovato per questa query specifica su eBay."
-        return "  Nessun articolo con titolo+prezzo riconosciuto in questa pagina."
+            return "  Nessun risultato sold trovato per questa query specifica su eBay (eBay stesso dichiara 0 match)."
+        righe_non_vuote = sum(1 for r in content.split("\n") if r.strip())
+        if righe_non_vuote == 0:
+            return "  Nessun articolo trovato (pagina scrapata vuota/senza contenuto -- probabile scrape fallito o pagina bloccata)."
+        if not titoli and not prezzi:
+            return f"  Nessun articolo trovato ({righe_non_vuote} righe di contenuto scrapate, ma nessun tag titolo/prezzo eBay riconosciuto -- probabile layout eBay cambiato)."
+        return "  Nessun articolo con titolo+prezzo riconosciuto in questa pagina (titoli o prezzi trovati singolarmente, ma non abbinabili)."
     return "\n".join(righe_pulite)
 
 
@@ -3179,15 +3209,59 @@ def _prezzi_per_fonte_da_pool(pool_ricerca_grezzo):
     return risultato
 
 
+def _motivo_nessun_prezzo(blocco_fonte):
+    """Quando una fonte non ha prodotto prezzi, va a leggere il motivo che
+    le funzioni di estrazione (_estrai_articoli_vinted, _estrai_articoli_ebay,
+    _serper_batch_query_vestiaire) ora incorporano nel loro stesso testo di
+    ritorno quando non trovano nulla -- distingue 'Serper non ha trovato
+    proprio niente' da 'Serper ha trovato risultati ma senza un prezzo
+    riconoscibile' da 'la richiesta a Serper e' fallita (rete/crediti)'.
+    Aggiunto il 2026-09-19 su richiesta esplicita: sapere solo 'nessun
+    prezzo' non bastava, serviva vedere se la ricerca aveva davvero
+    restituito qualcosa di scartato dopo, o se era vuota dall'inizio."""
+    testo = blocco_fonte.strip()
+    testo_lower = testo.lower()
+    # Controlli sull'INIZIO della stringa (non substring generica): i
+    # messaggi di errore vero (rete/crediti) iniziano sempre cosi', mentre
+    # "scrape fallito"/"fallito" possono comparire anche DENTRO la spiegazione
+    # di uno scenario "0 risultati" (es. "...probabile scrape fallito o
+    # pagina bloccata" dentro il messaggio di pagina vuota) -- un controllo
+    # a substring qui darebbe falsi positivi "query FALLITA" per quel caso.
+    if (
+        testo_lower.startswith("serper fallito")
+        or testo_lower.startswith("scrape fallito")
+        or testo_lower.startswith("ricerca fallita")
+        or testo_lower.startswith("ricerca non eseguita")
+    ):
+        return f"query Serper FALLITA -- {testo}"
+    if "categoria non rilevata" in testo_lower:
+        return "query saltata (categoria non rilevata dal titolo)"
+    if testo_lower == "nessun risultato trovato.":
+        return "query Google (site:vestiairecollective.com) interrogata, 0 risultati organici trovati"
+    if "pagina scrapata vuota" in testo_lower or testo_lower.startswith("nessun risultato trovato") or testo_lower.startswith("nessun risultato sold trovato"):
+        return f"Serper interrogato, 0 risultati -- {testo}"
+    if "righe di contenuto scrapate" in testo_lower or "titoli o prezzi trovati singolarmente" in testo_lower:
+        return f"Serper ha trovato contenuto ma nessun prezzo utilizzabile -- {testo}"
+    # Fallback: testo diagnostico non riconosciuto in uno dei pattern noti
+    # (es. "Fonte non disponibile", messaggi futuri) -- lo mostriamo cosi'
+    # com'e' invece di nasconderlo dietro un generico "nessun prezzo".
+    return testo if testo else "nessun prezzo, motivo non disponibile"
+
+
 def _riepilogo_comp_per_fonte(pool_ricerca_grezzo):
     """Riassume pool_ricerca_grezzo in UNA riga per fonte (conteggio + range
-    di prezzo), invece di riportare gli snippet grezzi Serper per intero --
-    pensata per il blocco debug Telegram (DEBUG_CONFRONTO_COMP_TELEGRAM),
-    dove l'utente vuole vedere a colpo d'occhio 'quanti prezzi e in che
-    range' per ciascuna fonte, non il testo grezzo con markup HTML residuo.
+    di prezzo quando ci sono prezzi, motivo diagnostico quando non ce ne
+    sono), invece di riportare gli snippet grezzi Serper per intero --
+    pensata per il blocco debug Telegram (DEBUG_CONFRONTO_COMP_TELEGRAM).
     Riconosce i blocchi gia' etichettati "📍 FONTE: <nome>" (comp pre-raccolti
     E ricerche on-demand, entrambi taggati cosi', vedi search_comps_completo/
-    chiama_*_cervello_forzato) e spacca il pool su quell'etichetta."""
+    chiama_*_cervello_forzato) e spacca il pool su quell'etichetta.
+
+    Aggiornato il 2026-09-19: il ramo 'nessun prezzo' ora richiama
+    _motivo_nessun_prezzo per dire ANCHE se Serper ha trovato qualcosa (poi
+    scartato/senza prezzo) o non ha trovato proprio nulla -- prima
+    'nessun prezzo' copriva indistintamente entrambi i casi, nascondendo se
+    la ricerca stessa avesse funzionato."""
     if not pool_ricerca_grezzo or not pool_ricerca_grezzo.strip():
         return "(pool vuoto)"
 
@@ -3204,9 +3278,10 @@ def _riepilogo_comp_per_fonte(pool_ricerca_grezzo):
         if prima_riga.upper().startswith("RICERCA WEB PRE-RACCOLTA"):
             continue
         nome_fonte = prima_riga.split("(")[0].strip().rstrip(":—-").strip() or prima_riga.strip()
-        prezzi_fonte = sorted(_estrai_prezzi_da_pool_ricerca(resto or blocco))
+        blocco_dati = resto or blocco
+        prezzi_fonte = sorted(_estrai_prezzi_da_pool_ricerca(blocco_dati))
         if not prezzi_fonte:
-            righe.append(f"• {nome_fonte}: nessun prezzo")
+            righe.append(f"• {nome_fonte}: {_motivo_nessun_prezzo(blocco_dati)}")
         elif len(prezzi_fonte) == 1:
             righe.append(f"• {nome_fonte}: 1 prezzo (€{prezzi_fonte[0]:.2f})")
         else:
