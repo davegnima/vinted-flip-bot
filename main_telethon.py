@@ -41,28 +41,47 @@ TELEGRAM_ALERT_CHAT_ID = os.environ.get("TELEGRAM_ALERT_CHAT_ID")
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 SERPER_API_KEY = os.environ.get("SERPER_API_KEY")
 
+# VINTED_ACCESS_TOKEN / VINTED_REFRESH_TOKEN: opzionali, servono SOLO per la
+# ricerca visuale Vinted (search_by_image), l'unica fonte che richiede una
+# sessione autenticata -- vedi la lunga docstring di _risolvi_search_by_image_id
+# per la prova (raccolta il 2026-09-19 via DevTools) che senza login questa
+# feature specifica non parte, mentre TUTTO il resto del bot (scraping
+# annunci, ricerca testo/catalogo) resta anonimo come sempre e non ne ha
+# bisogno. Vanno presi dai cookie del browser DOPO aver fatto login su un
+# account Vinted -- l'utente ha scelto esplicitamente di usare un account
+# dedicato/sacrificabile, MAI l'account principale, per il rischio di ban
+# che l'uso automatizzato di un account comporta (vedi conversazione
+# 2026-09-19). Se assenti, la ricerca visuale resta semplicemente disattivata
+# (comportamento identico a prima di questa modifica) -- nessun'altra parte
+# del bot dipende da queste variabili.
+VINTED_ACCESS_TOKEN = os.environ.get("VINTED_ACCESS_TOKEN", "").strip()
+VINTED_REFRESH_TOKEN = os.environ.get("VINTED_REFRESH_TOKEN", "").strip()
+
 # VISUAL_SEARCH_ATTIVA: la 4a fonte comp "ricerca visuale Vinted" (equivalente
 # al bottone "Cerca articoli simili" + filtro brand, vedi
 # _risolvi_search_by_image_id/build_vinted_visual_search_url).
 #
-# STATO: ABBANDONATA per ora (verificato in produzione il 2026-09-19).
-# Tentativo 1 (senza Referer): redirect a /member/register per ogni item.
-# Tentativo 2 (con Referer=/items/{id} e Sec-Fetch-* da navigazione interna,
-# sessione persistente che ha gia' visitato la pagina annuncio): STESSO
-# identico redirect a /member/register su ogni item testato -- il fix non
-# ha cambiato nulla. Quindi il problema non e' (solo) l'header Referer:
-# Vinted sta probabilmente distinguendo il bot per qualcos'altro che
-# 'requests' non replica (cookie di sessione anonima impostati via
-# JavaScript lato client anziche' header Set-Cookie puro, un token
-# CSRF che il bottone reale legge dal DOM prima della chiamata, o
-# fingerprinting TLS/anti-bot) -- nessuna di queste e' risolvibile senza un
-# browser vero (rendering JS), che vorrebbe dire uscire dall'approccio "solo
-# richieste HTTP" per cui questa funzionalita' era stata pensata.
-# Decisione: non investire altro tempo qui finche' non emerge un motivo
-# concreto per riconsiderarla (es. disponibilita' di un browser headless nel
-# bot). Il flag resta com'e' (default False, funzione gia' pronta e
-# innocua se riattivata) solo per non buttare il codice, non perche' ci si
-# aspetti che torni utile a breve.
+# STATO: CHIUSA DEFINITIVAMENTE il 2026-09-19 -- non e' un bug di header
+# risolvibile, e' un requisito di autenticazione del prodotto Vinted stesso.
+# Prova conclusiva raccolta via DevTools con l'utente: la richiesta che ha
+# funzionato nel browser portava cookie access_token_web/refresh_token_web
+# (sessione Vinted autenticata con l'account personale dell'utente, non
+# anonima). Confermato con un test mirato: riaprire lo stesso URL gia'
+# generato in incognito senza login funzionava (cache), ma generare una
+# ricerca visuale NUOVA (mai vista da Vinted prima) sempre in incognito
+# senza login veniva rimandata al login. Quindi senza una sessione
+# autenticata la feature non parte, punto -- nessun Referer/Sec-Fetch/User-
+# Agent puo' aggirarlo. Vedi la docstring di _risolvi_search_by_image_id per
+# il dettaglio completo dei due tentativi precedenti (falliti) e di questa
+# verifica finale.
+# Decisione: il bot NON autentica MAI le proprie richieste con le
+# credenziali Vinted personali dell'utente (rischio sull'account reale,
+# uso improprio di credenziali per uno scraper, violazione ToS diretta) --
+# quindi questa fonte resta chiusa a meno che l'utente non scelga
+# esplicitamente, in futuro, di dedicare un account Vinted separato al bot
+# con piena consapevolezza dei rischi. Il flag resta com'e' (default False,
+# funzione gia' pronta e innocua se mai riattivata) solo per non buttare il
+# codice, non perche' ci si aspetti che torni utile.
 VISUAL_SEARCH_ATTIVA = os.environ.get("VISUAL_SEARCH_ATTIVA", "false").strip().lower() == "true"
 
 # CERVELLO_PROVIDER: "gemini" (default, comportamento storico) oppure
@@ -906,6 +925,38 @@ IMAGE_DOWNLOAD_HEADERS = {
 }
 _vinted_session = requests.Session()
 _vinted_session.headers.update(VINTED_HEADERS)
+if VINTED_ACCESS_TOKEN:
+    _vinted_session.cookies.set("access_token_web", VINTED_ACCESS_TOKEN, domain=".vinted.it")
+if VINTED_REFRESH_TOKEN:
+    _vinted_session.cookies.set("refresh_token_web", VINTED_REFRESH_TOKEN, domain=".vinted.it")
+
+
+def _jwt_scaduto(token, margine_secondi=120):
+    """Decodifica (senza verificarne la firma -- non ci serve, ci fidiamo
+    della fonte visto che l'ha inserito l'utente stesso in una env var) il
+    campo 'exp' di un JWT Vinted (access_token_web/refresh_token_web sono
+    entrambi JWT, visto nel payload reale catturato il 2026-09-19: struttura
+    header.payload.firma in base64url) per sapere se e' scaduto SENZA fare
+    una richiesta di rete a vuoto. Margine di 120s per non rischiare di
+    usare un token che scade a meta' di una richiesta in corso. Se il
+    parsing fallisce per qualunque motivo (token vuoto, formato inatteso,
+    campo mancante), lo tratta come scaduto per sicurezza -- meglio un
+    fallback alla ricerca visuale disattivata che un crash o un loop."""
+    if not token:
+        return True
+    try:
+        parti = token.split(".")
+        if len(parti) != 3:
+            return True
+        payload_b64 = parti[1]
+        payload_b64 += "=" * (-len(payload_b64) % 4)  # padding base64url
+        payload = json.loads(base64.urlsafe_b64decode(payload_b64))
+        exp = payload.get("exp")
+        if not exp:
+            return True
+        return time.time() >= (exp - margine_secondi)
+    except Exception:
+        return True
 
 # ---------------------------------------------------------------------------
 # PROXY (opzionale) -- rotazione sulle richieste dirette a Vinted, stesso
@@ -1914,28 +1965,58 @@ def _risolvi_search_by_image_id(item_id, photo_id):
     osservati in produzione, questa e' una delle prime cose da rivedere o
     rendere disattivabile.
 
-    OSSERVATO IN PRODUZIONE IL 2026-09-18: con una richiesta "a freddo" senza
-    Referer, questo endpoint reindirizza a /member/register/select_type
-    invece che al catalogo. L'utente ha confermato che in un browser reale,
-    anche in navigazione anonima/senza login, il bottone funziona -- la
-    differenza non e' il login ma il CONTESTO della richiesta: nel browser
-    il click parte dalla pagina dell'annuncio stesso (Referer =
-    /items/{id}, Sec-Fetch-Site=same-origin), mentre la chiamata del bot
-    arrivava "da fuori" (nessun Referer, Sec-Fetch-Site=none, gli header di
-    default pensati per un URL digitato in barra). Questa funzione ora
-    imposta esplicitamente Referer + Sec-Fetch-* per imitare un click
-    interno al sito. La sessione (_vinted_session, condivisa e persistente)
-    ha comunque gia' visitato /items/{item_id} poco prima via
-    scrape_vinted_listing, quindi porta gia' con se' gli eventuali cookie
-    anonimi che Vinted assegna a qualunque visitatore.
+    STATO DEFINITIVO (confermato il 2026-09-19, chiude l'indagine aperta il
+    2026-09-18): questa feature RICHIEDE una sessione Vinted autenticata,
+    punto. Non e' un problema di Referer/Sec-Fetch/header che si possa
+    aggiustare lato codice -- e' un vero requisito del prodotto.
 
-    Il controllo sul redirect di login resta come rete di sicurezza: se
-    dovesse ripresentarsi (es. Vinted introduce un controllo piu' stretto),
-    la fonte visuale viene semplicemente saltata per quell'item invece di
-    rompere il resto della pipeline."""
+    Prova definitiva raccolta con l'utente via DevTools: la richiesta
+    "search_by_image?photo_id=..." che ha prodotto il redirect 307 al
+    catalogo aveva nei cookie access_token_web/refresh_token_web (JWT con
+    "purpose":"access", account_id valorizzato) -- l'utente era loggato col
+    proprio account personale, non anonimo. Per confermare che fosse
+    davvero questo e non altro, l'utente ha poi: (1) riaperto lo STESSO URL
+    esatto in incognito senza login -> ha funzionato (probabile cache lato
+    Vinted/CDN su quell'URL gia' generato in precedenza dalla sessione
+    autenticata); (2) provato a generare una ricerca visuale NUOVA (nuovo
+    item/photo_id mai richiesto prima) sempre in incognito senza login ->
+    Vinted ha richiesto il login. Il primo test da solo sarebbe stato
+    ambiguo (poteva sembrare che bastasse l'URL pubblico), il secondo lo
+    disambigua: senza sessione autenticata, una ricerca visuale MAI vista
+    prima da Vinted non parte.
+
+    Conclusione: il bot NON puo' e non deve usare le credenziali Vinted
+    personali dell'utente per autenticarsi (rischio sull'account reale,
+    uso improprio delle credenziali per uno scraper automatico, violazione
+    diretta dei ToS molto piu' seria di un semplice scraping di pagine
+    pubbliche). VISUAL_SEARCH_ATTIVA resta quindi permanentemente
+    disattivabile via env var ma la feature va considerata chiusa: non
+    investire altro tempo qui a meno che l'utente non decida esplicitamente
+    di autenticare il bot con un proprio account dedicato (scelta sua, con
+    consapevolezza dei rischi, mai una decisione presa in autonomia dal
+    codice).
+
+    RIAPERTA il 2026-09-19 (stesso giorno): l'utente ha scelto di procedere
+    con un account Vinted dedicato/sacrificabile (mai il suo account
+    principale) per questo solo scopo. VINTED_ACCESS_TOKEN/REFRESH_TOKEN
+    (env var, vedi CONFIGURAZIONE in testa al file) portano quella sessione
+    autenticata; se assenti o scaduti la funzione si comporta esattamente
+    come nello stato "chiuso" sopra (ritorna None, nessuna rottura del
+    resto della pipeline). Refresh automatico del token NON ancora
+    implementato (l'endpoint esatto va ancora catturato via DevTools): per
+    ora, quando l'access token scade, questa fonte torna semplicemente
+    inattiva finche' l'utente non aggiorna manualmente la env var su
+    Railway con un nuovo access_token_web copiato dal browser."""
     if not VISUAL_SEARCH_ATTIVA:
         return None
     if not item_id or not photo_id:
+        return None
+    if not VINTED_ACCESS_TOKEN or _jwt_scaduto(VINTED_ACCESS_TOKEN):
+        log.info(
+            "_risolvi_search_by_image_id: VINTED_ACCESS_TOKEN assente o scaduto -- "
+            "fonte visuale saltata per questo item (serve un token fresco dall'account "
+            "dedicato, aggiornabile su Railway)."
+        )
         return None
     url_intermedio = f"https://www.vinted.it/items/{item_id}/search_by_image?photo_id={quote(photo_id)}"
     headers_referer_annuncio = {
@@ -1952,8 +2033,11 @@ def _risolvi_search_by_image_id(item_id, photo_id):
         return None
     if "/member/register" in resp.url or "/member/login" in resp.url:
         log.info(
-            "_risolvi_search_by_image_id: redirect a login/registrazione anche con "
-            "Referer impostato (%s) -- fonte visuale saltata per questo item.",
+            "_risolvi_search_by_image_id: redirect a login/registrazione NONOSTANTE "
+            "VINTED_ACCESS_TOKEN impostato e non scaduto (%s) -- possibile token "
+            "invalidato lato Vinted prima della scadenza dichiarata, o blocco Datadome "
+            "sul fingerprint della richiesta (vedi nota TLS/Datadome nella docstring "
+            "sopra). Fonte visuale saltata per questo item.",
             resp.url,
         )
         return None
