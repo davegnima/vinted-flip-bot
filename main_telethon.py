@@ -176,30 +176,44 @@ TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 # compito piu' meccanico (leggere etichette, descrivere condizione), poco
 # da guadagnare da un modello piu' pesante qui.
 #
-# CERVELLO (verdetto finale: prezzo di vendita, margine, ROI): upgrade a un
-# Flash "pieno", non Lite. Questa e' la parte che ha prodotto quotazioni
-# incoerenti su capi quasi identici (es. due camicie Our Legacy valutate
-# €40 e €60) -- il ragionamento sui comp e l'ancoraggio ai prezzi reali
-# beneficiano di piu' capacita' rispetto al filtro visivo. Costa di piu' per
-# token, ma il Cervello viene chiamato una sola volta per annuncio (non ha
-# senso risparmiare li' se il risultato e' il numero che decide l'acquisto).
+# CERVELLO (verdetto finale): DECLASSATO da gemini-3.8-flash a
+# gemini-3.5-flash-lite il 2026-09-19, stesso modello dell'Occhio.
+#
+# Motivo: verificato lo stesso giorno che il free tier di 3.8-flash (come
+# quello di 3.5-flash "pieno" e 3.6-flash) concede solo ~20 richieste/giorno
+# -- non i 1.500 di una fonte terza rivelatasi sbagliata per questi modelli
+# -- mentre gemini-3.5-flash-lite ha un tetto reale di ~500 RPD. Con 200
+# annunci/giorno e il Cervello che fa 2-3 chiamate ciascuno (fase ricerca +
+# fase verdetto JSON, vedi MAX_ROUNDS_FUNZIONE), restare su un modello a 20
+# RPD significa fermarsi dopo ~10 item; con 3.5-flash-lite c'e' margine per
+# coprirli quasi tutti, anche se non e' garantito al 100% (Occhio + Cervello
+# sullo stesso modello condividono lo stesso tetto giornaliero: vedi il
+# calcolo nel commit del 2026-09-19).
+#
+# Trade-off ACCETTATO esplicitamente dall'utente, non implicito: la scelta
+# di aggiornare a un Flash "pieno" (vedi commit precedenti) nasceva da
+# quotazioni incoerenti su capi quasi identici (due camicie Our Legacy
+# valutate €40 e €60). Con l'output JSON strutturato quell'incoerenza
+# SPECIFICA (formato, numeri che si contraddicono nel testo) e' sparita per
+# costruzione -- calcola_verdetto fa i conti, non il modello. Cio' che
+# un modello Lite puo' ancora fare peggio e' il ragionamento semantico a
+# monte del JSON: quale comp escludere, se una discrepanza sull'etichetta
+# e' vera o un bias sul prezzo basso, quanto fidarsi di un "Primi articoli
+# in vendita" ambiguo. Nessuna rete di sicurezza recupera un giudizio
+# sbagliato su QUESTO. Se tornano valutazioni palesemente inconsistenti fra
+# capi simili, il primo sospetto e' questo downgrade, non un bug nel calcolo.
 GEMINI_MODEL_OCCHIO = "gemini-3.5-flash-lite"
-# gemini-3.8-flash aggiornato dal 3.7-flash il 2026-09-19: stesso prezzo per
-# milione di token (verificato su ai.google.dev/gemini-api/docs/pricing,
-# $0.75 input / $3.75 output fino al 31/12/2026, identico al 3.7), quindi
-# PREZZO_CERVELLO_INPUT/OUTPUT sotto restano validi senza modifiche.
-GEMINI_MODEL_CERVELLO = "gemini-3.8-flash"
+GEMINI_MODEL_CERVELLO = "gemini-3.5-flash-lite"
 GEMINI_API_URL_OCCHIO = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL_OCCHIO}:generateContent"
 GEMINI_API_URL_CERVELLO = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL_CERVELLO}:generateContent"
 
-# Prezzi per milione di token, paid tier standard (Ago 2026) -- verificare su
-# https://ai.google.dev/gemini-api/docs/pricing se cambiano.
+# Prezzi per milione di token -- STESSO modello per Occhio e Cervello da
+# oggi, quindi stesso prezzo per entrambi. Verificare su
+# https://ai.google.dev/gemini-api/docs/pricing se cambia.
 PREZZO_OCCHIO_INPUT = 0.30
 PREZZO_OCCHIO_OUTPUT = 2.50
-# Prezzo scontato di lancio, valido fino al 31/12/2026 (poi raddoppia a
-# $1.50/$7.50 -- verificare su ai.google.dev/gemini-api/docs/pricing).
-PREZZO_CERVELLO_INPUT = 0.75
-PREZZO_CERVELLO_OUTPUT = 3.75
+PREZZO_CERVELLO_INPUT = PREZZO_OCCHIO_INPUT
+PREZZO_CERVELLO_OUTPUT = PREZZO_OCCHIO_OUTPUT
 PREZZO_GROUNDING_PER_QUERY = 14 / 1000
 
 # Cervello alternativo via OpenAI (attivo solo con CERVELLO_PROVIDER=openai).
