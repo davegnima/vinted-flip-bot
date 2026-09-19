@@ -16,15 +16,37 @@ import uuid
 import asyncio
 import base64
 import logging
+import statistics
 import traceback
 from io import BytesIO
 from urllib.parse import quote
-from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 
-import requests
+import httpx
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 from PIL import Image
+
+# MIGRAZIONE AD ASYNCIO (2026-09-19)
+# ----------------------------------
+# Telethon e' un framework interamente asincrono: ogni chiamata di rete
+# sincrona (requests) e ogni pausa bloccante (time.sleep) eseguite nel suo
+# loop fermano TUTTO il bot, compresa la ricezione di nuovi messaggi dal
+# tracker. Nella versione precedente process_listing girava dentro
+# asyncio.to_thread, il che evitava il blocco del loop ma serializzava di
+# fatto la pipeline su un solo thread per annuncio, con decine di secondi
+# di attesa passiva (scraping Vinted, Serper, Gemini) durante i quali non
+# si poteva iniziare a lavorare l'annuncio successivo.
+#
+# Ora tutta la rete passa da httpx.AsyncClient e tutte le pause da
+# asyncio.sleep, quindi piu' annunci vengono elaborati davvero in
+# parallelo e le attese di rete non costano nulla. L'unico rate-limit che
+# resta volutamente serializzato e' quello verso Vinted, protetto da
+# _vinted_rate_limit_lock (vedi sotto): li' la pausa minima tra richieste
+# e' una difesa contro il 403, non un collo di bottiglia da eliminare.
+#
+# NOTA httpx >= 0.28: il vecchio parametro "proxies" (plurale, dict) e'
+# stato rimosso. La rotazione proxy e' quindi implementata con un client
+# per proxy, costruiti una volta sola all'avvio (vedi _CLIENT_VINTED_POOL).
 
 # ---------------------------------------------------------------------------
 # CONFIGURAZIONE
@@ -102,6 +124,24 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 if CERVELLO_PROVIDER == "openai" and not OPENAI_API_KEY:
     raise ValueError("CERVELLO_PROVIDER=openai richiede OPENAI_API_KEY nell'ambiente.")
 
+# RETI_SICUREZZA_ATTIVE: RITIRATO il 2026-09-19 con il passaggio al
+# cervello a output JSON strutturato. Non ha piu' nulla da attivare o
+# disattivare: le sei reti di sicurezza che governava
+# (verifica_ancoraggio_prezzo_comp, verifica_comp_citati_sono_reali,
+# forza_soglia_minima_compra, converti_tratta_senza_obiettivo_valido,
+# declassa_urgenza_se_borderline, applica_soglia_trattativa_40_percento)
+# esistevano per correggere a posteriori, via regex sul testo, numeri e
+# decisioni che il modello scriveva in prosa. Ora quei numeri il modello
+# non li scrive affatto: li calcola calcola_verdetto() in Python dai dati
+# strutturati, quindi non esiste piu' l'errore da correggere. La domanda
+# diagnostica che questo flag doveva risolvere (perche' le reti
+# intervenivano sul 94% degli item con CERVELLO_PROVIDER=openai contro lo
+# 0% con Gemini) resta senza risposta ed e' diventata priva di oggetto: le
+# reti intervenivano sul FORMATO del testo, e quel formato non c'e' piu'.
+# La variabile d'ambiente puo' restare impostata su Railway senza alcun
+# effetto; questo blocco di commento e' l'unica traccia che ne resta.
+#
+# Vecchia documentazione del flag, conservata per contesto storico:
 # RETI_SICUREZZA_ATTIVE: interruttore diagnostico temporaneo. Log di
 # produzione del 18-19/09/2026 hanno mostrato che con CERVELLO_PROVIDER=openai
 # le reti di sicurezza post-processing (verifica_ancoraggio_prezzo_comp,
@@ -115,7 +155,7 @@ if CERVELLO_PROVIDER == "openai" and not OPENAI_API_KEY:
 # il verdetto cosi' come lo scrive il cervello -- SOLO per diagnosi
 # mirata, mai lasciare a False in modo permanente (nessuna rete a
 # protezione di falsi COMPRA basati su comp inventati).
-RETI_SICUREZZA_ATTIVE = os.environ.get("RETI_SICUREZZA_ATTIVE", "true").strip().lower() == "true"
+# (nessuna lettura della env var: il flag non governa piu' nulla)
 
 # DEBUG_CONFRONTO_COMP_TELEGRAM: quando True, aggiunge in fondo a OGNI
 # messaggio Telegram (non solo quelli corretti) un blocco con i prezzi
@@ -176,7 +216,61 @@ MAX_GALLERY_PHOTOS = 10
 # inequivocabile quale codice sta girando su Railway dopo un deploy, senza
 # doverlo dedurre dai timestamp dei log. Aggiorna la data quando fai una
 # modifica significativa (facoltativo, ma utile per il debug futuro).
-BOT_VERSION = "2026-09-13-parser-tracker-flessibile"
+BOT_VERSION = "2026-09-19-cervello-json-strutturato-asyncio"
+
+# ---------------------------------------------------------------------------
+# PARAMETRI ECONOMICI -- l'unica fonte di verita' per TUTTI i calcoli
+# ---------------------------------------------------------------------------
+# Dal 2026-09-19 il cervello IA non calcola piu' nessun numero finanziario:
+# restituisce un JSON strutturato con i soli DATI di valutazione (linea
+# rilevata, comp trovati, prezzo target di vendita) e margine, ROI, costo
+# d'acquisto, obiettivo trattativa, decisione e urgenza vengono calcolati
+# qui in Python da calcola_verdetto(). Questi sono i parametri di quel
+# calcolo: cambiarli qui cambia il comportamento di tutto il bot, senza
+# doverli inseguire dentro un prompt.
+COMMISSIONE_PROTEZIONE_PCT = 0.05      # protezione acquisti Vinted, quota sul prezzo
+COMMISSIONE_PROTEZIONE_FISSA = 0.70    # protezione acquisti Vinted, quota fissa
+SPEDIZIONE_STIMATA_EUR = 2.50          # tariffa IT, la piu' economica
+QUOTA_INCASSO_NETTO = 0.80             # incasso reale = prezzo di vendita x 0.80
+
+SOGLIA_MARGINE_COMPRA = 20.0           # EUR netti minimi per un COMPRA
+SOGLIA_ROI_COMPRA = 100.0              # % minima di ROI per un COMPRA
+SOGLIA_MARGINE_URGENZA = 30.0          # EUR netti minimi per "Alta urgenza"
+SOGLIA_ROI_URGENZA = 150.0             # % minima di ROI per "Alta urgenza"
+SCONTO_MAX_TRATTATIVA = 0.40           # sconto massimo trattabile sul PRODOTTO
+
+# Tolleranza (EUR) nel confronto tra un prezzo comp dichiarato dal cervello
+# e i prezzi realmente presenti nel pool di ricerca -- assorbe arrotondamenti
+# (89,99 scritto come 90) senza lasciar passare un numero inventato.
+TOLLERANZA_COMP_EUR = 1.0
+
+# COMP_DA_MEMORIA_AMMESSI: scelta esplicita dell'utente il 2026-09-19. Con
+# l'output JSON strutturato ogni prezzo comp dichiarato dal cervello e' un
+# numero isolato e confrontabile con il pool di ricerca realmente raccolto,
+# quindi sapere quali NON vengono dal pool e' ora un controllo esatto (una
+# differenza tra insiemi, non piu' un'interpretazione di prosa).
+#
+# A True (default, comportamento scelto): un comp che non trova riscontro
+# nel pool viene comunque USATO nel calcolo, ma marcato come proveniente
+# dalla conoscenza propria del modello e mostrato separatamente nel
+# messaggio Telegram -- niente item scartati, niente verdetti declassati,
+# solo trasparenza su da dove arriva ogni numero.
+#
+# PRECISAZIONE TECNICA IMPORTANTE (non un'obiezione, un dato di fatto sul
+# funzionamento di QUESTO bot): il cervello NON ha il grounding Google
+# attivo. Il tool builtin google_search e' stato deliberatamente sostituito
+# da cerca_comp_prezzo/Serper perche' non era forzabile in modo affidabile
+# (vedi il commento alla sezione CERVELLO GEMINI CON FUNCTION CALLING
+# FORZATO), e l'unica funzione che accetta grounding=True e' chiama_gemini,
+# invocata per l'Occhio con grounding=False. Un prezzo fuori pool non
+# proviene quindi da una ricerca web eseguita in quel momento, ma dalla
+# memoria parametrica del modello, con i limiti che questo comporta:
+# nessuna data, nessun mercato specifico, nessuna verificabilita'.
+#
+# A False: i comp senza riscontro nel pool vengono esclusi dal calcolo
+# della stima (restano comunque visibili nel messaggio, marcati come
+# scartati). Un solo valore da cambiare, nessun'altra modifica al codice.
+COMP_DA_MEMORIA_AMMESSI = os.environ.get("COMP_DA_MEMORIA_AMMESSI", "true").strip().lower() == "true"
 
 # GATE MARGINE ASSOLUTO (nuovo): soglia di qualita' del deal, separata dalla
 # soglia minima di sicurezza (EUR 20 / ROI 100%) gia' presente nei prompt e
@@ -733,54 +827,40 @@ Esempio reale di violazione da evitare: comp per un capo sartoriale con prezzi �
 Range di comp molto ampio (es. €25-200 per lo stesso brand) = quasi sempre stili diversi mescolati (basic vs lavorato/decorato) — usa solo i comp dello stesso stile del capo in analisi, mai la media di tutto il range.
 Nessun comp specifico per il modello, solo per il brand in generale → usa la fascia mediana-bassa trovata, mai quella ottimistica. Se la tua stima finale supera nettamente ogni prezzo SOLD citato, stai ragionando sul prezzo retail, non sul second-hand — correggi al ribasso.
 
-# MARGINE, SOGLIE, DECISIONE
-Acquisto pieno = prezzo + protezione(~5%+€0,70) + spedizione (IT €2,50, EU €4,50-6). Incasso reale = prezzo listing stimato×0,80. Margine netto = incasso reale − acquisto pieno.
-**COMPRA**: margine ≥€20 E ROI ≥100%. Sotto soglia → TRATTA o NON COMPRARE.
-**Obiettivo operativo margine ≥€50** (calibrazione, non soglia rigida): se molto sotto, abbassa il Deal score e dichiaralo in Analisi ("margine sotto l'obiettivo operativo"), ma la Decisione resta guidata solo da €20/100%.
-**Urgenza — riflette la DOMANDA di mercato per QUESTO item a questo prezzo, non solo margine/ROI**: un affare col margine giusto ma su un capo/taglia/modello poco ricercato (bacino ristretto, community verticale piccola, taglia estrema, categoria a bassa rotazione) non è "Alta urgenza" solo perché i numeri tornano — è un buon margine su un item che può aspettare. Alta urgenza richiede TUTTI questi elementi insieme: margine ≥€30 E ROI ≥150% E comp specifici verificabili citati E segnali concreti di domanda alta per questo modello specifico (più annunci simili venduti di recente nei comp, brand/pezzo in un segmento ad alta liquidità secondo la sezione LIQUIDITÀ PER SEGMENTO, taglia standard/centrale, pezzo iconico o particolarmente ricercato dichiarato come tale). Mancando anche solo la domanda di mercato (es. taglia estrema, categoria a bassa rotazione, nessun segnale che altri lo cerchino) → Media urgenza anche con margine/ROI alti, dichiarando esplicitamente in Analisi perché ("margine alto ma domanda di mercato limitata: taglia estrema/bacino ristretto"). Altrimenti Media o Bassa, mai Alta.
-**Trattativa**: sconto massimo 40% sul PREZZO PRODOTTO (mai sulla spedizione). TRATTA solo se l'Obiettivo trattativa, calcolato a quello sconto massimo, raggiunge DA SOLO ≥€20/≥100% — se anche a sconto massimo non ci arriva, la decisione corretta è NON COMPRARE, non ha senso negoziare per un obiettivo che comunque non risolve nulla. L'incasso nell'Obiettivo trattativa deve essere IDENTICO a quello del verdetto principale (cambia solo il costo d'acquisto, mai la stima di vendita): verifica margine_trattativa = incasso_principale − costo_trattato prima di scriverlo.
+# COSA DEVI PRODURRE -- e cosa NON devi calcolare
+Restituisci ESCLUSIVAMENTE un oggetto JSON conforme allo schema fornito. Nessun testo fuori dal JSON, nessun markdown, nessuna emoji di verdetto.
+
+**NON calcolare e non scrivere da nessuna parte**: costo d'acquisto, incasso netto, margine, ROI, decisione (COMPRA/TRATTA/NON COMPRARE), urgenza, importo dell'offerta di trattativa. Questi li calcola il sistema, in modo deterministico, a partire dai dati che gli dai. Se li scrivi comunque dentro un campo testuale, verranno ignorati e il messaggio finale risultera' incoerente.
+
+**L'unico numero economico che devi produrre e' `prezzo_target_vendita_eur`**: il prezzo LORDO a cui il capo andrebbe messo in vendita. Da li' il sistema ricava tutto il resto.
+
+# COME COSTRUIRE prezzo_target_vendita_eur
+1. Popola `comp_candidati` con OGNI prezzo comp che hai davanti, uno per oggetto, con il prezzo esatto e il titolo copiato alla lettera. Marca `escluso: true` (con motivo) quelli fuori categoria, di sottolinea sbagliata, o palesemente fuori scala. Non riassumere, non fare medie a mente: elencali.
+2. Ogni comp Vinted e' un prezzo **ASK** (annuncio attivo, spesso sovrastimato), mai un venduto confermato. Scegli il comp di riferimento tra quelli non esclusi e applica uno sconto prudenziale tra il 20% e il 30% (`sconto_ask_applicato_pct`).
+3. `prezzo_target_vendita_eur` non puo' superare il comp di riferimento gia' scontato, ne' un eventuale tetto di linea (`tetto_prezzo_linea_eur`). Il sistema applica comunque entrambi i limiti: se li superi, la tua stima viene abbassata d'ufficio, quindi tanto vale calcolarla giusta.
+4. Materiale non confermato (`materiale_confermato: false`) -> usa il comp piu' ECONOMICO tra quelli validi, mai il piu' caro.
+5. Meno di 2 comp validi dopo le esclusioni -> resta sulla fascia bassa e dichiaralo in `note_analista`, mai una stima alta appoggiata a un solo comp isolato.
+
+# PROVENIENZA DEI COMP -- dichiarala, non nasconderla
+Il campo `fonte` di ogni comp distingue i prezzi che hai davvero davanti (`vinted_testo`, `vinted_visuale`) da quelli che stai ricordando tu (`memoria_modello`). Se citi un prezzo che NON compare nei dati ricevuti in questa conversazione, marcalo `memoria_modello`: non e' vietato e non fa scartare nulla, ma va dichiarato per quello che e'. Non spacciare mai un prezzo ricordato per un risultato di ricerca: il sistema confronta comunque ogni numero col pool reale e corregge l'etichetta da solo, quindi mentire qui produce solo un messaggio finale contraddittorio.
+
+# URGENZA -- fornisci i segnali, non la conclusione
+Non scrivere "Alta urgenza": compila `domanda_mercato` e `segnali_domanda` con i fatti concreti (piu' annunci simili venduti di recente, segmento ad alta liquidita' secondo la sezione LIQUIDITA', taglia centrale, pezzo iconico). L'urgenza la decide il sistema incrociando quei segnali con margine e ROI calcolati. `domanda_mercato: "alta"` con `segnali_domanda` vuoto viene trattato come "media": senza fatti la dichiarazione non vale.
+
+# MESSAGGIO AL VENDITORE
+In `messaggio_venditore_template`, se serve indicare una cifra d'offerta scrivi ESATTAMENTE il segnaposto {OFFERTA}: il sistema lo sostituisce con l'importo che ha calcolato al massimo sconto consentito. Non scrivere mai un importo in euro, sarebbe diverso da quello reale. Lascia il campo a null se non c'e' nulla da mandare al venditore.
 
 # TRASPARENZA OBBLIGATORIA
-Se scrivi "Rischio fake: Alto" o menzioni falso/contraffatto/non autentico, specifica SEMPRE il motivo esatto (font etichetta, cuciture, materiale, wash tag incoerente, proporzioni logo) — mai "rischio alto" senza spiegazione, l'utente deve sapere COSA ha insospettito.
+`legit_motivo_specifico` deve sempre dire COSA hai visto: font dell'etichetta e in cosa differisce, proporzioni del logo, cuciture, materiale, wash tag incoerente, hardware. Mai "rischio alto" o "discrepanze evidenti" senza dettaglio: quel testo arriva all'utente cosi' com'e'.
 
-# FORMATO — non deviare
-Emoji verdetto ESCLUSIVE: 🟢 COMPRA · 🟡 TRATTA · 🔴 NON COMPRARE · 🔵 CHIEDI ALTRE FOTO (mai ✅⚠️❌, riservate al legit check dell'occhio). Urgenza ESATTAMENTE "Alta urgenza"/"Media urgenza"/"Bassa urgenza", mai sinonimi.
+`motivo_profilo_venditore` deve citare esplicitamente il contenuto di "Primi articoli in vendita" quando e' presente nei dati, non il solo numero di recensioni.
 
-# PRIMA DI RISPONDERE — verifica in ordine, correggi se necessario
-1. Margine/ROI supportano la Decisione (soglia €20/100%)?
-2. Se TRATTA: l'Obiettivo trattativa raggiunge DA SOLO €20/100%? Se no → NON COMPRARE.
-3. Se "Alta urgenza": margine ≥€30 E ROI ≥150% E comp specifici citati E domanda di mercato concreta per QUESTO modello/taglia (non solo margine alto su un item a bacino ristretto)? Se manca anche solo la domanda → Media urgenza.
-4. La stima di vendita supera il comp più alto (SOLD) citato in Analisi? Se sì → abbassala.
-5. Il materiale dei comp usati corrisponde al capo? Se materiale ignoto, hai usato il comp più economico?
-6. L'Obiettivo trattativa rispetta il 40% massimo sul prodotto (mai sulla spedizione)?
-7. Decisione = COMPRA o NON COMPRARE puro (nessuna trattativa, nessuna foto/info mancante per legit-check)? Se sì → NON includere i blocchi "Messaggio da inviare" e "Da chiedere".
-
-# OUTPUT — Verdetto in cima.
-
-## Verdetto
-[EMOJI] **[DECISIONE]** · [urgenza]
-
-💰 €[acquisto pieno] → €[incasso reale = listing×0.80] → **€[margine netto] (ROI [X]%)**
-🏷️ Legit: [max 15 parole, mai basato sul prezzo]
-🕐 ~[Z] giorni · Deal [X]/10 · Rischio fake: [B/M/A/MA] · Confidenza: [A/M/B]
-
-[Solo se TRATTA]
-🤝 Obiettivo trattativa: €[costo totale trattato] → €[incasso — DEVE essere identico all'incasso del verdetto principale sopra] → €[margine netto] (ROI [X]%)
-
-[Blocco "Messaggio da inviare" + "Da chiedere" — SOLO in questi due casi, altrimenti ometti ENTRAMBI i blocchi interamente (niente "Non necessario", niente placeholder: se il caso non si applica, i blocchi non compaiono affatto nel messaggio):
-1. Decisione = TRATTA (serve un'offerta da inviare, e volendo domande di supporto).
-2. Servono davvero altre foto o informazioni dal venditore per completare legit-check o valutare un difetto — non per curiosità o dettagli che non cambierebbero la decisione.
-Su COMPRA (prezzo già conveniente, nessuna trattativa necessaria) o NON COMPRARE (l'operazione non regge indipendentemente da taglia/composizione/altri dettagli) NON includere questi blocchi.]
----
-📨 **Messaggio da inviare:**
-"[testo pronto, con offerta se TRATTA]"
-
----
-❓ **Da chiedere**: [max 2 domande brevi, solo se davvero necessarie per legit-check/difetti/trattativa]
-
----
-🧠 **Analisi dell'analista:**
-[3-5 righe. Spiega il ragionamento sui prezzi E commenta esplicitamente il profilo/guardaroba venditore.]
+# PRIMA DI CHIUDERE IL JSON -- verifica
+1. Ogni prezzo in `comp_candidati` e' copiato alla lettera dai dati, o marcato `memoria_modello`?
+2. `prezzo_target_vendita_eur` rispetta il comp di riferimento scontato e l'eventuale tetto di linea?
+3. Il materiale dei comp non esclusi corrisponde al capo? Se ignoto, hai usato il piu' economico?
+4. `legit_motivo_specifico` e' concreto e descrive una discrepanza reale?
+5. Hai evitato di scrivere margine, ROI, decisione, urgenza e importi di trattativa ovunque?
 """.strip()
 
 
@@ -788,46 +868,50 @@ Su COMPRA (prezzo già conveniente, nessuna trattativa necessaria) o NON COMPRAR
 # TELEGRAM BOT API HELPERS
 # ---------------------------------------------------------------------------
 
-def telegram_send_message(chat_id, text):
-    MAX_LEN = 3500
+def _spezza_per_telegram(text, max_len=3500):
+    """Chunking condiviso da telegram_send_message e telegram_send_with_buttons
+    (prima duplicato identico in entrambe). Taglia preferibilmente su riga
+    vuota, poi su a capo, e solo come ultima risorsa a lunghezza fissa."""
     chunks = []
     remaining = text
     while remaining:
-        if len(remaining) <= MAX_LEN:
+        if len(remaining) <= max_len:
             chunks.append(remaining)
             break
-        split_at = remaining.rfind("\n\n", 0, MAX_LEN)
+        split_at = remaining.rfind("\n\n", 0, max_len)
         if split_at == -1:
-            split_at = remaining.rfind("\n", 0, MAX_LEN)
+            split_at = remaining.rfind("\n", 0, max_len)
         if split_at == -1:
-            split_at = MAX_LEN
+            split_at = max_len
         chunks.append(remaining[:split_at])
         remaining = remaining[split_at:]
+    return chunks or [text]
 
-    for i, chunk in enumerate(chunks, start=1):
-        resp = requests.post(
+
+async def telegram_send_message(chat_id, text):
+    MAX_LEN = 3500
+    for chunk in _spezza_per_telegram(text, MAX_LEN):
+        resp = await _client_telegram.post(
             f"{TELEGRAM_API}/sendMessage",
             json={"chat_id": chat_id, "text": chunk, "parse_mode": "Markdown", "disable_web_page_preview": True},
-            timeout=20,
         )
-        if not resp.ok:
+        if not resp.is_success:
             log.warning("sendMessage Markdown fallita -- HTTP %d: %s -- ritento senza parse_mode", resp.status_code, resp.text[:300])
-            requests.post(
+            await _client_telegram.post(
                 f"{TELEGRAM_API}/sendMessage",
                 json={"chat_id": chat_id, "text": chunk, "disable_web_page_preview": True},
-                timeout=20,
             )
 
 
-def telegram_send_photo(chat_id, photo_bytes, caption=None):
+async def telegram_send_photo(chat_id, photo_bytes, caption=None):
     files = {"photo": ("photo.jpg", photo_bytes)}
     data = {"chat_id": chat_id}
     if caption:
         data["caption"] = caption[:1024]
-    requests.post(f"{TELEGRAM_API}/sendPhoto", data=data, files=files, timeout=30)
+    await _client_telegram.post(f"{TELEGRAM_API}/sendPhoto", data=data, files=files, timeout=30)
 
 
-def telegram_send_media_group(chat_id, photos_bytes_list, caption=None):
+async def telegram_send_media_group(chat_id, photos_bytes_list, caption=None):
     if not photos_bytes_list:
         return
     files = {}
@@ -839,7 +923,7 @@ def telegram_send_media_group(chat_id, photos_bytes_list, caption=None):
         if i == 0 and caption:
             item["caption"] = caption[:1024]
         media.append(item)
-    requests.post(
+    await _client_telegram.post(
         f"{TELEGRAM_API}/sendMediaGroup",
         data={"chat_id": chat_id, "media": json.dumps(media)},
         files=files,
@@ -847,7 +931,7 @@ def telegram_send_media_group(chat_id, photos_bytes_list, caption=None):
     )
 
 
-def telegram_send_with_buttons(chat_id, text, url_annuncio, item_id=None):
+async def telegram_send_with_buttons(chat_id, text, url_annuncio, item_id=None):
     """Manda 'text' con i bottoni inline in fondo. Bug corretto il 2026-09-19:
     a differenza di telegram_send_message, questa funzione non spezzava mai
     il testo -- oltre 4096 caratteri (limite Telegram per sendMessage) la
@@ -861,22 +945,7 @@ def telegram_send_with_buttons(chat_id, text, url_annuncio, item_id=None):
     abbastanza lungo. Ora usa lo stesso chunking di telegram_send_message,
     con i bottoni spostati sull'ULTIMO chunk (dove servono davvero: aprire
     l'annuncio/scrivere al venditore dopo aver letto tutto)."""
-    MAX_LEN = 3500
-    chunks = []
-    remaining = text
-    while remaining:
-        if len(remaining) <= MAX_LEN:
-            chunks.append(remaining)
-            break
-        split_at = remaining.rfind("\n\n", 0, MAX_LEN)
-        if split_at == -1:
-            split_at = remaining.rfind("\n", 0, MAX_LEN)
-        if split_at == -1:
-            split_at = MAX_LEN
-        chunks.append(remaining[:split_at])
-        remaining = remaining[split_at:]
-    if not chunks:
-        chunks = [text]
+    chunks = _spezza_per_telegram(text, 3500)
 
     keyboard = {"inline_keyboard": [[
         {"text": "🔗 Apri su Vinted", "url": url_annuncio},
@@ -891,17 +960,16 @@ def telegram_send_with_buttons(chat_id, text, url_annuncio, item_id=None):
         payload_base = {"chat_id": chat_id, "text": chunk, "disable_web_page_preview": True}
         if e_ultimo_chunk:
             payload_base["reply_markup"] = keyboard
-        resp = requests.post(
+        resp = await _client_telegram.post(
             f"{TELEGRAM_API}/sendMessage",
             json={**payload_base, "parse_mode": "Markdown"},
-            timeout=20,
         )
-        if not resp.ok:
+        if not resp.is_success:
             log.warning(
                 "telegram_send_with_buttons: Markdown fallita -- HTTP %d: %s -- ritento senza parse_mode",
                 resp.status_code, resp.text[:300],
             )
-            requests.post(f"{TELEGRAM_API}/sendMessage", json=payload_base, timeout=20)
+            await _client_telegram.post(f"{TELEGRAM_API}/sendMessage", json=payload_base)
 
 
 # ---------------------------------------------------------------------------
@@ -980,12 +1048,11 @@ IMAGE_DOWNLOAD_HEADERS = {
     "Sec-Fetch-Dest": "image", "Sec-Fetch-Mode": "no-cors", "Sec-Fetch-Site": "same-site",
     "Connection": "keep-alive",
 }
-_vinted_session = requests.Session()
-_vinted_session.headers.update(VINTED_HEADERS)
+_VINTED_COOKIES = {}
 if VINTED_ACCESS_TOKEN:
-    _vinted_session.cookies.set("access_token_web", VINTED_ACCESS_TOKEN, domain=".vinted.it")
+    _VINTED_COOKIES["access_token_web"] = VINTED_ACCESS_TOKEN
 if VINTED_REFRESH_TOKEN:
-    _vinted_session.cookies.set("refresh_token_web", VINTED_REFRESH_TOKEN, domain=".vinted.it")
+    _VINTED_COOKIES["refresh_token_web"] = VINTED_REFRESH_TOKEN
 
 
 def _jwt_scaduto(token, margine_secondi=120):
@@ -1033,17 +1100,102 @@ else:
     log.info("Nessun PROXY_LIST impostato -- richieste dirette senza proxy (comportamento originale).")
 
 
-def _prossimo_proxy():
-    """Restituisce il prossimo proxy in rotazione round-robin, o None se
-    PROXY_LIST e' vuota (nessuna proxy configurata)."""
-    if not PROXY_LIST:
-        return None
-    proxy_url = PROXY_LIST[_proxy_indice_rotazione[0] % len(PROXY_LIST)]
+# ---------------------------------------------------------------------------
+# CLIENT HTTP ASINCRONI
+# ---------------------------------------------------------------------------
+# Un client per ogni destinazione, costruiti una volta sola e riusati per
+# tutta la vita del processo: httpx tiene aperte le connessioni (keep-alive),
+# quindi si risparmiano handshake TLS su ogni chiamata, cosa che con
+# requests.Session avveniva solo per Vinted.
+#
+# Rotazione proxy: da httpx 0.28 il parametro "proxies" (dict per schema) non
+# esiste piu', si passa un solo "proxy" per client. La rotazione round-robin
+# diventa quindi una rotazione TRA CLIENT, uno per proxy, costruiti all'avvio.
+# Se PROXY_LIST e' vuota il pool contiene un solo client diretto, cioe'
+# esattamente il comportamento originale senza proxy.
+_CLIENT_VINTED_POOL = []
+_client_generico = None   # Gemini/OpenAI/Serper/Resellbot: nessun proxy
+_client_telegram = None   # Bot API: timeout piu' corti, chiamate frequenti
+
+
+def _crea_client_vinted(proxy_url=None):
+    return httpx.AsyncClient(
+        headers=VINTED_HEADERS,
+        cookies=_VINTED_COOKIES or None,
+        follow_redirects=True,   # _risolvi_search_by_image_id dipende dal redirect
+        proxy=proxy_url,
+        timeout=httpx.Timeout(20.0, connect=10.0),
+        limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
+    )
+
+
+async def inizializza_client_http():
+    """Crea i client httpx. Va chiamata DENTRO il loop asyncio (da main()),
+    mai a import-time: un AsyncClient costruito fuori dal loop che poi lo
+    usera' e' una sorgente classica di 'Event loop is closed' e di
+    connessioni che non vengono mai riutilizzate."""
+    global _client_generico, _client_telegram
+    if PROXY_LIST:
+        for proxy_url in PROXY_LIST:
+            _CLIENT_VINTED_POOL.append(_crea_client_vinted(proxy_url))
+    else:
+        _CLIENT_VINTED_POOL.append(_crea_client_vinted(None))
+
+    _client_generico = httpx.AsyncClient(
+        follow_redirects=True,
+        timeout=httpx.Timeout(90.0, connect=15.0),
+        limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
+    )
+    _client_telegram = httpx.AsyncClient(
+        timeout=httpx.Timeout(30.0, connect=10.0),
+        limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
+    )
+    log.info(
+        "Client HTTP asincroni pronti: %d client Vinted (%s), 1 generico, 1 Telegram.",
+        len(_CLIENT_VINTED_POOL),
+        f"{len(PROXY_LIST)} proxy in rotazione" if PROXY_LIST else "nessun proxy, richieste dirette",
+    )
+
+
+async def chiudi_client_http():
+    """Chiusura ordinata: senza questa httpx logga warning di socket non
+    chiusi allo spegnimento del processo."""
+    for client in _CLIENT_VINTED_POOL:
+        await client.aclose()
+    for client in (_client_generico, _client_telegram):
+        if client is not None:
+            await client.aclose()
+
+
+def _prossimo_client_vinted():
+    """Prossimo client Vinted in rotazione round-robin (uno per proxy).
+    Sostituisce _prossimo_proxy: la rotazione ora e' tra client, non tra
+    dict di proxy passati alla singola richiesta."""
+    client = _CLIENT_VINTED_POOL[_proxy_indice_rotazione[0] % len(_CLIENT_VINTED_POOL)]
     _proxy_indice_rotazione[0] += 1
-    return {"http": proxy_url, "https": proxy_url}
+    return client
 
 
-def _vinted_get_con_retry(url, timeout=15, max_retries=3, headers_extra=None):
+# Rate-limit Vinted: la pausa minima tra due richieste consecutive va
+# rispettata GLOBALMENTE, anche ora che piu' annunci vengono elaborati in
+# parallelo. Senza lock, due task concorrenti leggerebbero lo stesso
+# timestamp "ultima richiesta", calcolerebbero la stessa attesa e
+# partirebbero insieme -- cioe' esattamente la raffica che ha prodotto i
+# 403 dopo ~13h di attivita' continua. Il lock serializza SOLO l'attesa e
+# l'aggiornamento del timestamp, non la richiesta vera e propria.
+_vinted_rate_limit_lock = asyncio.Lock()
+
+
+async def _attendi_turno_vinted():
+    async with _vinted_rate_limit_lock:
+        tempo_trascorso = time.monotonic() - _vinted_timestamp_ultima_richiesta[0]
+        attesa = PAUSA_MINIMA_TRA_RICHIESTE_VINTED_SECONDI - tempo_trascorso
+        if attesa > 0:
+            await asyncio.sleep(attesa)
+        _vinted_timestamp_ultima_richiesta[0] = time.monotonic()
+
+
+async def _vinted_get_con_retry(url, timeout=15, max_retries=3, headers_extra=None):
     """GET con retry per lo scraping Vinted. In precedenza un singolo timeout
     faceva fallire l'intero scraping (foto, descrizione, venditore tutti
     vuoti), costringendo il cervello a lavorare quasi alla cieca.
@@ -1057,17 +1209,14 @@ def _vinted_get_con_retry(url, timeout=15, max_retries=3, headers_extra=None):
     (es. Referer/Sec-Fetch-Site per simulare un click interno al sito invece
     di un arrivo diretto dall'esterno) -- fusi sopra VINTED_HEADERS, non
     toccano le altre chiamate."""
-    tempo_trascorso = time.time() - _vinted_timestamp_ultima_richiesta[0]
-    if tempo_trascorso < PAUSA_MINIMA_TRA_RICHIESTE_VINTED_SECONDI:
-        time.sleep(PAUSA_MINIMA_TRA_RICHIESTE_VINTED_SECONDI - tempo_trascorso)
-
     headers_richiesta = VINTED_HEADERS if not headers_extra else {**VINTED_HEADERS, **headers_extra}
 
     ultimo_errore = None
     for tentativo in range(1, max_retries + 1):
+        await _attendi_turno_vinted()
         try:
-            _vinted_timestamp_ultima_richiesta[0] = time.time()
-            resp = _vinted_session.get(url, headers=headers_richiesta, timeout=timeout, proxies=_prossimo_proxy())
+            client = _prossimo_client_vinted()
+            resp = await client.get(url, headers=headers_richiesta, timeout=timeout)
             resp.raise_for_status()
             return resp
         except Exception as e:
@@ -1075,16 +1224,17 @@ def _vinted_get_con_retry(url, timeout=15, max_retries=3, headers_extra=None):
             if tentativo < max_retries:
                 # Su 403 (probabile rate-limit) attende piu' a lungo del
                 # normale backoff, dando al blocco lato Vinted il tempo di
-                # attenuarsi prima del prossimo tentativo.
+                # attenuarsi prima del prossimo tentativo. Ora e' un'attesa
+                # asincrona: non blocca il resto del bot.
                 e_403 = "403" in str(e)
                 attesa = (6.0 * tentativo) if e_403 else (1.5 * tentativo)
-                time.sleep(attesa)
+                await asyncio.sleep(attesa)
                 continue
     log.warning("Scraping Vinted fallito dopo %d tentativi per %s: %s", max_retries, url, ultimo_errore)
     return None
 
 
-def scrape_vinted_listing(url):
+async def scrape_vinted_listing(url):
     result = {
         "photo_urls": [], "cover_photo_id": None, "size": None, "condition": None, "description": None,
         "created_at": None, "age_days": None, "catalog_id": None,
@@ -1096,7 +1246,7 @@ def scrape_vinted_listing(url):
         "seller_wardrobe_debug": "non tentato",
     }
     try:
-        resp = _vinted_get_con_retry(url, timeout=15, max_retries=3)
+        resp = await _vinted_get_con_retry(url, timeout=15, max_retries=3)
         if resp is None:
             return result
         html_pagina = resp.text
@@ -1289,8 +1439,8 @@ def scrape_vinted_listing(url):
                 else f"https://www.vinted.it/member/{seller_login}"
             )
             try:
-                resp_profilo = _vinted_get_con_retry(profilo_url, timeout=12, max_retries=2)
-                if resp_profilo is not None and resp_profilo.ok:
+                resp_profilo = await _vinted_get_con_retry(profilo_url, timeout=12, max_retries=2)
+                if resp_profilo is not None and resp_profilo.is_success:
                     html_profilo = resp_profilo.text
                     # SOLO questo pattern e' verificato su HTML reale:
                     # data-testid="other_user_items-N--description-title">Brand</p>.
@@ -1357,7 +1507,7 @@ def scrape_vinted_listing(url):
     return result
 
 
-def download_image_bytes(url, referer="https://www.vinted.it/", max_retries=3):
+async def download_image_bytes(url, referer="https://www.vinted.it/", max_retries=3):
     headers = dict(IMAGE_DOWNLOAD_HEADERS)
     headers["Referer"] = referer
     # TEMP DIAGNOSTIC: this used to swallow every failure silently (bare
@@ -1367,13 +1517,14 @@ def download_image_bytes(url, referer="https://www.vinted.it/", max_retries=3):
     ultimo_dettaglio = None
     for attempt in range(1, max_retries + 1):
         try:
-            resp = _vinted_session.get(url, headers=headers, timeout=18, proxies=_prossimo_proxy())
-            if resp.ok:
+            client = _prossimo_client_vinted()
+            resp = await client.get(url, headers=headers, timeout=18)
+            if resp.is_success:
                 return resp.content
             ultimo_dettaglio = f"HTTP {resp.status_code}"
         except Exception as e:
             ultimo_dettaglio = f"{type(e).__name__}: {e}"
-        time.sleep(0.6 * attempt)
+        await asyncio.sleep(0.6 * attempt)
     log.warning(
         "download_image_bytes: fallito dopo %d tentativi per %s -- ultimo errore: %s",
         max_retries, url, ultimo_dettaglio,
@@ -1398,12 +1549,24 @@ def optimize_image_bytes(img_bytes, max_size=768):
         return img_bytes
 
 
-def costruisci_parts_foto(photo_bytes_list):
+def _costruisci_parts_foto_sync(photo_bytes_list):
     parts = []
     for img_bytes in photo_bytes_list:
         optimized = optimize_image_bytes(img_bytes)
         parts.append({"inline_data": {"mime_type": "image/jpeg", "data": base64.b64encode(optimized).decode("utf-8")}})
     return parts
+
+
+async def costruisci_parts_foto(photo_bytes_list):
+    """Ridimensionamento PIL + base64 di 10 foto e' lavoro CPU puro: dentro
+    il loop asyncio bloccherebbe tutto per qualche centinaio di millisecondi
+    per annuncio, proprio mentre altri annunci stanno aspettando risposte di
+    rete. asyncio.to_thread lo sposta su un thread worker e lascia il loop
+    libero. E' l'unico punto del bot dove serve ancora un thread: tutto il
+    resto e' attesa di rete, che asyncio gestisce nativamente."""
+    if not photo_bytes_list:
+        return []
+    return await asyncio.to_thread(_costruisci_parts_foto_sync, photo_bytes_list)
 
 
 def costo_gemini_token(usage, prezzo_input=PREZZO_OCCHIO_INPUT, prezzo_output=PREZZO_OCCHIO_OUTPUT):
@@ -1412,10 +1575,10 @@ def costo_gemini_token(usage, prezzo_input=PREZZO_OCCHIO_INPUT, prezzo_output=PR
     return (inp * prezzo_input + out * prezzo_output) / 1_000_000
 
 
-def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, grounding=False, max_retries=4,
-                  api_url=GEMINI_API_URL_OCCHIO, prezzo_input=PREZZO_OCCHIO_INPUT, prezzo_output=PREZZO_OCCHIO_OUTPUT):
+async def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, grounding=False, max_retries=4,
+                        api_url=GEMINI_API_URL_OCCHIO, prezzo_input=PREZZO_OCCHIO_INPUT, prezzo_output=PREZZO_OCCHIO_OUTPUT):
     photo_bytes_list = photo_bytes_list or []
-    parts = [{"text": user_text}] + costruisci_parts_foto(photo_bytes_list)
+    parts = [{"text": user_text}] + await costruisci_parts_foto(photo_bytes_list)
 
     payload = {
         "system_instruction": {"parts": [{"text": system_prompt}]},
@@ -1433,10 +1596,10 @@ def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, grounding=Fal
     backoff_seconds = 2
     for attempt in range(1, max_retries + 1):
         try:
-            resp = requests.post(api_url, params={"key": GEMINI_API_KEY}, json=payload, timeout=90)
-            if not resp.ok:
+            resp = await _client_generico.post(api_url, params={"key": GEMINI_API_KEY}, json=payload, timeout=90)
+            if not resp.is_success:
                 log.warning("Gemini HTTP %d: %s", resp.status_code, resp.text[:500])
-            if resp.ok:
+            if resp.is_success:
                 data = resp.json()
                 candidates = data.get("candidates", [])
                 if candidates:
@@ -1448,13 +1611,13 @@ def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, grounding=Fal
                     return text, costo, n_query
                 return "[ERRORE: risposta Gemini senza candidates]", 0.0, 0
             if resp.status_code in {429, 500, 502, 503, 504}:
-                time.sleep(backoff_seconds)
+                await asyncio.sleep(backoff_seconds)
                 backoff_seconds *= 2
                 continue
             resp.raise_for_status()
         except Exception as e:
             if attempt < max_retries:
-                time.sleep(backoff_seconds)
+                await asyncio.sleep(backoff_seconds)
                 backoff_seconds *= 2
                 continue
             return f"[ERRORE: chiamata Gemini fallita dopo {max_retries} tentativi. Eccezione: {e}]", 0.0, 0
@@ -1532,14 +1695,14 @@ def _riga_serper_e_rumore(titolo, snippet):
     return False
 
 
-def cerca_serper_mirata(query):
+async def cerca_serper_mirata(query):
     """Ricerca aggiuntiva mirata, richiamabile dal cervello quando i comp
     pre-raccolti sono insufficienti o fuori tema."""
     if not SERPER_API_KEY:
         return "Ricerca non eseguita (SERPER_API_KEY non impostata)."
     payload = [{"q": query, "gl": "it", "hl": "it", "num": 10}]
     try:
-        resp = requests.post(
+        resp = await _client_generico.post(
             "https://google.serper.dev/search",
             headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
             json=payload, timeout=15,
@@ -1586,68 +1749,437 @@ CERVELLO_FUNCTION_DECLARATION = {
 }
 
 
-def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca=True, max_retries=4,
-                                    api_url=GEMINI_API_URL_CERVELLO, prezzo_input=PREZZO_CERVELLO_INPUT, prezzo_output=PREZZO_CERVELLO_OUTPUT):
-    """Variante del cervello con function calling. Se forza_ricerca=True, il
-    primo giro DEVE chiamare cerca_comp_prezzo (mode ANY). Se False, il tool
-    resta disponibile ma la scelta e' lasciata al modello (mode AUTO).
+# ---------------------------------------------------------------------------
+# SCHEMA DI OUTPUT STRUTTURATO DEL CERVELLO (structured output / JSON mode)
+# ---------------------------------------------------------------------------
+# Sostituisce il verdetto in prosa e tutte le regex che ne estraevano i
+# numeri. L'ordine di propertyOrdering NON e' cosmetico: Gemini genera i
+# campi in quell'ordine, quindi e' letteralmente la catena di ragionamento
+# imposta al modello -- prima si impegna per iscritto su brand e linea,
+# poi elenca i comp, e solo alla fine produce il prezzo target. Non puo'
+# sparare un numero prima di aver dichiarato su quale linea lo sta
+# calcolando.
+#
+# VINCOLO API (documentato, non aggirabile): Gemini rifiuta una richiesta
+# che contenga insieme function_declarations e responseMimeType
+# "application/json" con l'errore "Function calling with a response mime
+# type: 'application/json' is unsupported". Per questo la chiamata al
+# cervello e' divisa in due fasi: i giri di ricerca usano i tools come
+# prima, il giro finale toglie i tools dal payload e accende lo schema.
+# Vedi chiama_gemini_cervello_forzato.
+#
+# Nota sui vincoli numerici: responseSchema accetta solo un sottoinsieme di
+# OpenAPI, quindi qui non si usano pattern/minimum/maximum -- i limiti
+# (sconto 20-30%, deal 1-10, tetti di prezzo) sono applicati in Python da
+# valida_payload_cervello/calcola_verdetto, che e' comunque dove devono
+# stare: un vincolo dichiarato nello schema verrebbe rispettato "quasi
+# sempre", uno applicato in codice sempre.
 
-    Gestisce fino a MAX_ROUNDS_FUNZIONE giri di ricerca: se dopo aver
-    ricevuto un risultato (es. una ricerca fallita per crediti Serper
-    esauriti) il modello prova a richiamare di nuovo la funzione invece di
-    rispondere, i giri precedenti lasciavano il messaggio Telegram vuoto
-    (solo header, verdetto assente) perche' la seconda risposta veniva letta
-    come testo finale anche quando conteneva solo un'altra richiesta di
-    funzione. All'ultimo giro consentito, il tool viene dichiarato con
-    "mode: NONE" esplicito (non piu' omesso del tutto: omettere "tools" non
-    disattivava davvero il function calling quando la conversazione conteneva
-    gia' uno scambio functionCall/functionResponse precedente -- bug
-    osservato in produzione su quasi ogni item il 2026-09-13) per costringere
-    il modello a rispondere con un verdetto testuale usando qualunque dato
-    abbia gia' raccolto. Se anche cosi' il modello insiste con una
-    functionCall, un ultimo tentativo di fallback (senza "tools" nel payload
-    e con un turno "user" esplicito) prova a recuperare comunque un
-    verdetto testuale prima di arrendersi."""
+CATEGORIE_CAPO_ENUM = sorted(CATEGORIA_TERMINE_EN.keys()) + ["non_determinabile"]
+
+CERVELLO_RESPONSE_SCHEMA = {
+    "type": "OBJECT",
+    "propertyOrdering": [
+        "brand_dichiarato_annuncio",
+        "brand_reale_etichetta",
+        "corrispondenza_brand",
+        "linea_o_era_rilevata",
+        "tetto_prezzo_linea_eur",
+        "categoria_capo",
+        "materiale_rilevato",
+        "materiale_confermato",
+        "taglia_rilevata",
+        "fascia_taglia",
+        "comp_candidati",
+        "comp_riferimento_eur",
+        "sconto_ask_applicato_pct",
+        "prezzo_target_vendita_eur",
+        "giorni_stimati_vendita",
+        "mese_consigliato_pubblicazione",
+        "legit_verdetto",
+        "legit_motivo_specifico",
+        "rischio_fake",
+        "confidenza",
+        "profilo_venditore",
+        "motivo_profilo_venditore",
+        "domanda_mercato",
+        "segnali_domanda",
+        "deal_score",
+        "note_analista",
+        "domande_al_venditore",
+        "messaggio_venditore_template",
+    ],
+    "properties": {
+        # --- 1. ANCORAGGIO AL BRAND: il modello si impegna PRIMA di vedere numeri
+        "brand_dichiarato_annuncio": {
+            "type": "STRING",
+            "description": "Brand come dichiarato nell'annuncio Vinted.",
+        },
+        "brand_reale_etichetta": {
+            "type": "STRING",
+            "nullable": True,
+            "description": "Testo ESATTO letto sull'etichetta dall'analisi visiva. null se nessuna etichetta leggibile.",
+        },
+        "corrispondenza_brand": {
+            "type": "STRING",
+            "format": "enum",
+            "enum": ["corrisponde", "sottolinea_stessa_maison", "brand_estraneo", "non_verificabile"],
+            "description": (
+                "'sottolinea_stessa_maison' = MM6 per Margiela, See by Chloe per Chloe, "
+                "Weekend per Max Mara: ha ancora valore, si valuta normalmente. "
+                "'brand_estraneo' = marchio diverso e non correlato (es. Kapitales invece "
+                "di Kapital): verdetto gia' scontato, nessun comp necessario."
+            ),
+        },
+        "linea_o_era_rilevata": {
+            "type": "STRING",
+            "description": (
+                "Linea o era precisa secondo la tabella LINEE E ERE. Esempi validi: "
+                "'Era Lang 1986-2005', 'Era Link Theory post-2006', 'Linea 10', 'MM6', "
+                "\"JEAN'S PAUL GAULTIER\", \"JPG.JEAN'S\", 'Veilance', 'mainline', "
+                "'non determinabile'."
+            ),
+        },
+        "tetto_prezzo_linea_eur": {
+            "type": "NUMBER",
+            "nullable": True,
+            "description": (
+                "Tetto di rivendita imposto dalla linea quando la tabella ne prevede uno "
+                "(es. 30 per JEAN'S PAUL GAULTIER). null se nessun tetto si applica."
+            ),
+        },
+
+        # --- 2. IDENTITA' DEL CAPO
+        "categoria_capo": {
+            "type": "STRING",
+            "format": "enum",
+            "enum": CATEGORIE_CAPO_ENUM,
+        },
+        "materiale_rilevato": {"type": "STRING", "nullable": True},
+        "materiale_confermato": {
+            "type": "BOOLEAN",
+            "description": (
+                "true SOLO se letto da etichetta o dai dati strutturati dell'annuncio. "
+                "false = stima: in quel caso il comp di riferimento deve essere il piu' "
+                "economico tra quelli validi."
+            ),
+        },
+        "taglia_rilevata": {"type": "STRING", "nullable": True},
+        "fascia_taglia": {
+            "type": "STRING",
+            "format": "enum",
+            "enum": ["centrale", "estrema", "ignota"],
+            "description": (
+                "centrale = donna IT 40-44 / uomo IT 48-52 (bacino ampio). "
+                "estrema = fuori da quelle fasce: riduce liquidita' e domanda."
+            ),
+        },
+
+        # --- 3. COMP: prezzi verbatim, un oggetto per comp, niente prosa
+        "comp_candidati": {
+            "type": "ARRAY",
+            "minItems": 0,
+            "description": (
+                "OGNI prezzo comp valutato, anche quelli scartati. I prezzi presi dai dati "
+                "ricevuti vanno copiati alla lettera; quelli che vengono dalla tua "
+                "conoscenza del brand vanno marcati fonte='memoria_modello'."
+            ),
+            "items": {
+                "type": "OBJECT",
+                "propertyOrdering": [
+                    "titolo_verbatim", "prezzo_eur", "fonte",
+                    "stessa_categoria", "stessa_linea", "corrispondenza_materiale",
+                    "escluso", "motivo_esclusione",
+                ],
+                "properties": {
+                    "titolo_verbatim": {
+                        "type": "STRING",
+                        "description": "Titolo del comp copiato alla lettera dai dati ricevuti.",
+                    },
+                    "prezzo_eur": {
+                        "type": "NUMBER",
+                        "description": "Prezzo in euro. Se viene dai dati ricevuti, copiato alla lettera, mai arrotondato.",
+                    },
+                    "fonte": {
+                        "type": "STRING",
+                        "format": "enum",
+                        "enum": ["vinted_testo", "vinted_visuale", "memoria_modello"],
+                        "description": (
+                            "'memoria_modello' = prezzo che ricordi tu, non presente nei dati "
+                            "ricevuti in questa conversazione. Dichiararlo e' obbligatorio e non "
+                            "comporta alcuna penalizzazione."
+                        ),
+                    },
+                    "stessa_categoria": {"type": "BOOLEAN"},
+                    "stessa_linea": {
+                        "type": "BOOLEAN",
+                        "description": "false per Y-3 su Yohji, McQ su McQueen, See by Chloe su Chloe, MM6 su Margiela mainline.",
+                    },
+                    "corrispondenza_materiale": {
+                        "type": "STRING",
+                        "format": "enum",
+                        "enum": ["stesso", "diverso", "ignoto"],
+                    },
+                    "escluso": {"type": "BOOLEAN"},
+                    "motivo_esclusione": {"type": "STRING", "nullable": True},
+                },
+                "required": [
+                    "titolo_verbatim", "prezzo_eur", "fonte",
+                    "stessa_categoria", "stessa_linea", "corrispondenza_materiale", "escluso",
+                ],
+            },
+        },
+        "comp_riferimento_eur": {
+            "type": "NUMBER",
+            "nullable": True,
+            "description": (
+                "Il prezzo, tra i comp NON esclusi, su cui ancori la stima. Deve essere uno "
+                "dei prezzo_eur dichiarati sopra. null se non c'e' nessun comp valido."
+            ),
+        },
+        "sconto_ask_applicato_pct": {
+            "type": "INTEGER",
+            "description": "Sconto prudenziale applicato al comp ASK di riferimento, tra 20 e 30.",
+        },
+
+        # --- 4. L'UNICO NUMERO ECONOMICO CHE IL MODELLO PRODUCE
+        "prezzo_target_vendita_eur": {
+            "type": "NUMBER",
+            "description": (
+                "Prezzo LORDO di listing previsto. NON calcolare margine, ROI, incasso o "
+                "costo d'acquisto: li calcola il sistema. Non puo' superare il comp di "
+                "riferimento gia' scontato, ne' tetto_prezzo_linea_eur."
+            ),
+        },
+        "giorni_stimati_vendita": {"type": "INTEGER"},
+        "mese_consigliato_pubblicazione": {
+            "type": "STRING",
+            "nullable": True,
+            "description": (
+                "Solo se il capo e' fuori stagione (capispalla invernali da settembre, "
+                "capi estivi da aprile). La stagionalita' allunga i tempi, non abbassa il prezzo."
+            ),
+        },
+
+        # --- 5. LEGIT E RISCHIO
+        "legit_verdetto": {
+            "type": "STRING",
+            "format": "enum",
+            "enum": [
+                "probabilmente_autentico",
+                "sospetto_servono_altre_foto",
+                "probabilmente_falso",
+                "non_verificabile",
+            ],
+        },
+        "legit_motivo_specifico": {
+            "type": "STRING",
+            "description": (
+                "Discrepanza concreta: font dell'etichetta e in cosa differisce, proporzioni "
+                "del logo, cuciture, materiale, wash tag incoerente, hardware. Vietate le "
+                "formule generiche ('font grossolano', 'dettagli generici'). Obbligatorio e "
+                "circostanziato quando il verdetto e' probabilmente_falso."
+            ),
+        },
+        "rischio_fake": {
+            "type": "STRING", "format": "enum",
+            "enum": ["basso", "medio", "alto", "molto_alto"],
+        },
+        "confidenza": {
+            "type": "STRING", "format": "enum",
+            "enum": ["alta", "media", "bassa"],
+        },
+
+        # --- 6. VENDITORE E DOMANDA (input dell'urgenza, calcolata in Python)
+        "profilo_venditore": {
+            "type": "STRING", "format": "enum",
+            "enum": ["privato_genuino", "reseller_esperto", "non_determinabile"],
+        },
+        "motivo_profilo_venditore": {
+            "type": "STRING",
+            "description": (
+                "Deve citare esplicitamente il contenuto di 'Primi articoli in vendita' "
+                "quando presente nei dati, non il solo numero di recensioni."
+            ),
+        },
+        "domanda_mercato": {
+            "type": "STRING", "format": "enum",
+            "enum": ["alta", "media", "bassa"],
+            "description": (
+                "Domanda per QUESTO modello a QUESTA taglia, indipendente da margine e ROI. "
+                "'alta' richiede segnali concreti elencati in segnali_domanda."
+            ),
+        },
+        "segnali_domanda": {
+            "type": "ARRAY",
+            "items": {"type": "STRING"},
+            "description": "Segnali concreti e verificabili. Array vuoto se non ce ne sono.",
+        },
+        "deal_score": {"type": "INTEGER", "description": "Qualita' complessiva del deal, da 1 a 10."},
+
+        # --- 7. TESTO PER TELEGRAM (nessun numero finanziario qui dentro)
+        "note_analista": {
+            "type": "STRING",
+            "description": (
+                "3-5 righe: ragionamento sui comp e commento esplicito sul profilo/guardaroba "
+                "del venditore. Non scrivere margine, ROI o decisione: li inserisce il sistema."
+            ),
+        },
+        "domande_al_venditore": {
+            "type": "ARRAY",
+            "maxItems": 2,
+            "items": {"type": "STRING"},
+            "description": (
+                "Array vuoto se non servono davvero per legit-check, difetti o trattativa. "
+                "Non riempirlo per curiosita'."
+            ),
+        },
+        "messaggio_venditore_template": {
+            "type": "STRING",
+            "nullable": True,
+            "description": (
+                "Messaggio pronto per il venditore. Se serve indicare un'offerta scrivi "
+                "ESATTAMENTE il segnaposto {OFFERTA}: l'importo lo calcola e lo sostituisce "
+                "il sistema. Non scrivere mai una cifra in euro qui dentro. null se non serve "
+                "nessun messaggio."
+            ),
+        },
+    },
+    "required": [
+        "brand_dichiarato_annuncio", "corrispondenza_brand", "linea_o_era_rilevata",
+        "categoria_capo", "materiale_confermato", "fascia_taglia",
+        "comp_candidati", "sconto_ask_applicato_pct", "prezzo_target_vendita_eur",
+        "giorni_stimati_vendita", "legit_verdetto", "legit_motivo_specifico",
+        "rischio_fake", "confidenza", "profilo_venditore", "motivo_profilo_venditore",
+        "domanda_mercato", "segnali_domanda", "deal_score", "note_analista",
+        "domande_al_venditore",
+    ],
+}
+
+
+def _schema_gemini_to_openai(schema):
+    """Converte lo schema Gemini (dialetto OpenAPI, tipi MAIUSCOLI, nullable
+    booleano, propertyOrdering) nel JSON Schema che OpenAI accetta in
+    response_format.json_schema con strict=true.
+
+    Esiste per avere UNA sola fonte di verita': lo schema si scrive una
+    volta sopra, e il ramo OpenAI (CERVELLO_PROVIDER=openai) ne riceve
+    automaticamente la traduzione. Senza questa funzione i due schemi
+    divergerebbero alla prima modifica, ed e' esattamente il tipo di
+    disallineamento silenzioso che questo refactor serve a eliminare.
+
+    Regole di strict=true che la conversione deve rispettare:
+    - additionalProperties: false su ogni oggetto;
+    - OGNI property elencata in "required" (gli opzionali si esprimono con
+      un tipo unione che include "null", non omettendoli da required);
+    - niente propertyOrdering/format:enum (ignorati o rifiutati da OpenAI).
+    """
+    if not isinstance(schema, dict):
+        return schema
+
+    tipo = schema.get("type")
+    convertito = {}
+
+    if isinstance(tipo, str):
+        tipo_lower = tipo.lower()
+        if tipo_lower == "integer":
+            tipo_lower = "integer"
+        convertito["type"] = [tipo_lower, "null"] if schema.get("nullable") else tipo_lower
+
+    for chiave in ("description", "enum", "minItems", "maxItems"):
+        if chiave in schema:
+            convertito[chiave] = schema[chiave]
+
+    if "properties" in schema:
+        convertito["properties"] = {
+            nome: _schema_gemini_to_openai(sotto_schema)
+            for nome, sotto_schema in schema["properties"].items()
+        }
+        # strict=true pretende che TUTTE le property siano in required.
+        convertito["required"] = list(schema["properties"].keys())
+        convertito["additionalProperties"] = False
+
+    if "items" in schema:
+        convertito["items"] = _schema_gemini_to_openai(schema["items"])
+
+    return convertito
+
+
+CERVELLO_RESPONSE_SCHEMA_OPENAI = _schema_gemini_to_openai(CERVELLO_RESPONSE_SCHEMA)
+
+
+MAX_ROUNDS_FUNZIONE = 2  # Rialzato da 1 a 2 il 2026-09-14. Con 1, i log
+                         # mostravano che ~1 item su 2 finiva comunque nel
+                         # fallback forzato, che nel caso peggiore costa
+                         # quanto il vecchio "2 giri" (3 chiamate totali) ma
+                         # senza dare al modello la seconda ricerca reale che
+                         # chiedeva. Con 2 il caso "un giro basta" costa
+                         # uguale a prima, il caso "serve una seconda ricerca"
+                         # costa quanto il vecchio fallback ma con una
+                         # ricerca vera al posto del rifiuto secco.
+
+ISTRUZIONE_FASE_JSON = (
+    "Le ricerche sono terminate. Produci ORA il verdetto come oggetto JSON "
+    "conforme allo schema, usando esclusivamente i dati e i comp raccolti in "
+    "questa conversazione. Ricorda: non calcolare margine, ROI, decisione, "
+    "urgenza o importi di trattativa, e marca fonte='memoria_modello' ogni "
+    "prezzo che non compare nei dati ricevuti."
+)
+
+
+def _estrai_testo_da_parts(parts):
+    return "".join(p.get("text", "") for p in (parts or []) if isinstance(p, dict))
+
+
+async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca=True, max_retries=4,
+                                         api_url=GEMINI_API_URL_CERVELLO,
+                                         prezzo_input=PREZZO_CERVELLO_INPUT,
+                                         prezzo_output=PREZZO_CERVELLO_OUTPUT):
+    """Cervello Gemini in DUE FASI, imposte da un vincolo dell'API.
+
+    FASE 1 -- RICERCA (fino a MAX_ROUNDS_FUNZIONE giri): function calling
+    come prima. Con forza_ricerca=True il primo giro DEVE chiamare
+    cerca_comp_prezzo (mode ANY), i successivi sono liberi (AUTO).
+
+    FASE 2 -- VERDETTO (un solo giro): "tools" e "tool_config" vengono
+    TOLTI dal payload e si accendono responseMimeType="application/json" +
+    responseSchema. L'output e' quindi un oggetto conforme a
+    CERVELLO_RESPONSE_SCHEMA, non piu' prosa da cui pescare numeri con
+    espressioni regolari.
+
+    Perche' due fasi e non una: Gemini rifiuta un payload che contenga
+    insieme function_declarations e responseMimeType "application/json"
+    ("Function calling with a response mime type: 'application/json' is
+    unsupported"). Non e' un bug transitorio ma una limitazione
+    documentata, quindi la separazione e' strutturale, non un workaround
+    temporaneo.
+
+    Effetto collaterale positivo: sparisce l'intera classe di bug che
+    affliggeva la vecchia ultima fase. Prima, per impedire al modello di
+    restituire l'ennesima functionCall al posto del verdetto, servivano un
+    "mode: NONE" dichiarato esplicitamente, un tentativo di fallback senza
+    tools e una diagnostica sul testo vuoto (vedi lo storico dei commenti
+    del 2026-09-13). Ora, con responseMimeType="application/json", il
+    modello non ha piu' un canale per emettere una functionCall: l'unico
+    output sintatticamente valido e' l'oggetto JSON.
+
+    Ritorna una tupla di 5 elementi:
+      (verdetto_dict | None, errore | None, costo_totale, n_query_extra,
+       ricerche_extra_raw)
+    """
     contents = [{"role": "user", "parts": [{"text": user_text}]}]
     costo_totale = 0.0
     n_query_extra = 0
-    ricerche_extra_raw = []  # testo grezzo di ogni cerca_serper_mirata riuscita in
-                              # questa chiamata -- usato da verifica_comp_citati_sono_reali
-                              # per controllare che i prezzi citati in Analisi provengano
-                              # davvero dai dati di ricerca, non da una stima "a memoria".
-    MAX_ROUNDS_FUNZIONE = 2  # Rialzato da 1 a 2 il 2026-09-14. Con 1, i log
-                             # mostravano che ~1 item su 2 finiva comunque nel
-                             # fallback forzato (vedi sotto), che nel caso
-                             # peggiore costa quanto il vecchio "2 giri" (3
-                             # chiamate totali), ma senza dare al modello la
-                             # seconda ricerca reale che chiedeva -- lo
-                             # zittisce e basta, verdetto su comp che il
-                             # modello stesso riteneva insufficienti. Con
-                             # MAX_ROUNDS_FUNZIONE=2 il caso "un giro basta"
-                             # costa uguale a prima (2 chiamate), il caso
-                             # "serve una seconda ricerca" costa uguale al
-                             # fallback di oggi (3 chiamate) ma con una
-                             # ricerca vera al posto del rifiuto secco --
-                             # stesso costo nel caso peggiore, qualita'
-                             # probabilmente migliore. Se il costo medio reale
-                             # sale sensibilmente rispetto a questa attesa
-                             # (monitorare il footer costo su Telegram),
-                             # il primo sospetto e' che il modello chieda
-                             # ricerca extra anche quando non servirebbe --
-                             # in quel caso riconsiderare, non tornare a 1
-                             # alla cieca.
+    ricerche_extra_raw = []  # testo grezzo di ogni cerca_serper_mirata riuscita,
+                             # usato per etichettare i comp che il cervello
+                             # dichiara e per il blocco debug Telegram.
 
-    def _chiama_gemini_raw(tool_mode, tools_abilitati, tentativi_rimasti, omit_tools=False):
-        # NOTA: "tools_abilitati" e' ora vestigiale per i giri normali (le
-        # funzioni vengono sempre dichiarate, con mode esplicito -- vedi fix
-        # sotto). "omit_tools" resta per il SOLO tentativo di fallback finale,
-        # dove vogliamo omettere "tools" e "tool_config" del tutto (zero
-        # ambiguita' possibile), a differenza del fix normale che dichiara
-        # sempre la funzione con mode "NONE".
-        function_calling_config = {"mode": tool_mode}
-        if tool_mode == "ANY":
-            function_calling_config["allowed_function_names"] = ["cerca_comp_prezzo"]
-
+    async def _chiama_gemini_raw(tool_mode=None, json_mode=False, tentativi_rimasti=max_retries):
+        generation_config = {
+            "temperature": 0.2,
+            "maxOutputTokens": 10000,
+            "thinkingConfig": {"thinkingLevel": "low"},
+        }
         payload = {
             "system_instruction": {"parts": [{"text": system_prompt}]},
             "contents": contents,
@@ -1656,212 +2188,148 @@ def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca=True,
                     "HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH",
                     "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT")
             ],
-            # thinkingConfig esplicito + maxOutputTokens alzato a 10000 (era
-            # 3000 senza thinkingConfig; poi 6000 -- ANCORA insufficiente in
-            # produzione: bug ripetuto su Loro Piana con 2 giri di ricerca
-            # anche a 6000, quindi alzato di nuovo). Bug reale: con
-            # gemini-3.7-flash (a differenza del 3.1-flash-lite originale)
-            # il "pensiero" interno + il verdetto strutturato finale possono
-            # insieme superare budget piu' bassi su casi complessi (piu' giri
-            # di ricerca, comp multipli da citare) -- risultato: "il modello
-            # non ha prodotto una risposta testuale", credito Gemini speso,
-            # nessun verdetto. Vedi il log diagnostico su finishReason/
-            # thoughtsTokenCount piu' sotto se ricapita anche a 10000: dira'
-            # se e' ancora un problema di budget (finishReason=MAX_TOKENS) o
-            # qualcos'altro.
-            # thinkingLevel="low" (non il default "medium"): scelta
-            # deliberata su costo/velocita' -- i token di pensiero sono
-            # fatturati come output e a "medium" possono essere ~6x i token
-            # della risposta finale (dato da benchmark indipendenti sul
-            # modello gemello 3.6 Flash). "low" e' significativamente piu'
-            # economico e piu' veloce, e benchmark indipendenti non mostrano
-            # un guadagno di accuratezza affidabile sopra "low" per molti
-            # task -- ma non e' stato specificamente testato sul compito di
-            # questo Cervello (valutazione prezzi second-hand). Se dopo
-            # qualche giorno tornano quotazioni incoerenti come il caso
-            # Kapital/Kapitales o le due camicie Our Legacy, il primo
-            # tentativo e' alzare questo a "medium", non aggiungere altre
-            # reti di sicurezza.
-            "generationConfig": {
-                "temperature": 0.2,
-                "maxOutputTokens": 10000,
-                "thinkingConfig": {"thinkingLevel": "low"},
-            },
+            "generationConfig": generation_config,
         }
-        # FIX: la funzione va sempre dichiarata (anche quando tool_mode=="NONE"),
-        # altrimenti "mode: NONE" non viene mai comunicato a Gemini -- prima
-        # venivano omessi sia "tools" sia "tool_config" quando tools_abilitati
-        # era False, e il modello, avendo gia' in "contents" uno scambio
-        # model->functionCall / user->functionResponse dal giro precedente,
-        # continuava a restituire un'altra functionCall invece di testo anche
-        # senza funzioni dichiarate in quel turno (bug osservato in produzione
-        # su quasi ogni item: Lemaire, Max Mara, Mugler, Miu Miu, Cucinelli,
-        # Jil Sander, Loewe, Toteme, Rick Owens, Helmut Lang, JPG -- log
-        # 2026-09-13). Dichiarare sempre "tools" ma con mode "NONE" esplicito
-        # e' il meccanismo ufficiale Gemini per vietare la chiamata pur
-        # lasciando la funzione visibile, e rimuove l'ambiguita' che il
-        # modello aveva quando le funzioni sparivano di colpo dallo schema.
-        if not omit_tools:
+
+        if json_mode:
+            # FASE 2. Niente "tools"/"tool_config" nel payload: con lo schema
+            # attivo sarebbero rifiutati dall'API. La cronologia in "contents"
+            # continua a contenere le coppie functionCall/functionResponse dei
+            # giri di ricerca, ed e' accettata senza problemi -- lo stesso
+            # schema (history con function parts, payload senza tools) era
+            # gia' usato dal vecchio tentativo di fallback finale.
+            generation_config["responseMimeType"] = "application/json"
+            generation_config["responseSchema"] = CERVELLO_RESPONSE_SCHEMA
+        else:
+            # FASE 1. maxOutputTokens piu' basso: qui il modello deve solo
+            # formulare una query di ricerca, non il verdetto completo.
+            generation_config["maxOutputTokens"] = 2000
+            function_calling_config = {"mode": tool_mode}
+            if tool_mode == "ANY":
+                function_calling_config["allowed_function_names"] = ["cerca_comp_prezzo"]
             payload["tools"] = [{"function_declarations": [CERVELLO_FUNCTION_DECLARATION]}]
             payload["tool_config"] = {"function_calling_config": function_calling_config}
 
         backoff_seconds = 2
         for attempt in range(1, tentativi_rimasti + 1):
             try:
-                resp = requests.post(api_url, params={"key": GEMINI_API_KEY}, json=payload, timeout=90)
-                if not resp.ok:
-                    log.warning("Gemini (cervello forzato) HTTP %d: %s", resp.status_code, resp.text[:500])
+                resp = await _client_generico.post(
+                    api_url, params={"key": GEMINI_API_KEY}, json=payload, timeout=90)
+                if not resp.is_success:
+                    log.warning("Gemini (cervello) HTTP %d: %s", resp.status_code, resp.text[:500])
                     if resp.status_code in {429, 500, 502, 503, 504} and attempt < tentativi_rimasti:
-                        time.sleep(backoff_seconds)
+                        await asyncio.sleep(backoff_seconds)
                         backoff_seconds *= 2
                         continue
                     resp.raise_for_status()
                 return resp.json()
             except Exception:
                 if attempt < tentativi_rimasti:
-                    time.sleep(backoff_seconds)
+                    await asyncio.sleep(backoff_seconds)
                     backoff_seconds *= 2
                     continue
                 raise
         raise RuntimeError("tentativi esauriti")
 
+    # ---- FASE 1: giri di ricerca ------------------------------------------
     tool_mode = "ANY" if forza_ricerca else "AUTO"
 
-    for round_idx in range(MAX_ROUNDS_FUNZIONE + 1):
-        ultimo_giro = round_idx == MAX_ROUNDS_FUNZIONE
+    for round_idx in range(MAX_ROUNDS_FUNZIONE):
         try:
-            data = _chiama_gemini_raw(
-                tool_mode="NONE" if ultimo_giro else tool_mode,
-                tools_abilitati=not ultimo_giro,
-                tentativi_rimasti=max_retries,
-            )
+            data = await _chiama_gemini_raw(tool_mode=tool_mode)
         except Exception as e:
-            return f"[ERRORE: cervello forzato fallito. Eccezione: {e}]", costo_totale, n_query_extra, ricerche_extra_raw
+            log.warning("Cervello: fase ricerca fallita al giro %d (%s) -- si passa comunque al verdetto.", round_idx + 1, e)
+            break
 
         candidates = data.get("candidates", [])
         if not candidates:
-            return "[ERRORE: risposta Gemini senza candidates]", costo_totale, n_query_extra, ricerche_extra_raw
+            log.warning("Cervello: nessun candidate nella fase di ricerca (giro %d).", round_idx + 1)
+            break
 
-        usage = data.get("usageMetadata", {})
-        costo_totale += costo_gemini_token(usage, prezzo_input, prezzo_output)
+        costo_totale += costo_gemini_token(data.get("usageMetadata", {}), prezzo_input, prezzo_output)
 
         parts = candidates[0].get("content", {}).get("parts", []) or []
         function_call = next((p.get("functionCall") for p in parts if p.get("functionCall")), None)
 
-        if function_call and not ultimo_giro:
-            query_richiesta = function_call.get("args", {}).get("query", "")
-            log.info("Cervello Gemini ha richiesto ricerca mirata (giro %d/%d): '%s'", round_idx + 1, MAX_ROUNDS_FUNZIONE, query_richiesta)
-            risultato_ricerca = cerca_serper_mirata(query_richiesta)
-            n_query_extra += 1
-            # Tagga il risultato con la query usata (Serper/google.serper.dev
-            # search, non uno scrape di pagina) -- senza questo la query resta
-            # visibile solo nei log, non nel pool che finisce nel messaggio
-            # Telegram di debug (DEBUG_CONFRONTO_COMP_TELEGRAM).
-            ricerche_extra_raw.append(
-                f"\n📍 FONTE: RICERCA ON-DEMAND CERVELLO (Serper google search, query: '{query_richiesta}')\n{risultato_ricerca}"
-            )
+        if not function_call:
+            # Il modello non vuole (piu') cercare: ha gia' abbastanza per
+            # decidere. Si passa direttamente alla fase di verdetto; il testo
+            # eventualmente prodotto qui viene scartato, perche' il verdetto
+            # valido e' solo quello strutturato della fase 2.
+            break
 
-            contents.append({"role": "model", "parts": parts})
-            contents.append({
-                "role": "user",
-                "parts": [{
-                    "functionResponse": {
-                        "name": "cerca_comp_prezzo",
-                        "response": {"result": risultato_ricerca},
-                    }
-                }]
-            })
-            tool_mode = "AUTO"  # i giri successivi non sono piu' forzati
-            continue
-
-        if function_call and ultimo_giro:
-            # RETE DI SICUREZZA RESIDUA: anche con "tools" dichiarato e mode
-            # "NONE" esplicito (fix sopra), se il modello dovesse ANCORA
-            # restituire una functionCall invece di testo (bug lato Gemini
-            # non escludibile del tutto vista la ricorrenza osservata), non
-            # buttiamo via i comp gia' raccolti. Un solo tentativo extra,
-            # esplicito, senza alcuna dichiarazione di funzioni nel payload
-            # (nessuna ambiguita' possibile) e con un turno "user" che dice
-            # chiaramente di smettere di cercare e rispondere con i dati
-            # disponibili.
-            log.warning(
-                "Cervello: functionCall ricevuta anche all'ultimo giro nonostante mode=NONE "
-                "esplicito -- tentativo fallback forzato senza tools dichiarati."
-            )
-            contents.append({"role": "model", "parts": parts})
-            contents.append({
-                "role": "user",
-                "parts": [{
-                    "text": (
-                        "Le ricerche sono terminate: non puoi e non devi chiamare "
-                        "nessuna funzione. Rispondi ORA con il verdetto testuale "
-                        "completo, usando esclusivamente i dati e i comp gia' "
-                        "raccolti in questa conversazione."
-                    )
-                }]
-            })
-            try:
-                data_fallback = _chiama_gemini_raw(
-                    tool_mode="NONE", tools_abilitati=False, tentativi_rimasti=max_retries,
-                    omit_tools=True,
-                )
-            except Exception as e:
-                return (
-                    f"[ERRORE: cervello forzato fallito nel tentativo fallback. Eccezione: {e}]",
-                    costo_totale, n_query_extra, ricerche_extra_raw,
-                )
-            candidates_fb = data_fallback.get("candidates", [])
-            usage_fb = data_fallback.get("usageMetadata", {})
-            costo_totale += costo_gemini_token(usage_fb, prezzo_input, prezzo_output)
-            parts_fb = (candidates_fb[0].get("content", {}).get("parts", []) if candidates_fb else []) or []
-            testo_fb = "".join(p.get("text", "") for p in parts_fb)
-            if testo_fb.strip():
-                return testo_fb, costo_totale, n_query_extra, ricerche_extra_raw
-            finish_reason_fb = candidates_fb[0].get("finishReason", "?") if candidates_fb else "?"
-            return (
-                f"[ERRORE: il modello ha insistito con una function call anche nel tentativo "
-                f"fallback finale -- finishReason={finish_reason_fb}]"
-            ), costo_totale, n_query_extra, ricerche_extra_raw
-
-        testo = "".join(p.get("text", "") for p in parts)
-        if testo.strip():
-            return testo, costo_totale, n_query_extra, ricerche_extra_raw
-
-        # DIAGNOSTICA per capire perche' il testo e' vuoto. Bug ricorrente
-        # osservato in produzione con DUE varianti distinte finora:
-        # 1. finishReason=MAX_TOKENS -- budget di pensiero+output esaurito
-        #    (gia' mitigato alzando maxOutputTokens e limitando thinkingLevel).
-        # 2. finishReason=STOP (completamento NORMALE, non troncato) con
-        #    thoughtsTokenCount assente e testo comunque vuoto -- causa
-        #    diversa e non ancora capita, il fix del budget non basta qui.
-        # Loggato ora il JSON grezzo completo di parts/candidate (troncato)
-        # cosi' se ricapita abbiamo la struttura esatta (es. se "parts" e'
-        # una lista vuota, se contiene un part con "thought": true senza
-        # "text", se c'e' un safetyRatings che blocca in silenzio, ecc.)
-        # invece di dover indovinare di nuovo con solo due numeri.
-        finish_reason = candidates[0].get("finishReason", "?")
-        thoughts_tokens = usage.get("thoughtsTokenCount", "?")
-        output_tokens = usage.get("candidatesTokenCount", "?")
-        safety_ratings = candidates[0].get("safetyRatings", "assenti")
-        log.warning(
-            "Cervello: testo vuoto al giro %d/%d -- finishReason=%s, thoughtsTokenCount=%s, "
-            "candidatesTokenCount=%s, maxOutputTokens configurato=%s, n_parts=%d, "
-            "safetyRatings=%s\nDUMP GREZZO parts: %s\nDUMP GREZZO candidate (senza content): %s",
-            round_idx + 1, MAX_ROUNDS_FUNZIONE + 1, finish_reason, thoughts_tokens,
-            output_tokens, 10000, len(parts), safety_ratings,
-            json.dumps(parts, ensure_ascii=False)[:1500],
-            json.dumps({k: v for k, v in candidates[0].items() if k != "content"}, ensure_ascii=False)[:800],
+        query_richiesta = function_call.get("args", {}).get("query", "")
+        log.info("Cervello Gemini ha richiesto ricerca mirata (giro %d/%d): '%s'",
+                 round_idx + 1, MAX_ROUNDS_FUNZIONE, query_richiesta)
+        risultato_ricerca = await cerca_serper_mirata(query_richiesta)
+        n_query_extra += 1
+        ricerche_extra_raw.append(
+            f"\n📍 FONTE: RICERCA ON-DEMAND CERVELLO (Serper google search, query: '{query_richiesta}')\n{risultato_ricerca}"
         )
 
-        if not ultimo_giro:
-            # Nessun testo e nessuna function call valida (raro): un altro giro
-            continue
-        return (
-            f"[ERRORE: il modello non ha prodotto una risposta testuale dopo i tentativi di ricerca "
-            f"-- finishReason={finish_reason}, thinking={thoughts_tokens} token]"
-        ), costo_totale, n_query_extra, ricerche_extra_raw
+        contents.append({"role": "model", "parts": parts})
+        contents.append({
+            "role": "user",
+            "parts": [{
+                "functionResponse": {
+                    "name": "cerca_comp_prezzo",
+                    "response": {"result": risultato_ricerca},
+                }
+            }]
+        })
+        tool_mode = "AUTO"  # i giri successivi non sono piu' forzati
 
-    return "[ERRORE: tentativi esauriti]", costo_totale, n_query_extra, ricerche_extra_raw
+    # ---- FASE 2: verdetto strutturato -------------------------------------
+    contents.append({"role": "user", "parts": [{"text": ISTRUZIONE_FASE_JSON}]})
+
+    try:
+        data = await _chiama_gemini_raw(json_mode=True)
+    except Exception as e:
+        return None, f"chiamata al verdetto strutturato fallita: {e}", costo_totale, n_query_extra, ricerche_extra_raw
+
+    candidates = data.get("candidates", [])
+    if not candidates:
+        return None, "risposta Gemini senza candidates nella fase di verdetto", costo_totale, n_query_extra, ricerche_extra_raw
+
+    usage = data.get("usageMetadata", {})
+    costo_totale += costo_gemini_token(usage, prezzo_input, prezzo_output)
+
+    parts = candidates[0].get("content", {}).get("parts", []) or []
+    testo_json = _estrai_testo_da_parts(parts).strip()
+    finish_reason = candidates[0].get("finishReason", "?")
+
+    if not testo_json:
+        # Con lo schema attivo un output vuoto ha praticamente una sola
+        # causa plausibile: troncamento. A differenza della prosa, un JSON
+        # troncato non degrada (non e' "un verdetto un po' corto"), e'
+        # inutilizzabile -- quindi va distinto e segnalato come tale invece
+        # di finire in un generico "nessuna risposta testuale".
+        if finish_reason == "MAX_TOKENS":
+            return None, (
+                "verdetto troncato: il JSON ha superato maxOutputTokens "
+                f"(thinking={usage.get('thoughtsTokenCount', '?')} token). "
+                "Se ricapita spesso, la causa piu' probabile e' un array "
+                "comp_candidati molto lungo: alzare maxOutputTokens o "
+                "accorciare titolo_verbatim nello schema."
+            ), costo_totale, n_query_extra, ricerche_extra_raw
+        log.warning(
+            "Cervello: fase verdetto senza testo -- finishReason=%s, usage=%s, n_parts=%d, safetyRatings=%s",
+            finish_reason, json.dumps(usage, ensure_ascii=False)[:300], len(parts),
+            candidates[0].get("safetyRatings", "assenti"),
+        )
+        return None, f"il modello non ha prodotto il JSON del verdetto (finishReason={finish_reason})", costo_totale, n_query_extra, ricerche_extra_raw
+
+    try:
+        verdetto = json.loads(testo_json)
+    except json.JSONDecodeError as e:
+        log.warning("Cervello: JSON non parsabile (finishReason=%s): %s\nTESTO GREZZO: %s",
+                    finish_reason, e, testo_json[:1000])
+        return None, f"JSON del verdetto non parsabile ({e})", costo_totale, n_query_extra, ricerche_extra_raw
+
+    if not isinstance(verdetto, dict):
+        return None, "il JSON del verdetto non e' un oggetto", costo_totale, n_query_extra, ricerche_extra_raw
+
+    return verdetto, None, costo_totale, n_query_extra, ricerche_extra_raw
 
 
 # ---------------------------------------------------------------------------
@@ -1893,143 +2361,175 @@ def costo_openai_token(usage, prezzo_input=PREZZO_CERVELLO_OPENAI_INPUT, prezzo_
     return (inp * prezzo_input + out * prezzo_output) / 1_000_000
 
 
-def _chiama_openai_raw(messages, tool_choice, tentativi_rimasti, max_retries=4):
+OPENAI_RESPONSE_FORMAT_CERVELLO = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "verdetto_flip",
+        "strict": True,
+        "schema": CERVELLO_RESPONSE_SCHEMA_OPENAI,
+    },
+}
+
+
+async def _chiama_openai_raw(messages, tentativi_rimasti, tools=None, tool_choice=None,
+                             response_format=None, max_retries=4):
     payload = {
         "model": OPENAI_MODEL_CERVELLO,
         "messages": messages,
         "temperature": 0.2,
-        "max_tokens": 2000,
-        "tools": [OPENAI_CERVELLO_TOOL],
-        "tool_choice": tool_choice,  # "required" | "auto" | "none"
+        "max_tokens": 4000,
     }
+    if tools is not None:
+        payload["tools"] = tools
+        payload["tool_choice"] = tool_choice or "auto"
+    if response_format is not None:
+        payload["response_format"] = response_format
+
     headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
     backoff_seconds = 2
     for attempt in range(1, tentativi_rimasti + 1):
         try:
-            resp = requests.post(OPENAI_API_URL_CERVELLO, headers=headers, json=payload, timeout=90)
-            if not resp.ok:
+            resp = await _client_generico.post(
+                OPENAI_API_URL_CERVELLO, headers=headers, json=payload, timeout=90)
+            if not resp.is_success:
                 log.warning("OpenAI (cervello) HTTP %d: %s", resp.status_code, resp.text[:500])
                 if resp.status_code in {429, 500, 502, 503, 504} and attempt < tentativi_rimasti:
-                    time.sleep(backoff_seconds)
+                    await asyncio.sleep(backoff_seconds)
                     backoff_seconds *= 2
                     continue
                 resp.raise_for_status()
             return resp.json()
         except Exception:
             if attempt < tentativi_rimasti:
-                time.sleep(backoff_seconds)
+                await asyncio.sleep(backoff_seconds)
                 backoff_seconds *= 2
                 continue
             raise
     raise RuntimeError("tentativi esauriti")
 
 
-def chiama_openai_cervello_forzato(system_prompt, user_text, forza_ricerca=True, max_retries=4):
-    """Equivalente OpenAI di chiama_gemini_cervello_forzato. Stessa firma di
-    ritorno (testo, costo_totale, n_query_extra, ricerche_extra_raw) per
-    restare intercambiabile nel punto di chiamata via CERVELLO_PROVIDER."""
+async def chiama_openai_cervello_forzato(system_prompt, user_text, forza_ricerca=True, max_retries=4):
+    """Equivalente OpenAI del cervello Gemini, stessa firma di ritorno a 5
+    elementi per restare intercambiabile via CERVELLO_PROVIDER.
+
+    Differenza tecnica rispetto a Gemini: OpenAI NON ha il vincolo
+    "function calling incompatibile con structured output", quindi la
+    separazione in due fasi qui non sarebbe obbligatoria. La manteniamo
+    comunque identica, per tre motivi concreti: un solo flusso logico da
+    ragionare e correggere quando qualcosa va storto in produzione, gli
+    stessi log e gli stessi punti di fallimento su entrambi i provider, e
+    la certezza che cambiare CERVELLO_PROVIDER non cambi nient'altro che
+    il modello interrogato.
+
+    Lo schema passato in response_format e' la traduzione automatica di
+    CERVELLO_RESPONSE_SCHEMA fatta da _schema_gemini_to_openai: unica
+    fonte di verita', nessun rischio che i due schemi divergano.
+    """
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_text},
     ]
     costo_totale = 0.0
     n_query_extra = 0
-    ricerche_extra_raw = []  # vedi commento gemello in chiama_gemini_cervello_forzato
-    MAX_ROUNDS_FUNZIONE = 2  # stesso limite del gemello Gemini, per parita' di costo massimo
+    ricerche_extra_raw = []
 
+    # ---- FASE 1: giri di ricerca ------------------------------------------
     tool_choice = "required" if forza_ricerca else "auto"
 
-    for round_idx in range(MAX_ROUNDS_FUNZIONE + 1):
-        ultimo_giro = round_idx == MAX_ROUNDS_FUNZIONE
+    for round_idx in range(MAX_ROUNDS_FUNZIONE):
         try:
-            data = _chiama_openai_raw(
-                messages,
-                tool_choice="none" if ultimo_giro else tool_choice,
-                tentativi_rimasti=max_retries,
+            data = await _chiama_openai_raw(
+                messages, tentativi_rimasti=max_retries,
+                tools=[OPENAI_CERVELLO_TOOL], tool_choice=tool_choice,
             )
         except Exception as e:
-            return f"[ERRORE: cervello OpenAI fallito. Eccezione: {e}]", costo_totale, n_query_extra, ricerche_extra_raw
+            log.warning("Cervello OpenAI: fase ricerca fallita al giro %d (%s) -- si passa al verdetto.", round_idx + 1, e)
+            break
 
         choices = data.get("choices", [])
         if not choices:
-            return "[ERRORE: risposta OpenAI senza choices]", costo_totale, n_query_extra, ricerche_extra_raw
+            log.warning("Cervello OpenAI: nessuna choice nella fase di ricerca (giro %d).", round_idx + 1)
+            break
 
-        usage = data.get("usage", {})
-        costo_totale += costo_openai_token(usage)
+        costo_totale += costo_openai_token(data.get("usage", {}))
 
         msg = choices[0].get("message", {})
         tool_calls = msg.get("tool_calls") or []
+        if not tool_calls:
+            break  # il modello ha gia' abbastanza dati: si passa al verdetto
 
-        if tool_calls and not ultimo_giro:
-            # OpenAI puo' restituire PIU' tool_calls nello stesso turno
-            # (parallel tool calling, attivo di default) anche con un solo
-            # tool dichiarato -- il modello puo' scegliere di lanciare 2+
-            # ricerche mirate insieme. BUG corretto il 2026-09-19: prima si
-            # processava solo tool_calls[0] ma si rimandava indietro l'intera
-            # lista `tool_calls` nel messaggio assistant, lasciando gli altri
-            # tool_call_id senza risposta -- OpenAI rifiuta la history al
-            # giro successivo con HTTP 400 ("did not have response
-            # messages"), osservato ripetutamente in produzione su annunci
-            # diversi. Ora si risponde a OGNI tool_call ricevuta.
-            messages.append({"role": "assistant", "content": msg.get("content"), "tool_calls": tool_calls})
-            for call in tool_calls:
-                try:
-                    query_richiesta = json.loads(call.get("function", {}).get("arguments", "{}")).get("query", "")
-                except (json.JSONDecodeError, TypeError):
-                    query_richiesta = ""
-                log.info("Cervello OpenAI ha richiesto ricerca mirata (giro %d/%d): '%s'", round_idx + 1, MAX_ROUNDS_FUNZIONE, query_richiesta)
-                risultato_ricerca = cerca_serper_mirata(query_richiesta)
-                n_query_extra += 1
-                # Vedi commento gemello in chiama_gemini_cervello_forzato: tagga
-                # il risultato con la query usata per il blocco debug Telegram.
-                ricerche_extra_raw.append(
-                    f"\n📍 FONTE: RICERCA ON-DEMAND CERVELLO (Serper google search, query: '{query_richiesta}')\n{risultato_ricerca}"
-                )
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": call.get("id", ""),
-                    "content": risultato_ricerca,
-                })
-            tool_choice = "auto"  # i giri successivi non sono piu' forzati
-            continue
-
-        if tool_calls and ultimo_giro:
-            # Non dovrebbe succedere quasi mai (tool_choice="none" all'ultimo
-            # giro impedisce esplicitamente la tool_call), ma per simmetria
-            # con il fallback Gemini gestiamo comunque il caso senza perdere
-            # i comp gia' raccolti.
-            log.warning("Cervello OpenAI: tool_call ricevuta anche all'ultimo giro nonostante tool_choice=none.")
-            messages.append({
-                "role": "user",
-                "content": (
-                    "Le ricerche sono terminate: non puoi e non devi chiamare nessuna "
-                    "funzione. Rispondi ORA con il verdetto testuale completo, usando "
-                    "esclusivamente i dati e i comp gia' raccolti in questa conversazione."
-                ),
-            })
+        # OpenAI puo' restituire PIU' tool_calls nello stesso turno (parallel
+        # tool calling, attivo di default). Va risposto a OGNUNA: lasciare un
+        # tool_call_id senza risposta fa rifiutare l'intera history al giro
+        # successivo con HTTP 400 ("did not have response messages"), bug
+        # osservato ripetutamente in produzione prima del fix del 2026-09-19.
+        messages.append({"role": "assistant", "content": msg.get("content"), "tool_calls": tool_calls})
+        for call in tool_calls:
             try:
-                data_fb = _chiama_openai_raw(messages, tool_choice="none", tentativi_rimasti=max_retries)
-            except Exception as e:
-                return f"[ERRORE: cervello OpenAI fallito nel tentativo fallback. Eccezione: {e}]", costo_totale, n_query_extra, ricerche_extra_raw
-            choices_fb = data_fb.get("choices", [])
-            usage_fb = data_fb.get("usage", {})
-            costo_totale += costo_openai_token(usage_fb)
-            testo_fb = (choices_fb[0].get("message", {}).get("content") or "") if choices_fb else ""
-            if testo_fb.strip():
-                return testo_fb, costo_totale, n_query_extra, ricerche_extra_raw
-            return "[ERRORE: il modello ha insistito con una tool_call anche nel tentativo fallback finale]", costo_totale, n_query_extra, ricerche_extra_raw
+                query_richiesta = json.loads(call.get("function", {}).get("arguments", "{}")).get("query", "")
+            except (json.JSONDecodeError, TypeError):
+                query_richiesta = ""
+            log.info("Cervello OpenAI ha richiesto ricerca mirata (giro %d/%d): '%s'",
+                     round_idx + 1, MAX_ROUNDS_FUNZIONE, query_richiesta)
+            risultato_ricerca = await cerca_serper_mirata(query_richiesta)
+            n_query_extra += 1
+            ricerche_extra_raw.append(
+                f"\n📍 FONTE: RICERCA ON-DEMAND CERVELLO (Serper google search, query: '{query_richiesta}')\n{risultato_ricerca}"
+            )
+            messages.append({
+                "role": "tool",
+                "tool_call_id": call.get("id", ""),
+                "content": risultato_ricerca,
+            })
+        tool_choice = "auto"
 
-        testo = msg.get("content") or ""
-        if testo.strip():
-            return testo, costo_totale, n_query_extra, ricerche_extra_raw
+    # ---- FASE 2: verdetto strutturato -------------------------------------
+    messages.append({"role": "user", "content": ISTRUZIONE_FASE_JSON})
 
-        finish_reason = choices[0].get("finish_reason", "?")
-        log.warning("Cervello OpenAI: testo vuoto al giro %d/%d -- finish_reason=%s", round_idx + 1, MAX_ROUNDS_FUNZIONE + 1, finish_reason)
-        if not ultimo_giro:
-            continue
-        return f"[ERRORE: il modello OpenAI non ha prodotto una risposta testuale -- finish_reason={finish_reason}]", costo_totale, n_query_extra, ricerche_extra_raw
+    try:
+        data = await _chiama_openai_raw(
+            messages, tentativi_rimasti=max_retries,
+            response_format=OPENAI_RESPONSE_FORMAT_CERVELLO,
+        )
+    except Exception as e:
+        return None, f"chiamata al verdetto strutturato fallita: {e}", costo_totale, n_query_extra, ricerche_extra_raw
 
-    return "[ERRORE: tentativi esauriti]", costo_totale, n_query_extra, ricerche_extra_raw
+    choices = data.get("choices", [])
+    if not choices:
+        return None, "risposta OpenAI senza choices nella fase di verdetto", costo_totale, n_query_extra, ricerche_extra_raw
+
+    costo_totale += costo_openai_token(data.get("usage", {}))
+
+    msg = choices[0].get("message", {})
+    finish_reason = choices[0].get("finish_reason", "?")
+
+    # Un rifiuto esplicito del modello (campo "refusal" di structured output)
+    # non e' un JSON malformato: e' il modello che dichiara di non voler
+    # rispondere. Va distinto, altrimenti finirebbe come "JSON non parsabile"
+    # e si perderebbe il motivo reale.
+    if msg.get("refusal"):
+        return None, f"il modello ha rifiutato di produrre il verdetto: {msg['refusal']}", costo_totale, n_query_extra, ricerche_extra_raw
+
+    testo_json = (msg.get("content") or "").strip()
+    if not testo_json:
+        if finish_reason == "length":
+            return None, (
+                "verdetto troncato: il JSON ha superato max_tokens. Se ricapita, "
+                "la causa piu' probabile e' un array comp_candidati molto lungo."
+            ), costo_totale, n_query_extra, ricerche_extra_raw
+        return None, f"il modello non ha prodotto il JSON del verdetto (finish_reason={finish_reason})", costo_totale, n_query_extra, ricerche_extra_raw
+
+    try:
+        verdetto = json.loads(testo_json)
+    except json.JSONDecodeError as e:
+        log.warning("Cervello OpenAI: JSON non parsabile (finish_reason=%s): %s\nTESTO GREZZO: %s",
+                    finish_reason, e, testo_json[:1000])
+        return None, f"JSON del verdetto non parsabile ({e})", costo_totale, n_query_extra, ricerche_extra_raw
+
+    if not isinstance(verdetto, dict):
+        return None, "il JSON del verdetto non e' un oggetto", costo_totale, n_query_extra, ricerche_extra_raw
+
+    return verdetto, None, costo_totale, n_query_extra, ricerche_extra_raw
 
 
 # ---------------------------------------------------------------------------
@@ -2058,7 +2558,7 @@ def build_vinted_search_url(brand, categoria, materiale=None, catalog_id=None):
     return url, False
 
 
-def _risolvi_search_by_image_id(item_id, photo_id):
+async def _risolvi_search_by_image_id(item_id, photo_id):
     """Il photo_id della foto (estratto dall'URL CDN, es. "06_00506_...")
     NON e' l'ID accettato da search_by_image_id nel catalogo -- verificato
     empiricamente confrontando tre URL reali forniti dall'utente il
@@ -2139,33 +2639,37 @@ def _risolvi_search_by_image_id(item_id, photo_id):
         "Sec-Fetch-Dest": "document",
         "Sec-Fetch-User": "?1",
     }
-    resp = _vinted_get_con_retry(
+    resp = await _vinted_get_con_retry(
         url_intermedio, timeout=12, max_retries=2, headers_extra=headers_referer_annuncio
     )
     if resp is None:
         return None
-    if "/member/register" in resp.url or "/member/login" in resp.url:
+    # str(): con httpx resp.url e' un oggetto URL, non una stringa -- un
+    # "in" o una re.search direttamente su di esso solleverebbe TypeError
+    # (con requests era una stringa e funzionava).
+    url_finale = str(resp.url)
+    if "/member/register" in url_finale or "/member/login" in url_finale:
         log.info(
             "_risolvi_search_by_image_id: redirect a login/registrazione NONOSTANTE "
             "VINTED_ACCESS_TOKEN impostato e non scaduto (%s) -- possibile token "
             "invalidato lato Vinted prima della scadenza dichiarata, o blocco Datadome "
             "sul fingerprint della richiesta (vedi nota TLS/Datadome nella docstring "
             "sopra). Fonte visuale saltata per questo item.",
-            resp.url,
+            url_finale,
         )
         return None
-    m = re.search(r"search_by_image_id=([A-Za-z0-9_]+)", resp.url)
+    m = re.search(r"search_by_image_id=([A-Za-z0-9_]+)", url_finale)
     if not m:
         log.info(
             "_risolvi_search_by_image_id: redirect non ha prodotto un search_by_image_id "
             "nell'URL finale (%s) -- fonte visuale saltata per questo item.",
-            resp.url,
+            url_finale,
         )
         return None
     return m.group(1)
 
 
-def build_vinted_visual_search_url(item_id, photo_id, brand):
+async def build_vinted_visual_search_url(item_id, photo_id, brand):
     """URL equivalente al bottone Vinted "Cerca articoli simili" + filtro
     per brand. Risolve prima il vero search_by_image_id (vedi
     _risolvi_search_by_image_id -- il photo_id della foto da solo NON
@@ -2178,7 +2682,7 @@ def build_vinted_visual_search_url(item_id, photo_id, brand):
     brand_id = VINTED_BRAND_IDS.get((brand or "").strip().lower())
     if not brand_id:
         return None
-    search_by_image_id = _risolvi_search_by_image_id(item_id, photo_id)
+    search_by_image_id = await _risolvi_search_by_image_id(item_id, photo_id)
     if not search_by_image_id:
         return None
     return (
@@ -2266,13 +2770,13 @@ def _e_errore_crediti_serper(resp):
     return False
 
 
-def _serper_scrape_page_diretto(label, url):
+async def _serper_scrape_page_diretto(label, url):
     if not SERPER_API_KEY:
         return "Scrape non eseguito (SERPER_API_KEY non impostata).", False
 
     payload = {"url": url, "includeMarkdown": True, "includeRawHtml": True, "includeHtml": True}
     try:
-        resp = requests.post(
+        resp = await _client_generico.post(
             "https://scrape.serper.dev",
             headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
             json=payload, timeout=15,
@@ -2290,7 +2794,7 @@ def _serper_scrape_page_diretto(label, url):
     return "  Fonte non supportata.", True
 
 
-def _serper_batch_query_vestiaire(brand, categoria):
+async def _serper_batch_query_vestiaire(brand, categoria):
     """Query mirata su Vestiaire Collective. NON usa piu' un fallback generico
     "dress" quando la categoria non e' rilevata: in quel caso salta la query
     ed espone chiaramente al cervello che manca il dato, invece di restituire
@@ -2313,7 +2817,7 @@ def _serper_batch_query_vestiaire(brand, categoria):
 
     payload = [{"q": query_serper, "gl": "it", "hl": "it", "num": 10}]
     try:
-        resp = requests.post(
+        resp = await _client_generico.post(
             "https://google.serper.dev/search",
             headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
             json=payload, timeout=15,
@@ -2340,7 +2844,7 @@ def _serper_batch_query_vestiaire(brand, categoria):
     return ("\n".join(lines) if lines else "Nessun risultato trovato."), True
 
 
-def _query_resellbot_raw(query_testo, timeout):
+async def _query_resellbot_raw(query_testo, timeout):
     """Esegue UNA chiamata a Resellbot con la query testuale gia' costruita e
     ritorna (righe_di_testo, ok). Estratta da _cerca_ebay_sold_via_resellbot
     il 2026-09-19 per permettere il retry senza materiale (vedi sopra)."""
@@ -2361,7 +2865,7 @@ def _query_resellbot_raw(query_testo, timeout):
     }
     log.info("Resellbot: richiesta in corso -- query='%s'", query_testo)
     try:
-        resp = requests.post(
+        resp = await _client_generico.post(
             "https://scan-api.resellbot.com/api/search",
             headers=headers, json=payload, timeout=timeout,
         )
@@ -2404,7 +2908,7 @@ def _query_resellbot_raw(query_testo, timeout):
     return "\n".join(righe[:20]), True
 
 
-def _cerca_ebay_sold_via_resellbot(brand, categoria, material_per_ricerca=None, timeout=6):
+async def _cerca_ebay_sold_via_resellbot(brand, categoria, material_per_ricerca=None, timeout=6):
     """Fonte PRIMARIA per eBay SOLD, aggiunta il 2026-09-19: interroga
     direttamente l'API pubblica di Resellbot (scan-api.resellbot.com/api/search),
     lo stesso endpoint usato dalla pagina https://resellbot.com/ebay-sold-listings/
@@ -2451,7 +2955,7 @@ def _cerca_ebay_sold_via_resellbot(brand, categoria, material_per_ricerca=None, 
 
     if materiale_pulito:
         query_con_materiale = f'{query_base} {materiale_pulito}'
-        testo, ok = _query_resellbot_raw(query_con_materiale, timeout)
+        testo, ok = await _query_resellbot_raw(query_con_materiale, timeout)
         if not ok:
             return testo, False  # errore di rete/rate-limit: nessun retry, va al fallback Google
         if testo is not None:
@@ -2461,14 +2965,14 @@ def _cerca_ebay_sold_via_resellbot(brand, categoria, material_per_ricerca=None, 
             "Resellbot: 0 risultati con materiale ('%s') -- retry senza materiale ('%s').",
             query_con_materiale, query_base,
         )
-        testo_ampio, ok_ampio = _query_resellbot_raw(query_base, timeout)
+        testo_ampio, ok_ampio = await _query_resellbot_raw(query_base, timeout)
         if not ok_ampio:
             return testo_ampio, False
         if testo_ampio is not None:
             return testo_ampio, True
         return "  Nessun venduto trovato su Resellbot per questa query.", True
 
-    testo, ok = _query_resellbot_raw(query_base, timeout)
+    testo, ok = await _query_resellbot_raw(query_base, timeout)
     if not ok:
         return testo, False
     if testo is None:
@@ -2476,7 +2980,7 @@ def _cerca_ebay_sold_via_resellbot(brand, categoria, material_per_ricerca=None, 
     return testo, True
 
 
-def _serper_batch_query_ebay_sold(brand, categoria, material_per_ricerca=None):
+async def _serper_batch_query_ebay_sold(brand, categoria, material_per_ricerca=None):
     """FALLBACK per eBay SOLD (fonte primaria: _cerca_ebay_sold_via_resellbot
     sopra) -- stesso schema di _serper_batch_query_vestiaire (Google search
     via Serper, non scrape diretto della pagina eBay).
@@ -2535,7 +3039,7 @@ def _serper_batch_query_ebay_sold(brand, categoria, material_per_ricerca=None):
 
     payload = [{"q": query_serper, "gl": "it", "hl": "it", "num": 10}]
     try:
-        resp = requests.post(
+        resp = await _client_generico.post(
             "https://google.serper.dev/search",
             headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
             # timeout ridotto a 8s (era 15s): questa funzione e' anche il
@@ -2708,7 +3212,7 @@ def _rimuovi_comp_autoreferenziale(testo_comp_vinted, titolo_annuncio):
     return "\n".join(righe_filtrate)
 
 
-def _recupera_comp_visuali_vinted(item_id, photo_id, brand):
+async def _recupera_comp_visuali_vinted(item_id, photo_id, brand):
     """Wrapper per la fonte visuale, pensato per essere sottomesso come UN
     solo future nello stesso executor delle altre 3 fonti (vedi
     search_comps_completo) cosi' la risoluzione dell'ID (chiamata di rete
@@ -2719,13 +3223,13 @@ def _recupera_comp_visuali_vinted(item_id, photo_id, brand):
     (testo, ok) degli altri. ok=False (non un'eccezione) quando manca un
     ingrediente o la risoluzione fallisce, cosi' il chiamante lo tratta come
     fonte assente senza differenziare i log dalle altre query fallite."""
-    url = build_vinted_visual_search_url(item_id, photo_id, brand)
+    url = await build_vinted_visual_search_url(item_id, photo_id, brand)
     if not url:
         return "  Fonte non disponibile (photo_id/brand mancante o risoluzione ID falsa).", False
-    return _serper_scrape_page_diretto("VINTED", url)
+    return await _serper_scrape_page_diretto("VINTED", url)
 
 
-def _cerca_ebay_sold_con_fallback(brand, categoria, material_per_ricerca=None):
+async def _cerca_ebay_sold_con_fallback(brand, categoria, material_per_ricerca=None):
     """Wrapper per l'executor: prova prima Resellbot (dati di vendita
     confermati, veri, vedi _cerca_ebay_sold_via_resellbot), e solo se fallisce
     (bloccato, rate-limited, errore di rete, o semplicemente 'nessun venduto
@@ -2738,17 +3242,17 @@ def _cerca_ebay_sold_con_fallback(brand, categoria, material_per_ricerca=None):
     le fonti per restringere la query quando il materiale e' noto (vedi
     docstring di _cerca_ebay_sold_via_resellbot per il dettaglio sul retry
     automatico senza materiale se la query ristretta non trova nulla)."""
-    testo, ok = _cerca_ebay_sold_via_resellbot(brand, categoria, material_per_ricerca)
+    testo, ok = await _cerca_ebay_sold_via_resellbot(brand, categoria, material_per_ricerca)
     if ok:
         return testo, ok
     log.info("_cerca_ebay_sold_con_fallback: Resellbot fallito (%s), tento fallback Google.", testo)
-    testo_fallback, ok_fallback = _serper_batch_query_ebay_sold(brand, categoria, material_per_ricerca)
+    testo_fallback, ok_fallback = await _serper_batch_query_ebay_sold(brand, categoria, material_per_ricerca)
     if ok_fallback:
         return f"{testo_fallback}\n(Nota: fonte primaria Resellbot fallita, questi risultati vengono da Google/eBay.)", True
     return f"{testo} | fallback Google anch'esso fallito: {testo_fallback}", False
 
 
-def search_comps_completo(brand, categoria, query_base, catalog_id=None, material_per_ricerca=None, cover_photo_id=None, item_id=None):
+async def search_comps_completo(brand, categoria, query_base, catalog_id=None, material_per_ricerca=None, cover_photo_id=None, item_id=None):
     vinted_url, vinted_per_id = build_vinted_search_url(brand, categoria, material_per_ricerca, catalog_id)
     # Se manca l'ingrediente minimo (photo_id o brand mappato) la fonte
     # visuale e' inutile: lo sappiamo gia' qui senza fare rete, quindi non la
@@ -2774,39 +3278,34 @@ def search_comps_completo(brand, categoria, query_base, catalog_id=None, materia
     # la conoscenza generale di Gemini (grounding). Se in futuro si vuole
     # reintrodurre eBay, va prima risolta la conversione valuta in
     # _cerca_ebay_sold_via_resellbot.
+    # Fan-out delle fonti comp con asyncio.gather invece del vecchio
+    # ThreadPoolExecutor. Due vantaggi concreti oltre al non bloccare il loop:
+    # il timeout e' PER FONTE (prima era complessivo sull'as_completed, quindi
+    # una fonte lenta poteva consumare il budget di tutte), e asyncio.wait_for
+    # CANCELLA davvero la coroutine scaduta, mentre un thread in timeout
+    # restava vivo a consumare connessioni e quota Serper per una risposta
+    # che nessuno avrebbe piu' letto.
+    TIMEOUT_PER_FONTE_SECONDI = 15
+
+    async def _esegui_fonte(nome, coroutine):
+        try:
+            testo, ok = await asyncio.wait_for(coroutine, timeout=TIMEOUT_PER_FONTE_SECONDI)
+            return nome, testo, ok
+        except asyncio.TimeoutError:
+            return nome, f"  Timeout (fonte troppo lenta, oltre {TIMEOUT_PER_FONTE_SECONDI}s).", False
+        except Exception as e:
+            return nome, f"  Query fallita: {e}", False
+
+    lavori = [_esegui_fonte("vinted", _serper_scrape_page_diretto("VINTED", vinted_url))]
+    if tentare_ricerca_visuale:
+        lavori.append(_esegui_fonte(
+            "vinted_visuale", _recupera_comp_visuali_vinted(item_id, cover_photo_id, brand)))
+
     risultati = {}
     successi = {}
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        future_vinted = executor.submit(_serper_scrape_page_diretto, "VINTED", vinted_url)
-        futures = {future_vinted: "vinted"}
-        if tentare_ricerca_visuale:
-            future_visuale = executor.submit(_recupera_comp_visuali_vinted, item_id, cover_photo_id, brand)
-            futures[future_visuale] = "vinted_visuale"
-
-        try:
-            for future in as_completed(futures, timeout=15):
-                nome = futures[future]
-                try:
-                    testo, ok = future.result()
-                    risultati[nome] = testo
-                    successi[nome] = ok
-                except Exception as e:
-                    risultati[nome] = f"  Query fallita: {e}"
-                    successi[nome] = False
-        except TimeoutError:
-            for future, nome in futures.items():
-                if nome not in risultati:
-                    if future.done():
-                        try:
-                            testo, ok = future.result()
-                            risultati[nome] = testo
-                            successi[nome] = ok
-                        except Exception as e:
-                            risultati[nome] = f"  Query fallita: {e}"
-                            successi[nome] = False
-                    else:
-                        risultati[nome] = "  Timeout (fonte troppo lenta, oltre 15s)."
-                        successi[nome] = False
+    for nome, testo, ok in await asyncio.gather(*lavori):
+        risultati[nome] = testo
+        successi[nome] = ok
 
     serper_ha_funzionato = any(successi.values())
 
@@ -2878,56 +3377,6 @@ def _estrai_margine_e_roi_da_blocco(blocco_testo):
             pass
 
     return margine, roi
-
-
-def _normalizza_emoji_decisione(testo, lunghezza_blocco=400):
-    """Il cervello a volte usa per errore le emoji del legit-check
-    dell'occhio invece di quelle proprie, specialmente quando riprende la
-    formulazione dell'analisi visiva preliminare. Gestisce due casi:
-    1. Emoji sbagliata + nessuna parola di decisione: inserisce sia
-       l'emoji giusta sia la parola.
-    2. Emoji sbagliata + parola di decisione gia' presente: sostituisce
-       solo l'emoji, senza duplicare la parola.
-
-    IMPORTANTE: lo swap nel caso 2 avviene SOLO nel prefisso PRIMA della
-    parola di decisione, mai dopo -- altrove nel blocco possono comparire
-    le annotazioni inserite dalle reti di sicurezza, che non vanno mai
-    toccate o si generano doppioni."""
-    testa = testo[:lunghezza_blocco]
-    resto = testo[lunghezza_blocco:]
-
-    upper = testa.upper()
-    posizioni = [upper.find(k) for k in ("COMPRA", "TRATTA", "NON COMPRARE", "CHIEDI")]
-    posizioni = [p for p in posizioni if p != -1]
-
-    if posizioni:
-        idx_parola = min(posizioni)
-        prefisso = testa[:idx_parola].replace("✅", "🟢", 1).replace("❌", "🔴", 1).replace("⚠️", "🟡", 1)
-        testa = prefisso + testa[idx_parola:]
-    else:
-        if "✅" in testa:
-            testa = testa.replace("✅", "🟢 COMPRA", 1)
-        elif "❌" in testa:
-            testa = testa.replace("❌", "🔴 NON COMPRARE", 1)
-        elif "⚠️" in testa:
-            testa = testa.replace("⚠️", "🟡 TRATTA", 1)
-
-    return testa + resto
-
-
-def normalizza_urgenza_wording(testo, lunghezza_blocco=400):
-    """Il prompt prevede solo 3 livelli di urgenza (Alta/Media/Bassa), ma il
-    modello a volte inventa varianti come 'Massima urgenza' o 'Urgenza
-    massima' che sfuggono al controllo soglia (che cerca 'Alta'). Le
-    normalizza tutte ad 'Alta urgenza' prima che declassa_urgenza_se_borderline
-    valuti se il margine/ROI la giustifica davvero."""
-    testa = testo[:lunghezza_blocco]
-    resto = testo[lunghezza_blocco:]
-
-    testa = re.sub(r"massima\s+(?:urgenza|priorit[aà])", "Alta urgenza", testa, flags=re.IGNORECASE)
-    testa = re.sub(r"(?:urgenza|priorit[aà])\s+massima", "Alta urgenza", testa, flags=re.IGNORECASE)
-
-    return testa + resto
 
 
 # ---------------------------------------------------------------------------
@@ -3162,255 +3611,49 @@ def build_skip_report(listing_info, motivo_skip, output_occhi_testo=None):
     )
 
 
-def forza_soglia_minima_compra(testo):
-    """Ultima rete di sicurezza, indipendente dal formato esatto del verdetto.
-    valida_contraddizioni_report funziona solo se il modello include l'emoji
-    o la dicitura "**Decisione:**" -- se il modello omette entrambi (capita),
-    quella funzione non ha nulla da correggere e una COMPRA sotto soglia
-    passa inosservata. Questa funzione normalizza prima eventuali emoji
-    sbagliate, poi scansiona il blocco iniziale del testo e forza TRATTA se
-    margine <20€ o ROI <100% nonostante COMPRA."""
-    testo = _normalizza_emoji_decisione(testo)
-
-    LUNGHEZZA_BLOCCO_VERDETTO = 400
-    testa = testo[:LUNGHEZZA_BLOCCO_VERDETTO]
-    resto = testo[LUNGHEZZA_BLOCCO_VERDETTO:]
-
-    testa_upper = testa.upper()
-    contiene_compra = (
-        re.search(r"\bCOMPRA\b", testa_upper)
-        and "NON COMPRARE" not in testa_upper
-        and "TRATTA" not in testa_upper
-    )
-    if not contiene_compra:
-        return testo
-
-    margine_valore, roi_valore = _estrai_margine_e_roi_da_blocco(testa)
-
-    sotto_soglia = (
-        (margine_valore is not None and margine_valore < 20)
-        or (roi_valore is not None and roi_valore < 100)
-    )
-    if not sotto_soglia:
-        return testo
-
-    testa_corretta = testa.replace("🟢", "🟡", 1)
-    testa_corretta = re.sub(
-        r"\bCOMPRA(?:\s+(?:SUBITO|FORTE|IMMEDIATAMENTE|SE CI TIENI))?\b(?:\s*⚠️\s*_[^_]*_)?",
-        "TRATTA ⚠️ _corretto automaticamente: sotto soglia minima (€20 netti / ROI 100%)_",
-        testa_corretta, count=1, flags=re.IGNORECASE,
-    )
-    log.info(
-        "forza_soglia_minima_compra: COMPRA declassato a TRATTA (margine=%s, ROI=%s%%).",
-        margine_valore, roi_valore,
-    )
-    return testa_corretta + resto
-
-
-def declassa_urgenza_se_borderline(testo):
-    """Rete di sicurezza indipendente dal formato: 'Alta urgenza' deve
-    riflettere un margine di sicurezza reale (>=€30 netti E ROI >=150%),
-    non un semplice superamento della soglia minima per COMPRA."""
-    LUNGHEZZA_BLOCCO_VERDETTO = 400
-    testa = testo[:LUNGHEZZA_BLOCCO_VERDETTO]
-    resto = testo[LUNGHEZZA_BLOCCO_VERDETTO:]
-
-    PATTERN_ALTA_URGENZA = r"alta\s+(?:urgenza|priorit[aà]|importanza)"
-    if not re.search(PATTERN_ALTA_URGENZA, testa, re.IGNORECASE):
-        return testo
-
-    margine_valore, roi_valore = _estrai_margine_e_roi_da_blocco(testa)
-
-    margine_insufficiente_per_urgenza = margine_valore is not None and margine_valore < 30
-    roi_insufficiente_per_urgenza = roi_valore is not None and roi_valore < 150
-
-    if not (margine_insufficiente_per_urgenza or roi_insufficiente_per_urgenza):
-        return testo
-
-    testa_corretta = re.sub(
-        PATTERN_ALTA_URGENZA,
-        "Media urgenza ⚠️ _declassata: margine/ROI sopra soglia minima ma non abbastanza abbondante per Alta urgenza_",
-        testa, count=1, flags=re.IGNORECASE,
-    )
-    log.info(
-        "declassa_urgenza_se_borderline: Alta urgenza declassata a Media (margine=%s, ROI=%s%%).",
-        margine_valore, roi_valore,
-    )
-    return testa_corretta + resto
-
-
-def applica_soglia_trattativa_40_percento(testo, prezzo_prodotto):
-    """Rete di sicurezza sulla regola: sconto massimo trattabile = 40% sul
-    prezzo del PRODOTTO (mai sulla spedizione). Sostituisce l'INTERA riga
-    "Obiettivo trattativa: ..." fino a fine riga, non solo il numero
-    dell'offerta -- altrimenti il resto della frase resta calcolato sul
-    vecchio valore e produce numeri incoerenti tra loro."""
-    if prezzo_prodotto is None:
-        return testo
-
-    m = re.search(r"Obiettivo trattativa:\s*€\s*([\d.,]+)[^\n]*", testo, re.IGNORECASE)
-    if not m:
-        return testo
-
-    try:
-        valore_offerto = float(m.group(1).replace(",", "."))
-    except ValueError:
-        return testo
-
-    STIMA_SPEDIZIONE_MINIMA = 2.50  # tariffa IT, la piu' economica
-    soglia_minima = round(prezzo_prodotto * 0.6 + STIMA_SPEDIZIONE_MINIMA, 2)
-
-    if valore_offerto >= soglia_minima - 0.01:
-        return testo
-
-    soglia_str = f"{soglia_minima:.2f}".replace(".", ",")
-    riga_corretta = (
-        f"Obiettivo trattativa: €{soglia_str} totale (minimo consentito: 40% sconto "
-        f"su prezzo prodotto €{prezzo_prodotto:.2f} + spedizione) ⚠️ _offerta originale "
-        f"del modello (€{valore_offerto:.2f}) era sotto il limite consentito ed e' stata "
-        f"corretta al minimo -- margine e ROI relativi NON sono ricalcolati automaticamente, "
-        f"verificare manualmente prima di inviare l'offerta_"
-    )
-    testo_corretto = testo[:m.start()] + riga_corretta + testo[m.end():]
-
-    log.info(
-        "applica_soglia_trattativa_40_percento: offerta corretta da €%.2f a €%.2f (prezzo prodotto=€%.2f).",
-        valore_offerto, soglia_minima, prezzo_prodotto,
-    )
-    return testo_corretto
-
-
-def converti_tratta_senza_obiettivo_valido(testo):
-    """Rete di sicurezza: se il modello propone esplicitamente un
-    'Obiettivo trattativa' che resta sotto soglia anche al massimo sconto,
-    la negoziazione non risolve nulla -- la decisione corretta e' NON
-    COMPRARE.
-
-    IMPORTANTE: interviene SOLO se un obiettivo trattativa e' presente ed
-    e' insufficiente. Se manca del tutto (es. perche' questa TRATTA e'
-    stata generata da forza_soglia_minima_compra declassando un COMPRA
-    borderline), NON forza NON COMPRARE."""
-    testo = _normalizza_emoji_decisione(testo)
-
-    LUNGHEZZA_BLOCCO_VERDETTO = 400
-    testa = testo[:LUNGHEZZA_BLOCCO_VERDETTO]
-    resto = testo[LUNGHEZZA_BLOCCO_VERDETTO:]
-
-    testa_upper = testa.upper()
-    e_tratta = (
-        "TRATTA" in testa_upper
-        and "NON COMPRARE" not in testa_upper
-        and not re.search(r"\bCOMPRA\b", testa_upper)
-    )
-    if not e_tratta:
-        return testo
-
-    m_obiettivo = re.search(r"Obiettivo trattativa[:\s]*.{0,250}", testo, re.IGNORECASE | re.DOTALL)
-    if m_obiettivo is None:
-        return testo  # nessun obiettivo proposto: non e' un errore
-
-    margine_obiettivo, roi_obiettivo = _estrai_margine_e_roi_da_blocco(m_obiettivo.group(0))
-
-    obiettivo_insufficiente = (
-        (margine_obiettivo is not None and margine_obiettivo < 20)
-        or (roi_obiettivo is not None and roi_obiettivo < 100)
-    )
-    if not obiettivo_insufficiente:
-        return testo
-
-    testa_corretta = testa.replace("🟡", "🔴", 1)
-    testa_corretta = re.sub(
-        r"\bTRATTA\b(?:\s*⚠️\s*_[^_]*_)?",
-        "NON COMPRARE ⚠️ _corretto: anche l'obiettivo di trattativa non raggiunge la soglia minima (€20 netti / ROI 100%), non ha senso negoziare_",
-        testa_corretta, count=1, flags=re.IGNORECASE,
-    )
-    log.info(
-        "converti_tratta_senza_obiettivo_valido: TRATTA convertito in NON COMPRARE (margine_obiettivo=%s, ROI_obiettivo=%s%%).",
-        margine_obiettivo, roi_obiettivo,
-    )
-    return testa_corretta + resto
-
-
-def valida_contraddizioni_report(testo):
-    final_text = _normalizza_emoji_decisione(testo)
-
-    def _get_decisione_match(txt):
-        m = re.search(r"(🟢|🟡|🔴|🔵)\s+\*?\*?([^\n*]+)\*?\*?", txt)
-        if m:
-            return m, "emoji", m.group(2).strip()
-        m2 = re.search(r"\*\*Decisione:\*\*\s*([^\n]+)", txt)
-        if m2:
-            return m2, "markdown", m2.group(1).strip()
-        return None, None, ""
-
-    match_d, fmt, dt = _get_decisione_match(final_text)
-
-    def _sostituisci_decisione(txt, nuova_decisione, motivo):
-        if fmt == "emoji":
-            emoji_map = {"NON COMPRARE": "🔴", "TRATTA": "🟡", "COMPRA": "🟢", "CHIEDI": "🔵"}
-            nuova_emoji = next((e for k, e in emoji_map.items() if k in nuova_decisione.upper()), "🟡")
-            return re.sub(
-                r"(🟢|🟡|🔴|🔵)\s+\*?\*?[^\n*]+\*?\*?",
-                f"{nuova_emoji} **{nuova_decisione}** ⚠️ _{motivo}_",
-                txt, count=1
-            )
-        else:
-            return re.sub(
-                r"(\*\*Decisione:\*\*\s*)[^\n]+",
-                r"\1" + nuova_decisione + f" ⚠️ _{motivo}_",
-                txt, count=1
-            )
-
-    roi_m = re.search(r"ROI\s*~?\s*(\d+)(?:[-–](\d+))?\s*%", final_text, re.IGNORECASE)
-
-    if re.search(r"\bCOMPRA\b", dt) and re.search(r"sotto\s+soglia", final_text, re.IGNORECASE):
-        nuova = "NON COMPRARE · N/A"
-        final_text = _sostituisci_decisione(final_text, nuova, "corretto: margine sotto soglia")
-        match_d, fmt, dt = _get_decisione_match(final_text)
-
-    if "COMPRA SUBITO" in dt and re.search(r"Confidenza[:\s]+Bassa", final_text, re.IGNORECASE):
-        nuova = dt.replace("COMPRA SUBITO", "COMPRA FORTE")
-        final_text = _sostituisci_decisione(final_text, nuova, "corretto: COMPRA SUBITO richiede Confidenza non Bassa")
-        match_d, fmt, dt = _get_decisione_match(final_text)
-
-    if re.search(r"\bCOMPRA\b", dt) and "TRATTA" not in dt.upper():
-        margine_m = re.search(r"€\s*([\d.,]+)\s*\(?ROI", final_text, re.IGNORECASE)
-        margine_valore = None
-        if margine_m:
-            try:
-                margine_valore = float(margine_m.group(1).replace(",", "."))
-            except ValueError:
-                pass
-        roi_max = None
-        if roi_m:
-            roi_max = max(int(roi_m.group(1)), int(roi_m.group(2)) if roi_m.group(2) else int(roi_m.group(1)))
-
-        margine_troppo_basso = margine_valore is not None and margine_valore < 15
-        roi_troppo_basso = roi_max is not None and roi_max < 60
-
-        if margine_troppo_basso or roi_troppo_basso:
-            nuova = dt
-            for k in ("COMPRA SUBITO", "COMPRA FORTE", "COMPRA SE CI TIENI", "COMPRA"):
-                if k in nuova.upper():
-                    nuova = re.sub(re.escape(k), "TRATTA", nuova, flags=re.IGNORECASE)
-                    break
-            motivo_num = f"margine €{margine_valore}" if margine_troppo_basso else f"ROI {roi_max}%"
-            final_text = _sostituisci_decisione(final_text, nuova, f"corretto: {motivo_num} troppo basso per COMPRA diretto")
-
-    return final_text
-
-
-def estrai_decisione_da_testo(testo):
-    m = re.search(r"(?:🟢|🟡|🔴|🔵)\s+\*?\*?([^\n*⚠️]+)", testo)
-    if m:
-        return m.group(1).strip().rstrip("*").strip()
-    m2 = re.search(r"\*\*Decisione:\*\*\s*([^\n]+)", testo)
-    return m2.group(1).strip() if m2 else None
-
-
-def _e_urgenza_alta(decisione_testo):
-    testo = (decisione_testo or "").lower()
-    return any(k in testo for k in ("alta", "altissima", "subito", "forte"))
+# ---------------------------------------------------------------------------
+# RETI DI SICUREZZA REGEX -- RIMOSSE il 2026-09-19
+# ---------------------------------------------------------------------------
+# Con il cervello a output JSON strutturato queste funzioni non hanno piu'
+# un oggetto su cui lavorare, quindi sono state eliminate invece di essere
+# lasciate nel file come codice morto (un file lungo pieno di funzioni che
+# non vengono mai chiamate e' un costo di lettura permanente, e prima o poi
+# qualcuno le riattiva senza accorgersi che parsano un formato che non
+# esiste piu'). Elenco di cosa e' sparito e di cosa lo sostituisce:
+#
+#   _normalizza_emoji_decisione        -> le emoji le scrive render_messaggio_
+#                                         verdetto da un dizionario, il modello
+#                                         non le produce piu'
+#   normalizza_urgenza_wording         -> l'urgenza e' un valore calcolato,
+#                                         non una parola da normalizzare
+#   forza_soglia_minima_compra         -> calcola_verdetto applica le soglie
+#                                         PRIMA di scrivere la decisione
+#   declassa_urgenza_se_borderline     -> idem, l'urgenza nasce gia' corretta
+#   applica_soglia_trattativa_40_percento -> l'offerta la calcola il codice,
+#                                         il modello non la propone piu'
+#   converti_tratta_senza_obiettivo_valido -> TRATTA esiste solo se
+#                                         l'obiettivo regge, per costruzione
+#   valida_contraddizioni_report       -> non esistono piu' contraddizioni
+#                                         possibili tra testo e numeri
+#   estrai_decisione_da_testo          -> la decisione e' un campo, non si
+#                                         estrae da nessuna parte
+#   _e_urgenza_alta                    -> verdetto["urgenza"] == "Alta"
+#   verifica_falso_ha_motivazione      -> legit_motivo_specifico e' un campo
+#                                         obbligatorio dello schema, e la
+#                                         lunghezza minima e' controllata in
+#                                         valida_payload_cervello
+#   verifica_ancoraggio_prezzo_comp    -> diventata un min() in calcola_verdetto
+#   verifica_comp_citati_sono_reali    -> diventata una differenza tra insiemi
+#                                         in classifica_provenienza_comp
+#
+# Restano invece _estrai_prezzi_da_pool_ricerca, _prezzi_per_fonte_da_pool,
+# _motivo_nessun_prezzo e _riepilogo_comp_per_fonte: servono ancora, sia per
+# il blocco debug Telegram sia per il confronto tra i comp dichiarati dal
+# cervello e quelli realmente presenti nel pool.
+#
+# Restano anche _estrai_margine_e_roi_da_blocco e estrai_margine_preliminare:
+# NON riguardano il cervello ma l'OCCHIO, che continua a produrre prosa e la
+# cui stima preliminare alimenta ancora check_skip_pre_cervello.
 
 
 def _estrai_item_id_da_url(url):
@@ -3418,184 +3661,6 @@ def _estrai_item_id_da_url(url):
         return None
     m = re.search(r"/items/(\d+)", url)
     return m.group(1) if m else None
-
-
-def verifica_falso_ha_motivazione(testo):
-    """Regola generale: se la parola 'falso'/'contraffatto'/'non autentico'
-    compare nel messaggio finale, deve esserci una spiegazione specifica
-    vicino (font, cuciture, materiale, wash tag...). Se il testo e' troppo
-    corto o coincide con una vecchia frase generica nota, aggiunge un
-    avviso visibile invece di lasciare l'utente senza motivo."""
-    testo_lower = testo.lower()
-    if not any(kw in testo_lower for kw in ("falso", "contraffatto", "non autentico")):
-        return testo
-
-    m_blocco = re.search(
-        r"(?:🏷️\s*Legit:|##\s*Legit check\s*\n)(.{0,500})",
-        testo, re.IGNORECASE | re.DOTALL,
-    )
-    blocco_legit = m_blocco.group(1).strip() if m_blocco else testo[:500]
-
-    troppo_corto = len(blocco_legit) < 60
-    frase_generica_nota = (
-        "rilevato da analisi visiva con alta confidenza" in blocco_legit.lower()
-        and len(blocco_legit) < 120
-    )
-
-    if troppo_corto or frase_generica_nota:
-        log.info("verifica_falso_ha_motivazione: 'falso' citato senza motivo specifico, aggiunto avviso.")
-        return testo + (
-            "\n\n⚠️ _Nota automatica: e' stato rilevato un possibile falso ma non e' stato fornito "
-            "un motivo specifico (font, cuciture, materiale, wash tag). Verificare manualmente le "
-            "foto prima di scartare definitivamente l'annuncio._"
-        )
-
-    return testo
-
-
-def verifica_ancoraggio_prezzo_comp(testo, pool_ricerca_grezzo=None):
-    """Rete di sicurezza per una violazione osservata piu' volte in produzione
-    nonostante la regola sia gia' esplicita nel prompt ("CONTROLLO NUMERICO
-    OBBLIGATORIO SUL PREZZO DI LISTING"): il modello a volte fissa un prezzo
-    di listing SUPERIORE al comp piu' alto che lui stesso cita nell'Analisi
-    dell'analista, spesso chiamandolo "prudenziale" -- l'opposto della
-    prudenza. Casi reali che hanno motivato questa funzione:
-    - comp citati Vinted €215 e eBay SOLD €200, listing fissato a €225
-      ("prudenzialmente");
-    - maglioncino Brunello Cucinelli €90, comp citati fino a €180, listing
-      stimato €225 con verdetto "COMPRA SUBITO".
-
-    Versione precedente di questa funzione aggiungeva solo una nota di
-    avviso in fondo al messaggio, lasciando il verdetto (COMPRA/TRATTA)
-    intatto in testa -- rischio concreto che l'utente si fidi del verdetto
-    senza scorrere fino alla nota. Ora la violazione DECLASSA il verdetto
-    stesso, con lo stesso meccanismo (sostituzione di emoji + testo nel
-    blocco dei primi 400 caratteri) usato dalle altre reti di sicurezza
-    del file (forza_soglia_minima_compra, converti_tratta_senza_obiettivo_valido).
-    Margine/ROI numerici NON vengono ricalcolati (troppo rischioso via
-    regex): si declassa solo l'etichetta di decisione, ed e' comunque
-    responsabilita' dell'utente verificare manualmente il caso.
-
-    pool_ricerca_grezzo (aggiunto il 2026-09-19): PRIMA questa funzione
-    trovava il comp massimo SOLO cercando prezzi scritti esplicitamente nel
-    testo dell'Analisi -- se il cervello scriveva in modo vago ("prezzi tra
-    €50 e €90 per capi simili", senza mai isolare un numero riconoscibile
-    dal regex, o descrivendo un range senza cifre puntuali), 'comp_citati'
-    restava vuoto e la funzione usciva subito senza controllare nulla,
-    lasciando passare stime gonfiate senza alcun freno (caso reale: due
-    Missoni consecutivi con target di rivendita giudicato troppo alto
-    dall'utente). Ora, quando il testo dell'Analisi non offre comp
-    numerici, si usa come fallback il MASSIMO PREZZO REALE dell'intero pool
-    di ricerca (stessa fonte usata da verifica_comp_citati_sono_reali) --
-    un limite oggettivo e sempre disponibile quando la ricerca ha trovato
-    almeno un prezzo, indipendentemente da come il cervello lo abbia
-    descritto in prosa."""
-    m_verdetto = re.search(
-        r"💰\s*€\s*([\d.,]+)\s*→\s*€\s*([\d.,]+)\s*→",
-        testo[:400],
-    )
-    if not m_verdetto:
-        return testo
-
-    try:
-        incasso_reale = float(m_verdetto.group(2).replace(",", "."))
-    except ValueError:
-        return testo
-
-    if incasso_reale <= 0:
-        return testo
-
-    prezzo_listing_stimato = incasso_reale / 0.80
-
-    m_analisi = re.search(
-        r"Analisi dell'analista:?\**\s*\n(.+)", testo, re.IGNORECASE | re.DOTALL,
-    )
-    blocco_analisi = m_analisi.group(1) if m_analisi else ""
-
-    comp_citati = []
-    if blocco_analisi:
-        for m in re.finditer(r"€\s*([\d]+(?:[.,]\d+)?)|([\d]+(?:[.,]\d+)?)\s*€", blocco_analisi):
-            # Esclude i numeri che sono il modello stesso che ripete la SUA
-            # stima (es. "posizionando il listing a 225€, incasso netto 180€")
-            # -- altrimenti questi vengono scambiati per comp esterni citati,
-            # innalzando artificialmente il "massimo" e mascherando proprio la
-            # violazione che questa funzione deve rilevare.
-            finestra_precedente = blocco_analisi[max(0, m.start() - 40):m.start()].lower()
-            if re.search(r"\b(listing|incasso)\b", finestra_precedente):
-                continue
-            valore = m.group(1) or m.group(2)
-            comp_citati.append(float(valore.replace(",", ".")))
-
-    fonte_comp_massimo = "citati nell'Analisi dell'analista"
-    if comp_citati:
-        comp_massimo = max(comp_citati)
-    elif pool_ricerca_grezzo:
-        # Fallback: l'analisi non cita numeri isolati riconoscibili --
-        # usa il prezzo reale piu' alto trovato in TUTTO il pool di ricerca
-        # (pre-raccolti + eventuali ricerche on-demand) come limite oggettivo.
-        prezzi_pool = _estrai_prezzi_da_pool_ricerca(pool_ricerca_grezzo)
-        if not prezzi_pool:
-            return testo
-        comp_massimo = max(prezzi_pool)
-        fonte_comp_massimo = "trovati nel pool di ricerca (l'Analisi non cita cifre isolate)"
-    else:
-        return testo
-
-    TOLLERANZA = 1.02  # 2% di margine per arrotondamenti, non e' una soglia rigida
-    if prezzo_listing_stimato <= comp_massimo * TOLLERANZA:
-        return testo
-
-    sforamento_percento = (prezzo_listing_stimato / comp_massimo - 1) * 100
-
-    log.info(
-        "verifica_ancoraggio_prezzo_comp: prezzo di listing stimato €%.2f supera il comp piu' alto "
-        "%s (€%.2f, sforamento %.0f%%) -- declassato il verdetto.",
-        prezzo_listing_stimato, fonte_comp_massimo, comp_massimo, sforamento_percento,
-    )
-
-    nota_calcolo = (
-        f"il prezzo di listing stimato (~€{prezzo_listing_stimato:.2f}, ricavato "
-        f"dall'incasso €{incasso_reale:.2f}÷0.80) supera del {sforamento_percento:.0f}% "
-        f"il comp piu' alto {fonte_comp_massimo} (€{comp_massimo:.2f}) -- "
-        f"violazione della regola di ancoraggio ai comp reali"
-    )
-
-    testo = _normalizza_emoji_decisione(testo)
-    LUNGHEZZA_BLOCCO_VERDETTO = 400
-    testa = testo[:LUNGHEZZA_BLOCCO_VERDETTO]
-    resto = testo[LUNGHEZZA_BLOCCO_VERDETTO:]
-    testa_upper = testa.upper()
-
-    # Sforamento grosso (>20% sopra il comp massimo): la stima e' cosi'
-    # lontana dal comp reale che anche trattare non ha senso -- NON COMPRARE.
-    # Sforamento piu' contenuto: declassa a TRATTA (o resta NON COMPRARE se
-    # gia' tale, non c'e' nulla sotto a cui declassare).
-    SOGLIA_SFORAMENTO_NON_COMPRARE = 20.0
-
-    if "NON COMPRARE" in testa_upper:
-        # Gia' al livello minimo: aggiunge solo la motivazione, senza toccare
-        # l'emoji/decisione che e' gia' quella corretta.
-        testa_corretta = re.sub(
-            r"(NON COMPRARE)(\s*⚠️\s*_[^_]*_)?",
-            lambda m: f"{m.group(1)} ⚠️ _corretto: {nota_calcolo}_",
-            testa, count=1, flags=re.IGNORECASE,
-        )
-    elif sforamento_percento > SOGLIA_SFORAMENTO_NON_COMPRARE:
-        testa_corretta = testa.replace("🟢", "🔴", 1).replace("🟡", "🔴", 1)
-        testa_corretta = re.sub(
-            r"\b(?:COMPRA(?:\s+(?:SUBITO|FORTE|IMMEDIATAMENTE|SE CI TIENI))?|TRATTA)\b(?:\s*⚠️\s*_[^_]*_)?",
-            f"NON COMPRARE ⚠️ _corretto: {nota_calcolo}_",
-            testa_corretta, count=1, flags=re.IGNORECASE,
-        )
-    else:
-        testa_corretta = testa.replace("🟢", "🟡", 1)
-        testa_corretta = re.sub(
-            r"\bCOMPRA(?:\s+(?:SUBITO|FORTE|IMMEDIATAMENTE|SE CI TIENI))?\b(?:\s*⚠️\s*_[^_]*_)?",
-            f"TRATTA ⚠️ _corretto: {nota_calcolo}_",
-            testa_corretta, count=1, flags=re.IGNORECASE,
-        )
-
-    return testa_corretta + resto
 
 
 def _estrai_prezzi_da_pool_ricerca(pool_ricerca_grezzo):
@@ -3776,346 +3841,589 @@ def _riepilogo_comp_per_fonte(pool_ricerca_grezzo):
     return "\n".join(righe) if righe else "(nessuna fonte con prezzi)"
 
 
-def verifica_comp_citati_sono_reali(testo, pool_ricerca_grezzo, prezzo_annuncio_originale=None):
-    """Rete di sicurezza per una violazione distinta da quella di
-    verifica_ancoraggio_prezzo_comp: qui il cervello non sfora un comp reale
-    che cita, ma CITA COMP CHE NON ESISTONO nei dati di ricerca effettivamente
-    ricevuti -- una stima "a memoria del brand" (es. "vendite recenti tra
-    €150 e €280" per una t-shirt Undercover, quando la ricerca web reale non
-    conteneva quei numeri da nessuna parte) presentata come se venisse dai
-    dati. Il prompt lo vieta esplicitamente ("Cita SEMPRE almeno 2 prezzi
-    ESATTI verbatim dai dati ricevuti... mai un range parafrasato a memoria")
-    ma nessun controllo automatico lo verificava finora.
+# ---------------------------------------------------------------------------
+# MOTORE DI VERDETTO DETERMINISTICO
+# ---------------------------------------------------------------------------
+# Tutto cio' che prima era "il modello scrive un numero, una rete di
+# sicurezza controlla via regex se il numero e' plausibile" vive qui, come
+# aritmetica su dati strutturati. Il cervello fornisce i DATI della
+# valutazione (linea, comp, prezzo target), queste funzioni producono il
+# VERDETTO (margine, ROI, decisione, urgenza, offerta di trattativa).
+#
+# Conseguenza pratica: le violazioni che le vecchie reti inseguivano non
+# sono piu' "corrette a posteriori", sono impossibili. Un COMPRA sotto
+# soglia non puo' esistere perche' la decisione E' la soglia; un'offerta di
+# trattativa oltre il 40% non puo' esistere perche' l'offerta E' il 40%.
 
-    Se ANCHE SOLO UNO dei prezzi citati nel blocco Analisi non trova
-    corrispondenza (con una piccola tolleranza per arrotondamenti) tra i
-    numeri realmente presenti nel pool di ricerca, il verdetto non ha base
-    interamente verificabile: declassa allo stesso modo di
-    verifica_ancoraggio_prezzo_comp (COMPRA/TRATTA -> declassati, NON
-    COMPRARE lasciato con nota). Corretto il 2026-09-19: la versione
-    precedente richiedeva che TUTTI i prezzi citati fossero senza riscontro
-    prima di declassare (bastava un solo numero vero per far passare
-    l'intera Analisi) -- troppo permissivo per il pattern osservato in
-    produzione di un'Analisi che mescola un comp reale con uno inventato e
-    attribuito a una fonte piu' autorevole di quella vera (es. taggato
-    "eBay SOLD" quando eBay era vuoto nel pool).
+# URGENZA_RICHIEDE_COMP_REALE: "Alta urgenza" e' l'unico livello che fa
+# scattare i bottoni di azione rapida su Telegram, cioe' l'unico che chiede
+# all'utente di muoversi subito. Per quel livello si pretende almeno un comp
+# realmente presente nel pool di ricerca, non solo comp ricordati dal
+# modello (vedi COMP_DA_MEMORIA_AMMESSI): i comp da memoria restano validi
+# per calcolare la stima e per COMPRA/TRATTA, ma non bastano da soli a
+# dichiarare un'urgenza. Mettere a False per togliere anche questo vincolo.
+URGENZA_RICHIEDE_COMP_REALE = True
 
-    SECONDO LIVELLO aggiunto lo stesso giorno: non basta che un prezzo
-    citato esista DA QUALCHE PARTE nel pool complessivo -- se il cervello
-    dichiara esplicitamente una fonte vicino al prezzo (es. "€103.66 su
-    eBay SOLD"), quel prezzo deve trovarsi PROPRIO nel blocco di quella
-    fonte nel pool, non altrove. Senza questo controllo un numero vero preso
-    da una fonte debole (es. Vestiaire) puo' essere rietichettato come
-    proveniente da una fonte piu' autorevole (es. "eBay SOLD confermato")
-    senza che nessuna rete se ne accorga, dato che il numero di per se' e'
-    verificabile nel pool complessivo. Riconosce le fonti eBay/Vestiaire/
-    Vinted/Depop/Grailed (vedi ALIAS_FONTE); un prezzo senza fonte dichiarata
-    vicino continua a passare col solo controllo di primo livello.
+EMOJI_DECISIONE = {
+    "COMPRA": "🟢",
+    "TRATTA": "🟡",
+    "NON COMPRARE": "🔴",
+    "CHIEDI ALTRE FOTO": "🔵",
+    "DATI INSUFFICIENTI": "🔵",
+}
 
-    Corretto il 2026-09-19 (caso Dries Van Noten): il prezzo escluso qui
-    sotto (prezzo_richiesto) e' SOLO il "prezzo pieno" ricalcolato dal
-    cervello nella riga verdetto ("💰 €31.45 → ..."), che puo' includere
-    commissioni/spedizione ed essere quindi diverso dal prezzo Vinted grezzo
-    dell'annuncio (es. €25.00, mostrato nell'header del messaggio). Quando
-    l'Analisi cita quest'ultimo come contesto ("prezzo d'acquisto di €25.00
-    eccezionale per...") non e' un comp inventato, ma senza questo secondo
-    valore la rete lo trattava come tale -- falso positivo che declassava un
-    verdetto corretto. prezzo_annuncio_originale (listing_info['price'],
-    passato dal chiamante) copre questo secondo caso."""
-    if not pool_ricerca_grezzo or not pool_ricerca_grezzo.strip():
-        return testo  # nessun dato di ricerca disponibile: non c'e' nulla da verificare
+ETICHETTA_LEGIT = {
+    "probabilmente_autentico": "Probabilmente autentico",
+    "sospetto_servono_altre_foto": "Sospetto, servono altre foto",
+    "probabilmente_falso": "Probabilmente falso",
+    "non_verificabile": "Non verificabile",
+}
 
-    m_analisi = re.search(
-        r"Analisi dell'analista:?\**\s*\n(.+)", testo, re.IGNORECASE | re.DOTALL,
-    )
-    if not m_analisi:
-        return testo
-    blocco_analisi = m_analisi.group(1)
+ETICHETTA_RISCHIO = {"basso": "B", "medio": "M", "alto": "A", "molto_alto": "MA"}
+ETICHETTA_CONFIDENZA = {"alta": "A", "media": "M", "bassa": "B"}
+ETICHETTA_FONTE_COMP = {
+    "vinted_testo": "Vinted",
+    "vinted_visuale": "Vinted visuale",
+    "memoria_modello": "memoria modello",
+}
 
-    # Il prezzo RICHIESTO dell'annuncio (es. "💰 €50.00 → ...") non e' un comp
-    # e va escluso dal confronto: e' normalissimo che l'Analisi lo ripeta, e
-    # non e' una prova di ricerca -- includerlo indebolirebbe la verifica.
-    prezzo_richiesto = None
-    m_richiesto = re.search(r"💰\s*€\s*([\d.,]+)\s*→", testo[:400])
-    if m_richiesto:
-        try:
-            prezzo_richiesto = round(float(m_richiesto.group(1).replace(",", ".")), 2)
-        except ValueError:
-            pass
+# Traduzione dalle chiavi-fonte normalizzate del pool (prodotte da
+# _prezzi_per_fonte_da_pool a partire dalle etichette "📍 FONTE: ...") alle
+# diciture mostrate accanto a ogni comp nel messaggio Telegram. L'ordine
+# conta: si applica il primo prefisso che combacia, e "vintedricercavisuale"
+# va controllato PRIMA di "vinted", che ne e' un prefisso.
+PREFISSI_FONTE_POOL = [
+    ("vintedricercavisuale", "Vinted visuale"),
+    ("ricercaondemand", "ricerca on-demand"),
+    ("vinted", "Vinted"),
+    ("ebaysold", "eBay"),
+    ("vestiairecollective", "Vestiaire"),
+    ("depop", "Depop"),
+    ("grailed", "Grailed"),
+]
 
-    # Secondo valore escluso: il prezzo Vinted grezzo dell'annuncio (diverso
-    # dal "prezzo pieno" sopra quando quest'ultimo include commissioni/
-    # spedizione). Vedi nota nel docstring.
-    prezzo_annuncio_originale_norm = None
-    if prezzo_annuncio_originale is not None:
-        try:
-            prezzo_annuncio_originale_norm = round(float(str(prezzo_annuncio_originale).replace(",", ".")), 2)
-        except (ValueError, TypeError):
-            pass
 
-    # Nomi di fonte riconosciuti quando compaiono vicino a un prezzo citato
-    # nell'Analisi -- usati per il controllo di secondo livello "la fonte
-    # dichiarata corrisponde a dove il prezzo si trova davvero nel pool".
-    # Ogni variante testuale mappa alla stessa chiave normalizzata usata da
-    # _prezzi_per_fonte_da_pool (nome fonte pool in minuscolo, senza spazi/
-    # punteggiatura), cosi' "eBay SOLD", "eBay" e "ebay" puntano tutte allo
-    # stesso blocco pool.
-    ALIAS_FONTE = [
-        (r"ebay\s*sold", "ebaysold"),
-        (r"ebay", "ebaysold"),
-        (r"vestiaire\s*collective", "vestiairecollective"),
-        (r"vestiaire", "vestiairecollective"),
-        (r"vinted", "vinted"),
-        (r"depop", "depop"),
-        (r"grailed", "grailed"),
-    ]
+def _etichetta_fonte_pool(chiave):
+    for prefisso, etichetta in PREFISSI_FONTE_POOL:
+        if chiave.startswith(prefisso):
+            return etichetta
+    return "ricerca"
 
-    # Corretto il 2026-09-19 (casi reali Dries Van Noten + Jil Sander): il
-    # blocco Analisi non contiene SOLO comp di mercato citati -- contiene
-    # anche l'aritmetica del calcolo economico del cervello stesso (fee,
-    # spedizione, costo d'acquisto totale, margine netto, incasso, importi
-    # scontati per la trattativa). Finora solo "listing"/"incasso" erano
-    # escluse dalla finestra precedente, ma i log reali mostravano frasi
-    # come "€1,95 fee", "€3,50 spedizione", "margine netto di €37,55",
-    # "sconto massimo negoziabile del 40% sul capo (€72.00 + fee +
-    # spedizione = €81.30)", "costo d'acquisto totale di €30,45" -- nessuna
-    # di queste e' un comp, sono tutte derivate dal prezzo dell'annuncio +
-    # aritmetica, ma venivano trattate come "prezzo citato senza riscontro
-    # nel pool" e declassavano verdetti corretti. Lista ampliata per
-    # coprire l'intero vocabolario di calcolo usato dal prompt.
-    # Corretto il 2026-09-19 (caso reale Gonna Pucci): DUE fix distinti.
-    # 1. Aggiunta "protezione" -- il cervello a volte chiama la fee di
-    #    Vinted "protezione acquisti" invece di "fee", variante mancante.
-    # 2. BUG: le keyword troncate a radice (es. "protezion", "spediz",
-    #    "scontat") erano scritte dentro un gruppo racchiuso da \b...\b
-    #    SENZA un \w* di seguito -- \b e' un confine di parola, e non
-    #    esiste tra "protezion" e la "e" successiva di "protezione" (sono
-    #    entrambi caratteri di parola, quindi nessun confine li' in mezzo).
-    #    La radice quindi non matchava MAI la parola completa che il
-    #    cervello scrive davvero, solo un'improbabile forma tronca
-    #    letterale. Aggiunto \w* a ogni radice per assorbire il suffisso.
-    KEYWORD_CALCOLO_NON_COMP = (
-        r"listing|incasso|fee|protezion\w*|spediz\w*|costo\s+d.acquisto|margine|"
-        r"acquisto\s+(?:iniziale|totale)|sconto|scontat\w*|trattativ\w*|negoziabil\w*|"
-        r"ricalcol\w*|prezzo\s+pieno|netto|costo\s+total\w*"
-    )
-    prezzi_citati = []
-    fonte_dichiarata_per_prezzo = {}  # indice in prezzi_citati -> chiave fonte pool o None
-    for m in re.finditer(r"€\s*([\d]+(?:[.,]\d+)?)|([\d]+(?:[.,]\d+)?)\s*€", blocco_analisi):
-        finestra_precedente = blocco_analisi[max(0, m.start() - 60):m.start()].lower()
-        finestra_dopo_calcolo = blocco_analisi[m.end():m.end() + 20].lower()
-        if re.search(r"\b(?:" + KEYWORD_CALCOLO_NON_COMP + r")\b", finestra_precedente) or \
-           re.search(r"\b(?:" + KEYWORD_CALCOLO_NON_COMP + r")\b", finestra_dopo_calcolo):
-            continue  # e' un termine del calcolo economico del cervello, non un comp citato
-        valore = m.group(1) or m.group(2)
-        try:
-            prezzo = round(float(valore.replace(",", ".")), 2)
-        except ValueError:
+
+def _a_float(valore, default=None):
+    """Conversione tollerante: il JSON strutturato garantisce il TIPO
+    dichiarato nello schema, non che il valore sia sensato. Un modello puo'
+    comunque restituire una stringa dove lo schema chiede un numero se il
+    provider allenta il vincolo, quindi la conversione resta difensiva."""
+    if valore is None:
+        return default
+    if isinstance(valore, bool):
+        return default
+    if isinstance(valore, (int, float)):
+        return float(valore)
+    try:
+        return float(str(valore).replace("€", "").replace(",", ".").strip())
+    except (ValueError, TypeError):
+        return default
+
+
+def valida_payload_cervello(verdetto):
+    """Normalizza e mette in sicurezza il JSON ricevuto dal cervello.
+
+    Lo schema garantisce la FORMA (quali campi, di che tipo), non la
+    SENSATEZZA dei valori: uno sconto del 95%, un deal score di 47 o un
+    prezzo target negativo sono tutti conformi allo schema. I limiti
+    numerici si applicano qui, non nello schema, perche' un vincolo
+    dichiarato al modello viene rispettato quasi sempre mentre uno
+    applicato in codice viene rispettato sempre.
+
+    Ritorna (verdetto_normalizzato, elenco_problemi). I problemi non
+    bloccano l'elaborazione: vengono mostrati in coda al messaggio, cosi'
+    un campo compilato male resta visibile invece di sparire dietro un
+    valore di default silenzioso.
+    """
+    problemi = []
+    v = dict(verdetto or {})
+
+    # --- enum: un valore fuori lista diventa il default piu' prudente
+    def _enum(campo, ammessi, default):
+        valore = (v.get(campo) or "").strip().lower() if isinstance(v.get(campo), str) else None
+        if valore in ammessi:
+            v[campo] = valore
+            return
+        if v.get(campo) is not None:
+            problemi.append(f"{campo}='{v.get(campo)}' non riconosciuto, uso '{default}'")
+        v[campo] = default
+
+    _enum("corrispondenza_brand",
+          {"corrisponde", "sottolinea_stessa_maison", "brand_estraneo", "non_verificabile"},
+          "non_verificabile")
+    _enum("legit_verdetto",
+          {"probabilmente_autentico", "sospetto_servono_altre_foto", "probabilmente_falso", "non_verificabile"},
+          "non_verificabile")
+    _enum("rischio_fake", {"basso", "medio", "alto", "molto_alto"}, "medio")
+    _enum("confidenza", {"alta", "media", "bassa"}, "bassa")
+    _enum("profilo_venditore", {"privato_genuino", "reseller_esperto", "non_determinabile"}, "non_determinabile")
+    _enum("domanda_mercato", {"alta", "media", "bassa"}, "media")
+    _enum("fascia_taglia", {"centrale", "estrema", "ignota"}, "ignota")
+
+    # --- numeri
+    v["prezzo_target_vendita_eur"] = _a_float(v.get("prezzo_target_vendita_eur"), 0.0) or 0.0
+    if v["prezzo_target_vendita_eur"] <= 0:
+        problemi.append("prezzo_target_vendita_eur assente o non positivo")
+
+    v["comp_riferimento_eur"] = _a_float(v.get("comp_riferimento_eur"), None)
+    v["tetto_prezzo_linea_eur"] = _a_float(v.get("tetto_prezzo_linea_eur"), None)
+
+    sconto = _a_float(v.get("sconto_ask_applicato_pct"), 25.0) or 25.0
+    if not (20 <= sconto <= 30):
+        problemi.append(f"sconto ASK {sconto:.0f}% fuori dal range 20-30, riportato nel range")
+        sconto = min(30.0, max(20.0, sconto))
+    v["sconto_ask_applicato_pct"] = sconto
+
+    giorni = _a_float(v.get("giorni_stimati_vendita"), 30.0) or 30.0
+    v["giorni_stimati_vendita"] = int(min(365, max(1, giorni)))
+
+    deal = _a_float(v.get("deal_score"), 5.0) or 5.0
+    v["deal_score"] = int(min(10, max(1, deal)))
+
+    # --- legit: il motivo deve essere circostanziato quando accusa un falso.
+    # Sostituisce verifica_falso_ha_motivazione, che doveva indovinare dal
+    # testo se una motivazione fosse presente: qui il campo e' isolato e si
+    # controlla direttamente.
+    motivo = (v.get("legit_motivo_specifico") or "").strip()
+    if v["legit_verdetto"] == "probabilmente_falso" and len(motivo) < 40:
+        problemi.append(
+            "verdetto 'probabilmente falso' senza motivazione circostanziata: "
+            "verificare a mano le foto prima di scartare l'annuncio"
+        )
+    v["legit_motivo_specifico"] = motivo or "Nessun dettaglio fornito dall'analisi."
+
+    # --- liste
+    comp_validi = []
+    for grezzo in (v.get("comp_candidati") or []):
+        if not isinstance(grezzo, dict):
             continue
-        if prezzo_richiesto is not None and abs(prezzo - prezzo_richiesto) < 0.01:
-            continue  # e' solo la ripetizione del prezzo richiesto, non un comp
-        if prezzo_annuncio_originale_norm is not None and abs(prezzo - prezzo_annuncio_originale_norm) < 0.01:
-            continue  # e' solo il prezzo Vinted grezzo dell'annuncio ripetuto, non un comp
-
-        # Cerca un nome di fonte esplicito vicino al prezzo citato (finestra
-        # stretta, prima o dopo il numero: "€103.66 su eBay SOLD", "eBay:
-        # €103.66", "venduto a €103 (Vestiaire)"). Se trovato, lo normalizza
-        # nella stessa chiave usata per i blocchi del pool.
-        #
-        # Corretto il 2026-09-19 (casi reali Dries Van Noten + Jil Sander):
-        # questa finestra era la STESSA usata sopra per le keyword di
-        # calcolo (fee/spedizione/margine), allargata a 60 caratteri -- ma
-        # una finestra cosi' larga cattura anche menzioni di fonte generiche
-        # e non specifiche, es. "comp ASK/venduto documentati su Vinted ed
-        # eBay tra €47,95 e €85,00": qui "eBay" introduce collettivamente
-        # UN RANGE di due prezzi, non attribuisce specificamente €47,95a
-        # eBay -- ma la finestra larga lo faceva sembrare cosi', causando
-        # un falso "fonte dichiarata non corrispondente". La finestra per
-        # l'attribuzione di fonte resta quindi STRETTA (20 char) e, in piu',
-        # si ferma al primo simbolo € incontrato PRIMA del nome fonte (se
-        # c'e' un altro prezzo di mezzo, la fonte non e' specifica per
-        # questo numero).
-        finestra_fonte_precedente = blocco_analisi[max(0, m.start() - 20):m.start()]
-        if "€" in finestra_fonte_precedente:
-            finestra_fonte_precedente = finestra_fonte_precedente.rsplit("€", 1)[1]
-        # Se tra il nome fonte e il prezzo compare una congiunzione di range
-        # ("tra", " e ", "-", "/") la fonte introduce collettivamente PIU'
-        # prezzi (es. "su Vinted ed eBay tra €47,95 e €85,00") e non e'
-        # un'attribuzione specifica a QUESTO prezzo -- va ignorata, non
-        # trattata come dichiarazione di fonte puntuale.
-        if re.search(r"\b(?:tra|fra)\b|\be\b|[-/]", finestra_fonte_precedente.lower()):
-            finestra_fonte_precedente = ""
-        # Stessa esclusione anche sulla finestra DOPO: "€58.00 e comp eBay
-        # SOLD €62.50" ha la congiunzione "e" subito dopo il primo prezzo e
-        # prima del nome fonte -- la fonte introduce il prezzo SUCCESSIVO
-        # (62.50), non 58.00, quindi non va trattata come dichiarazione per
-        # questo numero.
-        finestra_fonte_dopo = blocco_analisi[m.end():m.end() + 20]
-        if re.search(r"^\s*(?:e|,\s*e|\be\b|[-/])", finestra_fonte_dopo.lower()):
-            finestra_fonte_dopo = ""
-        # Corretto il 2026-09-19 (caso reale Gonna Pucci): un punto fermo
-        # chiude la frase -- "...a €99,80. Su Vinted i prezzi ASK..." e' una
-        # frase NUOVA che parla d'altro, non un'attribuzione di fonte per
-        # €99,80. Senza questo taglio la finestra "dopo" catturava "Vinted"
-        # da una frase successiva scollegata, generando un falso "fonte
-        # dichiarata non corrispondente" (il prezzo era davvero eBay SOLD,
-        # ma veniva confrontato contro il blocco Vinted del pool).
-        if "." in finestra_fonte_dopo:
-            finestra_fonte_dopo = finestra_fonte_dopo.split(".", 1)[0]
-        finestra_fonte = (finestra_fonte_precedente + " " + finestra_fonte_dopo).lower()
-        chiave_fonte_citata = None
-        for pattern_alias, chiave_pool in ALIAS_FONTE:
-            if re.search(pattern_alias, finestra_fonte):
-                chiave_fonte_citata = chiave_pool
-                break
-
-        indice = len(prezzi_citati)
-        prezzi_citati.append(prezzo)
-        fonte_dichiarata_per_prezzo[indice] = chiave_fonte_citata
-    if not prezzi_citati:
-        return testo  # nessun comp citato in Analisi: altre reti coprono questo caso
-
-    prezzi_pool = _estrai_prezzi_da_pool_ricerca(pool_ricerca_grezzo)
-    prezzi_per_fonte = _prezzi_per_fonte_da_pool(pool_ricerca_grezzo)
-
-    TOLLERANZA_ASSOLUTA = 1.0  # euro, per arrotondamenti (es. 89.99 vs 90)
-
-    prezzi_non_verificati = []
-    prezzi_fonte_sbagliata = []  # (prezzo, chiave_fonte_citata) -- esiste nel pool ma non in quella fonte
-    for indice, citato in enumerate(prezzi_citati):
-        esiste_nel_pool = any(abs(citato - reale) <= TOLLERANZA_ASSOLUTA for reale in prezzi_pool)
-        if not esiste_nel_pool:
-            prezzi_non_verificati.append(citato)
+        prezzo = _a_float(grezzo.get("prezzo_eur"), None)
+        if prezzo is None or prezzo <= 0:
             continue
+        comp = dict(grezzo)
+        comp["prezzo_eur"] = round(prezzo, 2)
+        fonte = (comp.get("fonte") or "").strip().lower()
+        comp["fonte"] = fonte if fonte in ETICHETTA_FONTE_COMP else "memoria_modello"
+        comp["escluso"] = bool(comp.get("escluso"))
+        comp["stessa_categoria"] = bool(comp.get("stessa_categoria", True))
+        comp["stessa_linea"] = bool(comp.get("stessa_linea", True))
+        comp["titolo_verbatim"] = (comp.get("titolo_verbatim") or "senza titolo").strip()
+        comp_validi.append(comp)
+    v["comp_candidati"] = comp_validi
 
-        chiave_fonte_citata = fonte_dichiarata_per_prezzo.get(indice)
-        if chiave_fonte_citata is None:
-            continue  # verificato nel pool, nessuna fonte specifica dichiarata: ok cosi'
+    v["segnali_domanda"] = [s for s in (v.get("segnali_domanda") or []) if isinstance(s, str) and s.strip()]
+    v["domande_al_venditore"] = [
+        d.strip() for d in (v.get("domande_al_venditore") or [])
+        if isinstance(d, str) and d.strip()
+    ][:2]
 
-        prezzi_di_quella_fonte = prezzi_per_fonte.get(chiave_fonte_citata, set())
-        esiste_nella_fonte_dichiarata = any(
-            abs(citato - reale) <= TOLLERANZA_ASSOLUTA for reale in prezzi_di_quella_fonte
+    for campo in ("note_analista", "motivo_profilo_venditore", "linea_o_era_rilevata"):
+        if not (v.get(campo) or "").strip():
+            v[campo] = "non specificato"
+
+    return v, problemi
+
+
+def classifica_provenienza_comp(v, pool_ricerca_grezzo):
+    """Confronta ogni prezzo dichiarato dal cervello con i prezzi realmente
+    presenti nel pool di ricerca e ne stabilisce la provenienza REALE.
+
+    Questa funzione sostituisce verifica_comp_citati_sono_reali, e la
+    differenza e' tutta nel tipo di dato su cui lavora. Prima il controllo
+    doveva ricostruire, da un paragrafo di prosa, quali numeri fossero comp
+    citati e quali invece aritmetica del calcolo (fee, spedizione, margine,
+    importi scontati), indovinando la fonte dichiarata dalla vicinanza
+    testuale di una parola: 300 righe di euristiche, e comunque 4 falsi
+    positivi in poche ore. Ora i comp sono una lista di numeri isolati e
+    gia' etichettati, quindi il controllo e' una differenza tra insiemi:
+    il prezzo compare nel pool oppure no.
+
+    Cosa NON fa piu', per scelta esplicita dell'utente (2026-09-19): non
+    declassa nulla e non scarta l'item. Un prezzo che non risulta nel pool
+    viene semplicemente marcato 'memoria_modello' e mostrato come tale nel
+    messaggio. Vedi COMP_DA_MEMORIA_AMMESSI per la versione stretta.
+    """
+    prezzi_pool = _estrai_prezzi_da_pool_ricerca(pool_ricerca_grezzo or "")
+    # Mappa {chiave_fonte: set(prezzi)}: permette di dire non solo SE un
+    # comp e' reale, ma DA QUALE fonte del pool proviene (Vinted testo,
+    # ricerca visuale, ricerca on-demand del cervello), cosi' l'etichetta
+    # accanto al prezzo nel messaggio Telegram e' quella vera e non quella
+    # dichiarata dal modello.
+    prezzi_per_fonte = _prezzi_per_fonte_da_pool(pool_ricerca_grezzo or "")
+
+    riclassificati = 0
+    for comp in v.get("comp_candidati", []):
+        nel_pool = any(
+            abs(comp["prezzo_eur"] - reale) <= TOLLERANZA_COMP_EUR for reale in prezzi_pool
         )
-        if not esiste_nella_fonte_dichiarata:
-            prezzi_fonte_sbagliata.append((citato, chiave_fonte_citata))
+        comp["nel_pool"] = nel_pool
+        if nel_pool:
+            # Se il modello l'aveva marcato come ricordato ma il prezzo c'e'
+            # davvero, si fida del dato oggettivo: e' un comp reale.
+            comp["fonte_reale"] = comp["fonte"] if comp["fonte"] != "memoria_modello" else "vinted_testo"
+            fonti_trovate = [
+                _etichetta_fonte_pool(chiave)
+                for chiave, prezzi in prezzi_per_fonte.items()
+                if any(abs(comp["prezzo_eur"] - prezzo) <= TOLLERANZA_COMP_EUR for prezzo in prezzi)
+            ]
+            # Lo stesso prezzo puo' comparire in piu' blocchi del pool (es.
+            # un risultato Vinted che appare sia nella ricerca testuale sia
+            # in quella visuale): si mostrano tutte le fonti in cui e' stato
+            # trovato, senza duplicati e in ordine stabile.
+            comp["etichetta_fonte"] = " + ".join(dict.fromkeys(fonti_trovate)) or "ricerca"
+        else:
+            if comp["fonte"] != "memoria_modello":
+                riclassificati += 1
+            comp["fonte_reale"] = "memoria_modello"
+            comp["etichetta_fonte"] = "memoria modello"
 
-    if not prezzi_non_verificati and not prezzi_fonte_sbagliata:
-        return testo  # OGNI prezzo citato ha riscontro nel pool, nella fonte giusta: nessuna violazione
-
-    # BUG corretto il 2026-09-19: la versione precedente lasciava passare
-    # l'intera Analisi appena UN SOLO prezzo citato risultava verificato,
-    # anche se altri citati nello stesso paragrafo erano inventati -- caso
-    # reale osservato: Analisi che cita "eBay SOLD €103.66" (fonte eBay
-    # completamente vuota nel pool -- numero senza alcun riscontro) insieme
-    # a "Vestiaire €132.00" (questo si', presente nel pool), il prezzo vero
-    # dava credibilita' a tutto il paragrafo e la violazione sul primo
-    # passava inosservata. Ora la verifica e' PER OGNI prezzo citato: anche
-    # un solo numero senza riscontro fa scattare la rete, perche' e'
-    # comunque un dato presentato come verificato quando non lo e' (nel
-    # caso Miu Miu, proprio quel numero non verificato era la base
-    # dell'attribuzione "venduto confermato" che giustificava il COMPRA).
-    #
-    # SECONDO LIVELLO aggiunto lo stesso giorno: un prezzo puo' esistere DA
-    # QUALCHE PARTE nel pool ma essere attribuito dal cervello a una fonte
-    # diversa e piu' autorevole di quella reale (es. un prezzo che nel pool
-    # sta solo nel blocco Vestiaire, ma il cervello lo cita come "eBay SOLD
-    # €X" -- il numero e' vero, la fonte no). Caso osservato: Robe Missoni,
-    # "€66 eBay" mentre la query on-demand eBay per quell'item non aveva
-    # ancora dati confermati nel pool. prezzi_fonte_sbagliata isola questi
-    # casi separandoli da quelli senza riscontro nel pool (prezzi_non_verificati).
-    if prezzi_non_verificati:
+    n_memoria = sum(1 for c in v.get("comp_candidati", []) if c["fonte_reale"] == "memoria_modello")
+    if riclassificati:
         log.info(
-            "verifica_comp_citati_sono_reali: %d/%d prezzi citati in Analisi senza corrispondenza "
-            "nei dati di ricerca realmente ricevuti -- non verificati: %s (citati: %s, pool: %s) "
-            "-- declassato il verdetto.",
-            len(prezzi_non_verificati), len(prezzi_citati), prezzi_non_verificati, prezzi_citati, sorted(prezzi_pool),
+            "classifica_provenienza_comp: %d comp dichiarati come risultati di ricerca non "
+            "compaiono nel pool, riclassificati come memoria del modello (pool: %d prezzi).",
+            riclassificati, len(prezzi_pool),
         )
-    if prezzi_fonte_sbagliata:
-        log.info(
-            "verifica_comp_citati_sono_reali: %d prezzi citati con fonte dichiarata non corrispondente "
-            "al blocco pool reale -- fonte_sbagliata: %s -- declassato il verdetto.",
-            len(prezzi_fonte_sbagliata), prezzi_fonte_sbagliata,
-        )
+    return {
+        "n_comp": len(v.get("comp_candidati", [])),
+        "n_memoria": n_memoria,
+        "n_riclassificati": riclassificati,
+        "n_prezzi_pool": len(prezzi_pool),
+    }
 
-    if prezzi_non_verificati and len(prezzi_non_verificati) == len(prezzi_citati):
-        nota_calcolo = (
-            f"i prezzi citati nell'Analisi dell'analista ({', '.join(f'€{p:.2f}' for p in prezzi_citati)}) "
-            f"non corrispondono a nessun prezzo presente nei dati di ricerca realmente raccolti per "
-            f"questo annuncio -- possibile stima 'a memoria del brand' invece che dai comp reali"
-        )
-    elif prezzi_fonte_sbagliata and not prezzi_non_verificati:
-        dettaglio_fonti = ', '.join(f"€{p:.2f} (non e' in {fonte})" for p, fonte in prezzi_fonte_sbagliata)
-        nota_calcolo = (
-            f"nell'Analisi dell'analista alcuni prezzi sono attribuiti a una fonte che non li contiene "
-            f"davvero nei dati di ricerca raccolti ({dettaglio_fonti}) -- il numero esiste nel pool ma "
-            f"in una fonte diversa da quella dichiarata, probabile fonte mal attribuita"
-        )
+
+def _comp_utilizzabili(v):
+    """I comp che entrano nel calcolo della stima: non esclusi dal modello,
+    stessa categoria, stessa linea, e - solo se COMP_DA_MEMORIA_AMMESSI e'
+    False - realmente presenti nel pool."""
+    utilizzabili = []
+    for comp in v.get("comp_candidati", []):
+        if comp.get("escluso") or not comp.get("stessa_categoria") or not comp.get("stessa_linea"):
+            continue
+        if not COMP_DA_MEMORIA_AMMESSI and comp.get("fonte_reale") == "memoria_modello":
+            continue
+        utilizzabili.append(comp)
+    return utilizzabili
+
+
+def _filtra_outlier(prezzi):
+    """Scarta i comp oltre 3x la mediana o sotto 1/3 della mediana: quasi
+    sempre appartengono a un capo diverso (categoria, materiale o edizione)
+    o sono un ASK irrealistico finito per errore nei risultati.
+
+    Era una procedura descritta a parole nel prompt e quindi applicata "di
+    solito"; ora e' aritmetica e viene applicata sempre. Sotto i 3 prezzi
+    non si filtra: con due soli valori la mediana non distingue un outlier
+    da un campione piccolo, e scartarne uno lascerebbe la stima appesa a un
+    unico comp isolato.
+    """
+    if len(prezzi) < 3:
+        return list(prezzi), []
+    mediana = statistics.median(prezzi)
+    tenuti = [p for p in prezzi if mediana / 3 <= p <= mediana * 3]
+    scartati = [p for p in prezzi if p not in tenuti]
+    if len(tenuti) < 2:
+        return list(prezzi), []  # il filtro lascerebbe troppo poco: meglio non filtrare
+    return tenuti, scartati
+
+
+def calcola_verdetto(v, prezzo_prodotto):
+    """Trasforma i dati del cervello nel verdetto finale. Unico punto del
+    bot dove si decide COMPRA/TRATTA/NON COMPRARE e dove si calcolano
+    margine, ROI e obiettivo di trattativa."""
+    limiti_applicati = []
+
+    if prezzo_prodotto is None or prezzo_prodotto <= 0:
+        # Senza il prezzo dell'annuncio non esiste nessun calcolo economico
+        # possibile. Meglio dirlo che produrre un NON COMPRARE che sembra un
+        # giudizio sul capo quando e' solo un dato mancante.
+        return {
+            "decisione": "DATI INSUFFICIENTI",
+            "urgenza": "Bassa",
+            "prezzo_prodotto": prezzo_prodotto,
+            "acquisto_pieno": None, "incasso": None, "margine": None, "roi": None,
+            "prezzo_target": v.get("prezzo_target_vendita_eur"),
+            "tratta_costo": None, "tratta_margine": None, "tratta_roi": None,
+            "comp_usati": [], "comp_scartati_outlier": [],
+            "limiti_applicati": ["prezzo dell'annuncio non disponibile: nessun calcolo economico eseguito"],
+        }
+
+    acquisto_pieno = (
+        prezzo_prodotto * (1 + COMMISSIONE_PROTEZIONE_PCT)
+        + COMMISSIONE_PROTEZIONE_FISSA
+        + SPEDIZIONE_STIMATA_EUR
+    )
+
+    target = v["prezzo_target_vendita_eur"]
+    target_dichiarato = target
+
+    # --- limite 1: tetto di linea (es. JEAN'S PAUL GAULTIER)
+    tetto = v.get("tetto_prezzo_linea_eur")
+    if tetto and target > tetto:
+        target = tetto
+        limiti_applicati.append(f"tetto di linea €{tetto:.2f} ({v.get('linea_o_era_rilevata')})")
+
+    # --- limite 2: ancoraggio al comp di riferimento, gia' scontato
+    # (era verifica_ancoraggio_prezzo_comp, 140 righe di regex sul testo)
+    fattore_sconto = 1 - v["sconto_ask_applicato_pct"] / 100.0
+    riferimento = v.get("comp_riferimento_eur")
+    if riferimento and riferimento > 0:
+        massimo_consentito = riferimento * fattore_sconto
+        if target > massimo_consentito:
+            limiti_applicati.append(
+                f"ancoraggio al comp di riferimento €{riferimento:.2f} "
+                f"scontato {v['sconto_ask_applicato_pct']:.0f}% = €{massimo_consentito:.2f}"
+            )
+            target = massimo_consentito
+
+    # --- limite 3: filtro outlier sui comp utilizzabili
+    utilizzabili = _comp_utilizzabili(v)
+    prezzi = sorted(c["prezzo_eur"] for c in utilizzabili)
+    prezzi_tenuti, prezzi_scartati = _filtra_outlier(prezzi)
+
+    if prezzi_tenuti:
+        if v.get("materiale_confermato"):
+            # Materiale noto: il tetto e' il comp piu' alto rimasto dopo il
+            # filtro, scontato.
+            massimo_consentito = max(prezzi_tenuti) * fattore_sconto
+            descrizione_limite = f"comp piu' alto €{max(prezzi_tenuti):.2f}"
+        else:
+            # Materiale non confermato: si usa il comp piu' ECONOMICO, come
+            # prescrive la regola. Prima era un'istruzione nel prompt che il
+            # modello seguiva a discrezione, ora e' un limite applicato.
+            massimo_consentito = min(prezzi_tenuti) * fattore_sconto
+            descrizione_limite = f"materiale non confermato, comp piu' economico €{min(prezzi_tenuti):.2f}"
+        if target > massimo_consentito:
+            limiti_applicati.append(
+                f"{descrizione_limite} scontato {v['sconto_ask_applicato_pct']:.0f}% = €{massimo_consentito:.2f}"
+            )
+            target = massimo_consentito
+
+    target = max(0.0, round(target, 2))
+
+    incasso = target * QUOTA_INCASSO_NETTO
+    margine = incasso - acquisto_pieno
+    roi = (margine / acquisto_pieno * 100) if acquisto_pieno > 0 else 0.0
+
+    # --- trattativa: SEMPRE al massimo sconto consentito sul solo prodotto,
+    # mai sulla spedizione. Sostituisce applica_soglia_trattativa_40_percento,
+    # che correggeva l'offerta ma lasciava dichiaratamente incoerenti margine
+    # e ROI della riga corretta (la vecchia nota diceva all'utente di
+    # verificarli a mano). Qui sono ricalcolati sullo stesso incasso.
+    prezzo_trattato = prezzo_prodotto * (1 - SCONTO_MAX_TRATTATIVA)
+    tratta_costo = (
+        prezzo_trattato * (1 + COMMISSIONE_PROTEZIONE_PCT)
+        + COMMISSIONE_PROTEZIONE_FISSA
+        + SPEDIZIONE_STIMATA_EUR
+    )
+    tratta_margine = incasso - tratta_costo
+    tratta_roi = (tratta_margine / tratta_costo * 100) if tratta_costo > 0 else 0.0
+
+    # --- decisione
+    supera_soglia = margine >= SOGLIA_MARGINE_COMPRA and roi >= SOGLIA_ROI_COMPRA
+    tratta_supera_soglia = tratta_margine >= SOGLIA_MARGINE_COMPRA and tratta_roi >= SOGLIA_ROI_COMPRA
+
+    if v["corrispondenza_brand"] == "brand_estraneo":
+        decisione = "NON COMPRARE"
+        limiti_applicati.append("brand reale estraneo al segmento monitorato")
+    elif v["legit_verdetto"] == "probabilmente_falso":
+        decisione = "NON COMPRARE"
+    elif supera_soglia:
+        decisione = "CHIEDI ALTRE FOTO" if v["legit_verdetto"] == "sospetto_servono_altre_foto" else "COMPRA"
+    elif tratta_supera_soglia:
+        decisione = "TRATTA"
     else:
-        pezzi_non_ok = [f"€{p:.2f}" for p in prezzi_non_verificati] + [
-            f"€{p:.2f} (fonte errata: dichiarato {fonte})" for p, fonte in prezzi_fonte_sbagliata
-        ]
-        nota_calcolo = (
-            f"parte dei prezzi citati nell'Analisi dell'analista non corrisponde ai dati di ricerca "
-            f"realmente raccolti (problemi su: {', '.join(pezzi_non_ok)}) "
-            f"-- possibile mix di comp reali e stime 'a memoria del brand' o attribuiti alla fonte sbagliata"
-        )
+        decisione = "NON COMPRARE"
 
-    testo = _normalizza_emoji_decisione(testo)
-    LUNGHEZZA_BLOCCO_VERDETTO = 400
-    testa = testo[:LUNGHEZZA_BLOCCO_VERDETTO]
-    resto = testo[LUNGHEZZA_BLOCCO_VERDETTO:]
-    testa_upper = testa.upper()
+    # --- urgenza: mai dedotta dai soli numeri, serve domanda di mercato reale
+    comp_reali = [c for c in utilizzabili if c.get("fonte_reale") != "memoria_modello"]
+    urgenza = "Bassa"
+    if decisione in ("COMPRA", "TRATTA"):
+        urgenza = "Media"
+    if (
+        decisione == "COMPRA"
+        and margine >= SOGLIA_MARGINE_URGENZA
+        and roi >= SOGLIA_ROI_URGENZA
+        and v["domanda_mercato"] == "alta"
+        and v["segnali_domanda"]
+        and v["fascia_taglia"] != "estrema"
+        and len(prezzi_tenuti) >= 2
+        and (not URGENZA_RICHIEDE_COMP_REALE or comp_reali)
+    ):
+        urgenza = "Alta"
 
-    if "NON COMPRARE" in testa_upper:
-        testa_corretta = re.sub(
-            r"(NON COMPRARE)(\s*⚠️\s*_[^_]*_)?",
-            lambda m: f"{m.group(1)} ⚠️ _corretto: {nota_calcolo}_",
-            testa, count=1, flags=re.IGNORECASE,
-        )
-    elif "TRATTA" in testa_upper:
-        testa_corretta = testa.replace("🟡", "🔴", 1)
-        testa_corretta = re.sub(
-            r"\bTRATTA\b(?:\s*⚠️\s*_[^_]*_)?",
-            f"NON COMPRARE ⚠️ _corretto: {nota_calcolo}_",
-            testa_corretta, count=1, flags=re.IGNORECASE,
-        )
+    return {
+        "decisione": decisione,
+        "urgenza": urgenza,
+        "prezzo_prodotto": prezzo_prodotto,
+        "acquisto_pieno": acquisto_pieno,
+        "incasso": incasso,
+        "margine": margine,
+        "roi": roi,
+        "prezzo_target": target,
+        "prezzo_target_dichiarato": target_dichiarato,
+        "tratta_prezzo_prodotto": prezzo_trattato,
+        "tratta_costo": tratta_costo,
+        "tratta_margine": tratta_margine,
+        "tratta_roi": tratta_roi,
+        "comp_usati": prezzi_tenuti,
+        "comp_scartati_outlier": prezzi_scartati,
+        "n_comp_reali": len(comp_reali),
+        "limiti_applicati": limiti_applicati,
+    }
+
+
+def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None):
+    """Costruisce il messaggio Telegram dal verdetto calcolato. E' l'unico
+    posto del bot dove si scrivono emoji di decisione e cifre: il modello
+    non produce piu' nessuna delle due, quindi non esiste piu' il caso
+    'testo e numeri si contraddicono'."""
+    dec = verdetto["decisione"]
+    emoji = EMOJI_DECISIONE.get(dec, "🔵")
+
+    righe = ["## Verdetto", f"{emoji} **{dec}** · {verdetto['urgenza']} urgenza", ""]
+
+    if verdetto["margine"] is None:
+        righe.append("💰 Calcolo economico non disponibile: prezzo dell'annuncio non rilevato.")
     else:
-        testa_corretta = testa.replace("🟢", "🟡", 1)
-        testa_corretta = re.sub(
-            r"\bCOMPRA(?:\s+(?:SUBITO|FORTE|IMMEDIATAMENTE|SE CI TIENI))?\b(?:\s*⚠️\s*_[^_]*_)?",
-            f"TRATTA ⚠️ _corretto: {nota_calcolo}_",
-            testa_corretta, count=1, flags=re.IGNORECASE,
+        righe.append(
+            f"💰 €{verdetto['acquisto_pieno']:.2f} → €{verdetto['incasso']:.2f} → "
+            f"**€{verdetto['margine']:.2f} (ROI {verdetto['roi']:.0f}%)**"
+        )
+        righe.append(f"📈 Vendita stimata: €{verdetto['prezzo_target']:.2f} · Linea: {v.get('linea_o_era_rilevata')}")
+
+    legit = ETICHETTA_LEGIT.get(v["legit_verdetto"], v["legit_verdetto"])
+    righe.append(f"🏷️ Legit: {legit} — {v['legit_motivo_specifico']}")
+    righe.append(
+        f"🕐 ~{v['giorni_stimati_vendita']} giorni · Deal {v['deal_score']}/10 · "
+        f"Rischio fake: {ETICHETTA_RISCHIO.get(v['rischio_fake'], '?')} · "
+        f"Confidenza: {ETICHETTA_CONFIDENZA.get(v['confidenza'], '?')}"
+    )
+
+    if v.get("mese_consigliato_pubblicazione"):
+        righe.append(f"📅 Fuori stagione: pubblicare da {v['mese_consigliato_pubblicazione']}")
+
+    # --- obiettivo trattativa: mostrato solo quando e' la decisione presa.
+    # L'importo e' quello calcolato al massimo sconto consentito, non una
+    # proposta del modello, quindi margine e ROI qui sotto sono coerenti con
+    # l'incasso del verdetto principale per costruzione.
+    if dec == "TRATTA":
+        righe.append("")
+        righe.append(
+            f"🤝 Obiettivo trattativa: offrire €{verdetto['tratta_prezzo_prodotto']:.2f} sul prodotto "
+            f"(costo pieno €{verdetto['tratta_costo']:.2f}) → €{verdetto['incasso']:.2f} → "
+            f"**€{verdetto['tratta_margine']:.2f} (ROI {verdetto['tratta_roi']:.0f}%)**"
         )
 
-    return testa_corretta + resto
+    # --- messaggio al venditore e domande: solo dove servono davvero.
+    # Il vecchio backstop a colpi di regex (rimozione dei blocchi "Messaggio
+    # da inviare"/"Da chiedere" da un testo gia' generato) non serve piu':
+    # qui i blocchi si aggiungono, non si tolgono.
+    serve_messaggio = dec in ("TRATTA", "CHIEDI ALTRE FOTO")
+    template = (v.get("messaggio_venditore_template") or "").strip()
+    if serve_messaggio and template:
+        if dec == "TRATTA":
+            testo_messaggio = template.replace("{OFFERTA}", f"€{verdetto['tratta_prezzo_prodotto']:.2f}")
+        else:
+            # Su CHIEDI ALTRE FOTO non c'e' nessuna offerta da fare: se il
+            # modello ha lasciato comunque il segnaposto, va tolto invece di
+            # finire nel messaggio come testo letterale.
+            testo_messaggio = template.replace("{OFFERTA}", "").strip()
+        righe += ["", "---", "📨 **Messaggio da inviare:**", f'"{testo_messaggio}"']
+
+    if serve_messaggio and v.get("domande_al_venditore"):
+        righe += ["", "---", "❓ **Da chiedere**: " + " ".join(v["domande_al_venditore"])]
+
+    # --- analisi
+    righe += ["", "---", "🧠 **Analisi dell'analista:**", v["note_analista"]]
+    if v.get("motivo_profilo_venditore") and v["motivo_profilo_venditore"] != "non specificato":
+        righe.append(f"👤 Venditore: {v['motivo_profilo_venditore']}")
+
+    # --- comp usati, con la provenienza dichiarata accanto a ogni prezzo
+    comp_visibili = [c for c in v.get("comp_candidati", []) if not c.get("escluso")][:6]
+    if comp_visibili:
+        righe += ["", "📊 **Comp considerati:**"]
+        for comp in comp_visibili:
+            etichetta = comp.get("etichetta_fonte") or ETICHETTA_FONTE_COMP.get(
+                comp.get("fonte_reale", comp["fonte"]), "?")
+            titolo = comp["titolo_verbatim"]
+            titolo = titolo[:60] + "…" if len(titolo) > 60 else titolo
+            righe.append(f"• €{comp['prezzo_eur']:.2f} — {titolo} _[{etichetta}]_")
+
+    if stats_comp and stats_comp.get("n_memoria"):
+        n_memoria = stats_comp["n_memoria"]
+        n_pool = stats_comp["n_prezzi_pool"]
+        quanti = "Tutti i" if n_memoria == stats_comp["n_comp"] else f"{n_memoria} dei"
+        quanti_comp = "comp" if n_memoria == stats_comp["n_comp"] else f"{stats_comp['n_comp']} comp"
+        if n_pool == 0:
+            dove = "la ricerca non ha restituito nessun prezzo"
+        elif n_pool == 1:
+            dove = "l'unico prezzo trovato dalla ricerca e' diverso"
+        else:
+            dove = f"non compaiono tra i {n_pool} prezzi trovati dalla ricerca"
+        righe.append(
+            f"\n_ℹ️ {quanti} {quanti_comp} vengono dalla conoscenza del modello, non da annunci "
+            f"verificati: {dove}._"
+        )
+
+    if verdetto.get("comp_scartati_outlier"):
+        scartati = ", ".join(f"€{p:.2f}" for p in verdetto["comp_scartati_outlier"])
+        righe.append(f"_🔎 Scartati dal filtro outlier (oltre 3x o sotto 1/3 della mediana): {scartati}_")
+
+    # --- limiti applicati al prezzo: sostituisce le note "⚠️ corretto
+    # automaticamente" che le vecchie reti iniettavano nel testo. Stessa
+    # informazione, ma dichiarata prima del calcolo invece che rattoppata dopo.
+    if verdetto.get("limiti_applicati"):
+        righe.append("")
+        if verdetto.get("prezzo_target_dichiarato") and verdetto.get("prezzo_target") is not None:
+            if verdetto["prezzo_target_dichiarato"] > verdetto["prezzo_target"] + 0.01:
+                righe.append(
+                    f"⚠️ _Stima del modello €{verdetto['prezzo_target_dichiarato']:.2f} "
+                    f"ridotta a €{verdetto['prezzo_target']:.2f}._"
+                )
+        for limite in verdetto["limiti_applicati"]:
+            righe.append(f"⚠️ _{limite}_")
+
+    if problemi:
+        righe.append("")
+        for problema in problemi:
+            righe.append(f"⚠️ _Dato anomalo dal cervello: {problema}_")
+
+    return "\n".join(righe)
 
 
-def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header, output_finale, decisione, e_compra, scenario_usato, n_query_grounding=0):
+async def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header, output_finale,
+                                    decisione, e_compra, scenario_usato, urgenza="Bassa"):
     item_id = _estrai_item_id_da_url(url)
-    urgenza_alta = _e_urgenza_alta(decisione)
-    e_compra_urgente = (
-        e_compra
-        and urgenza_alta
-        and "NON COMPRARE" not in (decisione or "").upper()
-        and "CHIEDI" not in (decisione or "").upper()
-    )
+    # L'urgenza ora arriva calcolata da calcola_verdetto invece di essere
+    # dedotta dal testo del verdetto (_e_urgenza_alta cercava parole come
+    # "alta"/"subito"/"forte" dentro la stringa di decisione, e bastava una
+    # variante di wording del modello per sbagliare bersaglio).
+    e_compra_urgente = e_compra and urgenza == "Alta" and decisione == "COMPRA"
 
     if len(photo_bytes_list) > 1:
-        telegram_send_media_group(
+        await telegram_send_media_group(
             TELEGRAM_OWNER_CHAT_ID,
             photo_bytes_list,
             caption=f"📸 {listing_info.get('title')} · {len(photo_bytes_list)} foto"
         )
     elif len(photo_bytes_list) == 1:
-        telegram_send_photo(TELEGRAM_OWNER_CHAT_ID, photo_bytes_list[0], caption=listing_info.get("title"))
+        await telegram_send_photo(TELEGRAM_OWNER_CHAT_ID, photo_bytes_list[0], caption=listing_info.get("title"))
 
     if url:
         if e_compra_urgente:
-            telegram_send_with_buttons(TELEGRAM_OWNER_CHAT_ID, header + output_finale, url, item_id)
+            await telegram_send_with_buttons(TELEGRAM_OWNER_CHAT_ID, header + output_finale, url, item_id)
         else:
-            telegram_send_with_buttons(TELEGRAM_OWNER_CHAT_ID, header + output_finale, url, None)
+            await telegram_send_with_buttons(TELEGRAM_OWNER_CHAT_ID, header + output_finale, url, None)
     else:
-        telegram_send_message(TELEGRAM_OWNER_CHAT_ID, header + output_finale)
+        await telegram_send_message(TELEGRAM_OWNER_CHAT_ID, header + output_finale)
 
     if TELEGRAM_ALERT_CHAT_ID and e_compra:
         alert_text = (
@@ -4126,26 +4434,23 @@ def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header, outpu
             f"{url or ''}"
         )
         if e_compra_urgente and item_id:
-            telegram_send_with_buttons(TELEGRAM_ALERT_CHAT_ID, alert_text, url, item_id)
+            await telegram_send_with_buttons(TELEGRAM_ALERT_CHAT_ID, alert_text, url, item_id)
         else:
-            telegram_send_message(TELEGRAM_ALERT_CHAT_ID, alert_text)
+            await telegram_send_message(TELEGRAM_ALERT_CHAT_ID, alert_text)
 
 
 # ---------------------------------------------------------------------------
 # PIPELINE PRINCIPALE
 # ---------------------------------------------------------------------------
 
-def process_listing(parsed, url, cover_photo_bytes):
+async def process_listing(parsed, url, cover_photo_bytes):
     listing_info = dict(parsed)
     listing_info["url"] = url
     costo_totale = 0.0
-    correzioni_applicate = []
-    output_finale_raw = ""
-    user_text_cervello = ""
 
     photo_bytes_list = []
     if url:
-        scraped = scrape_vinted_listing(url)
+        scraped = await scrape_vinted_listing(url)
         listing_info.update({
             "size": scraped.get("size"), "condition": scraped.get("condition"),
             "description": scraped.get("description"), "age_days": scraped.get("age_days"),
@@ -4168,15 +4473,11 @@ def process_listing(parsed, url, cover_photo_bytes):
         if e_skip_pre:
             # Silenzioso: nessuna notifica Telegram per le esclusioni pre-Gemini.
             # Rimane visibile solo nei log (Railway) per debug/controllo.
-            log.info("FILTRO PRE-GEMINI ATTIVATO (silenzioso, no notifica): '%s'. Motivo: %s", listing_info.get("title"), motivo_skip_pre)
+            log.info("FILTRO PRE-GEMINI ATTIVATO (silenzioso, no notifica): '%s'. Motivo: %s",
+                     listing_info.get("title"), motivo_skip_pre)
             return
 
         photo_urls = scraped.get("photo_urls", [])
-        # TEMP DIAGNOSTIC: distinguishes "the listing page itself yielded zero
-        # photo URLs" (regex extraction failed / page fetch failed upstream in
-        # scrape_vinted_listing) from "photo URLs were found but every single
-        # download attempt failed" -- the two have different causes and the
-        # existing logs never separated them. Remove once diagnosed.
         if not photo_urls:
             log.warning(
                 "scrape_vinted_listing non ha restituito nessun photo_url per %s "
@@ -4184,10 +4485,12 @@ def process_listing(parsed, url, cover_photo_bytes):
                 url,
             )
         if photo_urls:
-            with ThreadPoolExecutor(max_workers=5) as pool:
-                risultati_download = list(pool.map(
-                    lambda u: download_image_bytes(u, referer=url), photo_urls
-                ))
+            # Download in parallelo con asyncio.gather al posto del
+            # ThreadPoolExecutor: stesso parallelismo, senza thread e senza
+            # bloccare il loop mentre le foto arrivano.
+            risultati_download = await asyncio.gather(
+                *(download_image_bytes(u, referer=url) for u in photo_urls)
+            )
             photo_bytes_list = [img for img in risultati_download if img]
 
             # Se alcune foto non sono state scaricate, ritenta specificamente
@@ -4199,12 +4502,10 @@ def process_listing(parsed, url, cover_photo_bytes):
                     "Download foto incompleto per %s: %d/%d riuscite al primo giro, ritento le mancanti...",
                     url, len(photo_bytes_list), len(photo_urls),
                 )
-                with ThreadPoolExecutor(max_workers=3) as pool:
-                    retry_risultati = list(pool.map(
-                        lambda u: download_image_bytes(u, referer=url, max_retries=4), mancanti
-                    ))
-                recuperate = [img for img in retry_risultati if img]
-                photo_bytes_list.extend(recuperate)
+                retry_risultati = await asyncio.gather(
+                    *(download_image_bytes(u, referer=url, max_retries=4) for u in mancanti)
+                )
+                photo_bytes_list.extend([img for img in retry_risultati if img])
                 if len(photo_bytes_list) < len(photo_urls):
                     log.warning(
                         "Dopo il retry restano %d/%d foto mancanti per %s -- analisi visiva basata su set incompleto.",
@@ -4221,7 +4522,8 @@ def process_listing(parsed, url, cover_photo_bytes):
         )
     listing_info["fallback_solo_cover_photo"] = fallback_solo_cover_photo
     if not photo_bytes_list:
-        telegram_send_message(TELEGRAM_OWNER_CHAT_ID,
+        await telegram_send_message(
+            TELEGRAM_OWNER_CHAT_ID,
             f"⚠️ Niente foto per: {listing_info.get('title')}\nURL: {url or 'non trovato'}\nSalto valutazione.")
         return
 
@@ -4271,9 +4573,22 @@ def process_listing(parsed, url, cover_photo_bytes):
             "esplicitamente il limite."
         )
 
-    output_occhi, costo_occhi, _ = chiama_gemini(
+    output_occhi, costo_occhi, _ = await chiama_gemini(
         GEMINI_OCCHI_SYSTEM_PROMPT, user_text_occhi, photo_bytes_list, grounding=False)
     costo_totale += costo_occhi
+
+    # Prezzo del prodotto: base di OGNI calcolo economico a valle.
+    prezzo_prodotto = _a_float(listing_info.get("price"), None)
+
+    decisione = "NON COMPRARE"
+    urgenza = "Bassa"
+    n_query_grounding = 0
+    costo_cervello = 0.0
+    pool_ricerca_grezzo = ""
+    tentare_ricerca_visuale = False
+    fonte_visuale_riuscita = False
+    forza_ricerca = None
+    verdetto_calcolato = None
 
     e_skip, motivo_skip = check_skip_pre_cervello(output_occhi, listing_info)
     if e_skip:
@@ -4281,12 +4596,7 @@ def process_listing(parsed, url, cover_photo_bytes):
         if motivo_skip.startswith("[FALSO CONCLAMATO"):
             log.info("FALSO CONCLAMATO -- output occhi grezzo per '%s':\n%s", listing_info.get("title"), output_occhi)
         output_finale = build_skip_report(listing_info, motivo_skip, output_occhi_testo=output_occhi)
-        n_query_grounding = 0
         scenario_usato = "SKIP"
-        forza_ricerca = None
-        comp_sufficienti = None
-        costo_cervello = 0.0
-        pool_ricerca_grezzo = ""  # SKIP: nessuna ricerca comp eseguita, nulla da verificare
     else:
         titolo_annuncio = listing_info.get("title") or ""
         brand_annuncio = listing_info.get("brand") or ""
@@ -4299,12 +4609,6 @@ def process_listing(parsed, url, cover_photo_bytes):
 
         scenario_usato = "F"
         comps_text = None
-        # Default per lo scenario "Serper non disponibile" (raffreddamento o
-        # API key assente): nessuna ricerca comp e' stata neppure tentata,
-        # quindi la fonte visuale non e' stata ne' tentata ne' riuscita --
-        # usati dal blocco debug DEBUG_CONFRONTO_COMP_TELEGRAM piu' avanti.
-        tentare_ricerca_visuale = False
-        fonte_visuale_riuscita = False
 
         tempo_trascorso = time.time() - _serper_timestamp_ultimo_fallimento[0]
         in_raffreddamento = (
@@ -4314,7 +4618,7 @@ def process_listing(parsed, url, cover_photo_bytes):
         serper_disponibile = bool(SERPER_API_KEY) and not in_raffreddamento
 
         if serper_disponibile:
-            comps_text, serper_ok, tentare_ricerca_visuale, fonte_visuale_riuscita = search_comps_completo(
+            comps_text, serper_ok, tentare_ricerca_visuale, fonte_visuale_riuscita = await search_comps_completo(
                 brand_annuncio, categoria_per_ricerca, titolo_annuncio,
                 catalog_id=catalog_id, material_per_ricerca=material_per_ricerca,
                 cover_photo_id=cover_photo_id, item_id=item_id_annuncio,
@@ -4324,14 +4628,14 @@ def process_listing(parsed, url, cover_photo_bytes):
                 _serper_fallimenti_consecutivi[0] = 0
                 if _serper_notifica_esaurimento_inviata[0]:
                     _serper_notifica_esaurimento_inviata[0] = False
-                    telegram_send_message(TELEGRAM_OWNER_CHAT_ID, "✅ Serper e' tornato a funzionare normalmente.")
+                    await telegram_send_message(TELEGRAM_OWNER_CHAT_ID, "✅ Serper e' tornato a funzionare normalmente.")
             else:
                 _serper_fallimenti_consecutivi[0] += 1
                 _serper_timestamp_ultimo_fallimento[0] = time.time()
                 if _serper_fallimenti_consecutivi[0] >= SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO:
                     if not _serper_notifica_esaurimento_inviata[0]:
                         _serper_notifica_esaurimento_inviata[0] = True
-                        telegram_send_message(
+                        await telegram_send_message(
                             TELEGRAM_OWNER_CHAT_ID,
                             f"⚠️ *Serper ha esaurito i crediti o non risponde*.\nFallback a Scenario F per {RAFFREDDAMENTO_SERPER_SECONDI/3600:.0f} ore."
                         )
@@ -4355,7 +4659,6 @@ def process_listing(parsed, url, cover_photo_bytes):
             )
         else:
             forza_ricerca = True
-            comp_sufficienti = False
             user_text_cervello = (
                 f"{contesto_listing}\n\n"
                 f"--- LA TUA VALUTAZIONE PRELIMINARE ---\n"
@@ -4364,80 +4667,64 @@ def process_listing(parsed, url, cover_photo_bytes):
                 "cerca_comp_prezzo per ottenere comp reali prima di rispondere."
             )
 
-        if CERVELLO_PROVIDER == "openai":
-            output_finale_raw, costo_cervello, n_query_grounding, ricerche_extra_raw = chiama_openai_cervello_forzato(
-                GEMINI_CERVELLO_SYSTEM_PROMPT, user_text_cervello, forza_ricerca=forza_ricerca)
-        else:
-            output_finale_raw, costo_cervello, n_query_grounding, ricerche_extra_raw = chiama_gemini_cervello_forzato(
-                GEMINI_CERVELLO_SYSTEM_PROMPT, user_text_cervello, forza_ricerca=forza_ricerca)
+        chiama_cervello = (
+            chiama_openai_cervello_forzato if CERVELLO_PROVIDER == "openai"
+            else chiama_gemini_cervello_forzato
+        )
+        verdetto_json, errore_cervello, costo_cervello, n_query_grounding, ricerche_extra_raw = await chiama_cervello(
+            GEMINI_CERVELLO_SYSTEM_PROMPT, user_text_cervello, forza_ricerca=forza_ricerca)
         costo_totale += costo_cervello
 
         # Pool di TUTTO il testo grezzo di ricerca visto dal cervello per
-        # questo item -- comp pre-raccolti (Scenario G) + eventuali ricerche
-        # on-demand (cerca_comp_prezzo). Usato da verifica_comp_citati_sono_reali
-        # per controllare che i prezzi scritti in Analisi provengano davvero
-        # da qui, non da una stima "a memoria del brand" del modello.
+        # questo item: comp pre-raccolti (Scenario G) + eventuali ricerche
+        # on-demand. Serve a stabilire la provenienza reale di ogni comp che
+        # il cervello dichiara (vedi classifica_provenienza_comp).
         pool_ricerca_grezzo = "\n".join(filter(None, [comps_text] + ricerche_extra_raw))
 
-        output_finale = valida_contraddizioni_report(output_finale_raw)
-        if output_finale != output_finale_raw:
-            correzioni_applicate.append("valida_contraddizioni_report")
+        if errore_cervello:
+            # Un errore qui e' definitivo: senza il JSON non c'e' verdetto da
+            # calcolare. Si avvisa invece di restare in silenzio, perche' un
+            # annuncio valutato a meta' e' peggio di uno non valutato.
+            log.warning("Cervello fallito per '%s': %s", listing_info.get("title"), errore_cervello)
+            await telegram_send_message(
+                TELEGRAM_OWNER_CHAT_ID,
+                f"⚠️ *Valutazione non completata* — {listing_info.get('title')}\n"
+                f"{errore_cervello}\n{url or ''}\n"
+                f"_Costo comunque sostenuto: ${costo_totale:.4f}_"
+            )
+            return
 
-        # normalizza_urgenza_wording resta SEMPRE attiva anche con
-        # RETI_SICUREZZA_ATTIVE=False: e' solo normalizzazione di wording
-        # (mai un declassamento), e serve al parsing di estrai_decisione_da_testo
-        # a valle -- disattivarla romperebbe il parsing, non l'esperimento.
-        prev = output_finale
-        output_finale = normalizza_urgenza_wording(output_finale)
-        if output_finale != prev:
-            correzioni_applicate.append("normalizza_urgenza_wording")
-        prev = output_finale
+        v, problemi = valida_payload_cervello(verdetto_json)
+        stats_comp = classifica_provenienza_comp(v, pool_ricerca_grezzo)
+        verdetto_calcolato = calcola_verdetto(v, prezzo_prodotto)
+        decisione = verdetto_calcolato["decisione"]
+        urgenza = verdetto_calcolato["urgenza"]
+        output_finale = render_messaggio_verdetto(v, verdetto_calcolato, problemi, stats_comp)
 
-        if RETI_SICUREZZA_ATTIVE:
-            output_finale = forza_soglia_minima_compra(output_finale)
-            if output_finale != prev:
-                correzioni_applicate.append("forza_soglia_minima_compra")
-            prev = output_finale
+        log.info(
+            "Verdetto '%s': %s (%s urgenza) — margine=%s ROI=%s — comp usati=%d (%d da memoria) — limiti=%s",
+            listing_info.get("title"), decisione, urgenza,
+            f"{verdetto_calcolato['margine']:.2f}" if verdetto_calcolato["margine"] is not None else "n/d",
+            f"{verdetto_calcolato['roi']:.0f}%" if verdetto_calcolato["roi"] is not None else "n/d",
+            len(verdetto_calcolato["comp_usati"]), stats_comp["n_memoria"],
+            verdetto_calcolato["limiti_applicati"] or "nessuno",
+        )
 
-            output_finale = converti_tratta_senza_obiettivo_valido(output_finale)
-            if output_finale != prev:
-                correzioni_applicate.append("converti_tratta_senza_obiettivo_valido")
-            prev = output_finale
-
-            output_finale = declassa_urgenza_se_borderline(output_finale)
-            if output_finale != prev:
-                correzioni_applicate.append("declassa_urgenza_se_borderline")
-            prev = output_finale
-
-            prezzo_prodotto = None
-            try:
-                prezzo_prodotto = float(str(listing_info.get("price") or "").replace(",", "."))
-            except (ValueError, TypeError):
-                pass
-            output_finale = applica_soglia_trattativa_40_percento(output_finale, prezzo_prodotto)
-        if output_finale != prev:
-            correzioni_applicate.append("applica_soglia_trattativa_40_percento")
-
-    decisione = estrai_decisione_da_testo(output_finale) or ""
-    e_compra = any(k in decisione.upper() for k in ("COMPRA", "TRATTA", "CHIEDI ALTRE FOTO"))
+    e_compra = decisione in ("COMPRA", "TRATTA", "CHIEDI ALTRE FOTO")
 
     # ---- GATE MARGINE ASSOLUTO (qualita' del deal, non sicurezza) ----
-    # Sopprime la notifica quando il margine netto stimato resta sotto
-    # l'obiettivo operativo, anche se ROI e soglia minima sono superati.
-    # Serve ad alzare il valore medio dei deal che arrivano su Telegram
-    # senza toccare i cap delle watch. Scarto silenzioso (solo log), stessa
-    # logica gia' usata dal filtro pre-Gemini.
-    if scenario_usato != "SKIP" and SOGLIA_MARGINE_ASSOLUTO_NOTIFICA > 0:
-        margine_finale, _roi_finale = _estrai_margine_e_roi_da_blocco(output_finale[:400])
-        decisione_upper_gate = decisione.upper()
-        sotto_obiettivo = (
+    # Sopprime la notifica quando il margine netto resta sotto l'obiettivo
+    # operativo, anche se ROI e soglia minima sono superati. Ora legge il
+    # margine calcolato invece di riestrarlo con una regex dal testo.
+    if verdetto_calcolato and SOGLIA_MARGINE_ASSOLUTO_NOTIFICA > 0:
+        margine_finale = verdetto_calcolato["margine"]
+        if (
             margine_finale is not None
             and margine_finale < SOGLIA_MARGINE_ASSOLUTO_NOTIFICA
-            and "NON COMPRARE" not in decisione_upper_gate
-        )
-        if sotto_obiettivo:
+            and decisione != "NON COMPRARE"
+        ):
             log.info(
-                "GATE MARGINE ASSOLUTO: notifica soppressa per '%s' (margine=%.2f EUR < soglia %d EUR). Decisione originale: %s",
+                "GATE MARGINE ASSOLUTO: notifica soppressa per '%s' (margine=%.2f EUR < soglia %d EUR). Decisione: %s",
                 listing_info.get("title"), margine_finale, SOGLIA_MARGINE_ASSOLUTO_NOTIFICA, decisione,
             )
             return
@@ -4471,113 +4758,17 @@ def process_listing(parsed, url, cover_photo_bytes):
         + f"\n{url or ''}\n{'—' * 20}\n"
     )
 
-    output_finale = verifica_falso_ha_motivazione(output_finale)
-
-    # Disattivate il 2026-09-19 su decisione esplicita dell'utente:
-    # verifica_ancoraggio_prezzo_comp e verifica_comp_citati_sono_reali
-    # restano DISATTIVATE indipendentemente da RETI_SICUREZZA_ATTIVE. Motivo:
-    # 4 falsi positivi consecutivi osservati con Gemini in poche ore (Dries
-    # Van Noten, Jil Sander, Gonna Pucci, Loro Piana), tutti causati dal modo
-    # in cui queste reti interpretano rigidamente il posizionamento testuale
-    # dei numeri nell'Analisi (aritmetica di calcolo scambiata per comp,
-    # attribuzioni di fonte per pura vicinanza in prosa densa) -- un problema
-    # strutturale nel design delle reti, non nella qualita' del giudizio di
-    # Gemini sui prezzi. Inoltre, la causa root di molte discrepanze
-    # prezzo-comp osservate era un bug a monte nella fonte eBay (Resellbot
-    # restituiva prezzi USD ristampati col simbolo €, ora rimossa dalla
-    # pipeline, vedi search_comps_completo) -- Gemini non stava sbagliando,
-    # stava (correttamente) diffidando di comp gonfiati da un bug di dati.
-    # Il codice resta nel file, funzionante e testato (vedi
-    # scratchpad/test_fonte2/run_tests_verifica_comp.py), nel caso servisse
-    # riattivarlo in futuro con un provider meno affidabile di Gemini.
-    prev_ancoraggio = output_finale
-    if output_finale != prev_ancoraggio:
-        # Una delle due reti sopra ha cambiato l'emoji/decisione in testa:
-        # ricalcola 'decisione' ed 'e_compra' sul testo aggiornato, altrimenti
-        # la logica sotto (soppressione "Messaggio da inviare"/"Da chiedere",
-        # normalizzazione "NON COMPRARE · N/A", alert su TELEGRAM_ALERT_CHAT_ID)
-        # continuerebbe a ragionare sul verdetto originale non piu' valido --
-        # es. un COMPRA declassato a NON COMPRARE non deve piu' triggerare
-        # l'alert "AZIONE RICHIESTA".
-        decisione = estrai_decisione_da_testo(output_finale) or decisione
-        e_compra = any(k in decisione.upper() for k in ("COMPRA", "TRATTA", "CHIEDI ALTRE FOTO"))
-
-    if "NON COMPRARE" in output_finale:
-        output_finale = re.sub(
-            r"(🔴\s+\*\*NON COMPRARE\*\*)\s*·\s*[^\n]+",
-            r"\1 · N/A",
-            output_finale
-        )
-
-    output_finale = re.sub(
-        r"[EÈè]'?\s*ancora disponibile\??[\s,]*(?:[Ss]e\s+s[ìi][,.]?\s*)?",
-        "",
-        output_finale,
-        flags=re.IGNORECASE
-    )
-
-    # Corretto il 2026-09-19 su richiesta esplicita dell'utente: i blocchi
-    # "Messaggio da inviare" e "Da chiedere" hanno senso solo su TRATTA
-    # (serve un'offerta) o quando servono davvero altre foto/info per
-    # legit-check o valutare un difetto -- su COMPRA puro (gia' conveniente,
-    # nessuna trattativa) o NON COMPRARE puro (l'operazione non regge a
-    # prescindere da taglia/composizione/altri dettagli) sono rumore. Prima
-    # venivano solo svuotati con "Non necessario." e solo su COMPRA puro;
-    # ora vengono RIMOSSI interamente (header + contenuto + i due separatori
-    # "---" che li isolano) anche su NON COMPRARE puro -- il prompt istruisce
-    # gia' il cervello a ometterli da solo quando non servono, questo e' il
-    # backstop lato codice per quando non lo fa.
-    decisione_upper = decisione.upper()
-    blocchi_domanda_superflui = (
-        ("COMPRA" in decisione_upper or "NON COMPRARE" in decisione_upper)
-        and "TRATTA" not in decisione_upper
-        and "CHIEDI" not in decisione_upper
-    )
-    if blocchi_domanda_superflui:
-        output_finale = re.sub(
-            r"\n?---\s*\n📨\s*\*\*Messaggio da inviare[:\*]*\*?\*?\s*\n.*?(?=\n---|\n#|\n❓|\n🧠|\Z)",
-            "",
-            output_finale,
-            flags=re.IGNORECASE | re.DOTALL
-        )
-        output_finale = re.sub(
-            r"\n?---\s*\n❓\s*\*\*Da chiedere[:\*]*\*?\*?\s*\n.*?(?=\n---|\n#|\n🧠|\Z)",
-            "",
-            output_finale,
-            flags=re.IGNORECASE | re.DOTALL
-        )
-
     # ---- BLOCCO DIAGNOSTICO: da dove vengono i comp REALMENTE ricevuti ----
-    # Attivo solo con DEBUG_CONFRONTO_COMP_TELEGRAM=true (default false,
-    # nessun costo AI aggiuntivo: e' puro post-processing su testo gia'
-    # generato, non genera nessuna chiamata Gemini/OpenAI in piu'). Mostra
-    # non solo i prezzi ma anche LA PROVENIENZA di ciascuno: quale fonte
-    # pre-raccolta (Vinted visuale/testo, gia' etichettata "📍 FONTE: ..."
-    # dentro comps_text) oppure quale query Serper on-demand del cervello
-    # (etichettata allo stesso modo quando aggiunta a ricerche_extra_raw,
-    # vedi chiama_gemini_cervello_forzato/chiama_openai_cervello_forzato) --
-    # inclusa la conferma esplicita se la ricerca visuale Vinted
-    # (search_by_image) ha prodotto risultati per QUESTO item o e' stata
-    # saltata. Va in coda al messaggio principale invece che in un messaggio
-    # separato per essere visibile anche quando RETI_SICUREZZA_ATTIVE=False
-    # sopprime le note automatiche. Lasciato disattivabile via env var
-    # (non rimosso dal codice) su richiesta esplicita dell'utente il
-    # 2026-09-19 -- gia' spento su Railway, riattivabile a costo zero.
+    # Attivo solo con DEBUG_CONFRONTO_COMP_TELEGRAM=true. Puro post-processing
+    # su dati gia' raccolti: nessuna chiamata IA aggiuntiva, costo zero.
     if DEBUG_CONFRONTO_COMP_TELEGRAM and scenario_usato != "SKIP":
         n_prezzi_pool_debug = len(_estrai_prezzi_da_pool_ricerca(pool_ricerca_grezzo))
-
         if fonte_visuale_riuscita:
             nota_visuale = "✅ riuscita"
         elif tentare_ricerca_visuale:
             nota_visuale = "❌ fallita per questo item"
         else:
             nota_visuale = "— non tentata"
-
-        # Riepilogo per fonte in UNA riga ciascuna (conteggio + range), non
-        # il testo grezzo Serper -- l'utente ha chiesto esplicitamente "solo
-        # come arriva a quel prezzo", non gli snippet completi (2026-09-19).
-        # Il pool completo resta comunque nei log Railway per chi vuole il
-        # dettaglio integrale.
         output_finale += (
             f"\n\n🔬 *DEBUG* — {n_prezzi_pool_debug} prezzi reali ricevuti, "
             f"visuale: {nota_visuale}\n"
@@ -4585,41 +4776,25 @@ def process_listing(parsed, url, cover_photo_bytes):
         )
 
     # ---- FOOTER COSTO IA: recap per-modello, per-messaggio ----
-    # Aggiunto in coda al messaggio cosi' e' sempre visibile quanto e'
-    # costata la valutazione di QUESTO specifico annuncio, senza dover
-    # controllare i log su Railway o sommare a mano.
     if scenario_usato == "SKIP":
         footer_costo = (
             f"\n\n💵 _Costo IA: 👁 {GEMINI_MODEL_OCCHIO} ${costo_occhi:.4f} "
             f"· Cervello non consultato · Totale ${costo_occhi:.4f}_"
         )
     else:
+        modello_cervello = OPENAI_MODEL_CERVELLO if CERVELLO_PROVIDER == "openai" else GEMINI_MODEL_CERVELLO
         footer_costo = (
             f"\n\n💵 _Costo IA: 👁 {GEMINI_MODEL_OCCHIO} ${costo_occhi:.4f} "
-            f"+ 🧠 {GEMINI_MODEL_CERVELLO} ${costo_cervello:.4f} "
+            f"+ 🧠 {modello_cervello} ${costo_cervello:.4f} "
             f"= Totale ${costo_totale:.4f}_"
         )
     output_finale = output_finale + footer_costo
 
-    _invia_risultato_telegram(
+    await _invia_risultato_telegram(
         listing_info, url, photo_bytes_list,
         header, output_finale, decisione, e_compra,
-        scenario_usato, n_query_grounding if scenario_usato != "SKIP" else 0
+        scenario_usato, urgenza,
     )
-
-    # Messaggio di debug separato, SOLO se una rete di sicurezza ha
-    # effettivamente modificato il verdetto -- utile per controllare da
-    # Telegram senza entrare su Railway. Riattivabile mettendo
-    # INVIA_DEBUG_CORREZIONI = True qui sotto.
-    INVIA_DEBUG_CORREZIONI = False
-    if INVIA_DEBUG_CORREZIONI and scenario_usato != "SKIP" and correzioni_applicate:
-        debug_text = (
-            f"🔧 *DEBUG* — correzioni automatiche applicate a *{listing_info.get('title')}*:\n"
-            f"{', '.join(correzioni_applicate)}\n\n"
-            f"— OUTPUT GREZZO CERVELLO (prima delle correzioni) —\n{output_finale_raw}\n\n"
-            f"— INPUT CERVELLO (occhi + comp Serper/ricerca extra) —\n{user_text_cervello}"
-        )
-        telegram_send_message(TELEGRAM_OWNER_CHAT_ID, debug_text)
 
 
 # ---------------------------------------------------------------------------
@@ -4690,15 +4865,31 @@ async def on_new_message(event):
                         break
 
         cover = await event.message.download_media(bytes) if event.message.photo else None
-        await asyncio.to_thread(process_listing, parsed, url, cover)
+        # Prima: asyncio.to_thread(process_listing, ...), necessario perche'
+        # la pipeline era interamente sincrona e avrebbe bloccato il loop.
+        # Ora process_listing e' una coroutine e si attende direttamente:
+        # Telethon esegue ogni handler come task separato, quindi piu'
+        # annunci vengono elaborati davvero in parallelo, e le lunghe attese
+        # di rete (scraping, Serper, Gemini) non occupano piu' un thread
+        # ciascuna.
+        await process_listing(parsed, url, cover)
     except Exception:
         log.error("Errore generico:\n%s", traceback.format_exc())
 
 
 async def main():
     log.info("Vinted Oracle avviato su Telethon. Versione: %s", BOT_VERSION)
-    await client.start()
-    await client.run_until_disconnected()
+    log.info(
+        "Cervello: %s (output JSON strutturato) · comp da memoria del modello: %s",
+        OPENAI_MODEL_CERVELLO if CERVELLO_PROVIDER == "openai" else GEMINI_MODEL_CERVELLO,
+        "ammessi" if COMP_DA_MEMORIA_AMMESSI else "esclusi dal calcolo",
+    )
+    await inizializza_client_http()
+    try:
+        await client.start()
+        await client.run_until_disconnected()
+    finally:
+        await chiudi_client_http()
 
 
 if __name__ == "__main__":
