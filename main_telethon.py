@@ -85,7 +85,7 @@ VINTED_REFRESH_TOKEN = os.environ.get("VINTED_REFRESH_TOKEN", "").strip()
 VISUAL_SEARCH_ATTIVA = os.environ.get("VISUAL_SEARCH_ATTIVA", "false").strip().lower() == "true"
 
 # CERVELLO_PROVIDER: "gemini" (default, comportamento storico) oppure
-# "openai" per usare GPT-4o-mini al posto di Gemini-3.7-flash sul solo step
+# "openai" per usare GPT-4o-mini al posto di Gemini-3.8-flash sul solo step
 # Cervello (verdetto/margine/ROI). L'Occhio (legit-check visivo) resta
 # SEMPRE Gemini in entrambi i casi -- non e' toccato da questo flag: un
 # test A/B su 12+ item reali (Set 2026-09) ha mostrato che Gemini resta
@@ -144,7 +144,11 @@ TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 # token, ma il Cervello viene chiamato una sola volta per annuncio (non ha
 # senso risparmiare li' se il risultato e' il numero che decide l'acquisto).
 GEMINI_MODEL_OCCHIO = "gemini-3.5-flash-lite"
-GEMINI_MODEL_CERVELLO = "gemini-3.7-flash"
+# gemini-3.8-flash aggiornato dal 3.7-flash il 2026-09-19: stesso prezzo per
+# milione di token (verificato su ai.google.dev/gemini-api/docs/pricing,
+# $0.75 input / $3.75 output fino al 31/12/2026, identico al 3.7), quindi
+# PREZZO_CERVELLO_INPUT/OUTPUT sotto restano validi senza modifiche.
+GEMINI_MODEL_CERVELLO = "gemini-3.8-flash"
 GEMINI_API_URL_OCCHIO = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL_OCCHIO}:generateContent"
 GEMINI_API_URL_CERVELLO = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL_CERVELLO}:generateContent"
 
@@ -3425,7 +3429,7 @@ def verifica_falso_ha_motivazione(testo):
     return testo
 
 
-def verifica_ancoraggio_prezzo_comp(testo):
+def verifica_ancoraggio_prezzo_comp(testo, pool_ricerca_grezzo=None):
     """Rete di sicurezza per una violazione osservata piu' volte in produzione
     nonostante la regola sia gia' esplicita nel prompt ("CONTROLLO NUMERICO
     OBBLIGATORIO SUL PREZZO DI LISTING"): il modello a volte fissa un prezzo
@@ -3446,7 +3450,22 @@ def verifica_ancoraggio_prezzo_comp(testo):
     del file (forza_soglia_minima_compra, converti_tratta_senza_obiettivo_valido).
     Margine/ROI numerici NON vengono ricalcolati (troppo rischioso via
     regex): si declassa solo l'etichetta di decisione, ed e' comunque
-    responsabilita' dell'utente verificare manualmente il caso."""
+    responsabilita' dell'utente verificare manualmente il caso.
+
+    pool_ricerca_grezzo (aggiunto il 2026-09-19): PRIMA questa funzione
+    trovava il comp massimo SOLO cercando prezzi scritti esplicitamente nel
+    testo dell'Analisi -- se il cervello scriveva in modo vago ("prezzi tra
+    €50 e €90 per capi simili", senza mai isolare un numero riconoscibile
+    dal regex, o descrivendo un range senza cifre puntuali), 'comp_citati'
+    restava vuoto e la funzione usciva subito senza controllare nulla,
+    lasciando passare stime gonfiate senza alcun freno (caso reale: due
+    Missoni consecutivi con target di rivendita giudicato troppo alto
+    dall'utente). Ora, quando il testo dell'Analisi non offre comp
+    numerici, si usa come fallback il MASSIMO PREZZO REALE dell'intero pool
+    di ricerca (stessa fonte usata da verifica_comp_citati_sono_reali) --
+    un limite oggettivo e sempre disponibile quando la ricerca ha trovato
+    almeno un prezzo, indipendentemente da come il cervello lo abbia
+    descritto in prosa."""
     m_verdetto = re.search(
         r"💰\s*€\s*([\d.,]+)\s*→\s*€\s*([\d.,]+)\s*→",
         testo[:400],
@@ -3467,26 +3486,36 @@ def verifica_ancoraggio_prezzo_comp(testo):
     m_analisi = re.search(
         r"Analisi dell'analista:?\**\s*\n(.+)", testo, re.IGNORECASE | re.DOTALL,
     )
-    if not m_analisi:
-        return testo
-    blocco_analisi = m_analisi.group(1)
+    blocco_analisi = m_analisi.group(1) if m_analisi else ""
 
     comp_citati = []
-    for m in re.finditer(r"€\s*([\d]+(?:[.,]\d+)?)|([\d]+(?:[.,]\d+)?)\s*€", blocco_analisi):
-        # Esclude i numeri che sono il modello stesso che ripete la SUA
-        # stima (es. "posizionando il listing a 225€, incasso netto 180€")
-        # -- altrimenti questi vengono scambiati per comp esterni citati,
-        # innalzando artificialmente il "massimo" e mascherando proprio la
-        # violazione che questa funzione deve rilevare.
-        finestra_precedente = blocco_analisi[max(0, m.start() - 40):m.start()].lower()
-        if re.search(r"\b(listing|incasso)\b", finestra_precedente):
-            continue
-        valore = m.group(1) or m.group(2)
-        comp_citati.append(float(valore.replace(",", ".")))
-    if not comp_citati:
-        return testo
+    if blocco_analisi:
+        for m in re.finditer(r"€\s*([\d]+(?:[.,]\d+)?)|([\d]+(?:[.,]\d+)?)\s*€", blocco_analisi):
+            # Esclude i numeri che sono il modello stesso che ripete la SUA
+            # stima (es. "posizionando il listing a 225€, incasso netto 180€")
+            # -- altrimenti questi vengono scambiati per comp esterni citati,
+            # innalzando artificialmente il "massimo" e mascherando proprio la
+            # violazione che questa funzione deve rilevare.
+            finestra_precedente = blocco_analisi[max(0, m.start() - 40):m.start()].lower()
+            if re.search(r"\b(listing|incasso)\b", finestra_precedente):
+                continue
+            valore = m.group(1) or m.group(2)
+            comp_citati.append(float(valore.replace(",", ".")))
 
-    comp_massimo = max(comp_citati)
+    fonte_comp_massimo = "citati nell'Analisi dell'analista"
+    if comp_citati:
+        comp_massimo = max(comp_citati)
+    elif pool_ricerca_grezzo:
+        # Fallback: l'analisi non cita numeri isolati riconoscibili --
+        # usa il prezzo reale piu' alto trovato in TUTTO il pool di ricerca
+        # (pre-raccolti + eventuali ricerche on-demand) come limite oggettivo.
+        prezzi_pool = _estrai_prezzi_da_pool_ricerca(pool_ricerca_grezzo)
+        if not prezzi_pool:
+            return testo
+        comp_massimo = max(prezzi_pool)
+        fonte_comp_massimo = "trovati nel pool di ricerca (l'Analisi non cita cifre isolate)"
+    else:
+        return testo
 
     TOLLERANZA = 1.02  # 2% di margine per arrotondamenti, non e' una soglia rigida
     if prezzo_listing_stimato <= comp_massimo * TOLLERANZA:
@@ -3496,14 +3525,14 @@ def verifica_ancoraggio_prezzo_comp(testo):
 
     log.info(
         "verifica_ancoraggio_prezzo_comp: prezzo di listing stimato €%.2f supera il comp piu' alto "
-        "citato nell'analisi (€%.2f, sforamento %.0f%%) -- declassato il verdetto.",
-        prezzo_listing_stimato, comp_massimo, sforamento_percento,
+        "%s (€%.2f, sforamento %.0f%%) -- declassato il verdetto.",
+        prezzo_listing_stimato, fonte_comp_massimo, comp_massimo, sforamento_percento,
     )
 
     nota_calcolo = (
         f"il prezzo di listing stimato (~€{prezzo_listing_stimato:.2f}, ricavato "
         f"dall'incasso €{incasso_reale:.2f}÷0.80) supera del {sforamento_percento:.0f}% "
-        f"il comp piu' alto citato nell'Analisi dell'analista (€{comp_massimo:.2f}) -- "
+        f"il comp piu' alto {fonte_comp_massimo} (€{comp_massimo:.2f}) -- "
         f"violazione della regola di ancoraggio ai comp reali"
     )
 
@@ -4291,7 +4320,7 @@ def process_listing(parsed, url, cover_photo_bytes):
 
     prev_ancoraggio = output_finale
     if RETI_SICUREZZA_ATTIVE:
-        output_finale = verifica_ancoraggio_prezzo_comp(output_finale)
+        output_finale = verifica_ancoraggio_prezzo_comp(output_finale, pool_ricerca_grezzo)
         output_finale = verifica_comp_citati_sono_reali(output_finale, pool_ricerca_grezzo)
     if output_finale != prev_ancoraggio:
         # Una delle due reti sopra ha cambiato l'emoji/decisione in testa:
