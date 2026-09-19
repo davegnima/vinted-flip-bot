@@ -3113,15 +3113,63 @@ def _estrai_prezzi_da_pool_ricerca(pool_ricerca_grezzo):
     (comp pre-raccolti + eventuali cerca_comp_prezzo on-demand). Sono gli
     UNICI numeri che il cervello puo' legittimamente citare come prezzi nel
     blocco Analisi -- qualunque altro prezzo citato non ha una fonte
-    verificabile in questa conversazione."""
+    verificabile in questa conversazione.
+
+    BUG corretto il 2026-09-19: il ramo "numero PRIMA del simbolo" (es.
+    '105 €', '400€' -- il formato piu' comune negli snippet Vestiaire/eBay
+    europei) non ha MAI matchato nulla, perche' il pattern terminava con
+    "(?:€|EUR)\\b" e \\b (word boundary) non esiste subito dopo '€' (non e'
+    un carattere di parola, quindi non crea un confine con cio' che segue).
+    Risultato pratico: questa funzione vedeva SOLO i prezzi scritti come
+    '€105', perdendo silenziosamente tutti quelli in formato '105€' -- cioe'
+    sottostimava il pool reale, con rischio di falsi "comp inventato" da
+    verifica_comp_citati_sono_reali quando il prezzo citato dal cervello
+    corrispondeva in realta' a un prezzo vero scritto in quel formato."""
     prezzi = set()
-    for m in re.finditer(r"€\s*([\d]+(?:[.,]\d+)?)|([\d]+(?:[.,]\d+)?)\s*(?:€|EUR)\b", pool_ricerca_grezzo, re.IGNORECASE):
+    for m in re.finditer(r"€\s*([\d]+(?:[.,]\d+)?)|([\d]+(?:[.,]\d+)?)\s*(?:€|EUR\b)", pool_ricerca_grezzo, re.IGNORECASE):
         valore = m.group(1) or m.group(2)
         try:
             prezzi.add(round(float(valore.replace(",", ".")), 2))
         except ValueError:
             continue
     return prezzi
+
+
+def _riepilogo_comp_per_fonte(pool_ricerca_grezzo):
+    """Riassume pool_ricerca_grezzo in UNA riga per fonte (conteggio + range
+    di prezzo), invece di riportare gli snippet grezzi Serper per intero --
+    pensata per il blocco debug Telegram (DEBUG_CONFRONTO_COMP_TELEGRAM),
+    dove l'utente vuole vedere a colpo d'occhio 'quanti prezzi e in che
+    range' per ciascuna fonte, non il testo grezzo con markup HTML residuo.
+    Riconosce i blocchi gia' etichettati "📍 FONTE: <nome>" (comp pre-raccolti
+    E ricerche on-demand, entrambi taggati cosi', vedi search_comps_completo/
+    chiama_*_cervello_forzato) e spacca il pool su quell'etichetta."""
+    if not pool_ricerca_grezzo or not pool_ricerca_grezzo.strip():
+        return "(pool vuoto)"
+
+    blocchi = re.split(r"\n?📍\s*FONTE:\s*", pool_ricerca_grezzo)
+    righe = []
+    for blocco in blocchi:
+        blocco = blocco.strip()
+        if not blocco:
+            continue
+        # Primo blocco (prima della prima 📍) e' l'header "RICERCA WEB
+        # PRE-RACCOLTA (...)" senza fonte propria -- non contiene mai prezzi
+        # utili, lo saltiamo.
+        prima_riga, _, resto = blocco.partition("\n")
+        if prima_riga.upper().startswith("RICERCA WEB PRE-RACCOLTA"):
+            continue
+        nome_fonte = prima_riga.split("(")[0].strip().rstrip(":—-").strip() or prima_riga.strip()
+        prezzi_fonte = sorted(_estrai_prezzi_da_pool_ricerca(resto or blocco))
+        if not prezzi_fonte:
+            righe.append(f"• {nome_fonte}: nessun prezzo")
+        elif len(prezzi_fonte) == 1:
+            righe.append(f"• {nome_fonte}: 1 prezzo (€{prezzi_fonte[0]:.2f})")
+        else:
+            righe.append(
+                f"• {nome_fonte}: {len(prezzi_fonte)} prezzi (€{min(prezzi_fonte):.2f}–€{max(prezzi_fonte):.2f})"
+            )
+    return "\n".join(righe) if righe else "(nessuna fonte con prezzi)"
 
 
 def verifica_comp_citati_sono_reali(testo, pool_ricerca_grezzo):
@@ -3682,35 +3730,24 @@ def process_listing(parsed, url, cover_photo_bytes):
     # invece che in un messaggio separato per essere visibile anche quando
     # RETI_SICUREZZA_ATTIVE=False sopprime le note automatiche.
     if DEBUG_CONFRONTO_COMP_TELEGRAM and scenario_usato != "SKIP":
-        prezzi_pool_debug = sorted(set(_estrai_prezzi_da_pool_ricerca(pool_ricerca_grezzo)))
-        if prezzi_pool_debug:
-            prezzi_fmt = ", ".join(f"€{p:.2f}".replace(".00", "") for p in prezzi_pool_debug)
-        else:
-            prezzi_fmt = "nessuno estratto (pool vuoto o senza risultati numerici)"
+        n_prezzi_pool_debug = len(_estrai_prezzi_da_pool_ricerca(pool_ricerca_grezzo))
 
         if fonte_visuale_riuscita:
-            nota_visuale = "✅ riuscita, comp inclusi sotto (fonte 'VINTED — RICERCA VISUALE PER FOTO')"
+            nota_visuale = "✅ riuscita"
         elif tentare_ricerca_visuale:
-            nota_visuale = "❌ tentata ma fallita per questo item (vedi log: redirect/timeout/nessun ID risolto)"
+            nota_visuale = "❌ fallita per questo item"
         else:
-            nota_visuale = "— non tentata (VISUAL_SEARCH_ATTIVA=false, o brand/cover_photo_id mancante)"
+            nota_visuale = "— non tentata"
 
-        # Troncato a un tetto ragionevole: con RETI_SICUREZZA_ATTIVE=False
-        # questo blocco va in coda a un messaggio che puo' gia' essere lungo
-        # (Analisi + Messaggio da inviare + Da chiedere), e telegram_send_
-        # with_buttons ora spezza correttamente sopra 4096 caratteri -- ma
-        # 3-4 messaggi Telegram per ogni singolo item resterebbero comunque
-        # scomodi da leggere dal telefono durante l'esperimento diagnostico.
-        MAX_DETTAGLIO_DEBUG = 1200
-        dettaglio_debug = pool_ricerca_grezzo or "(pool vuoto)"
-        if len(dettaglio_debug) > MAX_DETTAGLIO_DEBUG:
-            dettaglio_debug = dettaglio_debug[:MAX_DETTAGLIO_DEBUG] + "\n… (troncato, vedi log Railway per il pool completo)"
-
+        # Riepilogo per fonte in UNA riga ciascuna (conteggio + range), non
+        # il testo grezzo Serper -- l'utente ha chiesto esplicitamente "solo
+        # come arriva a quel prezzo", non gli snippet completi (2026-09-19).
+        # Il pool completo resta comunque nei log Railway per chi vuole il
+        # dettaglio integrale.
         output_finale += (
-            f"\n\n🔬 *DEBUG provenienza comp* — riepilogo prezzi ({len(prezzi_pool_debug)}): {prezzi_fmt}\n"
-            f"Ricerca visuale Vinted: {nota_visuale}\n"
-            f"— Dettaglio per fonte (pre-raccolti + ricerche on-demand del cervello) —\n"
-            f"{dettaglio_debug}"
+            f"\n\n🔬 *DEBUG* — {n_prezzi_pool_debug} prezzi reali ricevuti, "
+            f"visuale: {nota_visuale}\n"
+            f"{_riepilogo_comp_per_fonte(pool_ricerca_grezzo)}"
         )
 
     # ---- FOOTER COSTO IA: recap per-modello, per-messaggio ----
