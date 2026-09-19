@@ -1482,6 +1482,47 @@ def valuta_qualita_comp(comps_text):
     return n_prezzi >= 3
 
 
+# Snippet-placeholder che Google/Serper restituisce quando non riesce a
+# generare un estratto reale (pagina JS-rendered, bloccata, o senza testo
+# indicizzabile) -- puro rumore, occupa spazio nel contesto del cervello
+# senza portare ne' un prezzo ne' informazione utile.
+SNIPPET_PLACEHOLDER_INUTILI = [
+    "nessuna informazione disponibile per questa pagina",
+]
+
+# Simboli di valuta non-EUR il cui prezzo non e' direttamente comparabile
+# senza conversione (mercati regionali: baht thailandese, yen, rupia, won,
+# ecc.) -- un risultato che ha SOLO questi simboli di prezzo (nessun
+# €/EUR/$/USD/£/GBP nello snippet) va scartato perche' il cervello non ha
+# modo di convertirlo in modo affidabile e rischia di trattarlo come comp
+# diretto.
+SIMBOLI_VALUTA_NON_COMPARABILI = ["฿", "¥", "₹", "₩", "₫", "₱"]
+SIMBOLI_VALUTA_COMPARABILI = ["€", "eur", "$", "usd", "£", "gbp"]
+
+
+def _riga_serper_e_rumore(titolo, snippet):
+    """True se la riga (titolo+snippet) di un risultato Google/Serper va
+    scartata perche' non porta informazione utile al cervello -- vedi
+    SNIPPET_PLACEHOLDER_INUTILI e SIMBOLI_VALUTA_NON_COMPARABILI sopra per
+    il dettaglio dei due casi coperti, individuati da un caso reale
+    (ricerca on-demand 'GU x Undercover Cargo' che restituiva pagine eBay
+    senza snippet e annunci in thailandese con prezzi in baht)."""
+    testo_completo = f"{titolo} {snippet}".strip()
+    if not testo_completo:
+        return True
+    # .rstrip(".") perche' Google a volte restituisce il placeholder con un
+    # punto finale ("...pagina.") e a volte senza -- confermato empiricamente
+    # nel caso reale che ha originato questo filtro (vedi log 'gu × undercover').
+    snippet_lower = snippet.strip().lower().rstrip(".")
+    if snippet_lower in SNIPPET_PLACEHOLDER_INUTILI:
+        return True
+    ha_valuta_non_comparabile = any(simbolo in testo_completo for simbolo in SIMBOLI_VALUTA_NON_COMPARABILI)
+    ha_valuta_comparabile = any(simbolo in testo_completo.lower() for simbolo in SIMBOLI_VALUTA_COMPARABILI)
+    if ha_valuta_non_comparabile and not ha_valuta_comparabile:
+        return True
+    return False
+
+
 def cerca_serper_mirata(query):
     """Ricerca aggiuntiva mirata, richiamabile dal cervello quando i comp
     pre-raccolti sono insufficienti o fuori tema."""
@@ -1499,11 +1540,17 @@ def cerca_serper_mirata(query):
     except Exception as e:
         return f"Ricerca fallita: {e}"
     lines = []
+    scartate = 0
     for batch in results:
         for r in batch.get("organic", [])[:8]:
             titolo = r.get("title", "")
             snippet = (r.get("snippet", "") or "")[:150]
+            if _riga_serper_e_rumore(titolo, snippet):
+                scartate += 1
+                continue
             lines.append(f"- {titolo}: {snippet}")
+    if scartate:
+        log.info("cerca_serper_mirata: scartate %d righe di rumore (snippet vuoto/placeholder o valuta non comparabile) per query '%s'.", scartate, query)
     return "\n".join(lines) if lines else "Nessun risultato trovato per questa query."
 
 
