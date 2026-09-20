@@ -1765,7 +1765,7 @@ Codici prodotto o diciture rare citati dall'occhio ("prototipo", "edizione limit
 La "Confidenza" che l'occhio dichiara su un verdetto "Probabilmente falso" NON è affidabile da sola (bias noto: prezzo molto basso può contaminare il giudizio con dettagli vaghi costruiti a posteriori) — se i dettagli citati sono generici e il prezzo è molto basso, verifica con cerca_comp_prezzo prima di confermare NON COMPRARE per sospetto falso.
 
 # MATERIALE DEI COMP DEVE CORRISPONDERE AL CAPO
-Il materiale cambia il valore quasi quanto la linea (es. Cucinelli: cashmere puro >> lana/cotone). Materiale noto → scarta o segnala esplicitamente i comp di materiale diverso. Materiale IGNOTO → il sistema applica una stima piu' prudente in automatico (mediana dei comp invece del piu' caro).
+Il materiale cambia il valore quasi quanto la linea (es. Cucinelli: cashmere puro >> lana/cotone). Materiale noto → scarta o segnala esplicitamente i comp di materiale diverso. Materiale IGNOTO → il sistema applica un tetto piu' prudente in automatico (75* percentile dei comp invece del piu' caro), ma solo se la tua stima lo supera davvero.
 **Cosa conta come "noto" (`materiale_confermato: true`)**: il materiale e' noto ogni volta che compare ESPLICITAMENTE in ALMENO UNO di questi posti, anche senza una foto ravvicinata dell'etichetta di composizione: titolo dell'annuncio, descrizione testuale, categoria/attributo strutturato di Vinted, oppure lettura diretta dell'etichetta nella foto. Esempio: titolo "Kaschmir Pullover" → materiale noto (cashmere), `materiale_confermato: true`, anche se non vedi la percentuale esatta di composizione. Segnala il materiale come IGNOTO (`materiale_confermato: false`) SOLO quando non ne parla nessuno di questi posti e staresti indovinando dalla sola foto generica del capo (es. una semplice foto di un maglione senza nessuna menzione testuale del tessuto). Non abbassarlo per eccesso di prudenza quando l'informazione e' gia' scritta da qualche parte nei dati.
 
 # ANCORAGGIO PREZZI — la regola più violata in produzione, massima attenzione
@@ -1794,7 +1794,7 @@ Restituisci ESCLUSIVAMENTE un oggetto JSON conforme allo schema fornito. Nessun 
 1. Popola `comp_candidati` con OGNI prezzo comp che hai davanti, uno per oggetto, con il prezzo esatto e il titolo copiato alla lettera. Marca `escluso: true` (con motivo) quelli fuori categoria, di sottolinea sbagliata, o palesemente fuori scala. Non riassumere, non fare medie a mente: elencali.
 2. Ogni comp Vinted e' un prezzo **ASK** (annuncio attivo, spesso sovrastimato), mai un venduto confermato. Scegli il comp di riferimento tra quelli non esclusi e applica uno sconto prudenziale tra il 20% e il 30% (`sconto_ask_applicato_pct`).
 3. `prezzo_target_vendita_eur` non puo' superare il comp di riferimento gia' scontato, ne' un eventuale tetto di linea (`tetto_prezzo_linea_eur`). Il sistema applica comunque entrambi i limiti: se li superi, la tua stima viene abbassata d'ufficio, quindi tanto vale calcolarla giusta.
-4. Materiale non confermato (`materiale_confermato: false`, vedi sezione MATERIALE per cosa conta come "noto") -> resta prudente, il sistema comunque abbassa la stima alla mediana dei comp validi se la superi.
+4. Materiale non confermato (`materiale_confermato: false`, vedi sezione MATERIALE per cosa conta come "noto") -> resta prudente, il sistema comunque abbassa la stima al 75* percentile dei comp validi se la superi.
 5. Meno di 2 comp validi dopo le esclusioni -> resta sulla fascia bassa e dichiaralo in `note_analista`, mai una stima alta appoggiata a un solo comp isolato.
 
 # PROVENIENZA DEI COMP -- dichiarala, non nasconderla
@@ -2848,7 +2848,7 @@ CERVELLO_RESPONSE_SCHEMA = {
                 "una foto ravvicinata della sola etichetta di composizione (es. titolo "
                 "'Kaschmir Pullover' = true). false SOLO se il materiale non e' menzionato da "
                 "nessuna parte e andrebbe indovinato dalla sola foto generica: in quel caso il "
-                "sistema abbassa la stima alla mediana dei comp validi invece che al piu' caro."
+                "sistema abbassa la stima al 75* percentile dei comp validi invece che al piu' caro."
             ),
         },
         "taglia_rilevata": {"type": "STRING", "nullable": True},
@@ -5239,6 +5239,23 @@ def _comp_utilizzabili(v):
     return utilizzabili
 
 
+def _percentile(valori_ordinati, p):
+    """Percentile p (0-100) su una lista GIA' ordinata, interpolazione
+    lineare tra i due valori piu' vicini. Con un solo valore ritorna quello;
+    con lista vuota ritorna 0.0 (il chiamante gestisce comunque il caso
+    'nessun comp' a monte, qui e' solo per non esplodere)."""
+    n = len(valori_ordinati)
+    if n == 0:
+        return 0.0
+    if n == 1:
+        return valori_ordinati[0]
+    posizione = (p / 100.0) * (n - 1)
+    indice_basso = int(posizione)
+    indice_alto = min(indice_basso + 1, n - 1)
+    frazione = posizione - indice_basso
+    return valori_ordinati[indice_basso] + (valori_ordinati[indice_alto] - valori_ordinati[indice_basso]) * frazione
+
+
 def _filtra_outlier(prezzi):
     """Scarta i comp oltre 3x la mediana o sotto 1/3 della mediana: quasi
     sempre appartengono a un capo diverso (categoria, materiale o edizione)
@@ -5321,18 +5338,28 @@ def calcola_verdetto(v, prezzo_prodotto):
             massimo_consentito = max(prezzi_tenuti) * fattore_sconto
             descrizione_limite = f"comp piu' alto €{max(prezzi_tenuti):.2f}"
         else:
-            # Materiale non confermato: si usa la MEDIANA dei comp validi,
-            # non piu' il comp piu' economico. La versione precedente
-            # (comp piu' economico) era troppo punitiva: bastava che il
-            # cervello marcasse per prudenza eccessiva materiale_confermato
-            # a false -- anche quando titolo/etichetta lo dichiaravano gia'
-            # esplicitamente (es. "Kaschmir" nel titolo) -- per far crollare
-            # la stima su un singolo comp isolato in fondo alla forchetta,
-            # producendo un prezzo fuorviante. La mediana resta prudente ma
-            # non si appoggia a un solo valore anomalo.
-            mediana_prezzi = statistics.median(prezzi_tenuti)
-            massimo_consentito = mediana_prezzi * fattore_sconto
-            descrizione_limite = f"materiale non confermato, mediana comp €{mediana_prezzi:.2f}"
+            # Materiale non confermato: tetto sul 75* percentile dei comp
+            # validi, non piu' sulla mediana. Storia della regola: prima
+            # usava il comp piu' economico (troppo punitiva: bastava che il
+            # cervello marcasse materiale_confermato a false per prudenza
+            # eccessiva -- anche con titolo/etichetta che lo dichiaravano
+            # gia' esplicitamente -- per far crollare la stima su un singolo
+            # comp isolato in fondo alla forchetta). Corretta alla mediana,
+            # che pero' si e' rivelata a sua volta troppo severa: tagliava
+            # fuori meta' dei comp e, sommata allo sconto ASK del 25-30%
+            # gia' applicato altrove, portava spesso un affare con margine
+            # sano vicino al pareggio (caso reale: gonna Marni, mediana
+            # comp €59 -> tetto €44.25, quando la stima ragionata del
+            # cervello era €55 e i comp arrivavano fino a €100).
+            # Il 75* percentile resta piu' prudente del "comp piu' caro"
+            # riservato al materiale confermato (non si fida del singolo
+            # comp piu' alto, spesso un outlier residuo), ma non scarta piu'
+            # a priori la meta' superiore della forchetta: lascia passare la
+            # stima del cervello quando e' gia' in linea con il grosso dei
+            # comp, e interviene solo quando la supera davvero.
+            percentile_75 = _percentile(prezzi_tenuti, 75)
+            massimo_consentito = percentile_75 * fattore_sconto
+            descrizione_limite = f"materiale non confermato, 75* percentile comp €{percentile_75:.2f}"
         if target > massimo_consentito:
             limiti_applicati.append(
                 f"{descrizione_limite} scontato {v['sconto_ask_applicato_pct']:.0f}% = €{massimo_consentito:.2f}"
