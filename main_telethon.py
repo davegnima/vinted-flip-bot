@@ -2109,6 +2109,29 @@ _CLIENT_VINTED_POOL = []
 _client_generico = None   # Gemini/OpenAI/Serper/Resellbot: nessun proxy
 _client_telegram = None   # Bot API: timeout piu' corti, chiamate frequenti
 
+# Client HTTP DEDICATO all'account Vinted autenticato (ricerca visuale),
+# separato dal pool anonimo _CLIENT_VINTED_POOL -- aggiunto il 2026-09-20
+# per chiudere il bug "refresh riuscito ma redirect a /member/register
+# comunque": _prossimo_client_vinted() fa round-robin tra client condivisi
+# da TUTTO lo scraping anonimo (annunci, venditori), quindi ognuno di quei
+# client accumula nel proprio cookie jar cookie Datadome/anti-bot legati a
+# traffico anonimo ad alto volume, scorrelati dall'account dedicato. Il
+# refresh e la successiva chiamata search_by_image_id finivano cosi' su
+# client diversi (round-robin avanza a ogni chiamata) o comunque su un
+# client il cui cookie Datadome non corrisponde alla sessione autenticata
+# appena rinnovata -- mandare un JWT valido insieme a un cookie Datadome di
+# un'altra "sessione anonima" e' esattamente il tipo di incoerenza che fa
+# scattare un blocco anti-bot, a prescindere dalla validita' del token.
+# Con un client dedicato, riusato SEMPRE per refresh + search_by_image_id,
+# httpx accumula da solo (jar persistente normale, nessun parsing manuale)
+# i cookie Datadome/sessione ricevuti sulla home page e sul refresh, e la
+# chiamata search_by_image_id li porta con se' in modo coerente -- proprio
+# come farebbe un browser reale sempre loggato con lo stesso account.
+# NON aggiunto a _CLIENT_VINTED_POOL: lo scraping anonimo di annunci/
+# venditori non lo vede mai e resta interamente separato, come richiesto
+# esplicitamente dall'utente.
+_CLIENT_VINTED_AUTH = None
+
 
 def _crea_client_vinted(proxy_url=None):
     # NIENTE cookies=_VINTED_COOKIES qui (tolto il 2026-09-20, era li' dal
@@ -2135,12 +2158,20 @@ async def inizializza_client_http():
     mai a import-time: un AsyncClient costruito fuori dal loop che poi lo
     usera' e' una sorgente classica di 'Event loop is closed' e di
     connessioni che non vengono mai riutilizzate."""
-    global _client_generico, _client_telegram
+    global _client_generico, _client_telegram, _CLIENT_VINTED_AUTH
     if PROXY_LIST:
         for proxy_url in PROXY_LIST:
             _CLIENT_VINTED_POOL.append(_crea_client_vinted(proxy_url))
     else:
         _CLIENT_VINTED_POOL.append(_crea_client_vinted(None))
+
+    # Client dedicato all'account Vinted autenticato (vedi commento sopra
+    # _CLIENT_VINTED_AUTH): pinnato a UN SOLO proxy (il primo della lista, se
+    # presente) invece che in rotazione, cosi' anche l'IP resta coerente tra
+    # il refresh del token e la chiamata search_by_image_id -- un cambio di
+    # IP a meta' sessione autenticata sarebbe un altro segnale anomalo per
+    # l'anti-bot, oltre al cookie jar.
+    _CLIENT_VINTED_AUTH = _crea_client_vinted(PROXY_LIST[0] if PROXY_LIST else None)
 
     _client_generico = httpx.AsyncClient(
         follow_redirects=True,
@@ -2163,7 +2194,7 @@ async def chiudi_client_http():
     chiusi allo spegnimento del processo."""
     for client in _CLIENT_VINTED_POOL:
         await client.aclose()
-    for client in (_client_generico, _client_telegram):
+    for client in (_client_generico, _client_telegram, _CLIENT_VINTED_AUTH):
         if client is not None:
             await client.aclose()
 
@@ -2208,12 +2239,16 @@ async def _rinnova_token_vinted():
         )
         return False
 
-    client = _prossimo_client_vinted()
-    # Cookie passati ESPLICITAMENTE su queste due chiamate (non piu' sul
-    # client condiviso, vedi _crea_client_vinted): httpx li aggiunge solo
-    # alla richiesta corrente senza toccare il cookie jar persistente del
-    # client, quindi lo stesso client torna "pulito" per la prossima
-    # richiesta anonima fatta da qualunque altra parte del bot.
+    # Client DEDICATO (_CLIENT_VINTED_AUTH, non il pool anonimo): lo stesso
+    # client viene riusato per il refresh e per search_by_image_id, cosi'
+    # httpx accumula da solo nel suo jar i cookie Datadome/sessione coerenti
+    # con questo account -- vedi il lungo commento sopra la definizione di
+    # _CLIENT_VINTED_AUTH per il perche'.
+    client = _CLIENT_VINTED_AUTH
+    # Cookie JWT passati ESPLICITAMENTE (non allegati a costruzione, vedi
+    # _crea_client_vinted): httpx li aggiunge solo alla richiesta corrente
+    # (in merge col jar persistente del client, che qui e' voluto: e' proprio
+    # quel jar a portare i cookie anti-bot coerenti).
     cookies_auth = {k: v for k, v in _VINTED_COOKIES.items() if v}
 
     # Passo 1: CSRF token fresco dalla home page -- SENZA cookie (fix
@@ -2330,7 +2365,7 @@ async def _attendi_turno_vinted():
         _vinted_timestamp_ultima_richiesta[0] = time.monotonic()
 
 
-async def _vinted_get_con_retry(url, timeout=15, max_retries=3, headers_extra=None, cookies_extra=None):
+async def _vinted_get_con_retry(url, timeout=15, max_retries=3, headers_extra=None, cookies_extra=None, client_override=None):
     """GET con retry per lo scraping Vinted. In precedenza un singolo timeout
     faceva fallire l'intero scraping (foto, descrizione, venditore tutti
     vuoti), costringendo il cervello a lavorare quasi alla cieca.
@@ -2352,14 +2387,20 @@ async def _vinted_get_con_retry(url, timeout=15, max_retries=3, headers_extra=No
     completamente separato dal pool anonimo usato per lo scraping normale
     di annunci/venditori. Nessun impatto sulle altre chiamate: httpx aggiunge
     i cookie solo all'header Cookie di QUESTA richiesta, non li salva nel
-    cookie jar persistente del client."""
+    cookie jar persistente del client.
+
+    client_override (aggiunto il 2026-09-20): usa questo client httpx invece
+    di farne uno in round-robin dal pool anonimo -- serve per la sessione
+    autenticata (_CLIENT_VINTED_AUTH, vedi il commento li' sopra), che deve
+    SEMPRE riusare lo stesso client per tenere coerenti IP e cookie jar tra
+    il refresh del token e la ricerca visuale vera e propria."""
     headers_richiesta = VINTED_HEADERS if not headers_extra else {**VINTED_HEADERS, **headers_extra}
 
     ultimo_errore = None
     for tentativo in range(1, max_retries + 1):
         await _attendi_turno_vinted()
         try:
-            client = _prossimo_client_vinted()
+            client = client_override if client_override is not None else _prossimo_client_vinted()
             resp = await client.get(url, headers=headers_richiesta, cookies=cookies_extra, timeout=timeout)
             resp.raise_for_status()
             return resp
@@ -3880,7 +3921,23 @@ async def _risolvi_search_by_image_id(item_id, photo_id):
     NON VERIFICATO IN PRODUZIONE alla scrittura (vedi la docstring di
     _rinnova_token_vinted per il dettaglio) -- se il refresh fallisce si
     comporta esattamente come prima di questa modifica: fonte saltata,
-    nessuna rottura."""
+    nessuna rottura.
+
+    BUG TROVATO IN PRODUZIONE il 2026-09-20 e corretto: il refresh
+    riusciva (HTTP 200, nuovi access_token_web/refresh_token_web ricevuti)
+    ma QUESTA chiamata veniva comunque rediretta a /member/register/
+    select_type. Causa: sia il refresh sia questa chiamata prendevano un
+    client httpx dal pool anonimo condiviso (_prossimo_client_vinted, in
+    round-robin con TUTTO lo scraping annunci/venditori) -- ogni client del
+    pool accumula nel proprio cookie jar cookie Datadome/sessione da
+    traffico anonimo ad alto volume, scorrelati dall'account dedicato, e il
+    round-robin poteva far atterrare refresh e search_by_image_id su
+    client diversi comunque. Mandare un JWT valido insieme a un cookie
+    Datadome di un'altra sessione (anonima) e' un'incoerenza che Vinted
+    trattava come sessione sospetta. Corretto usando _CLIENT_VINTED_AUTH,
+    un client dedicato SEMPRE riusato per refresh + search_by_image_id (mai
+    toccato dal pool anonimo), cosi' il suo cookie jar resta coerente con
+    l'account autenticato in entrambe le chiamate."""
     if not VISUAL_SEARCH_ATTIVA:
         return None
     if not item_id or not photo_id:
@@ -3907,12 +3964,21 @@ async def _risolvi_search_by_image_id(item_id, photo_id):
         "Sec-Fetch-User": "?1",
     }
     # Cookie dell'account dedicato passati SOLO qui (cookies_extra, non piu'
-    # sul client condiviso): questa e' l'unica chiamata del bot che ha
-    # davvero bisogno di autenticazione (verificato via DevTools il
-    # 2026-09-18/19), tutto il resto dello scraping Vinted resta anonimo.
+    # sul client condiviso) E client_override=_CLIENT_VINTED_AUTH (non il
+    # pool anonimo, aggiunto il 2026-09-20): questa e' l'unica chiamata del
+    # bot che ha davvero bisogno di autenticazione (verificato via DevTools
+    # il 2026-09-18/19), tutto il resto dello scraping Vinted resta anonimo
+    # e passa dal pool round-robin come sempre. Riusare lo STESSO client di
+    # _rinnova_token_vinted e' il punto: porta con se' i cookie Datadome/
+    # sessione accumulati li', coerenti col JWT appena rinnovato -- prima
+    # (client preso dal pool anonimo in round-robin) questa richiesta poteva
+    # arrivare con un cookie Datadome di tutt'altra provenienza insieme a un
+    # JWT valido, un'incoerenza che Vinted trattava come sessione sospetta e
+    # rediriggeva a /member/register anche a refresh riuscito.
     resp = await _vinted_get_con_retry(
         url_intermedio, timeout=12, max_retries=2, headers_extra=headers_referer_annuncio,
         cookies_extra={k: v for k, v in _VINTED_COOKIES.items() if v},
+        client_override=_CLIENT_VINTED_AUTH,
     )
     if resp is None:
         return None
