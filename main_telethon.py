@@ -5906,7 +5906,8 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None):
         righe.append(f"👤 Venditore: {v['motivo_profilo_venditore']}")
 
     # --- comp usati, con la provenienza dichiarata accanto a ogni prezzo
-    comp_visibili = [c for c in v.get("comp_candidati", []) if not c.get("escluso")][:6]
+    comp_utilizzabili = [c for c in v.get("comp_candidati", []) if not c.get("escluso")]
+    comp_visibili = comp_utilizzabili[:6]
     if comp_visibili:
         righe += ["", "📊 **Comp considerati:**"]
         for comp in comp_visibili:
@@ -5915,6 +5916,25 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None):
             titolo = comp["titolo_verbatim"]
             titolo = titolo[:60] + "…" if len(titolo) > 60 else titolo
             righe.append(f"• €{comp['prezzo_eur']:.2f} — {titolo} _[{etichetta}]_")
+        # Split per fonte calcolato su TUTTI i comp utilizzabili (non solo i
+        # primi 6 mostrati sopra in dettaglio) -- richiesto dall'utente il
+        # 2026-09-20 per vedere a colpo d'occhio quanto pesa ciascuna fonte
+        # (Vinted testo/Serper, Vinted ricerca visuale, ragionamento/memoria
+        # del modello) senza dover attivare DEBUG_CONFRONTO_COMP_TELEGRAM,
+        # che aggiunge un blocco diagnostico molto piu' verboso e pensato
+        # per un altro scopo (confrontare i prezzi citati dal Cervello con
+        # quelli davvero ricevuti in pool).
+        conteggio_fonti = {}
+        for c in comp_utilizzabili:
+            fonte = c.get("fonte_reale", c["fonte"])
+            conteggio_fonti[fonte] = conteggio_fonti.get(fonte, 0) + 1
+        split_txt = " · ".join(
+            f"{ETICHETTA_FONTE_COMP.get(fonte, fonte)}: {conteggio_fonti[fonte]}"
+            for fonte in ("vinted_testo", "vinted_visuale", "memoria_modello")
+            if conteggio_fonti.get(fonte)
+        )
+        if split_txt:
+            righe.append(f"_Split fonti: {split_txt}_")
 
     if stats_comp and stats_comp.get("n_memoria"):
         n_memoria = stats_comp["n_memoria"]
