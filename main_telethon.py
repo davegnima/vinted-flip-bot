@@ -1312,7 +1312,7 @@ OCCHIO_RESPONSE_SCHEMA_GEMINI = _rimuovi_maxitems_da_array_di_oggetti(OCCHIO_RES
 # erano previste).
 # ==========================================================================
 
-def calcola_scarto_occhio(o, solo_cover_photo=False):
+def calcola_scarto_occhio(o, solo_cover_photo=False, listing_info=None):
     """Ritorna (scarta: bool, motivo: str|None) dai soli campi osservativi.
 
     solo_cover_photo: se le foto dell'annuncio non sono state scaricate e
@@ -1356,6 +1356,40 @@ def calcola_scarto_occhio(o, solo_cover_photo=False):
         return True, "[CONDIZIONE DISTRUTTA] Danno strutturale grave rilevato dall'analisi visiva."
 
     etichette = o.get("etichette") or []
+
+    # Regola severa specifica Miu Miu magliette/t-shirt (richiesta
+    # dall'utente il 2026-09-20): categoria a rischio fake molto alto e
+    # margini spesso risicati, quindi qui il bar per procedere e' piu' alto
+    # del generico "una qualunque etichetta leggibile" sotto -- serve
+    # SPECIFICAMENTE la main_label (l'etichetta interna, di solito cucita
+    # nel collo) leggibile almeno parzialmente. Se manca o e' illeggibile,
+    # skip anche se ci sono altre etichette (taglia, composizione, wash
+    # tag...) leggibili: per questa categoria quelle da sole non bastano a
+    # verificare l'autenticita'. Stessa eccezione "solo cover photo" delle
+    # altre regole di skip: senza le foto reali dell'annuncio non si puo'
+    # dire con certezza che l'etichetta interna manchi davvero.
+    li = listing_info or {}
+    brand_dichiarato = _norm(li.get("brand")) or ""
+    titolo_e_desc = f"{_norm(li.get('title')) or ''} {_norm(li.get('description')) or ''}"
+    e_miu_miu = "miu miu" in brand_dichiarato or "miu miu" in titolo_e_desc
+    MAGLIETTA_KEYWORDS = (
+        "maglietta", "magliette", "t-shirt", "tshirt", "t shirt", "tee",
+        "canotta", "canottiera", "top",
+    )
+    e_maglietta = any(kw in titolo_e_desc for kw in MAGLIETTA_KEYWORDS)
+    if e_miu_miu and e_maglietta and not solo_cover_photo:
+        main_label = next((e for e in etichette if _norm(e.get("tipo")) == "main_label"), None)
+        main_label_leggibile = bool(
+            main_label and _norm(main_label.get("leggibilita")) in ("nitida", "parziale")
+        )
+        if not main_label_leggibile:
+            return True, (
+                "[NESSUNA ETICHETTA INTERNA - MIU MIU T-SHIRT] Regola severa di categoria: "
+                "sulle magliette Miu Miu serve la main label (etichetta interna) leggibile "
+                "per procedere -- rischio fake troppo alto in questa categoria senza, "
+                "cervello non consultato anche se altre etichette sono visibili."
+            )
+
     nessuna_etichetta = not etichette or all(
         _norm(e.get("leggibilita")) == "illeggibile" for e in etichette
     )
@@ -5141,7 +5175,7 @@ def check_skip_pre_cervello(output_occhi_testo, listing_info=None, occhio_json=N
     default, quello che gira oggi in produzione."""
     if occhio_json is not None:
         solo_cover = bool(listing_info and listing_info.get("fallback_solo_cover_photo"))
-        return calcola_scarto_occhio(occhio_json, solo_cover_photo=solo_cover)
+        return calcola_scarto_occhio(occhio_json, solo_cover_photo=solo_cover, listing_info=listing_info)
 
     testo = (output_occhi_testo or "").lower()
 
@@ -5333,6 +5367,9 @@ def build_skip_report(listing_info, motivo_skip, output_occhi_testo=None):
     elif motivo_skip.startswith("[NESSUNA ETICHETTA VISIBILE"):
         riga_legit = "Nessuna etichetta visibile nelle foto fornite — autenticita' non verificabile allo stato attuale."
         riga_rischio = "ALTO (non verificabile) — servono piu' foto (filtro pre-cervello, risparmio token)"
+    elif motivo_skip.startswith("[NESSUNA ETICHETTA INTERNA - MIU MIU T-SHIRT"):
+        riga_legit = "Main label (etichetta interna) non leggibile — su questa categoria non si valuta senza, anche con altre etichette visibili."
+        riga_rischio = "ALTO (non verificabile) — regola severa Miu Miu t-shirt, servono foto della main label (filtro pre-cervello)"
     elif motivo_skip.startswith("[MARGINE PRELIMINARE NEGATIVO"):
         riga_legit = "Non valutato nel dettaglio — la stima preliminare indicava gia' una perdita netta."
         riga_rischio = "N/A — margine preliminare negativo (cervello non consultato per risparmiare token)"
