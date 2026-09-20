@@ -3903,7 +3903,20 @@ async def build_vinted_visual_search_url(item_id, photo_id, brand):
     essere un comp utile (l'utente ha verificato che il filtro brand e'
     quello che rende i risultati "molto verosimili"). Ritorna None se manca
     un ingrediente o la risoluzione fallisce -- il chiamante deve trattarlo
-    come fonte assente, non come errore."""
+    come fonte assente, non come errore.
+
+    NIENTE order=newest_first qui (fix 2026-09-20, dopo aver osservato in
+    log di produzione che i comp visuali erano categorie completamente
+    diverse dello stesso brand -- borse/profumi/gioielli mescolati a capi
+    d'abbigliamento -- invece di articoli simili alla foto): quel parametro
+    era stato copiato per analogia da build_vinted_search_url (ricerca
+    testuale, dove ha senso ordinare per data), ma su search_by_image_id
+    SOVRASCRIVE l'ordinamento per rilevanza/similarita' visiva che Vinted
+    applica di default su quell'endpoint, degradandolo a "ultimi articoli
+    del brand" su tutto il catalogo. L'unico URL verificato dall'utente via
+    DevTools il 2026-09-18 non aveva questo parametro. Lasciamo l'ordine di
+    default (rilevanza) e teniamo solo i filtri che restringono senza
+    riordinare (brand, status)."""
     brand_id = VINTED_BRAND_IDS.get((brand or "").strip().lower())
     if not brand_id:
         return None
@@ -3913,7 +3926,7 @@ async def build_vinted_visual_search_url(item_id, photo_id, brand):
     url = (
         f"https://www.vinted.it/catalog?search_by_image_id={quote(search_by_image_id)}"
         f"&brand_ids[]={brand_id}"
-        "&order=newest_first&status_ids[]=1&status_ids[]=2&status_ids[]=3"
+        "&status_ids[]=1&status_ids[]=2&status_ids[]=3"
     )
     log.info("build_vinted_visual_search_url: URL catalogo costruito: %s", url)
     return url
@@ -4562,11 +4575,18 @@ async def search_comps_completo(brand, categoria, query_base, catalog_id=None, m
     visual_comp_puliti = None
     if fonte_visuale_riuscita:
         visual_comp_puliti = _rimuovi_comp_autoreferenziale(risultati.get("vinted_visuale"), query_base)
+        # _filtra_comp_per_categoria RIATTIVATO qui il 2026-09-20: log di
+        # produzione (Jean Paul Gaultier, Max Mara, Vivienne Westwood) hanno
+        # mostrato borse/profumi/gioielli/categorie completamente diverse
+        # mescolate nei comp "visuali" -- l'assunzione che bastasse il
+        # search_by_image_id a restringere per somiglianza visiva era
+        # sbagliata (causa reale: order=newest_first sull'URL, appena
+        # rimosso in build_vinted_visual_search_url). Finche' non
+        # verifichiamo in produzione che il fix dell'ordinamento basta da
+        # solo, questo filtro resta come rete di sicurezza anti-categoria-
+        # sbagliata anche sulla fonte visuale.
+        visual_comp_puliti = _filtra_comp_per_categoria(visual_comp_puliti, categoria)
         visual_comp_puliti = _filtra_comp_per_brand_sottolinee(visual_comp_puliti, brand)
-        # NIENTE _filtra_comp_per_categoria qui: la ricerca e' gia' ristretta
-        # dalla similarita' visiva con la foto reale, un filtro testuale sulla
-        # categoria rischierebbe solo di scartare match validi con titoli
-        # atipici.
         log.info(
             "search_comps_completo: comp visuali DOPO pulizia (item_id=%s, brand=%s) -> %r",
             item_id, brand, visual_comp_puliti,
