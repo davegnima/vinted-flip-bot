@@ -5266,6 +5266,28 @@ def check_skip_pre_cervello(output_occhi_testo, listing_info=None, occhio_json=N
     return False, None
 
 
+def _escapa_markdown_legacy(testo):
+    """Sfugge i caratteri speciali della sintassi Markdown legacy di Telegram
+    (_, *, `, [) in un testo che finira' dentro un messaggio con
+    parse_mode=Markdown. Serve per qualunque testo NON scritto a mano da noi
+    -- tipicamente estratto via regex dall'output grezzo del modello --
+    perche' puo' contenere sequenze come nomi di campo JSON ('main_label',
+    'font_etichetta') o valori enum ('parziale_servono_altre_foto') che
+    Telegram interpreta come marcatori di formattazione. Un numero dispari
+    di underscore nell'INTERO messaggio fa fallire il parsing di tutto il
+    messaggio, non solo del pezzo incriminato (bug reale in produzione il
+    2026-09-20, caso 'Polo Loro Piana': il testo grezzo dell'Occhio dentro
+    build_skip_report conteneva 'main_label', 'font_etichetta' e
+    'parziale_servono_altre_foto', 5 underscore in totale, numero dispari ->
+    HTTP 400 'can't find end of the entity'. Stesso identico meccanismo gia'
+    visto e risolto per l'URL della ricerca visuale in
+    render_messaggio_verdetto, qui pero' il testo e' prosa libera, quindi la
+    soluzione e' sfuggire i caratteri invece di un link Markdown o backtick."""
+    if not testo:
+        return testo
+    return re.sub(r"([_*`\[])", r"\\\1", testo)
+
+
 def build_skip_report(listing_info, motivo_skip, output_occhi_testo=None):
     if motivo_skip.startswith("[MARGINE INSUFFICIENTE"):
         riga_legit = "Non valutato — filtro pre-cervello su margine insufficiente. Autenticita' non in dubbio."
@@ -5351,6 +5373,15 @@ def build_skip_report(listing_info, motivo_skip, output_occhi_testo=None):
         )
         if m:
             messaggio_skip = m.group(1).strip()
+
+    # Sfuggiti QUI, tutti insieme e appena prima dell'assemblaggio finale,
+    # invece che nei singoli punti sopra dove vengono valorizzati: piu'
+    # facile garantire che nessun punto di uscita della funzione se ne
+    # dimentichi. riga_rischio non serve escaparla (e' sempre una delle
+    # stringhe fisse nel blocco elif qui sopra, mai testo del modello).
+    riga_legit = _escapa_markdown_legacy(riga_legit)
+    motivo_breve = _escapa_markdown_legacy(motivo_breve)
+    messaggio_skip = _escapa_markdown_legacy(messaggio_skip)
 
     return (
         "## Verdetto operativo\n"
@@ -6248,7 +6279,8 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
         )
         righe.append(
             f"📈 Attesa €{verdetto['vendita_attesa']:.2f} · Listino €{verdetto['prezzo_da_listare']:.2f} "
-            f"· Minimo €{verdetto['minimo_accettabile_rivendita']:.2f} · {v.get('linea_o_era_rilevata')}"
+            f"· Minimo €{verdetto['minimo_accettabile_rivendita']:.2f} · "
+            f"{_escapa_markdown_legacy(v.get('linea_o_era_rilevata'))}"
         )
         # --- obiettivo trattativa: mostrato solo quando e' la decisione
         # presa. L'importo e' quello calcolato al massimo sconto consentito,
@@ -6310,21 +6342,27 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
         righe.append("")
         righe.append("💬 **Azioni (tocca per copiare):**")
         if testo_messaggio:
-            righe.append(f"`{testo_messaggio}`")
+            # Dentro un backtick singolo Telegram non scansiona _, *, [ per
+            # marcatori di formattazione (e' gia' protetto), ma un backtick
+            # LETTERALE nel testo del modello chiuderebbe lo span in anticipo
+            # -- tolto invece di sfuggito, un backtick a meta' frase non si
+            # legge comunque bene in un messaggio Telegram.
+            righe.append(f"`{testo_messaggio.replace('`', chr(39))}`")
             if messaggio_sostituito:
                 righe.append(
                     "_⚠️ messaggio del cervello sostituito: proponeva l'acquisto a prezzo pieno "
                     "senza nessuna offerta, in contraddizione con la decisione TRATTA._"
                 )
         if domande:
-            righe.append(f"`{' '.join(domande)}`")
+            domande_pulite = [d.replace("`", chr(39)) for d in domande]
+            righe.append(f"`{' '.join(domande_pulite)}`")
 
     # === 4. SEMINTERRATO: analisi, comp, link, avvisi -- tutto cio' che non
     # serve alla decisione immediata ma resta consultabile scorrendo giu' ===
-    righe += ["", "---", "🧠 **Analisi dell'analista:**", v["note_analista"]]
-    righe.append(f"_{v['legit_motivo_specifico']}_")
+    righe += ["", "---", "🧠 **Analisi dell'analista:**", _escapa_markdown_legacy(v["note_analista"])]
+    righe.append(f"_{_escapa_markdown_legacy(v['legit_motivo_specifico'])}_")
     if v.get("motivo_profilo_venditore") and v["motivo_profilo_venditore"] != "non specificato":
-        righe.append(f"👤 Venditore: {v['motivo_profilo_venditore']}")
+        righe.append(f"👤 Venditore: {_escapa_markdown_legacy(v['motivo_profilo_venditore'])}")
 
     # --- comp usati, con la provenienza dichiarata accanto a ogni prezzo
     comp_utilizzabili = [c for c in v.get("comp_candidati", []) if not c.get("escluso")]
@@ -6336,6 +6374,7 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
                 comp.get("fonte_reale", comp["fonte"]), "?")
             titolo = comp["titolo_verbatim"]
             titolo = titolo[:60] + "…" if len(titolo) > 60 else titolo
+            titolo = _escapa_markdown_legacy(titolo)
             righe.append(f"• €{comp['prezzo_eur']:.2f} — {titolo} _[{etichetta}]_")
         # Split per fonte calcolato su TUTTI i comp utilizzabili (non solo i
         # primi 6 mostrati sopra in dettaglio) -- richiesto dall'utente il
@@ -6424,12 +6463,15 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
                     f"ridotta a €{verdetto['prezzo_target']:.2f}._"
                 )
         for limite in verdetto["limiti_applicati"]:
-            righe.append(f"⚠️ _{limite}_")
+            # limite spesso incorpora testo libero del modello (es.
+            # v.get('descrizione_difetto') dentro calcola_verdetto), quindi
+            # stessa protezione delle altre stringhe grezze qui sopra.
+            righe.append(f"⚠️ _{_escapa_markdown_legacy(limite)}_")
 
     if problemi:
         righe.append("")
         for problema in problemi:
-            righe.append(f"⚠️ _Dato anomalo dal cervello: {problema}_")
+            righe.append(f"⚠️ _Dato anomalo dal cervello: {_escapa_markdown_legacy(problema)}_")
 
     return "\n".join(righe)
 
@@ -6874,9 +6916,14 @@ async def process_listing(parsed, url, cover_photo_bytes):
             "essere un falso negativo dovuto a questo, non ai capi reali."
         )
 
+    # Titolo e brand vengono dallo scraping Vinted, non scritti da noi: un
+    # titolo con underscore/asterisco (es. "T_shirt_vintage") rompe il
+    # parsing Markdown esattamente come il testo del modello altrove (stesso
+    # bug del 2026-09-20, qui pero' sulla RIGA PIU' VISTA del messaggio,
+    # dentro *asterischi* di grassetto per giunta -- priorita' alta).
     header = (
-        f"🆕 *{listing_info.get('title')}*\n"
-        f"🏷️ {listing_info.get('brand') or '?'} · 💰 {listing_info.get('price') or '?'} EUR\n"
+        f"🆕 *{_escapa_markdown_legacy(listing_info.get('title'))}*\n"
+        f"🏷️ {_escapa_markdown_legacy(listing_info.get('brand')) or '?'} · 💰 {listing_info.get('price') or '?'} EUR\n"
         f"🔧 Scenario {scenario_usato}{info_scenario}"
         f"{info_foto}"
         + f"\n{url or ''}\n{'—' * 20}\n"
