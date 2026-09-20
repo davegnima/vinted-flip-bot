@@ -3856,6 +3856,93 @@ def build_vinted_search_url(brand, categoria, materiale=None, catalog_id=None):
     return url, False
 
 
+async def _risolvi_search_by_image_id_via_serper(url_intermedio):
+    """Fallback aggiunto il 2026-09-20 dopo la prova in produzione che il
+    blocco su /search_by_image e' un blocco Datadome a livello di edge (HTTP
+    403 diretto, niente redirect, niente pagina) sul fingerprint TLS/HTTP
+    del client httpx -- confermato perche' NELLO STESSO log lo scraping
+    normale (pagine annuncio/venditore) con lo stesso identico stack
+    httpx funziona regolarmente: non e' un blocco generico su Python, e'
+    specifico di questo endpoint sensibile.
+
+    Il servizio di scraping di Serper pero' su QUESTO STESSO endpoint
+    riceve 200 OK nello stesso log (lo si vede usato subito dopo per altre
+    fonti) -- il suo infrastructure/fingerprint passa dove il nostro client
+    diretto viene bloccato. Tentativo: fargli scrape-are l'URL intermedio
+    di search_by_image e provare a recuperare l'URL finale (dopo il
+    redirect 307 a /catalog?search_by_image_id=...) dai metadati o dal
+    contenuto che restituisce, invece di fare l'intera catena (che aveva
+    dato risultati generici/degradati per il catalogo, vedi
+    _scrape_catalogo_vinted_diretto) -- qui serve solo l'ID risolto, non il
+    contenuto del catalogo.
+
+    NON VERIFICATO IN PRODUZIONE alla scrittura: non e' confermato che
+    Serper esponga l'URL finale dopo un redirect nella sua risposta, ne'
+    sotto quale nome di campo. Per questo logga le chiavi di primo livello
+    ricevute PRIMA di provare a estrarne uno specifico, cosi' se il
+    tentativo fallisce il prossimo log di produzione mostra la forma reale
+    della risposta invece di doverla indovinare una seconda volta. Fallisce
+    in modo sicuro: ritorna None su qualunque errore o mancata corrispondenza,
+    il chiamante si comporta come se il fallback non esistesse."""
+    if not SERPER_API_KEY:
+        return None
+    payload = {"url": url_intermedio, "includeMarkdown": True, "includeRawHtml": True, "includeHtml": True}
+    try:
+        resp = await _client_generico.post(
+            "https://scrape.serper.dev",
+            headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
+            json=payload, timeout=15,
+        )
+        if _e_errore_crediti_serper(resp):
+            log.info("_risolvi_search_by_image_id_via_serper: Serper fallito (crediti/HTTP %d).", resp.status_code)
+            return None
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:
+        log.info("_risolvi_search_by_image_id_via_serper: chiamata Serper fallita: %s", e)
+        return None
+
+    log.info("_risolvi_search_by_image_id_via_serper: chiavi ricevute da Serper: %s", list(data.keys()))
+
+    # Primo tentativo: un campo che indichi esplicitamente l'URL finale
+    # raggiunto da Serper dopo aver seguito eventuali redirect.
+    candidati_url = [
+        data.get("url"), data.get("finalUrl"), data.get("resolvedUrl"),
+        (data.get("metadata") or {}).get("url") if isinstance(data.get("metadata"), dict) else None,
+    ]
+    for candidato in candidati_url:
+        if candidato and "search_by_image_id=" in candidato:
+            m = re.search(r"search_by_image_id=([A-Za-z0-9_]+)", candidato)
+            if m:
+                log.info(
+                    "_risolvi_search_by_image_id_via_serper: OK (da campo URL) -> search_by_image_id=%s (url=%s)",
+                    m.group(1), candidato,
+                )
+                return m.group(1)
+
+    # Secondo tentativo: l'ID potrebbe comparire dentro il contenuto
+    # restituito (link canonico, og:url, redirect lato JS) anche se Serper
+    # non espone un campo "url" dedicato.
+    for chiave in ("markdown", "text", "html", "rawHtml"):
+        contenuto = data.get(chiave)
+        if not contenuto:
+            continue
+        m = re.search(r"search_by_image_id=([A-Za-z0-9_]+)", contenuto)
+        if m:
+            log.info(
+                "_risolvi_search_by_image_id_via_serper: OK (da campo '%s') -> search_by_image_id=%s",
+                chiave, m.group(1),
+            )
+            return m.group(1)
+
+    log.info(
+        "_risolvi_search_by_image_id_via_serper: nessun search_by_image_id trovato nella risposta Serper "
+        "(chiavi disponibili: %s) -- formato risposta da rivedere sul prossimo log.",
+        list(data.keys()),
+    )
+    return None
+
+
 async def _risolvi_search_by_image_id(item_id, photo_id):
     """Il photo_id della foto (estratto dall'URL CDN, es. "06_00506_...")
     NON e' l'ID accettato da search_by_image_id nel catalogo -- verificato
@@ -3980,33 +4067,61 @@ async def _risolvi_search_by_image_id(item_id, photo_id):
         cookies_extra={k: v for k, v in _VINTED_COOKIES.items() if v},
         client_override=_CLIENT_VINTED_AUTH,
     )
-    if resp is None:
-        return None
-    # str(): con httpx resp.url e' un oggetto URL, non una stringa -- un
-    # "in" o una re.search direttamente su di esso solleverebbe TypeError
-    # (con requests era una stringa e funzionava).
-    url_finale = str(resp.url)
-    if "/member/register" in url_finale or "/member/login" in url_finale:
+    esito_diretto = None
+    if resp is not None:
+        # str(): con httpx resp.url e' un oggetto URL, non una stringa -- un
+        # "in" o una re.search direttamente su di esso solleverebbe TypeError
+        # (con requests era una stringa e funzionava).
+        url_finale = str(resp.url)
+        if "/member/register" in url_finale or "/member/login" in url_finale:
+            log.info(
+                "_risolvi_search_by_image_id: redirect a login/registrazione NONOSTANTE "
+                "VINTED_ACCESS_TOKEN impostato e non scaduto (%s) -- possibile token "
+                "invalidato lato Vinted prima della scadenza dichiarata, o blocco Datadome "
+                "sul fingerprint della richiesta (vedi nota TLS/Datadome nella docstring "
+                "sopra). Provo il fallback via Serper prima di arrendermi.",
+                url_finale,
+            )
+        else:
+            m = re.search(r"search_by_image_id=([A-Za-z0-9_]+)", url_finale)
+            if m:
+                esito_diretto = m.group(1)
+            else:
+                log.info(
+                    "_risolvi_search_by_image_id: redirect non ha prodotto un search_by_image_id "
+                    "nell'URL finale (%s) -- provo il fallback via Serper prima di arrendermi.",
+                    url_finale,
+                )
+    else:
         log.info(
-            "_risolvi_search_by_image_id: redirect a login/registrazione NONOSTANTE "
-            "VINTED_ACCESS_TOKEN impostato e non scaduto (%s) -- possibile token "
-            "invalidato lato Vinted prima della scadenza dichiarata, o blocco Datadome "
-            "sul fingerprint della richiesta (vedi nota TLS/Datadome nella docstring "
-            "sopra). Fonte visuale saltata per questo item.",
-            url_finale,
+            "_risolvi_search_by_image_id: richiesta diretta fallita (probabile 403 Datadome "
+            "sul fingerprint del client -- vedi nota TLS/Datadome nella docstring sopra). "
+            "Provo il fallback via Serper prima di arrendermi."
         )
-        return None
-    m = re.search(r"search_by_image_id=([A-Za-z0-9_]+)", url_finale)
-    if not m:
+
+    if esito_diretto:
         log.info(
-            "_risolvi_search_by_image_id: redirect non ha prodotto un search_by_image_id "
-            "nell'URL finale (%s) -- fonte visuale saltata per questo item.",
-            url_finale,
+            "_risolvi_search_by_image_id: OK (diretto) item_id=%s photo_id=%s -> search_by_image_id=%s",
+            item_id, photo_id, esito_diretto,
         )
-        return None
+        return esito_diretto
+
+    # Fallback via Serper (aggiunto il 2026-09-20): il client diretto viene
+    # bloccato a livello edge su QUESTO endpoint (403 o redirect a signup),
+    # ma nello stesso log lo stesso Serper riceve 200 OK dallo stesso host
+    # -- vedi _risolvi_search_by_image_id_via_serper per il dettaglio.
+    esito_serper = await _risolvi_search_by_image_id_via_serper(url_intermedio)
+    if esito_serper:
+        log.info(
+            "_risolvi_search_by_image_id: OK (fallback Serper) item_id=%s photo_id=%s -> search_by_image_id=%s",
+            item_id, photo_id, esito_serper,
+        )
+        return esito_serper
+
     log.info(
-        "_risolvi_search_by_image_id: OK item_id=%s photo_id=%s -> search_by_image_id=%s (url_finale=%s)",
-        item_id, photo_id, m.group(1), url_finale,
+        "_risolvi_search_by_image_id: nessuna via (diretta o Serper) ha risolto search_by_image_id "
+        "per item_id=%s -- fonte visuale saltata per questo item.",
+        item_id,
     )
     return m.group(1)
 
