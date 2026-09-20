@@ -2006,10 +2006,36 @@ IMAGE_DOWNLOAD_HEADERS = {
     "Sec-Fetch-Dest": "image", "Sec-Fetch-Mode": "no-cors", "Sec-Fetch-Site": "same-site",
     "Connection": "keep-alive",
 }
+
+# TOKEN_FILE: dentro /data, il path del Volume Railway ("vinted-tokens")
+# creato e agganciato al servizio "worker" il 2026-09-20 apposta per questo.
+# Senza quel Volume montato, qualunque path relativo finirebbe sulla parte
+# effimera del filesystem e sparirebbe a ogni riavvio/redeploy -- e' successo
+# storicamente col tentativo di "log esiti reali", da qui la scelta di
+# scrivere esplicitamente sotto /data invece che nella working directory.
+# Se in futuro il Volume viene rimosso o rimontato altrove, il fallback su
+# VINTED_ACCESS_TOKEN/REFRESH_TOKEN dalla env var resta comunque intatto
+# (vedi sotto): un errore di scrittura qui non rompe nulla, semplicemente
+# si perde la persistenza tra riavvii.
+TOKEN_FILE = "/data/vinted_tokens.json"
+
 _VINTED_COOKIES = {}
-if VINTED_ACCESS_TOKEN:
+if os.path.exists(TOKEN_FILE):
+    try:
+        with open(TOKEN_FILE, "r") as f:
+            _salvati = json.load(f)
+        if _salvati.get("access_token_web"):
+            _VINTED_COOKIES["access_token_web"] = _salvati["access_token_web"]
+        if _salvati.get("refresh_token_web"):
+            _VINTED_COOKIES["refresh_token_web"] = _salvati["refresh_token_web"]
+    except Exception as e:
+        log.warning("Impossibile leggere %s (probabilmente non esiste ancora): %s", TOKEN_FILE, e)
+# La env var resta il fallback/seed: se il file non c'e' (primo avvio, o
+# container ripartito senza Volume) o non contiene un token, si riparte da
+# quello che l'utente ha messo su Railway.
+if not _VINTED_COOKIES.get("access_token_web") and VINTED_ACCESS_TOKEN:
     _VINTED_COOKIES["access_token_web"] = VINTED_ACCESS_TOKEN
-if VINTED_REFRESH_TOKEN:
+if not _VINTED_COOKIES.get("refresh_token_web") and VINTED_REFRESH_TOKEN:
     _VINTED_COOKIES["refresh_token_web"] = VINTED_REFRESH_TOKEN
 
 
@@ -2132,6 +2158,120 @@ def _prossimo_client_vinted():
     client = _CLIENT_VINTED_POOL[_proxy_indice_rotazione[0] % len(_CLIENT_VINTED_POOL)]
     _proxy_indice_rotazione[0] += 1
     return client
+
+
+_vinted_refresh_lock = asyncio.Lock()
+
+
+async def _rinnova_token_vinted():
+    """Rinnova access_token_web/refresh_token_web chiamando l'endpoint di
+    refresh catturato dall'utente via DevTools il 2026-09-20
+    (POST /web/api/auth/refresh, richiede un x-csrf-token fresco preso dalla
+    home page).
+
+    NON VERIFICATO IN PRODUZIONE al momento della scrittura: non e' confermato
+    ne' il formato esatto del meta tag CSRF nella home ne' che la risposta del
+    refresh contenga davvero nuovi cookie access_token_web/refresh_token_web
+    (l'utente ha catturato solo la richiesta, non la risposta). Per questo la
+    funzione logga in dettaglio cosa arriva davvero (status, corpo troncato,
+    nomi dei cookie ricevuti) invece di assumerlo -- se il formato reale e'
+    diverso, il prossimo log di produzione lo mostra e si corregge il parsing
+    senza dover indovinare una seconda volta.
+
+    Fallisce in modo sicuro: in caso di qualunque errore o risposta inattesa
+    ritorna False senza toccare _VINTED_COOKIES, quindi il chiamante si
+    comporta esattamente come se il refresh automatico non esistesse (fonte
+    visuale saltata per questo item, nessuna rottura del resto della
+    pipeline)."""
+    refresh_token = _VINTED_COOKIES.get("refresh_token_web")
+    if not refresh_token or _jwt_scaduto(refresh_token):
+        log.warning(
+            "_rinnova_token_vinted: refresh_token_web assente o scaduto -- serve un nuovo "
+            "VINTED_REFRESH_TOKEN su Railway (nessun refresh automatico possibile da qui)."
+        )
+        return False
+
+    client = _prossimo_client_vinted()
+
+    # Passo 1: CSRF token fresco dalla home page. Pattern del meta tag non
+    # confermato su una risposta reale -- se fallisce lo si vede nel log qui
+    # sotto e si aggiusta la regex, non si fallisce in silenzio.
+    try:
+        resp_home = await client.get("https://www.vinted.it/", timeout=15.0)
+        resp_home.raise_for_status()
+    except Exception as e:
+        log.warning("_rinnova_token_vinted: GET home page fallita: %s", e)
+        return False
+    m_csrf = re.search(r'<meta[^>]+name="csrf-token"[^>]+content="([^"]+)"', resp_home.text)
+    if not m_csrf:
+        log.warning(
+            "_rinnova_token_vinted: nessun meta csrf-token trovato nella home page -- "
+            "il markup potrebbe essere diverso da quello atteso. Refresh annullato."
+        )
+        return False
+    csrf_token = m_csrf.group(1)
+
+    # Passo 2: POST di refresh con il CSRF token.
+    headers_refresh = dict(VINTED_HEADERS)
+    headers_refresh.update({
+        "accept": "application/json, text/plain, */*",
+        "referer": "https://www.vinted.it/session-refresh?ref_url=%2F",
+        "x-csrf-token": csrf_token,
+    })
+    try:
+        resp = await client.post(
+            "https://www.vinted.it/web/api/auth/refresh", headers=headers_refresh, timeout=15.0
+        )
+    except Exception as e:
+        log.warning("_rinnova_token_vinted: chiamata all'endpoint di refresh fallita: %s", e)
+        return False
+
+    if resp.status_code >= 400:
+        log.warning(
+            "_rinnova_token_vinted: refresh HTTP %d, corpo: %s",
+            resp.status_code, resp.text[:300],
+        )
+        return False
+
+    # Log dei nomi dei cookie ricevuti PRIMA di assumere quali siano quelli
+    # giusti -- e' il punto non verificato di tutta la funzione.
+    nomi_cookie_ricevuti = list(resp.cookies.keys())
+    log.info("_rinnova_token_vinted: refresh HTTP %d, cookie ricevuti: %s",
+              resp.status_code, nomi_cookie_ricevuti)
+
+    nuovo_access = resp.cookies.get("access_token_web")
+    nuovo_refresh = resp.cookies.get("refresh_token_web")
+    if not nuovo_access:
+        log.warning(
+            "_rinnova_token_vinted: risposta HTTP %d ma nessun cookie 'access_token_web' "
+            "nella risposta (cookie ricevuti: %s) -- il formato reale e' probabilmente "
+            "diverso da quello previsto, va corretto guardando questo log.",
+            resp.status_code, nomi_cookie_ricevuti,
+        )
+        return False
+
+    _VINTED_COOKIES["access_token_web"] = nuovo_access
+    _VINTED_COOKIES["refresh_token_web"] = nuovo_refresh or refresh_token
+
+    # Propaga a TUTTI i client del pool: ognuno ha la propria copia dei
+    # cookie presa a costruzione, mutare _VINTED_COOKIES da sola non basta.
+    for c in _CLIENT_VINTED_POOL:
+        c.cookies.set("access_token_web", _VINTED_COOKIES["access_token_web"], domain=".vinted.it")
+        c.cookies.set("refresh_token_web", _VINTED_COOKIES["refresh_token_web"], domain=".vinted.it")
+
+    # Persistenza su /data (Volume Railway "vinted-tokens", 2026-09-20):
+    # sopravvive ai riavvii/redeploy. Il try/except resta comunque -- se il
+    # Volume viene rimosso o il path cambia, un errore qui non deve rompere
+    # il refresh appena riuscito, solo la sua persistenza tra un riavvio e
+    # l'altro.
+    try:
+        with open(TOKEN_FILE, "w") as f:
+            json.dump(_VINTED_COOKIES, f)
+    except Exception as e:
+        log.warning("_rinnova_token_vinted: impossibile salvare %s: %s", TOKEN_FILE, e)
+
+    log.info("_rinnova_token_vinted: access token Vinted rinnovato con successo.")
+    return True
 
 
 # Rate-limit Vinted: la pausa minima tra due richieste consecutive va
@@ -3684,24 +3824,34 @@ async def _risolvi_search_by_image_id(item_id, photo_id):
     con un account Vinted dedicato/sacrificabile (mai il suo account
     principale) per questo solo scopo. VINTED_ACCESS_TOKEN/REFRESH_TOKEN
     (env var, vedi CONFIGURAZIONE in testa al file) portano quella sessione
-    autenticata; se assenti o scaduti la funzione si comporta esattamente
-    come nello stato "chiuso" sopra (ritorna None, nessuna rottura del
-    resto della pipeline). Refresh automatico del token NON ancora
-    implementato (l'endpoint esatto va ancora catturato via DevTools): per
-    ora, quando l'access token scade, questa fonte torna semplicemente
-    inattiva finche' l'utente non aggiorna manualmente la env var su
-    Railway con un nuovo access_token_web copiato dal browser."""
+    autenticata; se assenti la funzione si comporta esattamente come nello
+    stato "chiuso" sopra (ritorna None, nessuna rottura del resto della
+    pipeline).
+
+    RIAPERTA di nuovo il 2026-09-20: refresh automatico via
+    _rinnova_token_vinted() quando l'access token e' scaduto, invece di
+    restare inattiva finche' l'utente non lo aggiorna a mano su Railway.
+    NON VERIFICATO IN PRODUZIONE alla scrittura (vedi la docstring di
+    _rinnova_token_vinted per il dettaglio) -- se il refresh fallisce si
+    comporta esattamente come prima di questa modifica: fonte saltata,
+    nessuna rottura."""
     if not VISUAL_SEARCH_ATTIVA:
         return None
     if not item_id or not photo_id:
         return None
-    if not VINTED_ACCESS_TOKEN or _jwt_scaduto(VINTED_ACCESS_TOKEN):
-        log.info(
-            "_risolvi_search_by_image_id: VINTED_ACCESS_TOKEN assente o scaduto -- "
-            "fonte visuale saltata per questo item (serve un token fresco dall'account "
-            "dedicato, aggiornabile su Railway)."
-        )
-        return None
+    if not _VINTED_COOKIES.get("access_token_web") or _jwt_scaduto(_VINTED_COOKIES.get("access_token_web")):
+        async with _vinted_refresh_lock:
+            # Doppio controllo dentro il lock: un altro task in parallelo
+            # potrebbe aver gia' rinnovato mentre aspettavamo il lock.
+            if not _VINTED_COOKIES.get("access_token_web") or _jwt_scaduto(_VINTED_COOKIES.get("access_token_web")):
+                log.info("_risolvi_search_by_image_id: access token scaduto/assente, tento il refresh automatico...")
+                if not await _rinnova_token_vinted():
+                    log.info(
+                        "_risolvi_search_by_image_id: refresh automatico fallito -- fonte visuale "
+                        "saltata per questo item (serve un token fresco dall'account dedicato, "
+                        "aggiornabile su Railway)."
+                    )
+                    return None
     url_intermedio = f"https://www.vinted.it/items/{item_id}/search_by_image?photo_id={quote(photo_id)}"
     headers_referer_annuncio = {
         "Referer": f"https://www.vinted.it/items/{item_id}",
