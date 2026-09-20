@@ -245,7 +245,11 @@ BOT_VERSION = "2026-09-19-cervello-json-strutturato-asyncio"
 COMMISSIONE_PROTEZIONE_PCT = 0.05      # protezione acquisti Vinted, quota sul prezzo
 COMMISSIONE_PROTEZIONE_FISSA = 0.70    # protezione acquisti Vinted, quota fissa
 SPEDIZIONE_STIMATA_EUR = 2.50          # tariffa IT, la piu' economica
-QUOTA_INCASSO_NETTO = 0.80             # incasso reale = prezzo di vendita x 0.80
+QUOTA_INCASSO_NETTO = 0.80             # NON PIU' USATA nel calcolo di calcola_verdetto
+                                        # (tolta il 2026-09-20 su richiesta esplicita
+                                        # dell'utente: raddoppiava lo sconto gia'
+                                        # applicato al target). Lasciata qui solo come
+                                        # riferimento storico, nessun codice la legge piu'.
 SCONTO_TIPICO_TRATTATIVA_VENDITA = 0.10  # sconto medio che un acquirente strappa in
                                           # trattativa su Vinted prima di comprare: usato
                                           # SOLO per calcolare "prezzo da listare" (di
@@ -253,8 +257,17 @@ SCONTO_TIPICO_TRATTATIVA_VENDITA = 0.10  # sconto medio che un acquirente strapp
                                           # avere margine di trattativa), NON per la
                                           # decisione COMPRA/TRATTA che resta invariata
 
-SOGLIA_MARGINE_COMPRA = 20.0           # EUR netti minimi per un COMPRA
-SOGLIA_ROI_COMPRA = 100.0              # % minima di ROI per un COMPRA
+SOGLIA_MARGINE_COMPRA = 25.0           # EUR netti minimi per un COMPRA (alzata da 20 a 25
+                                        # il 2026-09-20 su richiesta esplicita dell'utente).
+                                        # Usata sia per la decisione compra/tratta/non-compra
+                                        # (insieme a SOGLIA_ROI_COMPRA qui sotto) sia, DA SOLA
+                                        # senza il floor ROI, per il "minimo accettabile"
+                                        # mostrato in chat.
+SOGLIA_ROI_COMPRA = 100.0              # % minima di ROI per COMPRA/TRATTA. Chiarito il
+                                        # 2026-09-20 su richiesta esplicita dell'utente: resta
+                                        # nella decisione compra/tratta/non-compra, ma NON
+                                        # entra nel calcolo del "minimo accettabile" mostrato
+                                        # in chat (quello usa solo SOGLIA_MARGINE_COMPRA).
 SOGLIA_MARGINE_URGENZA = 30.0          # EUR netti minimi per "Alta urgenza"
 SOGLIA_ROI_URGENZA = 150.0             # % minima di ROI per "Alta urgenza"
 SCONTO_MAX_TRATTATIVA = 0.40           # sconto massimo trattabile sul PRODOTTO
@@ -5978,33 +5991,29 @@ def calcola_verdetto(v, prezzo_prodotto):
 
     target = max(0.0, round(target, 2))
 
-    incasso = target * QUOTA_INCASSO_NETTO
+    # --- incasso = vendita attesa, senza sconto forfettario (tolto il
+    # 2026-09-20 su richiesta esplicita dell'utente: il -20% di
+    # QUOTA_INCASSO_NETTO sommato alla soglia ROI>=100% rendeva il "minimo
+    # accettabile" assurdamente piu' alto della vendita attesa reale, es.
+    # caso Missoni: vendita attesa 29.75 ma minimo accettabile 81.50. Da qui
+    # in poi compra/tratta si valutano sulla vendita attesa cosi' com'e'.
+    # QUOTA_INCASSO_NETTO resta definita sopra ma non e' piu' usata qui.
+    vendita_attesa = target
+    incasso = vendita_attesa
     margine = incasso - acquisto_pieno
     roi = (margine / acquisto_pieno * 100) if acquisto_pieno > 0 else 0.0
 
-    # --- tre cifre distinte per il messaggio (richiesto dall'utente il
-    # 2026-09-20: il precedente "Vendita stimata" unico nascondeva sia il
-    # -20% forfettario di QUOTA_INCASSO_NETTO sia il fatto che il prezzo da
-    # mettere in annuncio deve stare sopra al ricavo realistico, per
-    # lasciare spazio a una trattativa. NON cambiano la decisione
-    # COMPRA/TRATTA/NON COMPRARE ne' margine/ROI qui sopra: sono solo
-    # informative, calcolate sugli stessi target/acquisto_pieno.
-    vendita_attesa = target
-
-    # minimo prezzo di vendita (stesso "spazio" di vendita_attesa, PRIMA
-    # dello sconto di QUOTA_INCASSO_NETTO) sotto il quale l'affare non
-    # supera piu' le soglie di COMPRA (SOGLIA_MARGINE_COMPRA/SOGLIA_ROI_COMPRA).
-    # Deriva algebricamente da margine=incasso-acquisto_pieno e
-    # incasso=target*QUOTA_INCASSO_NETTO, per entrambe le soglie, poi prende
-    # la piu' stringente (di solito quella sul ROI):
-    #   margine >= SOGLIA_MARGINE_COMPRA  =>  target >= (acquisto_pieno + SOGLIA_MARGINE_COMPRA) / QUOTA_INCASSO_NETTO
-    #   roi >= SOGLIA_ROI_COMPRA          =>  target >= acquisto_pieno * (1 + SOGLIA_ROI_COMPRA/100) / QUOTA_INCASSO_NETTO
-    if QUOTA_INCASSO_NETTO > 0:
-        _target_min_margine = (acquisto_pieno + SOGLIA_MARGINE_COMPRA) / QUOTA_INCASSO_NETTO
-        _target_min_roi = (acquisto_pieno * (1 + SOGLIA_ROI_COMPRA / 100.0)) / QUOTA_INCASSO_NETTO
-        minimo_accettabile_rivendita = round(max(_target_min_margine, _target_min_roi, 0.0), 2)
-    else:
-        minimo_accettabile_rivendita = 0.0
+    # minimo prezzo di vendita sotto il quale l'affare non rispetta piu' il
+    # margine minimo. Volutamente SENZA il floor ROI>=100% (SOGLIA_ROI_COMPRA)
+    # che invece la decisione compra/tratta qui sotto continua a usare:
+    # chiarito il 2026-09-20 su richiesta esplicita dell'utente. Nella
+    # decisione il floor ROI resta perche' serve a scartare acquisti
+    # economici con margine risicato in percentuale; qui invece lo si vuole
+    # fuori perche' gonfiava il "minimo accettabile" mostrato in chat ben
+    # oltre la vendita attesa reale (es. caso Missoni: vendita attesa 29.75,
+    # minimo accettabile arrivava a 81.50 col floor ROI incluso).
+    #   margine >= SOGLIA_MARGINE_COMPRA  =>  vendita_attesa >= acquisto_pieno + SOGLIA_MARGINE_COMPRA
+    minimo_accettabile_rivendita = round(max(acquisto_pieno + SOGLIA_MARGINE_COMPRA, 0.0), 2)
 
     # prezzo consigliato in annuncio: vendita_attesa maggiorata di
     # SCONTO_TIPICO_TRATTATIVA_VENDITA, cosi' che dopo la trattativa tipica
@@ -6030,7 +6039,12 @@ def calcola_verdetto(v, prezzo_prodotto):
     tratta_margine = incasso - tratta_costo
     tratta_roi = (tratta_margine / tratta_costo * 100) if tratta_costo > 0 else 0.0
 
-    # --- decisione
+    # --- decisione: margine minimo E ROI minimo, come da sempre (chiarito il
+    # 2026-09-20: l'utente vuole tenere il floor ROI>=100% qui per
+    # compra/tratta, e toglierlo SOLO dal "minimo accettabile" mostrato in
+    # chat qui sopra, che infatti e' calcolato sul solo margine). Il -20%
+    # forfettario (QUOTA_INCASSO_NETTO) resta tolto: margine/roi qui sono
+    # calcolati sull'incasso = vendita attesa piena, senza sconto.
     supera_soglia = margine >= SOGLIA_MARGINE_COMPRA and roi >= SOGLIA_ROI_COMPRA
     tratta_supera_soglia = tratta_margine >= SOGLIA_MARGINE_COMPRA and tratta_roi >= SOGLIA_ROI_COMPRA
 
