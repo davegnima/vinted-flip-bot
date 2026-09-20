@@ -286,6 +286,26 @@ TOLLERANZA_COMP_EUR = 1.0
 # scartati). Un solo valore da cambiare, nessun'altra modifica al codice.
 COMP_DA_MEMORIA_AMMESSI = os.environ.get("COMP_DA_MEMORIA_AMMESSI", "true").strip().lower() == "true"
 
+# OCCHIO_OUTPUT_JSON: interruttore fra i due formati di output dell'Occhio.
+#
+#   false (DEFAULT)  L'Occhio risponde in prosa, com'e' sempre stato. Lo
+#                    skip pre-cervello usa check_skip_pre_cervello, cioe'
+#                    una decina di substring match sul testo.
+#   true             L'Occhio risponde con OCCHIO_RESPONSE_SCHEMA e lo skip
+#                    si calcola da campi tipizzati (calcola_scarto_occhio).
+#
+# Il default e' false di proposito: gemini-3.5-flash-lite e' un modello
+# piccolo e nessuna verifica a tavolino dice se compila bene 28 campi. Il
+# confronto va fatto su annunci veri, e questa variabile permette di
+# tornare indietro cambiando un valore su Railway, senza ricaricare codice.
+#
+# In entrambi i rami il resto della pipeline riceve lo STESSO testo: in
+# modalita' JSON il dict viene renderizzato da render_occhio_da_json() nel
+# formato prosa che build_skip_report e il prompt del Cervello gia'
+# consumano. Il raggio della modifica resta cosi' limitato alla sola
+# generazione, e il ramo prosa resta bit-per-bit quello di prima.
+OCCHIO_OUTPUT_JSON = os.environ.get("OCCHIO_OUTPUT_JSON", "false").strip().lower() == "true"
+
 # GATE MARGINE ASSOLUTO (nuovo): soglia di qualita' del deal, separata dalla
 # soglia minima di sicurezza (EUR 20 / ROI 100%) gia' presente nei prompt e
 # nelle reti di sicurezza. Serve ad alzare il valore medio dei deal notificati
@@ -684,6 +704,772 @@ def check_skip_pre_gemini(listing_info):
 # PROMPT DI SISTEMA
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# OCCHIO: SCHEMA JSON STRUTTURATO (attivo solo con OCCHIO_OUTPUT_JSON=true)
+# ---------------------------------------------------------------------------
+# Stesso impianto del Cervello, applicato un passo piu' a monte: il modello
+# OSSERVA e Python DECIDE.
+#
+# L'Occhio in prosa produce anche un verdetto finanziario completo (margine,
+# ROI, decisione, urgenza, deal score) che il codice ri-estrae con regex in
+# estrai_margine_preliminare per decidere se saltare il Cervello. E' la
+# stessa classe di errore rimossa dal Cervello il 2026-09-19, sopravvissuta
+# nel primo stadio: un annuncio buono puo' morire per un margine allucinato
+# prima ancora di essere valutato con comp reali.
+#
+# In questo schema l'Occhio non produce NESSUN numero economico, e nemmeno
+# il flag di scarto: uno scarto e' una decisione, e si calcola in
+# calcola_scarto_occhio() dai campi osservativi. La versione calcolata e'
+# anche piu' severa di quella dichiarabile a parole, perche' puo' pretendere
+# che la controprova anti-bias sia stata eseguita prima di accettare un
+# "falso conclamato" (caso reale: Dries Van Noten autentico a EUR 5,95
+# scartato come falso con dettagli costruiti a posteriori).
+#
+# L'ordine dei campi e' una catena di ragionamento forzata: evidenza ->
+# trascrizione verbatim -> identificazione -> osservazione fisica ->
+# riscontri -> controprova -> verdetto. Il verdetto puo' essere scritto solo
+# dopo che i riscontri concreti sono gia' stati messi per iscritto.
+#
+# maxItems su ogni array: l'input si paga una volta per chiamata, l'output
+# si paga per quanto il modello scrive.
+
+OCCHIO_RESPONSE_SCHEMA = {
+    "type": "OBJECT",
+    "propertyOrdering": [
+        # 1. EVIDENZA: cosa posso davvero vedere
+        "qualita_evidenza",
+        "segnali_rischio_annuncio",
+
+        # 2. TRASCRIZIONE VERBATIM: prima di interpretare
+        "etichette",
+        "brand_letto_etichetta",
+        "composizione_da_etichetta",
+        "taglia_etichetta",
+
+        # 3. IDENTIFICAZIONE: cosa deduco dalle trascrizioni
+        "relazione_brand",
+        "nome_sottolinea",
+        "categoria_capo_osservata",
+        "linea_o_era",
+        "evidenze_datazione",
+        "modello_riconosciuto",
+
+        # 4. OSSERVAZIONE FISICA
+        "materiale_osservato_dalle_foto",
+        "coerenza_materiale",
+        "indicatori_costruzione",
+        "livello_fattura",
+        "hardware_dettaglio",
+        "condizione_osservata",
+        "difetti",
+
+        # 5. CONTROPROVE: prima del verdetto, non dopo
+        "riscontri_autenticita",
+        "controprova_prezzo_eseguita",
+
+        # 6. VERDETTO: solo ora
+        "verdetto_legit",
+        "confidenza_legit",
+        "motivo_sintetico",
+        "foto_mancanti_richieste",
+
+        # 7. VENDITORE E SINTESI
+        "profilo_venditore",
+        "evidenza_profilo",
+        "sintesi_visiva",
+    ],
+    "properties": {
+
+        # =================================================================
+        # 1. EVIDENZA
+        # =================================================================
+        "qualita_evidenza": {
+            "type": "STRING",
+            "format": "enum",
+            "enum": ["sufficiente_per_verdetto", "parziale_servono_altre_foto", "insufficiente"],
+            "description": (
+                "Quanto le foto permettono un giudizio. Dichiaralo PRIMA di qualsiasi "
+                "verdetto: un verdetto netto su evidenza insufficiente e' un errore."
+            ),
+        },
+        "segnali_rischio_annuncio": {
+            "type": "ARRAY",
+            "maxItems": 4,
+            "items": {
+                "type": "STRING",
+                "format": "enum",
+                "enum": [
+                    "foto_stock_non_del_capo", "screenshot_di_altro_annuncio",
+                    "watermark_di_altro_sito", "capi_diversi_tra_le_foto",
+                    "foto_di_uno_schermo", "descrizione_incoerente_con_le_foto",
+                ],
+            },
+            "description": (
+                "Frode che riguarda l'ANNUNCIO, non il capo. Vuoto se nessuno."
+            ),
+        },
+
+        # =================================================================
+        # 2. TRASCRIZIONE VERBATIM
+        # =================================================================
+        "etichette": {
+            "type": "ARRAY",
+            "maxItems": 8,
+            "description": "Una voce per ogni etichetta visibile, anche parziale. Vuoto se nessuna.",
+            "items": {
+                "type": "OBJECT",
+                "propertyOrdering": ["tipo", "testo_verbatim", "leggibilita", "osservazioni_tecniche"],
+                "properties": {
+                    "tipo": {
+                        "type": "STRING",
+                        "format": "enum",
+                        "enum": [
+                            "main_label", "wash_care_tag", "etichetta_taglia",
+                            "etichetta_composizione", "codice_prodotto",
+                            "etichetta_storica_o_union", "ologramma_autenticita",
+                            "etichetta_rivenditore", "altro",
+                        ],
+                    },
+                    "testo_verbatim": {
+                        "type": "STRING",
+                        "description": (
+                            "Testo ESATTO, carattere per carattere, comprese maiuscole, "
+                            "apostrofi e simboli. Usa [...] per le parti illeggibili. E' la "
+                            "prova su cui si reggono tutte le deduzioni successive."
+                        ),
+                    },
+                    "leggibilita": {
+                        "type": "STRING",
+                        "format": "enum",
+                        "enum": ["nitida", "parziale", "illeggibile"],
+                    },
+                    "osservazioni_tecniche": {
+                        "type": "STRING",
+                        "nullable": True,
+                        "description": (
+                            "L'etichetta come OGGETTO FISICO: tessuta o stampata, font, "
+                            "densita' del ricamo, come e' cucita, materiale del nastro, "
+                            "invecchiamento coerente col capo."
+                        ),
+                    },
+                },
+                "required": ["tipo", "testo_verbatim", "leggibilita"],
+            },
+        },
+        "brand_letto_etichetta": {
+            "type": "STRING",
+            "nullable": True,
+            "description": (
+                "Il brand ESATTAMENTE come letto, senza correggerlo: se l'etichetta dice "
+                "'Kapitales' scrivi 'Kapitales', non 'Kapital'."
+            ),
+        },
+        "composizione_da_etichetta": {
+            "type": "STRING",
+            "nullable": True,
+            "description": (
+                "Composizione verbatim con le percentuali (es. '100% CASHMERE'). Solo da "
+                "etichetta fisica: NON dedurla dal titolo dell'annuncio."
+            ),
+        },
+        "taglia_etichetta": {
+            "type": "STRING",
+            "nullable": True,
+            "description": "Taglia come stampata sull'etichetta (es. 'IT 48', 'M', 'US 10').",
+        },
+
+        # =================================================================
+        # 3. IDENTIFICAZIONE
+        # =================================================================
+        "relazione_brand": {
+            "type": "STRING",
+            "format": "enum",
+            "enum": ["corrisponde", "sottolinea_stessa_maison", "brand_estraneo", "non_leggibile"],
+            "description": (
+                "'sottolinea_stessa_maison' = MM6 per Margiela, See by Chloe per Chloe, "
+                "Weekend per Max Mara: ha ancora valore. 'brand_estraneo' = marchio diverso e "
+                "NON correlato (es. 'Kapitales' per 'Kapital'): il sistema scarta l'annuncio "
+                "senza altre verifiche, quindi usalo solo se sei sicuro. Nel dubbio "
+                "'non_leggibile'."
+            ),
+        },
+        "nome_sottolinea": {
+            "type": "STRING",
+            "nullable": True,
+            "description": "Nome della sottolinea se applicabile (es. 'MM6', 'McQ').",
+        },
+        "categoria_capo_osservata": {
+            "type": "STRING",
+            "description": (
+                "Categoria come si VEDE nelle foto, non come la chiama il titolo "
+                "(es. 'giubbotto di jeans'): serve a intercettare i titoli fuorvianti."
+            ),
+        },
+        "linea_o_era": {
+            "type": "STRING",
+            "nullable": True,
+            "description": (
+                "Linea o era desunta dalle etichette (es. 'Era Lang 1986-2005', 'Era Link "
+                "Theory post-2006', 'Linea 10', 'mainline'). null se le etichette non lo "
+                "permettono: da qui dipende il valore stimato."
+            ),
+        },
+        "evidenze_datazione": {
+            "type": "ARRAY",
+            "maxItems": 5,
+            "items": {"type": "STRING"},
+            "description": (
+                "I segnali concreti su cui si basa linea_o_era: formato del wash tag, paese "
+                "di produzione, stile del logo, formato del codice, diciture legate a "
+                "un'epoca. Un'era senza evidenze elencate qui vale come non dichiarata."
+            ),
+        },
+        "modello_riconosciuto": {
+            "type": "STRING",
+            "nullable": True,
+            "description": (
+                "Nome del modello se riconoscibile come pezzo d'archivio noto. null se non "
+                "lo riconosci con certezza: non tirare a indovinare un nome iconico."
+            ),
+        },
+
+        # =================================================================
+        # 4. OSSERVAZIONE FISICA
+        # =================================================================
+        "materiale_osservato_dalle_foto": {
+            "type": "STRING",
+            "nullable": True,
+            "description": (
+                "Che materiale SEMBRA da drappeggio, riflesso, grana, peluria, pieghe. "
+                "Indipendente dall'etichetta: serve proprio a confrontarli."
+            ),
+        },
+        "coerenza_materiale": {
+            "type": "STRING",
+            "format": "enum",
+            "enum": ["coerente", "incoerente", "non_valutabile"],
+            "description": (
+                "Confronto tra composizione_da_etichetta e materiale osservato. 'incoerente' "
+                "= l'aspetto smentisce l'etichetta (possibile etichetta riportata)."
+            ),
+        },
+        "indicatori_costruzione": {
+            "type": "ARRAY",
+            "maxItems": 6,
+            "items": {"type": "STRING"},
+            "description": (
+                "Dettagli di fattura osservabili: finitura delle cuciture, tipo di fodera, "
+                "corrispondenza del disegno alle giunture, asole lavorate, finiture a mano, "
+                "interno pulito o grezzo, peso e marchiatura di zip e bottoni. Sono cio' che "
+                "distingue la qualita' vera a prescindere dall'etichetta."
+            ),
+        },
+        "livello_fattura": {
+            "type": "STRING",
+            "format": "enum",
+            "enum": ["alta_sartoriale", "buona_industriale", "media", "scadente", "non_valutabile"],
+        },
+        "hardware_dettaglio": {
+            "type": "STRING",
+            "nullable": True,
+            "description": (
+                "Marchio e aspetto di zip/bottoni/fibbie se leggibili (es. 'zip Lampo', "
+                "'bottoni marchiati HELMUT LANG N.Y.'): insieme indizio di autenticita' e di "
+                "datazione."
+            ),
+        },
+        "condizione_osservata": {
+            "type": "STRING",
+            "format": "enum",
+            "enum": ["come_nuovo", "ottime", "buone", "usato_evidente", "danneggiato"],
+            "description": "La condizione che vedi TU, non quella dichiarata dal venditore.",
+        },
+        "difetti": {
+            "type": "ARRAY",
+            "maxItems": 8,
+            "description": (
+                "Un oggetto per ogni difetto, sia visto in foto sia dichiarato nel testo. "
+                "Vuoto se non ce ne sono. Non accorpare piu' difetti in una voce."
+            ),
+            "items": {
+                "type": "OBJECT",
+                "propertyOrdering": ["tipo", "posizione", "gravita", "strutturale", "fonte"],
+                "properties": {
+                    "tipo": {
+                        "type": "STRING",
+                        "format": "enum",
+                        "enum": [
+                            "macchia", "alone", "buco", "foro_da_spilla", "strappo",
+                            "scucitura", "usura_tessuto", "pilling", "scolorimento",
+                            "filo_tirato", "zip_difettosa", "bottoni_mancanti",
+                            "rammendo_o_riparazione", "alterazione_sartoriale",
+                            "deformazione", "odore_dichiarato", "altro",
+                        ],
+                    },
+                    "posizione": {
+                        "type": "STRING",
+                        "description": "Dove si trova (es. 'manica sinistra vicino al polsino').",
+                    },
+                    "gravita": {
+                        "type": "STRING",
+                        "format": "enum",
+                        "enum": ["lieve", "moderata", "grave"],
+                    },
+                    "strutturale": {
+                        "type": "BOOLEAN",
+                        "description": (
+                            "true se compromette uso o rivendibilita' (strappo, buco aperto, "
+                            "zip rotta). false per difetti estetici recuperabili."
+                        ),
+                    },
+                    "fonte": {
+                        "type": "STRING",
+                        "format": "enum",
+                        "enum": ["visibile_in_foto", "dichiarato_dal_venditore", "entrambi"],
+                        "description": (
+                            "Distingue cio' che hai VISTO da cio' che ti e' stato DETTO: un "
+                            "difetto solo visibile e non dichiarato e' anche un segnale sul "
+                            "venditore."
+                        ),
+                    },
+                },
+                "required": ["tipo", "posizione", "gravita", "strutturale", "fonte"],
+            },
+        },
+
+        # =================================================================
+        # 5. CONTROPROVE
+        # =================================================================
+        "riscontri_autenticita": {
+            "type": "ARRAY",
+            "maxItems": 8,
+            "description": (
+                "Un oggetto per ogni elemento esaminato. E' la BASE del verdetto: il "
+                "verdetto discende da qui, non precede. Elenca anche i riscontri COERENTI: "
+                "un giudizio negativo su un solo elemento incoerente, ignorandone cinque "
+                "coerenti, e' un errore di metodo."
+            ),
+            "items": {
+                "type": "OBJECT",
+                "propertyOrdering": ["elemento", "osservazione", "esito", "peso"],
+                "properties": {
+                    "elemento": {
+                        "type": "STRING",
+                        "format": "enum",
+                        "enum": [
+                            "font_etichetta", "tessitura_etichetta", "cucitura_etichetta",
+                            "wash_tag", "codice_prodotto", "paese_produzione",
+                            "simboli_lavaggio", "hardware", "ricamo_logo",
+                            "proporzioni_logo", "qualita_cuciture", "fodera",
+                            "asole_e_bottoni", "coerenza_invecchiamento", "altro",
+                        ],
+                    },
+                    "osservazione": {
+                        "type": "STRING",
+                        "description": (
+                            "COSA hai visto, verificabile da chi guarda la stessa foto. "
+                            "Vietato 'font grossolano' o 'sembra di bassa qualita'': specifica "
+                            "in cosa differisce (spessore delle aste, spaziatura, grazie, "
+                            "allineamento, densita' del punto). Se non sai dirlo con "
+                            "precisione, l'esito e' 'non_valutabile'."
+                        ),
+                    },
+                    "esito": {
+                        "type": "STRING",
+                        "format": "enum",
+                        "enum": ["coerente", "incoerente", "non_valutabile"],
+                    },
+                    "peso": {
+                        "type": "STRING",
+                        "format": "enum",
+                        "enum": ["forte", "medio", "debole"],
+                        "description": (
+                            "Quanto sposta il giudizio: un codice wash tag incoerente pesa "
+                            "'forte', una cucitura irregolare su un vintage pesa 'debole'."
+                        ),
+                    },
+                },
+                "required": ["elemento", "osservazione", "esito", "peso"],
+            },
+        },
+        "controprova_prezzo_eseguita": {
+            "type": "BOOLEAN",
+            "description": (
+                "CONTROLLO ANTI-BIAS. Prima di dichiarare falso: con gli stessi identici "
+                "dettagli, lo giudicheresti sospetto anche se il prezzo fosse dieci volte "
+                "tanto? true solo se hai fatto la verifica e il giudizio regge. Se la "
+                "risposta e' 'forse no', declassa a 'sospetto_servono_altre_foto'."
+            ),
+        },
+
+        # =================================================================
+        # 6. VERDETTO
+        # =================================================================
+        "verdetto_legit": {
+            "type": "STRING",
+            "format": "enum",
+            "enum": [
+                "probabilmente_autentico", "sospetto_servono_altre_foto",
+                "probabilmente_falso", "non_verificabile",
+            ],
+            "description": (
+                "Discende da riscontri_autenticita. 'probabilmente_falso' richiede almeno un "
+                "riscontro 'incoerente' di peso 'forte' descritto in concreto."
+            ),
+        },
+        "confidenza_legit": {
+            "type": "STRING",
+            "format": "enum",
+            "enum": ["alta", "media", "bassa"],
+            "description": (
+                "'alta' solo con evidenza nitida e piu' riscontri concordi: falso + alta fa "
+                "scartare l'annuncio senza altri controlli."
+            ),
+        },
+        "motivo_sintetico": {
+            "type": "STRING",
+            "description": (
+                "Una riga che nomina l'elemento decisivo e cosa hai visto. Arriva all'utente "
+                "cosi' com'e' anche quando il resto della pipeline viene saltato."
+            ),
+        },
+        "foto_mancanti_richieste": {
+            "type": "ARRAY",
+            "maxItems": 3,
+            "items": {"type": "STRING"},
+            "description": (
+                "Quali foto scioglierebbero il dubbio (es. 'main label al collo in primo "
+                "piano'). Obbligatorio se il verdetto e' 'sospetto_servono_altre_foto'."
+            ),
+        },
+
+        # =================================================================
+        # 7. VENDITORE E SINTESI
+        # =================================================================
+        "profilo_venditore": {
+            "type": "STRING",
+            "format": "enum",
+            "enum": ["privato_genuino", "reseller_esperto", "non_determinabile"],
+            "description": (
+                "Il numero di recensioni da solo NON decide: conta COSA vende. Guardaroba "
+                "misto con fast fashion accanto al lusso = privato genuino anche con "
+                "centinaia di recensioni. Solo brand designer = reseller esperto."
+            ),
+        },
+        "evidenza_profilo": {
+            "type": "STRING",
+            "description": (
+                "Deve citare il contenuto di 'Primi articoli in vendita' quando presente, "
+                "non il solo numero di recensioni."
+            ),
+        },
+        "sintesi_visiva": {
+            "type": "STRING",
+            "description": (
+                "3-4 righe per l'utente: cosa vedi, cosa dicono le etichette, in che "
+                "condizione e'. Nessun numero finanziario, nessuna decisione d'acquisto."
+            ),
+        },
+    },
+    "required": [
+        "qualita_evidenza", "segnali_rischio_annuncio",
+        "etichette",
+        "relazione_brand", "categoria_capo_osservata", "evidenze_datazione",
+        "coerenza_materiale", "indicatori_costruzione", "livello_fattura",
+        "condizione_osservata", "difetti",
+        "riscontri_autenticita", "controprova_prezzo_eseguita",
+        "verdetto_legit", "confidenza_legit", "motivo_sintetico",
+        "foto_mancanti_richieste",
+        "profilo_venditore", "evidenza_profilo", "sintesi_visiva",
+    ],
+}
+
+
+# ==========================================================================
+# SCARTO PRE-CERVELLO: calcolato, non dichiarato dal modello.
+# Sostituisce check_skip_pre_cervello (~10 substring match su prosa, con due
+# bug reali trovati in produzione il 2026-09-19: "Confidenza: Alta" con i due
+# punti non matchava mai, e le varianti "falso palese"/"falso evidente" non
+# erano previste).
+# ==========================================================================
+
+def calcola_scarto_occhio(o, solo_cover_photo=False):
+    """Ritorna (scarta: bool, motivo: str|None) dai soli campi osservativi.
+
+    solo_cover_photo: se le foto dell'annuncio non sono state scaricate e
+    l'analisi si basa sulla sola cover di Telegram, "nessuna etichetta" e'
+    quasi certamente un falso negativo dello scraping, non del capo: in quel
+    caso non si scarta (stessa eccezione gia' presente oggi nel codice).
+
+    I confronti passano da _norm() anche se valida_payload_occhio ha gia'
+    normalizzato: questa funzione decide se spendere o no le ricerche di
+    mercato, e un confronto fallito per una maiuscola di troppo significa
+    lasciar passare un capo distrutto o un brand estraneo. Costa nulla,
+    e regge anche se un domani viene chiamata su un dict non validato.
+    """
+    def _norm(valore):
+        return valore.strip().lower() if isinstance(valore, str) else valore
+
+    if _norm(o.get("relazione_brand")) == "brand_estraneo":
+        return True, (
+            "[BRAND NON CORRISPONDENTE] L'etichetta mostra un marchio diverso e non "
+            f"correlato ({o.get('brand_letto_etichetta') or 'non leggibile'}) -- cervello "
+            "non consultato, il capo non ha valore nel segmento monitorato."
+        )
+
+    # Il falso conclamato richiede anche la controprova anti-bias: senza,
+    # e' esattamente il caso Dries Van Noten (autentico a 5,95 EUR scartato
+    # come falso con dettagli costruiti a posteriori).
+    if (_norm(o.get("verdetto_legit")) == "probabilmente_falso"
+            and _norm(o.get("confidenza_legit")) == "alta"
+            and o.get("controprova_prezzo_eseguita") is True):
+        return True, f"[FALSO CONCLAMATO] {o.get('motivo_sintetico') or 'rilevato dall analisi visiva.'}"
+
+    if o.get("segnali_rischio_annuncio"):
+        return True, (
+            "[ANNUNCIO FRAUDOLENTO] Segnali sulle immagini: "
+            + ", ".join(str(s) for s in o["segnali_rischio_annuncio"])
+        )
+
+    difetti = o.get("difetti") or []
+    if sum(1 for d in difetti
+           if d.get("strutturale") and _norm(d.get("gravita")) == "grave") >= 1:
+        return True, "[CONDIZIONE DISTRUTTA] Danno strutturale grave rilevato dall'analisi visiva."
+
+    etichette = o.get("etichette") or []
+    nessuna_etichetta = not etichette or all(
+        _norm(e.get("leggibilita")) == "illeggibile" for e in etichette
+    )
+    if nessuna_etichetta and not solo_cover_photo:
+        return True, (
+            "[NESSUNA ETICHETTA VISIBILE] Nessuna etichetta leggibile per verificare "
+            "l'autenticita' -- servono piu' foto (main label + wash tag) prima di procedere."
+        )
+
+    return False, None
+
+
+ETICHETTA_VERDETTO_LEGIT = {
+    "probabilmente_autentico": "Probabilmente autentico",
+    "sospetto_servono_altre_foto": "Sospetto, servono altre foto",
+    "probabilmente_falso": "Probabilmente falso",
+    "non_verificabile": "Non verificabile",
+}
+
+
+def valida_payload_occhio(occhio):
+    """Normalizza il JSON dell'Occhio e ne mette in sicurezza i valori.
+
+    Come valida_payload_cervello: lo schema garantisce la FORMA, non la
+    SENSATEZZA. Un enum fuori lista diventa il default piu' prudente, e i
+    problemi non bloccano l'elaborazione ma restano visibili.
+
+    Ritorna (dict_normalizzato, elenco_problemi).
+    """
+    problemi = []
+    o = dict(occhio or {})
+
+    def _enum(campo, ammessi, default):
+        valore = o.get(campo)
+        valore = valore.strip().lower() if isinstance(valore, str) else None
+        if valore in ammessi:
+            o[campo] = valore
+            return
+        if o.get(campo) is not None:
+            problemi.append(f"{campo}='{o.get(campo)}' non riconosciuto, uso '{default}'")
+        o[campo] = default
+
+    _enum("qualita_evidenza",
+          {"sufficiente_per_verdetto", "parziale_servono_altre_foto", "insufficiente"},
+          "parziale_servono_altre_foto")
+    _enum("relazione_brand",
+          {"corrisponde", "sottolinea_stessa_maison", "brand_estraneo", "non_leggibile"},
+          "non_leggibile")
+    _enum("coerenza_materiale", {"coerente", "incoerente", "non_valutabile"}, "non_valutabile")
+    _enum("livello_fattura",
+          {"alta_sartoriale", "buona_industriale", "media", "scadente", "non_valutabile"},
+          "non_valutabile")
+    _enum("condizione_osservata",
+          {"come_nuovo", "ottime", "buone", "usato_evidente", "danneggiato"}, "buone")
+    _enum("verdetto_legit",
+          {"probabilmente_autentico", "sospetto_servono_altre_foto",
+           "probabilmente_falso", "non_verificabile"},
+          "non_verificabile")
+    _enum("confidenza_legit", {"alta", "media", "bassa"}, "bassa")
+    _enum("profilo_venditore",
+          {"privato_genuino", "reseller_esperto", "non_determinabile"}, "non_determinabile")
+
+    for campo in ("etichette", "difetti", "riscontri_autenticita", "indicatori_costruzione",
+                  "evidenze_datazione", "foto_mancanti_richieste", "segnali_rischio_annuncio"):
+        if not isinstance(o.get(campo), list):
+            o[campo] = []
+
+    # Scarta le voci malformate invece di farle esplodere a valle.
+    o["etichette"] = [
+        e for e in o["etichette"]
+        if isinstance(e, dict) and (e.get("testo_verbatim") or "").strip()
+    ]
+    o["difetti"] = [d for d in o["difetti"] if isinstance(d, dict) and d.get("tipo")]
+    o["riscontri_autenticita"] = [
+        r for r in o["riscontri_autenticita"]
+        if isinstance(r, dict) and (r.get("osservazione") or "").strip()
+    ]
+
+    # Normalizzazione degli enum ANNIDATI. Lo schema li dichiara minuscoli ma
+    # il modello a volte capitalizza ("Grave" invece di "grave"), e su questi
+    # campi non c'e' un default prudente che salvi: un confronto fallito in
+    # calcola_scarto_occhio significa un difetto strutturale grave NON
+    # riconosciuto, quindi un annuncio distrutto che prosegue come se fosse
+    # integro. Si normalizza qui, una volta, invece di ripetere .lower() a
+    # ogni confronto sparso nel codice.
+    ENUM_ANNIDATI = {
+        "etichette": ("tipo", "leggibilita"),
+        "difetti": ("tipo", "gravita", "fonte"),
+        "riscontri_autenticita": ("elemento", "esito", "peso"),
+    }
+    for nome_array, campi in ENUM_ANNIDATI.items():
+        for voce in o[nome_array]:
+            for campo in campi:
+                if isinstance(voce.get(campo), str):
+                    voce[campo] = voce[campo].strip().lower()
+            if nome_array == "difetti":
+                voce["strutturale"] = bool(voce.get("strutturale"))
+
+    o["segnali_rischio_annuncio"] = [
+        s.strip().lower() for s in o["segnali_rischio_annuncio"] if isinstance(s, str) and s.strip()
+    ]
+
+    o["controprova_prezzo_eseguita"] = bool(o.get("controprova_prezzo_eseguita"))
+
+    # Un "probabilmente falso" senza nemmeno un riscontro incoerente e' il
+    # sintomo esatto del bias prezzo-basso: la conclusione non discende da
+    # nessuna osservazione messa per iscritto. Non si sovrascrive il
+    # verdetto (potrebbe essere corretto), ma si toglie la confidenza alta,
+    # che e' cio' che fa scattare lo scarto automatico.
+    if o["verdetto_legit"] == "probabilmente_falso":
+        incoerenti = [r for r in o["riscontri_autenticita"] if r.get("esito") == "incoerente"]
+        if not incoerenti:
+            problemi.append(
+                "verdetto 'probabilmente falso' senza nessun riscontro incoerente: "
+                "confidenza declassata, verificare a mano prima di scartare"
+            )
+            o["confidenza_legit"] = "bassa"
+
+    for campo in ("motivo_sintetico", "sintesi_visiva", "evidenza_profilo",
+                  "categoria_capo_osservata"):
+        if not isinstance(o.get(campo), str):
+            o[campo] = ""
+        o[campo] = o[campo].strip()
+
+    return o, problemi
+
+
+def render_occhio_da_json(occhio, problemi=None):
+    """Converte il JSON dell'Occhio nel formato testuale che il resto della
+    pipeline gia' consuma.
+
+    E' il punto che tiene piccola la modifica: build_skip_report continua a
+    cercare "**Analisi visiva**", "🏷️ Legit:" e "📨 **Messaggio da inviare:**"
+    con le stesse regex di sempre, e il prompt del Cervello riceve un blocco
+    di testo come prima -- solo piu' ricco e senza numeri inventati.
+
+    Nessuna cifra economica compare qui: in modalita' JSON l'Occhio non
+    produce piu' margine/ROI/decisione, quindi non c'e' nulla da estrarre
+    con estrai_margine_preliminare (lo skip su margine preliminare non si
+    applica a questo ramo, per costruzione).
+    """
+    o = occhio or {}
+    righe = ["**Analisi visiva**", o.get("sintesi_visiva") or "(nessuna sintesi fornita)"]
+
+    etichette = o.get("etichette") or []
+    if etichette:
+        righe.append("")
+        righe.append("Etichette lette:")
+        for e in etichette:
+            nota = f" [{e['osservazioni_tecniche']}]" if e.get("osservazioni_tecniche") else ""
+            righe.append(
+                f"- {e.get('tipo', 'altro')}: \"{e.get('testo_verbatim', '')}\" "
+                f"({e.get('leggibilita', 'n/d')}){nota}"
+            )
+    else:
+        righe += ["", "Etichette lette: nessuna leggibile nelle foto."]
+
+    if o.get("composizione_da_etichetta"):
+        righe.append(f"Composizione da etichetta: {o['composizione_da_etichetta']}")
+    if o.get("materiale_osservato_dalle_foto"):
+        righe.append(f"Materiale osservato: {o['materiale_osservato_dalle_foto']} "
+                     f"(coerenza con l'etichetta: {o.get('coerenza_materiale', 'non_valutabile')})")
+    if o.get("taglia_etichetta"):
+        righe.append(f"Taglia da etichetta: {o['taglia_etichetta']}")
+    if o.get("linea_o_era"):
+        evidenze = "; ".join(o.get("evidenze_datazione") or []) or "nessuna evidenza dichiarata"
+        righe.append(f"Linea/era: {o['linea_o_era']} (evidenze: {evidenze})")
+    if o.get("modello_riconosciuto"):
+        righe.append(f"Modello riconosciuto: {o['modello_riconosciuto']}")
+    if o.get("indicatori_costruzione"):
+        righe.append(f"Fattura ({o.get('livello_fattura', 'n/d')}): "
+                     + "; ".join(o["indicatori_costruzione"]))
+    if o.get("hardware_dettaglio"):
+        righe.append(f"Hardware: {o['hardware_dettaglio']}")
+
+    difetti = o.get("difetti") or []
+    if difetti:
+        righe.append("")
+        righe.append(f"Condizione osservata: {o.get('condizione_osservata', 'n/d')}. Difetti:")
+        for d in difetti:
+            strutturale = ", STRUTTURALE" if d.get("strutturale") else ""
+            righe.append(
+                f"- {d.get('tipo')} ({d.get('gravita', 'n/d')}{strutturale}) "
+                f"in {d.get('posizione', 'posizione non indicata')} "
+                f"[{d.get('fonte', 'n/d')}]"
+            )
+    else:
+        righe.append(f"Condizione osservata: {o.get('condizione_osservata', 'n/d')}, nessun difetto rilevato.")
+
+    riscontri = o.get("riscontri_autenticita") or []
+    if riscontri:
+        righe.append("")
+        righe.append("Riscontri di autenticita':")
+        for r in riscontri:
+            righe.append(
+                f"- {r.get('elemento')}: {r.get('osservazione')} "
+                f"-> {r.get('esito')} (peso {r.get('peso')})"
+            )
+
+    if o.get("segnali_rischio_annuncio"):
+        righe.append("")
+        righe.append("⚠️ Segnali di rischio sull'annuncio: "
+                     + ", ".join(o["segnali_rischio_annuncio"]))
+
+    legit = ETICHETTA_VERDETTO_LEGIT.get(o.get("verdetto_legit"), o.get("verdetto_legit") or "n/d")
+    righe += [
+        "",
+        "## Verdetto",
+        f"🏷️ Legit: {legit} — {o.get('motivo_sintetico') or 'nessun motivo fornito'}",
+        f"🕐 Confidenza: {(o.get('confidenza_legit') or 'bassa').capitalize()} · "
+        f"Evidenza fotografica: {o.get('qualita_evidenza', 'n/d')} · "
+        f"Venditore: {o.get('profilo_venditore', 'n/d')}",
+    ]
+    if o.get("evidenza_profilo"):
+        righe.append(f"👤 {o['evidenza_profilo']}")
+
+    foto_mancanti = o.get("foto_mancanti_richieste") or []
+    if foto_mancanti:
+        righe += [
+            "",
+            "---",
+            "📨 **Messaggio da inviare:**",
+            f'"Ciao! Mi interessa, potresti aggiungere qualche foto? {"; ".join(foto_mancanti)}. Grazie!"',
+        ]
+
+    if problemi:
+        righe.append("")
+        for p in problemi:
+            righe.append(f"⚠️ _Dato anomalo dall'analisi visiva: {p}_")
+
+    return "\n".join(righe)
+
+
 GEMINI_OCCHI_SYSTEM_PROMPT = """
 Sei l'analista visivo di un flipper professionista di lusso second-hand. Fai due cose in un solo passaggio: LEGIT CHECK visivo + valutazione finanziaria preliminare. Sei esperto di autenticazione su Vinted, Vestiaire, Grailed, eBay.
 
@@ -781,6 +1567,62 @@ Difetti strutturali (buchi, strappi gravi, tessuto lacerato) = NON COMPRARE semp
 ❓ **Da chiedere**: [max 2 domande brevi]
 """.strip()
 
+
+def _costruisci_prompt_occhio_json(prompt_prosa):
+    """Deriva il prompt dell'Occhio in modalita' JSON da quello in prosa.
+
+    Derivato e non duplicato, per la stessa ragione per cui lo schema
+    OpenAI si genera da quello Gemini con _schema_gemini_to_openai: due
+    copie a mano divergono alla prima modifica, e la divergenza silenziosa
+    e' proprio l'errore che questo refactor serve a eliminare. Qui si
+    tolgono le sezioni che lo schema rende ridondanti e si aggiungono, una
+    volta sola, le regole generali che altrimenti andrebbero ripetute nella
+    description di ogni campo.
+
+    Restano invece intatte tutte le sezioni di conoscenza di dominio
+    (venditore, mainline/diffusion, difetti, cosa guardare nelle foto):
+    lo schema descrive la FORMA della risposta, non sa nulla di moda.
+    """
+    # Le sezioni obsolete: la forma dell'output la impone lo schema, l'elenco
+    # dei verdetti e' diventato un enum, e l'obbligo di motivazione e' imposto
+    # strutturalmente da riscontri_autenticita (che non accetta un esito senza
+    # aver nominato elemento e osservazione).
+    OBSOLETE = (
+        "# OUTPUT",
+        "# VERDETTO LEGIT CHECK",
+        "# OBBLIGO DI MOTIVAZIONE ESPLICITA",
+    )
+    sezioni = re.split(r"\n(?=# )", prompt_prosa)
+    tenute = [s for s in sezioni if not s.startswith(OBSOLETE)]
+
+    testa = tenute[0].replace(
+        "Fai due cose in un solo passaggio: LEGIT CHECK visivo + valutazione finanziaria preliminare.",
+        "Il tuo compito e' UNO SOLO: osservare e descrivere. Il legit check visivo e la "
+        "descrizione del capo sono tuoi; la valutazione finanziaria NON e' tua.",
+    )
+    tenute[0] = testa
+
+    return "\n".join(tenute) + """
+
+# FORMATO DELLA RISPOSTA: SOLO JSON
+Rispondi ESCLUSIVAMENTE con un oggetto JSON conforme allo schema fornito. Nessun testo fuori dal JSON, nessun markdown, nessuna emoji di verdetto.
+
+**NON calcolare e non scrivere da nessuna parte**: prezzo di acquisto o di rivendita, margine, ROI, decisione (COMPRA/TRATTA/NON COMPRARE), urgenza, deal score, offerta di trattativa, messaggio al venditore. Non e' una semplificazione del tuo ruolo: senza comp di mercato reali quei numeri sarebbero inventati, e piu' avanti nella pipeline li calcola il sistema sui dati veri. Se li scrivi dentro un campo testuale vengono ignorati.
+
+Dove il prompt qui sopra ti chiede di scrivere una frase o una riga in un certo formato, quella istruzione e' superata dallo schema: la stessa informazione ha ora un campo dedicato. In particolare, il brand completamente estraneo NON si segnala piu' con una frase nel testo, ma con `relazione_brand: "brand_estraneo"`.
+
+# REGOLE GENERALI, VALIDE PER OGNI CAMPO
+1. Trascrivi SOLO cio' che e' realmente visibile. Mai completare a memoria una dicitura che conosci ma che nella foto non si legge: usa [...] per le parti illeggibili.
+2. Nel dubbio usa null, o il valore "non_valutabile"/"non_leggibile". Un valore inventato e' peggio di un valore assente, perche' il sistema non ha modo di distinguerlo da un'osservazione vera.
+3. Descrivi cosa vedi, non dare giudizi generici. "Font con aste piu' spesse e spaziatura irregolare rispetto allo standard del brand" e' un'osservazione; "font grossolano" non lo e'.
+4. Il prezzo non e' mai una prova di autenticita', in nessuna direzione.
+5. Elenca anche i riscontri COERENTI, non solo quelli sospetti: un verdetto negativo costruito su un solo elemento incoerente, ignorandone cinque coerenti, e' un errore di metodo.
+""".rstrip()
+
+
+GEMINI_OCCHI_SYSTEM_PROMPT_JSON = _costruisci_prompt_occhio_json(GEMINI_OCCHI_SYSTEM_PROMPT)
+
+
 GEMINI_CERVELLO_SYSTEM_PROMPT = """
 Sei il valutatore finanziario di un flipper professionista di lusso second-hand. Ricevi l'analisi visiva e i dati di mercato.
 
@@ -875,7 +1717,7 @@ Se pensi che possa servire una trattativa (margine risicato al prezzo pieno, anc
 1. Ogni prezzo in `comp_candidati` e' copiato alla lettera dai dati, o marcato `memoria_modello`?
 2. `prezzo_target_vendita_eur` rispetta il comp di riferimento scontato e l'eventuale tetto di linea?
 3. Il materiale e' davvero ignoto (nessuna menzione da nessuna parte) prima di mettere `materiale_confermato: false`? Se titolo/descrizione/etichetta lo dichiarano, e' `true`.
-4. C'e' un difetto degno di nota sul capo? Se si', `difetto_significativo: true` con `sconto_difetto_pct` proporzionato e `descrizione_difetto` compilata -- e NON gia' scontato a mano dentro `prezzo_target_vendita_eur` (verrebbe scontato due volte).
+4. C'e' un difetto degno di nota sul capo? Se si', `difetto_significativo: true` con `sconto_difetto_pct` proporzionato e `descrizione_difetto` compilata -- e NON gia' scontato a mano dentro `prezzo_target_vendita_eur` (verrebbe scontato due volte). Se il difetto compromette l'uso o la rivendibilita' (buco aperto, strappo, tessuto lacerato, cerniera rotta), aggiungi `difetto_strutturale: true`: il sistema porta il verdetto a NON COMPRARE da solo, tu limitati a dichiararlo.
 5. `legit_motivo_specifico` e' concreto e descrive una discrepanza reale?
 6. Hai evitato di scrivere margine, ROI, decisione, urgenza e importi di trattativa ovunque?
 """.strip()
@@ -1593,10 +2435,19 @@ def costo_gemini_token(usage, prezzo_input=PREZZO_OCCHIO_INPUT, prezzo_output=PR
 
 
 async def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, grounding=False, max_retries=4,
-                        api_url=GEMINI_API_URL_OCCHIO, prezzo_input=PREZZO_OCCHIO_INPUT, prezzo_output=PREZZO_OCCHIO_OUTPUT):
+                        api_url=GEMINI_API_URL_OCCHIO, prezzo_input=PREZZO_OCCHIO_INPUT, prezzo_output=PREZZO_OCCHIO_OUTPUT,
+                        response_schema=None):
+    """response_schema: se valorizzato, la risposta e' JSON conforme allo
+    schema invece che prosa libera (usato dall'Occhio con
+    OCCHIO_OUTPUT_JSON=true). Il testo ritornato e' il JSON grezzo: a
+    deserializzarlo e validarlo ci pensa il chiamante."""
     photo_bytes_list = photo_bytes_list or []
     parts = [{"text": user_text}] + await costruisci_parts_foto(photo_bytes_list)
 
+    generation_config = {
+        "temperature": 0.2, "maxOutputTokens": 3000,
+        "thinkingConfig": {"thinkingLevel": "low"},
+    }
     payload = {
         "system_instruction": {"parts": [{"text": system_prompt}]},
         "contents": [{"role": "user", "parts": parts}],
@@ -1605,8 +2456,20 @@ async def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, groundi
                 "HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH",
                 "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT")
         ],
-        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 3000, "thinkingConfig": {"thinkingLevel": "low"}},
+        "generationConfig": generation_config,
     }
+    if response_schema is not None:
+        # L'API rifiuta responseMimeType/responseSchema insieme a "tools"
+        # ("Function calling with a response mime type: 'application/json'
+        # is unsupported"): e' lo stesso vincolo che ha imposto le due fasi
+        # separate nel Cervello. Qui grounding non serve (l'Occhio e' sempre
+        # invocato con grounding=False), ma la guardia evita che una futura
+        # modifica produca un 400 difficile da diagnosticare.
+        if grounding:
+            log.warning("chiama_gemini: grounding ignorato, incompatibile con response_schema.")
+            grounding = False
+        generation_config["responseMimeType"] = "application/json"
+        generation_config["responseSchema"] = response_schema
     if grounding:
         payload["tools"] = [{"google_search": {}}]
 
@@ -1812,6 +2675,7 @@ CERVELLO_RESPONSE_SCHEMA = {
         "sconto_ask_applicato_pct",
         "prezzo_target_vendita_eur",
         "difetto_significativo",
+        "difetto_strutturale",
         "sconto_difetto_pct",
         "descrizione_difetto",
         "giorni_stimati_vendita",
@@ -1991,6 +2855,19 @@ CERVELLO_RESPONSE_SCHEMA = {
                 "specifici citati."
             ),
         },
+        "difetto_strutturale": {
+            "type": "BOOLEAN",
+            "description": (
+                "true se ALMENO UNO dei difetti compromette l'uso o la rivendibilita' del "
+                "capo: buco aperto, strappo, tessuto lacerato, cuciture saltate su una "
+                "giuntura portante, cerniera rotta non sostituibile, muffa. false per difetti "
+                "estetici recuperabili (pilling, macchia lavabile, filo tirato, foro di "
+                "spilla, bottone mancante sostituibile). Un capo strutturalmente danneggiato "
+                "e' invendibile nel segmento monitorato: il sistema lo porta d'ufficio a NON "
+                "COMPRARE indipendentemente dal prezzo e dal margine, quindi non serve che tu "
+                "abbassi la stima per segnalarlo -- limitati a dire il vero."
+            ),
+        },
         "sconto_difetto_pct": {
             "type": "NUMBER",
             "nullable": True,
@@ -2112,7 +2989,7 @@ CERVELLO_RESPONSE_SCHEMA = {
         "brand_dichiarato_annuncio", "corrispondenza_brand", "linea_o_era_rilevata",
         "categoria_capo", "materiale_confermato", "fascia_taglia",
         "comp_candidati", "sconto_ask_applicato_pct", "prezzo_target_vendita_eur",
-        "difetto_significativo",
+        "difetto_significativo", "difetto_strutturale",
         "giorni_stimati_vendita", "legit_verdetto", "legit_motivo_specifico",
         "rischio_fake", "confidenza", "profilo_venditore", "motivo_profilo_venditore",
         "domanda_mercato", "segnali_domanda", "deal_score", "note_analista",
@@ -3453,7 +4330,17 @@ def estrai_margine_preliminare(output_occhi_testo):
     return _estrai_margine_e_roi_da_blocco(output_occhi_testo or "")
 
 
-def check_skip_pre_cervello(output_occhi_testo, listing_info=None):
+def check_skip_pre_cervello(output_occhi_testo, listing_info=None, occhio_json=None):
+    """occhio_json: presente solo con OCCHIO_OUTPUT_JSON=true. In quel caso
+    lo scarto si calcola da campi tipizzati invece che cercando sottostringhe
+    nella prosa, e tutto il resto di questa funzione non viene eseguito.
+
+    Il ramo su prosa qui sotto resta invariato: e' il comportamento di
+    default, quello che gira oggi in produzione."""
+    if occhio_json is not None:
+        solo_cover = bool(listing_info and listing_info.get("fallback_solo_cover_photo"))
+        return calcola_scarto_occhio(occhio_json, solo_cover_photo=solo_cover)
+
     testo = (output_occhi_testo or "").lower()
 
     # NOTA (caso reale osservato): un Dries Van Noten a €5,95 e' stato
@@ -4047,6 +4934,11 @@ def valida_payload_cervello(verdetto):
 
     # --- sconto difetto: clamp a 0-50, coerente con difetto_significativo.
     v["difetto_significativo"] = bool(v.get("difetto_significativo"))
+    v["difetto_strutturale"] = bool(v.get("difetto_strutturale"))
+    if v["difetto_strutturale"] and not v["difetto_significativo"]:
+        # Un difetto strutturale e' per definizione significativo: la
+        # combinazione opposta e' una contraddizione, si tiene la piu' grave.
+        v["difetto_significativo"] = True
     sconto_difetto = _a_float(v.get("sconto_difetto_pct"), 0.0) or 0.0
     if sconto_difetto < 0 or sconto_difetto > 50:
         problemi.append(f"sconto_difetto_pct {sconto_difetto:.0f}% fuori dal range 0-50, riportato nel range")
@@ -4340,8 +5232,39 @@ def calcola_verdetto(v, prezzo_prodotto):
         limiti_applicati.append("brand reale estraneo al segmento monitorato")
     elif v["legit_verdetto"] == "probabilmente_falso":
         decisione = "NON COMPRARE"
+    elif v.get("difetto_strutturale"):
+        # Regola di dominio che finora viveva solo come frase nel prompt
+        # ("Difetti strutturali = NON COMPRARE sempre, invendibili") e quindi
+        # veniva applicata solo se il modello se ne ricordava. Dopo
+        # l'introduzione di sconto_difetto_pct il rischio era anzi aumentato:
+        # un capo con uno strappo riceveva uno sconto percentuale sul target e,
+        # se il prezzo d'acquisto era basso, tornava comunque COMPRA.
+        # Qui la regola e' aritmetica e non dipende piu' dal buon senso del
+        # modello, a cui resta solo il compito di dire se il difetto c'e'.
+        decisione = "NON COMPRARE"
+        limiti_applicati.append(
+            f"difetto strutturale ({v.get('descrizione_difetto') or 'non specificato'}): "
+            "capo invendibile, decisione forzata a NON COMPRARE"
+        )
     elif supera_soglia:
-        decisione = "CHIEDI ALTRE FOTO" if v["legit_verdetto"] == "sospetto_servono_altre_foto" else "COMPRA"
+        # "non_verificabile" NON puo' cadere nel ramo COMPRA. Significa che
+        # non c'e' stata nessuna prova di autenticita' da esaminare (nessuna
+        # etichetta leggibile), quindi il margine alto e' calcolato su un capo
+        # che potrebbe essere qualsiasi cosa: la risposta giusta e' chiedere
+        # altre foto, non comprare.
+        #
+        # Due percorsi lo rendono raggiungibile, entrambi verificati:
+        # 1. scraping foto fallito (fallback_solo_cover_photo): lo skip
+        #    "nessuna etichetta" viene deliberatamente bypassato per non
+        #    perdere l'annuncio, e il Cervello risponde "non_verificabile";
+        # 2. payload malformato: valida_payload_cervello usa proprio
+        #    "non_verificabile" come default prudente quando l'enum non e'
+        #    riconosciuto -- prima di questa correzione un JSON sformato del
+        #    Cervello si trasformava in un COMPRA.
+        if v["legit_verdetto"] in ("sospetto_servono_altre_foto", "non_verificabile"):
+            decisione = "CHIEDI ALTRE FOTO"
+        else:
+            decisione = "COMPRA"
     elif tratta_supera_soglia:
         decisione = "TRATTA"
     else:
@@ -4699,8 +5622,34 @@ async def process_listing(parsed, url, cover_photo_bytes):
             "esplicitamente il limite."
         )
 
-    output_occhi, costo_occhi, _ = await chiama_gemini(
-        GEMINI_OCCHI_SYSTEM_PROMPT, user_text_occhi, photo_bytes_list, grounding=False)
+    # --- OCCHIO: due rami, scelti da OCCHIO_OUTPUT_JSON.
+    # In entrambi i casi il resto della pipeline riceve `output_occhi` come
+    # testo: in modalita' JSON e' il rendering del dict, cosi' build_skip_report
+    # e il prompt del Cervello continuano a funzionare senza modifiche.
+    occhio_json = None
+    problemi_occhio = []
+    if OCCHIO_OUTPUT_JSON:
+        output_grezzo, costo_occhi, _ = await chiama_gemini(
+            GEMINI_OCCHI_SYSTEM_PROMPT_JSON, user_text_occhi, photo_bytes_list,
+            grounding=False, response_schema=OCCHIO_RESPONSE_SCHEMA)
+        try:
+            occhio_json, problemi_occhio = valida_payload_occhio(json.loads(output_grezzo))
+            output_occhi = render_occhio_da_json(occhio_json, problemi_occhio)
+            if problemi_occhio:
+                log.info("Occhio JSON con %d anomalie: %s", len(problemi_occhio), problemi_occhio)
+        except (json.JSONDecodeError, TypeError, ValueError) as e:
+            # Fallback esplicito e non silenzioso: se il JSON non e'
+            # parsabile si prosegue col testo grezzo sul ramo prosa, cosi'
+            # un annuncio non va perso per un problema di formato. Se
+            # compare spesso nei log, e' il segnale che flash-lite non
+            # regge lo schema e conviene rimettere OCCHIO_OUTPUT_JSON=false.
+            log.warning("Occhio: JSON non parsabile (%s), fallback al ramo prosa. Grezzo: %s",
+                        e, (output_grezzo or "")[:400])
+            occhio_json = None
+            output_occhi = output_grezzo
+    else:
+        output_occhi, costo_occhi, _ = await chiama_gemini(
+            GEMINI_OCCHI_SYSTEM_PROMPT, user_text_occhi, photo_bytes_list, grounding=False)
     costo_totale += costo_occhi
 
     # Prezzo del prodotto: base di OGNI calcolo economico a valle.
@@ -4716,7 +5665,7 @@ async def process_listing(parsed, url, cover_photo_bytes):
     forza_ricerca = None
     verdetto_calcolato = None
 
-    e_skip, motivo_skip = check_skip_pre_cervello(output_occhi, listing_info)
+    e_skip, motivo_skip = check_skip_pre_cervello(output_occhi, listing_info, occhio_json=occhio_json)
     if e_skip:
         log.info("FILTRO PRE-CERVELLO ATTIVATO. Motivo: %s", motivo_skip)
         if motivo_skip.startswith("[FALSO CONCLAMATO"):
@@ -5009,6 +5958,12 @@ async def main():
         "Cervello: %s (output JSON strutturato) · comp da memoria del modello: %s",
         OPENAI_MODEL_CERVELLO if CERVELLO_PROVIDER == "openai" else GEMINI_MODEL_CERVELLO,
         "ammessi" if COMP_DA_MEMORIA_AMMESSI else "esclusi dal calcolo",
+    )
+    log.info(
+        "Occhio: %s · output %s · scarto pre-cervello %s",
+        GEMINI_MODEL_OCCHIO,
+        "JSON strutturato" if OCCHIO_OUTPUT_JSON else "prosa",
+        "calcolato da campi tipizzati" if OCCHIO_OUTPUT_JSON else "da match testuale",
     )
     await inizializza_client_http()
     try:
