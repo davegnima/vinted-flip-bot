@@ -2111,9 +2111,18 @@ _client_telegram = None   # Bot API: timeout piu' corti, chiamate frequenti
 
 
 def _crea_client_vinted(proxy_url=None):
+    # NIENTE cookies=_VINTED_COOKIES qui (tolto il 2026-09-20, era li' dal
+    # giorno prima): i client di questo pool sono condivisi da TUTTO lo
+    # scraping Vinted (annunci, venditori, ricerca visuale), quindi
+    # allegare qui i cookie dell'account dedicato li rendeva permanenti su
+    # OGNI richiesta -- quando il token scadeva, anche lo scraping normale
+    # (che prima funzionava benissimo in modo anonimo) veniva rediretto a
+    # /session-refresh e si rompeva silenziosamente. Scelta esplicita
+    # dell'utente: l'account dedicato va usato SOLO per la ricerca visuale,
+    # passando i cookie caso per caso su quella singola chiamata (vedi
+    # _risolvi_search_by_image_id) invece che sul client condiviso.
     return httpx.AsyncClient(
         headers=VINTED_HEADERS,
-        cookies=_VINTED_COOKIES or None,
         follow_redirects=True,   # _risolvi_search_by_image_id dipende dal redirect
         proxy=proxy_url,
         timeout=httpx.Timeout(20.0, connect=10.0),
@@ -2200,12 +2209,18 @@ async def _rinnova_token_vinted():
         return False
 
     client = _prossimo_client_vinted()
+    # Cookie passati ESPLICITAMENTE su queste due chiamate (non piu' sul
+    # client condiviso, vedi _crea_client_vinted): httpx li aggiunge solo
+    # alla richiesta corrente senza toccare il cookie jar persistente del
+    # client, quindi lo stesso client torna "pulito" per la prossima
+    # richiesta anonima fatta da qualunque altra parte del bot.
+    cookies_auth = {k: v for k, v in _VINTED_COOKIES.items() if v}
 
     # Passo 1: CSRF token fresco dalla home page. Pattern del meta tag non
     # confermato su una risposta reale -- se fallisce lo si vede nel log qui
     # sotto e si aggiusta la regex, non si fallisce in silenzio.
     try:
-        resp_home = await client.get("https://www.vinted.it/", timeout=15.0)
+        resp_home = await client.get("https://www.vinted.it/", timeout=15.0, cookies=cookies_auth)
         resp_home.raise_for_status()
     except Exception as e:
         log.warning("_rinnova_token_vinted: GET home page fallita: %s", e)
@@ -2228,7 +2243,8 @@ async def _rinnova_token_vinted():
     })
     try:
         resp = await client.post(
-            "https://www.vinted.it/web/api/auth/refresh", headers=headers_refresh, timeout=15.0
+            "https://www.vinted.it/web/api/auth/refresh", headers=headers_refresh, timeout=15.0,
+            cookies=cookies_auth,
         )
     except Exception as e:
         log.warning("_rinnova_token_vinted: chiamata all'endpoint di refresh fallita: %s", e)
@@ -2261,11 +2277,13 @@ async def _rinnova_token_vinted():
     _VINTED_COOKIES["access_token_web"] = nuovo_access
     _VINTED_COOKIES["refresh_token_web"] = nuovo_refresh or refresh_token
 
-    # Propaga a TUTTI i client del pool: ognuno ha la propria copia dei
-    # cookie presa a costruzione, mutare _VINTED_COOKIES da sola non basta.
-    for c in _CLIENT_VINTED_POOL:
-        c.cookies.set("access_token_web", _VINTED_COOKIES["access_token_web"], domain=".vinted.it")
-        c.cookies.set("refresh_token_web", _VINTED_COOKIES["refresh_token_web"], domain=".vinted.it")
+    # NIENTE piu' propagazione ai client del pool (rimossa il 2026-09-20):
+    # da quando _crea_client_vinted non allega piu' i cookie a costruzione,
+    # non c'e' nessun cookie jar condiviso da tenere sincronizzato -- ogni
+    # chiamata autenticata (qui e in _risolvi_search_by_image_id) legge
+    # _VINTED_COOKIES freschi e li passa esplicitamente sulla propria
+    # richiesta, quindi il valore appena aggiornato sopra e' gia' quello
+    # che verra' usato dalla prossima chiamata.
 
     # Persistenza su /data (Volume Railway "vinted-tokens", 2026-09-20):
     # sopravvive ai riavvii/redeploy. Il try/except resta comunque -- se il
@@ -2301,7 +2319,7 @@ async def _attendi_turno_vinted():
         _vinted_timestamp_ultima_richiesta[0] = time.monotonic()
 
 
-async def _vinted_get_con_retry(url, timeout=15, max_retries=3, headers_extra=None):
+async def _vinted_get_con_retry(url, timeout=15, max_retries=3, headers_extra=None, cookies_extra=None):
     """GET con retry per lo scraping Vinted. In precedenza un singolo timeout
     faceva fallire l'intero scraping (foto, descrizione, venditore tutti
     vuoti), costringendo il cervello a lavorare quasi alla cieca.
@@ -2314,7 +2332,16 @@ async def _vinted_get_con_retry(url, timeout=15, max_retries=3, headers_extra=No
     headers_extra: header aggiuntivi/di override per questa singola chiamata
     (es. Referer/Sec-Fetch-Site per simulare un click interno al sito invece
     di un arrivo diretto dall'esterno) -- fusi sopra VINTED_HEADERS, non
-    toccano le altre chiamate."""
+    toccano le altre chiamate.
+
+    cookies_extra (aggiunto il 2026-09-20): cookie SOLO per questa singola
+    chiamata, passati direttamente a httpx invece che attaccati al client
+    condiviso -- scelta esplicita dell'utente per tenere l'account Vinted
+    dedicato (usato per la ricerca visuale, vedi _risolvi_search_by_image_id)
+    completamente separato dal pool anonimo usato per lo scraping normale
+    di annunci/venditori. Nessun impatto sulle altre chiamate: httpx aggiunge
+    i cookie solo all'header Cookie di QUESTA richiesta, non li salva nel
+    cookie jar persistente del client."""
     headers_richiesta = VINTED_HEADERS if not headers_extra else {**VINTED_HEADERS, **headers_extra}
 
     ultimo_errore = None
@@ -2322,7 +2349,7 @@ async def _vinted_get_con_retry(url, timeout=15, max_retries=3, headers_extra=No
         await _attendi_turno_vinted()
         try:
             client = _prossimo_client_vinted()
-            resp = await client.get(url, headers=headers_richiesta, timeout=timeout)
+            resp = await client.get(url, headers=headers_richiesta, cookies=cookies_extra, timeout=timeout)
             resp.raise_for_status()
             return resp
         except Exception as e:
@@ -3868,8 +3895,13 @@ async def _risolvi_search_by_image_id(item_id, photo_id):
         "Sec-Fetch-Dest": "document",
         "Sec-Fetch-User": "?1",
     }
+    # Cookie dell'account dedicato passati SOLO qui (cookies_extra, non piu'
+    # sul client condiviso): questa e' l'unica chiamata del bot che ha
+    # davvero bisogno di autenticazione (verificato via DevTools il
+    # 2026-09-18/19), tutto il resto dello scraping Vinted resta anonimo.
     resp = await _vinted_get_con_retry(
-        url_intermedio, timeout=12, max_retries=2, headers_extra=headers_referer_annuncio
+        url_intermedio, timeout=12, max_retries=2, headers_extra=headers_referer_annuncio,
+        cookies_extra={k: v for k, v in _VINTED_COOKIES.items() if v},
     )
     if resp is None:
         return None
