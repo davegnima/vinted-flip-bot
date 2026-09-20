@@ -6024,7 +6024,7 @@ def calcola_verdetto(v, prezzo_prodotto):
     }
 
 
-def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None):
+def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_id=None, cover_photo_id=None, brand=None):
     """Costruisce il messaggio Telegram dal verdetto calcolato. E' l'unico
     posto del bot dove si scrivono emoji di decisione e cifre: il modello
     non produce piu' nessuna delle due, quindi non esiste piu' il caso
@@ -6141,6 +6141,30 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None):
         )
         if split_txt:
             righe.append(f"_Split fonti: {split_txt}_")
+
+    # --- link per fare a mano la ricerca visuale (aggiunto il 2026-09-20):
+    # il bot non riesce piu' a risolverla da solo (VISUAL_SEARCH_ATTIVA=false,
+    # vedi la lunga indagine nella docstring di _risolvi_search_by_image_id --
+    # l'endpoint blocca sia il client diretto che il fallback Serper), ma lo
+    # stesso identico URL, aperto a mano in un browser vero gia' loggato
+    # sull'account Vinted dedicato, funziona (verificato dall'utente via
+    # DevTools il 2026-09-18/19). Qui si da' solo l'URL intermedio (quello che
+    # Vinted stesso rimbalza al catalogo visuale corretto), cosi' l'utente puo'
+    # farlo con un click quando gli serve, senza che il bot debba riprovare a
+    # farlo in automatico.
+    if item_id and cover_photo_id:
+        url_ricerca_visuale = f"https://www.vinted.it/items/{item_id}/search_by_image?photo_id={quote(cover_photo_id)}"
+        # Filtro brand aggiunto GIA' su questo URL intermedio (richiesto
+        # dall'utente il 2026-09-20): non e' confermato che Vinted preservi
+        # parametri extra attraverso il suo redirect 307 verso /catalog (e'
+        # il server a costruire l'URL finale, non un semplice forward della
+        # querystring) -- se non lo fa, l'utente atterra comunque sul
+        # catalogo visuale corretto e filtra il brand con un click in piu'
+        # nell'interfaccia Vinted, quindi tentarlo non peggiora nulla.
+        brand_id = VINTED_BRAND_IDS.get((brand or "").strip().lower())
+        if brand_id:
+            url_ricerca_visuale += f"&brand_ids[]={brand_id}&status_ids[]=1&status_ids[]=2&status_ids[]=3"
+        righe += ["", f"🔍 Ricerca visuale (manuale): {url_ricerca_visuale}"]
 
     if stats_comp and stats_comp.get("n_memoria"):
         n_memoria = stats_comp["n_memoria"]
@@ -6510,7 +6534,10 @@ async def process_listing(parsed, url, cover_photo_bytes):
         verdetto_calcolato = calcola_verdetto(v, prezzo_prodotto)
         decisione = verdetto_calcolato["decisione"]
         urgenza = verdetto_calcolato["urgenza"]
-        output_finale = render_messaggio_verdetto(v, verdetto_calcolato, problemi, stats_comp)
+        output_finale = render_messaggio_verdetto(
+            v, verdetto_calcolato, problemi, stats_comp,
+            item_id=item_id_annuncio, cover_photo_id=cover_photo_id, brand=brand_annuncio,
+        )
 
         log.info(
             "Verdetto '%s': %s (%s urgenza) — margine=%s ROI=%s — comp usati=%d (%d da memoria) — limiti=%s",
