@@ -3887,6 +3887,10 @@ async def _risolvi_search_by_image_id(item_id, photo_id):
             url_finale,
         )
         return None
+    log.info(
+        "_risolvi_search_by_image_id: OK item_id=%s photo_id=%s -> search_by_image_id=%s (url_finale=%s)",
+        item_id, photo_id, m.group(1), url_finale,
+    )
     return m.group(1)
 
 
@@ -3906,11 +3910,13 @@ async def build_vinted_visual_search_url(item_id, photo_id, brand):
     search_by_image_id = await _risolvi_search_by_image_id(item_id, photo_id)
     if not search_by_image_id:
         return None
-    return (
+    url = (
         f"https://www.vinted.it/catalog?search_by_image_id={quote(search_by_image_id)}"
         f"&brand_ids[]={brand_id}"
         "&order=newest_first&status_ids[]=1&status_ids[]=2&status_ids[]=3"
     )
+    log.info("build_vinted_visual_search_url: URL catalogo costruito: %s", url)
+    return url
 
 
 # search_comps_ebay_sold_url (URL diretto www.ebay.it/sch/i.html?...&LH_Sold=1)
@@ -4446,8 +4452,17 @@ async def _recupera_comp_visuali_vinted(item_id, photo_id, brand):
     fonte assente senza differenziare i log dalle altre query fallite."""
     url = await build_vinted_visual_search_url(item_id, photo_id, brand)
     if not url:
+        log.info(
+            "_recupera_comp_visuali_vinted: fonte non disponibile per item_id=%s "
+            "(photo_id/brand mancante o risoluzione ID fallita).", item_id,
+        )
         return "  Fonte non disponibile (photo_id/brand mancante o risoluzione ID falsa).", False
-    return await _serper_scrape_page_diretto("VINTED", url)
+    testo, ok = await _serper_scrape_page_diretto("VINTED", url)
+    log.info(
+        "_recupera_comp_visuali_vinted: scrape catalogo grezzo per item_id=%s ok=%s -> %r",
+        item_id, ok, testo,
+    )
+    return testo, ok
 
 
 async def _cerca_ebay_sold_con_fallback(brand, categoria, material_per_ricerca=None):
@@ -4552,6 +4567,10 @@ async def search_comps_completo(brand, categoria, query_base, catalog_id=None, m
         # dalla similarita' visiva con la foto reale, un filtro testuale sulla
         # categoria rischierebbe solo di scartare match validi con titoli
         # atipici.
+        log.info(
+            "search_comps_completo: comp visuali DOPO pulizia (item_id=%s, brand=%s) -> %r",
+            item_id, brand, visual_comp_puliti,
+        )
 
     n_fonti = 2 if fonte_visuale_riuscita else 1
     parti = [f"RICERCA WEB PRE-RACCOLTA ({n_fonti} fonti, base: '{query_base}'):"]
