@@ -4460,6 +4460,73 @@ def _rimuovi_comp_autoreferenziale(testo_comp_vinted, titolo_annuncio):
     return "\n".join(righe_filtrate)
 
 
+# Pattern che estrae titolo+prezzo dall'attributo alt="..." di ogni <img>
+# prodotto nella griglia catalogo Vinted -- confermato il 2026-09-20 via
+# view-source reale fornito dall'utente:
+# alt="Manteau Jean Paul Gaultier, Brand: Jean Paul Gaultier, Condizioni:
+# Ottime, Taglia: M / IT 42 / EU 38, 140.00 €, 147.70 €"
+# Il primo prezzo (140.00) e' l'ask "nudo", il secondo (147.70) include le
+# fee Vinted -- prendiamo il primo per coerenza con le altre fonti comp, che
+# lavorano tutte in ASK senza fee. Molto piu' robusto di un parser
+# HTML->markdown generico: il dato e' gia' strutturato da Vinted stesso nel
+# markup, non va indovinato dalla disposizione visiva del testo.
+_RE_ALT_PRODOTTO_VINTED = re.compile(
+    r'alt="([^"]+?),\s*Brand:.*?,\s*Condizioni:.*?,\s*Taglia:[^,"]*,\s*([\d]+(?:[.,]\d+)?)\s*€',
+    re.IGNORECASE,
+)
+
+
+def _estrai_articoli_da_alt_vinted(html_content, max_articoli=15):
+    """Estrae righe 'titolo — prezzo' dagli attributi alt= delle immagini
+    prodotto nell'HTML grezzo di una pagina catalogo Vinted (vedi
+    _RE_ALT_PRODOTTO_VINTED per il pattern esatto). Stesso formato di
+    output di _estrai_articoli_vinted ('- titolo — €prezzo', una riga per
+    articolo) cosi' il resto della pipeline (filtro autoreferenziale,
+    categoria, sottolinea brand) funziona invariato su entrambe le fonti."""
+    righe, visti = [], set()
+    for m in _RE_ALT_PRODOTTO_VINTED.finditer(html_content or ""):
+        titolo = html.unescape(m.group(1)).strip()
+        prezzo = m.group(2).replace(",", ".")
+        if not titolo or len(titolo) < 3:
+            continue
+        chiave = (titolo[:60].lower(), prezzo)
+        if chiave in visti:
+            continue
+        visti.add(chiave)
+        righe.append(f"- {titolo} — €{prezzo}")
+        if len(righe) >= max_articoli:
+            break
+    if not righe:
+        return "  Nessun articolo trovato (pattern alt= senza match -- possibile cambio di markup Vinted, da rivedere)."
+    return "\n".join(righe)
+
+
+async def _scrape_catalogo_vinted_diretto(url):
+    """Scarica la pagina catalogo search_by_image_id con il client HTTP GIA'
+    autenticato del bot (stesso pool/proxy usato per annunci e profili
+    venditore), invece di passare per Serper. Aggiunta il 2026-09-20 dopo
+    aver isolato empiricamente (con l'utente, via DevTools) che Vinted
+    restituisce contenuto DIVERSO a seconda di chi fa la richiesta: il
+    browser dell'utente (anche incognito, senza login) riceve la vera
+    griglia filtrata per search_by_image_id renderizzata server-side (SSR,
+    confermato: i titoli sono gia' nell'HTML grezzo via view-source, non
+    serve JS), mentre Serper riceveva sistematicamente lo stesso mazzo
+    generico di articoli del brand (identico su search_by_image_id diversi
+    per lo stesso brand) -- quasi certamente un fallback anti-bot (Datadome,
+    gia' noto per altri endpoint Vinted) che riconosce il fingerprint di
+    Serper e gli serve una versione non personalizzata invece di bloccare.
+
+    Estrazione via _estrai_articoli_da_alt_vinted (regex su alt=, vedi
+    sopra) invece che via markdown generico: un primo tentativo con
+    markdownify (HTML->markdown) metteva titolo e prezzo su righe separate
+    quando erano in tag diversi, rompendo il parser esistente che li vuole
+    sulla stessa riga -- scartato prima del deploy."""
+    resp = await _vinted_get_con_retry(url, timeout=15, max_retries=2)
+    if resp is None:
+        return "  Scrape diretto Vinted fallito (nessuna risposta dopo i retry).", False
+    return _estrai_articoli_da_alt_vinted(resp.text), True
+
+
 async def _recupera_comp_visuali_vinted(item_id, photo_id, brand):
     """Wrapper per la fonte visuale, pensato per essere sottomesso come UN
     solo future nello stesso executor delle altre 3 fonti (vedi
@@ -4470,7 +4537,10 @@ async def _recupera_comp_visuali_vinted(item_id, photo_id, brand):
     dell'executor e' un solo task con lo stesso contratto di ritorno
     (testo, ok) degli altri. ok=False (non un'eccezione) quando manca un
     ingrediente o la risoluzione fallisce, cosi' il chiamante lo tratta come
-    fonte assente senza differenziare i log dalle altre query fallite."""
+    fonte assente senza differenziare i log dalle altre query fallite.
+
+    Scrape diretto (non Serper) dal 2026-09-20: vedi docstring di
+    _scrape_catalogo_vinted_diretto per il perche'."""
     url = await build_vinted_visual_search_url(item_id, photo_id, brand)
     if not url:
         log.info(
@@ -4478,7 +4548,7 @@ async def _recupera_comp_visuali_vinted(item_id, photo_id, brand):
             "(photo_id/brand mancante o risoluzione ID fallita).", item_id,
         )
         return "  Fonte non disponibile (photo_id/brand mancante o risoluzione ID falsa).", False
-    testo, ok = await _serper_scrape_page_diretto("VINTED", url)
+    testo, ok = await _scrape_catalogo_vinted_diretto(url)
     log.info(
         "_recupera_comp_visuali_vinted: scrape catalogo grezzo per item_id=%s ok=%s -> %r",
         item_id, ok, testo,
