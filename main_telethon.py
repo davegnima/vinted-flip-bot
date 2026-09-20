@@ -428,7 +428,15 @@ CATEGORIA_KEYWORDS = {
     "abito": ["abito", "vestito", "kleid", "dress", "robe", "vestido"],
     "blusa": ["blusa", "camicetta", "bluse", "blouse", "chemisier"],
     "camicia": ["camicia", "hemd", "shirt", "chemise", "camisa", "camisola"],
-    "maglia": ["maglia", "maglione", "pullover", "sweater", "pull", "jumper", "jersey", "suéter", "trui", "strick"],
+    # "cardigan" aggiunto il 2026-09-20: assente prima in ogni categoria (ne'
+    # qui ne' altrove nel dizionario), quindi un titolo come "Jean Paul
+    # Gaultier Blue Cardigan" non veniva classificato in NESSUNA categoria
+    # (estrai_categoria_da_titolo tornava None) -- e con categoria=None
+    # _filtra_comp_per_categoria e' un no-op per definizione, quindi i comp
+    # visuali restavano completamente non filtrati (borse/vestiti/gonne
+    # mescolati) anche dopo il fix dell'ordinamento. Osservato in log di
+    # produzione reali.
+    "maglia": ["maglia", "maglione", "pullover", "sweater", "pull", "jumper", "jersey", "suéter", "trui", "strick", "cardigan"],
     "t-shirt": ["t-shirt", "tshirt", "t shirt", "maglietta", "camiseta", "playera"],
     "canotta": ["canotta", "canottiera", "top", "tank top", "canotte", "débardeur", "tirantes"],
     "felpa": ["felpa", "hoodie", "sweatshirt", "sudadera", "kapuzenpulli"],
