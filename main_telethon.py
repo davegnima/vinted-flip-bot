@@ -6583,7 +6583,18 @@ async def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header,
     else:
         await telegram_send_message(TELEGRAM_OWNER_CHAT_ID, header + output_finale, disable_notification=silenzioso)
 
-    if TELEGRAM_ALERT_CHAT_ID and e_compra:
+    # Ristretto a decisione == "COMPRA" (richiesto dall'utente il 2026-09-20,
+    # secondo giro): questo alert e' un sendMessage separato che NON passa
+    # per silenzioso/disable_notification sopra, quindi finche' il trigger
+    # restava "e_compra" (COMPRA O TRATTA O CHIEDI ALTRE FOTO) continuava a
+    # suonare a piena voce anche per TRATTA/CHIEDI ALTRE FOTO -- probabile
+    # causa reale delle notifiche push ancora ricevute su stati diversi da
+    # COMPRA, a prescindere dal disable_notification sul messaggio
+    # principale (che comunque su Telegram silenzia solo il SUONO, non fa
+    # sparire del tutto banner/vibrazione: per un silenzio totale sugli
+    # altri stati va mutata la chat principale lato Telegram, lasciando
+    # sblocca solo questa chat di alert).
+    if TELEGRAM_ALERT_CHAT_ID and decisione == "COMPRA":
         alert_text = (
             f"🚨 *AZIONE RICHIESTA*\n"
             f"*{listing_info.get('title')}*\n"
