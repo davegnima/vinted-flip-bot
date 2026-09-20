@@ -1643,7 +1643,7 @@ Distingui SEMPRE le linee/ere per i brand, è un fattore critico per il valore. 
 
 # DIFETTI MINORI VS STRUTTURALI
 Difetti minori (macchie lavabili, pilling) riducono il prezzo e spostano la decisione a TRATTA o NON COMPRARE se il capo è costoso, ma sono accettabili sotto €15.
-Difetti strutturali (buchi, strappi gravi, tessuto lacerato) = NON COMPRARE sempre, invendibili.
+Difetti strutturali (buchi, strappi, tessuto lacerato) compromettono l'uso o la rivendibilità, ma NON sono tutti uguali: un piccolo foro isolato su una manica di un pezzo d'archivio resta vendibile a forte sconto, un capo con più strappi o un'area ampia compromessa no. Descrivi sempre la DIMENSIONE e la POSIZIONE del difetto (non solo che esiste), così il Cervello può giudicarne la gravità reale invece di trattare ogni foro allo stesso modo di uno strappo esteso.
 
 # OUTPUT — ottimizzato per lettura rapida da mobile. Il verdetto va SEMPRE in cima.
 
@@ -1816,7 +1816,7 @@ Se pensi che possa servire una trattativa (margine risicato al prezzo pieno, anc
 1. Ogni prezzo in `comp_candidati` e' copiato alla lettera dai dati, o marcato `memoria_modello`?
 2. `prezzo_target_vendita_eur` rispetta il comp di riferimento scontato e l'eventuale tetto di linea?
 3. Il materiale e' davvero ignoto (nessuna menzione da nessuna parte) prima di mettere `materiale_confermato: false`? Se titolo/descrizione/etichetta lo dichiarano, e' `true`.
-4. C'e' un difetto degno di nota sul capo? Se si', `difetto_significativo: true` con `sconto_difetto_pct` proporzionato e `descrizione_difetto` compilata -- e NON gia' scontato a mano dentro `prezzo_target_vendita_eur` (verrebbe scontato due volte). Se il difetto compromette l'uso o la rivendibilita' (buco aperto, strappo, tessuto lacerato, cerniera rotta), aggiungi `difetto_strutturale: true`: il sistema porta il verdetto a NON COMPRARE da solo, tu limitati a dichiararlo.
+4. C'e' un difetto degno di nota sul capo? Se si', `difetto_significativo: true` con `sconto_difetto_pct` proporzionato e `descrizione_difetto` compilata -- e NON gia' scontato a mano dentro `prezzo_target_vendita_eur` (verrebbe scontato due volte). Se il difetto compromette l'uso o la rivendibilita' (buco aperto, strappo, tessuto lacerato, cerniera rotta), aggiungi `difetto_strutturale: true` e valuta `gravita_difetto_strutturale`: SOLO 'grave' porta il verdetto a NON COMPRARE da solo -- 'lieve' (difetto piccolo e localizzato, es. un foro isolato su una manica) e 'moderata' restano un capo normalmente valutabile, scontato tramite `sconto_difetto_pct` come ogni altro difetto. Non confondere "compromette la rivendibilita'" con "e' invendibile": un piccolo foro dichiarato in foto non rende automaticamente invendibile un pezzo d'archivio.
 5. `legit_motivo_specifico` e' concreto e descrive una discrepanza reale?
 6. Hai evitato di scrivere margine, ROI, decisione, urgenza e importi di trattativa ovunque?
 """.strip()
@@ -2775,6 +2775,7 @@ CERVELLO_RESPONSE_SCHEMA = {
         "prezzo_target_vendita_eur",
         "difetto_significativo",
         "difetto_strutturale",
+        "gravita_difetto_strutturale",
         "sconto_difetto_pct",
         "descrizione_difetto",
         "giorni_stimati_vendita",
@@ -2961,10 +2962,34 @@ CERVELLO_RESPONSE_SCHEMA = {
                 "capo: buco aperto, strappo, tessuto lacerato, cuciture saltate su una "
                 "giuntura portante, cerniera rotta non sostituibile, muffa. false per difetti "
                 "estetici recuperabili (pilling, macchia lavabile, filo tirato, foro di "
-                "spilla, bottone mancante sostituibile). Un capo strutturalmente danneggiato "
-                "e' invendibile nel segmento monitorato: il sistema lo porta d'ufficio a NON "
-                "COMPRARE indipendentemente dal prezzo e dal margine, quindi non serve che tu "
-                "abbassi la stima per segnalarlo -- limitati a dire il vero."
+                "spilla, bottone mancante sostituibile). Non decide da solo il blocco: e' "
+                "`gravita_difetto_strutturale` che stabilisce se il capo resta vendibile a "
+                "forte sconto o se e' invendibile -- vedi sotto."
+            ),
+        },
+        "gravita_difetto_strutturale": {
+            "type": "STRING",
+            "format": "enum",
+            "enum": ["lieve", "moderata", "grave"],
+            "nullable": True,
+            "description": (
+                "Obbligatorio (non null) se difetto_strutturale=true, altrimenti null. Caso "
+                "reale che ha corretto questa regola: una t-shirt Jean Paul Gaultier d'archivio "
+                "con un piccolo foro isolato sulla manica in tessuto a rete -- il sistema la "
+                "scartava sempre come invendibile, ma un difetto cosi' piccolo e localizzato su "
+                "un pezzo d'archivio resta perfettamente vendibile a sconto, dichiarato in "
+                "descrizione. 'lieve' = difetto strutturale ma PICCOLO e LOCALIZZATO (un foro "
+                "isolato, pochi cm di cucitura saltata su una giuntura secondaria): il capo "
+                "resta vendibile a forte sconto, NON viene bloccato automaticamente. "
+                "'moderata' = piu' esteso o su una giuntura piu' portante, ma il capo e' ancora "
+                "indossabile e vendibile dichiarandolo: non bloccato, ma il prezzo deve "
+                "riflettere il rischio (sconto_difetto_pct alto, verso il 50%). 'grave' = il "
+                "capo e' sostanzialmente invendibile: piu' difetti strutturali combinati, area "
+                "ampia compromessa, cerniera principale inutilizzabile, capo che rischia di "
+                "peggiorare con il solo indossarlo. SOLO 'grave' fa scattare il blocco "
+                "automatico a NON COMPRARE; 'lieve' e 'moderata' restano un capo normalmente "
+                "valutabile, scontato tramite sconto_difetto_pct come ogni altro difetto. Nel "
+                "dubbio tra 'moderata' e 'grave', scegli 'grave': e' la scelta prudente."
             ),
         },
         "sconto_difetto_pct": {
@@ -2975,7 +3000,13 @@ CERVELLO_RESPONSE_SCHEMA = {
                 "difetto, proporzionata alla gravita': difetto lieve/quasi invisibile ~5-10%, "
                 "difetto visibile ma non strutturale (piccolo foro, filo tirato, macchia "
                 "leggera) ~15-25%, difetto strutturale o che compromette l'uso (strappo, "
-                "cerniera rotta, macchia estesa) ~30-50%. 0 o null se difetto_significativo "
+                "cerniera rotta, macchia estesa) ~30-50%. Pesa anche POSIZIONE e VISIBILITA', "
+                "non solo dimensione: lo stesso foro conta meno se e' sotto l'ascella, sul "
+                "retro o in un punto normalmente coperto, conta di piu' se e' sul petto, su una "
+                "manica in vista o su un bordo. Non serve (e non va fatto) un trattamento "
+                "diverso per marchio o rarita' del capo: quello e' gia' incorporato nel prezzo "
+                "dei comp che stai scontando, un secondo aggiustamento lo conterebbe due volte. "
+                "0 o null se difetto_significativo "
                 "e' false. Decidilo tu in base a quanto descritto/visto, il sistema si limita "
                 "ad applicarlo: non scontarlo gia' tu dentro prezzo_target_vendita_eur, "
                 "altrimenti verrebbe scontato due volte."
@@ -3088,7 +3119,7 @@ CERVELLO_RESPONSE_SCHEMA = {
         "brand_dichiarato_annuncio", "corrispondenza_brand", "linea_o_era_rilevata",
         "categoria_capo", "materiale_confermato", "fascia_taglia",
         "comp_candidati", "sconto_ask_applicato_pct", "prezzo_target_vendita_eur",
-        "difetto_significativo", "difetto_strutturale",
+        "difetto_significativo", "difetto_strutturale", "gravita_difetto_strutturale",
         "giorni_stimati_vendita", "legit_verdetto", "legit_motivo_specifico",
         "rischio_fake", "confidenza", "profilo_venditore", "motivo_profilo_venditore",
         "domanda_mercato", "segnali_domanda", "deal_score", "note_analista",
@@ -5041,6 +5072,26 @@ def valida_payload_cervello(verdetto):
         # Un difetto strutturale e' per definizione significativo: la
         # combinazione opposta e' una contraddizione, si tiene la piu' grave.
         v["difetto_significativo"] = True
+
+    # gravita_difetto_strutturale: solo 'grave' blocca automaticamente (vedi
+    # calcola_verdetto). Un difetto_strutturale=true senza gravita' valida e'
+    # trattato come 'grave' per prudenza -- e' lo stesso principio degli enum
+    # dell'Occhio: il default su un campo di rischio e' sempre quello che
+    # blocca di piu', mai quello che lascia passare.
+    gravita_struct = v.get("gravita_difetto_strutturale")
+    gravita_struct = gravita_struct.strip().lower() if isinstance(gravita_struct, str) else None
+    if v["difetto_strutturale"]:
+        if gravita_struct not in ("lieve", "moderata", "grave"):
+            if gravita_struct is not None:
+                problemi.append(
+                    f"gravita_difetto_strutturale='{v.get('gravita_difetto_strutturale')}' "
+                    "non riconosciuta, uso 'grave' (default prudente)"
+                )
+            gravita_struct = "grave"
+    else:
+        gravita_struct = None
+    v["gravita_difetto_strutturale"] = gravita_struct
+
     sconto_difetto = _a_float(v.get("sconto_difetto_pct"), 0.0) or 0.0
     if sconto_difetto < 0 or sconto_difetto > 50:
         problemi.append(f"sconto_difetto_pct {sconto_difetto:.0f}% fuori dal range 0-50, riportato nel range")
@@ -5305,6 +5356,17 @@ def calcola_verdetto(v, prezzo_prodotto):
             f"sconto {sconto_difetto_pct:.0f}% da €{target_prima_difetto:.2f} a €{target:.2f}"
         )
 
+    # Difetto strutturale 'lieve'/'moderata' (vedi schema): non forza NON
+    # COMPRARE (lo fa solo 'grave', piu' sotto), ma la nota resta visibile
+    # per una decisione informata invece di sparire dentro il generico
+    # "difetto dichiarato" qui sopra.
+    if v.get("difetto_strutturale") and v.get("gravita_difetto_strutturale") in ("lieve", "moderata"):
+        limiti_applicati.append(
+            f"difetto strutturale {v['gravita_difetto_strutturale']} "
+            f"({v.get('descrizione_difetto') or 'non specificato'}): non bloccante, "
+            "gia' scontato nel prezzo target qui sopra"
+        )
+
     target = max(0.0, round(target, 2))
 
     incasso = target * QUOTA_INCASSO_NETTO
@@ -5334,7 +5396,7 @@ def calcola_verdetto(v, prezzo_prodotto):
         limiti_applicati.append("brand reale estraneo al segmento monitorato")
     elif v["legit_verdetto"] == "probabilmente_falso":
         decisione = "NON COMPRARE"
-    elif v.get("difetto_strutturale"):
+    elif v.get("difetto_strutturale") and v.get("gravita_difetto_strutturale") == "grave":
         # Regola di dominio che finora viveva solo come frase nel prompt
         # ("Difetti strutturali = NON COMPRARE sempre, invendibili") e quindi
         # veniva applicata solo se il modello se ne ricordava. Dopo
@@ -5343,9 +5405,18 @@ def calcola_verdetto(v, prezzo_prodotto):
         # se il prezzo d'acquisto era basso, tornava comunque COMPRA.
         # Qui la regola e' aritmetica e non dipende piu' dal buon senso del
         # modello, a cui resta solo il compito di dire se il difetto c'e'.
+        #
+        # CORRETTO il 2026-09-20 (caso reale: t-shirt Jean Paul Gaultier
+        # d'archivio con un piccolo foro isolato su una manica in tessuto a
+        # rete, comprata comunque dall'utente in trattativa): il blocco
+        # automatico incondizionato era troppo rigido, stesso difetto della
+        # regola "materiale non confermato" prima di essere corretta. Ora
+        # blocca solo la gravita' 'grave'; 'lieve' e 'moderata' restano un
+        # capo normalmente valutabile, gia' scontato da sconto_difetto_pct
+        # qualche riga sopra.
         decisione = "NON COMPRARE"
         limiti_applicati.append(
-            f"difetto strutturale ({v.get('descrizione_difetto') or 'non specificato'}): "
+            f"difetto strutturale grave ({v.get('descrizione_difetto') or 'non specificato'}): "
             "capo invendibile, decisione forzata a NON COMPRARE"
         )
     elif supera_soglia:
