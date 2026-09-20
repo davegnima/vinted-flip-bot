@@ -6442,6 +6442,36 @@ async def process_listing(parsed, url, cover_photo_bytes):
         cover_photo_id = listing_info.get("cover_photo_id")
         item_id_annuncio = _estrai_item_id_da_url(url)
 
+        # Brand da usare per la RICERCA comp, arricchito con la sottolinea
+        # letta dall'Occhio sull'etichetta quando presente (aggiunto il
+        # 2026-09-20, caso reale: annuncio con brand Vinted "Max Mara" ma
+        # etichetta fotografata "Weekend MaxMara" -- la ricerca comp usava
+        # solo "Max Mara" generico, prendendo cappotti mainline (€200,
+        # €290...) come comp per un capo Weekend, che vale sistematicamente
+        # meno. Il campo brand del listing riflette quasi sempre solo il
+        # brand madre scelto dal venditore, MAI la sottolinea specifica.
+        # _filtra_comp_per_brand_sottolinee (vedi BRAND_SOTTOLINEE_DA_ESCLUDERE)
+        # con brand="Max Mara" avrebbe anzi ATTIVAMENTE scartato eventuali
+        # comp "Weekend Max Mara" gia' trovati, aggravando il problema.
+        # Con brand arricchito a "Weekend Max Mara" quella chiave non esiste
+        # nel dizionario di esclusione (solo "max mara" mainline ce l'ha),
+        # quindi il filtro diventa automaticamente un no-op per questo caso
+        # -- nessuna modifica separata necessaria li'.
+        brand_per_ricerca = brand_annuncio
+        if (
+            occhio_json
+            and occhio_json.get("relazione_brand") == "sottolinea_stessa_maison"
+            and occhio_json.get("nome_sottolinea")
+        ):
+            nome_sottolinea = str(occhio_json["nome_sottolinea"]).strip()
+            if nome_sottolinea and nome_sottolinea.lower() not in brand_annuncio.lower():
+                brand_per_ricerca = f"{nome_sottolinea} {brand_annuncio}".strip()
+                log.info(
+                    "process_listing: brand arricchito per la ricerca comp: '%s' -> '%s' "
+                    "(sottolinea letta dall'Occhio sull'etichetta).",
+                    brand_annuncio, brand_per_ricerca,
+                )
+
         scenario_usato = "F"
         comps_text = None
 
@@ -6454,7 +6484,7 @@ async def process_listing(parsed, url, cover_photo_bytes):
 
         if serper_disponibile:
             comps_text, serper_ok, tentare_ricerca_visuale, fonte_visuale_riuscita = await search_comps_completo(
-                brand_annuncio, categoria_per_ricerca, titolo_annuncio,
+                brand_per_ricerca, categoria_per_ricerca, titolo_annuncio,
                 catalog_id=catalog_id, material_per_ricerca=material_per_ricerca,
                 cover_photo_id=cover_photo_id, item_id=item_id_annuncio,
             )
@@ -6536,7 +6566,7 @@ async def process_listing(parsed, url, cover_photo_bytes):
         urgenza = verdetto_calcolato["urgenza"]
         output_finale = render_messaggio_verdetto(
             v, verdetto_calcolato, problemi, stats_comp,
-            item_id=item_id_annuncio, cover_photo_id=cover_photo_id, brand=brand_annuncio,
+            item_id=item_id_annuncio, cover_photo_id=cover_photo_id, brand=brand_per_ricerca,
         )
 
         log.info(
