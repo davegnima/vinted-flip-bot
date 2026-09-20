@@ -6313,31 +6313,43 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
     template = (v.get("messaggio_venditore_template") or "").strip()
     messaggio_sostituito = False
     testo_messaggio = None
-    if serve_messaggio and template:
-        if dec == "TRATTA":
-            if "{OFFERTA}" in template:
-                testo_messaggio = template.replace("{OFFERTA}", f"€{verdetto['tratta_prezzo_prodotto']:.2f}")
-            else:
-                # Il cervello scrive messaggio_venditore_template SENZA sapere
-                # quale decisione prendera' il sistema (la calcola solo dopo,
-                # in calcola_verdetto): puo' quindi scrivere un messaggio che
-                # da' per scontato l'acquisto a prezzo pieno ("lo prendo
-                # subito") anche quando poi la decisione risulta TRATTA.
-                # Mandare quel testo contraddirebbe la trattativa mostrata
-                # sopra, quindi si sostituisce con un'apertura generica che
-                # propone davvero l'offerta calcolata.
-                testo_messaggio = (
-                    f"Ciao! Molto interessato, te lo prenderei subito a "
-                    f"€{verdetto['tratta_prezzo_prodotto']:.2f}. Fammi sapere se puo' andare, grazie!"
-                )
-                messaggio_sostituito = True
-        else:
-            # Su CHIEDI ALTRE FOTO non c'e' nessuna offerta da fare: se il
-            # modello ha lasciato comunque il segnaposto, va tolto invece di
-            # finire nel messaggio come testo letterale.
-            testo_messaggio = template.replace("{OFFERTA}", "").strip()
-
     domande = v.get("domande_al_venditore") if serve_messaggio else None
+    if dec == "TRATTA" and template:
+        if "{OFFERTA}" in template:
+            testo_messaggio = template.replace("{OFFERTA}", f"€{verdetto['tratta_prezzo_prodotto']:.2f}")
+        else:
+            # Il cervello scrive messaggio_venditore_template SENZA sapere
+            # quale decisione prendera' il sistema (la calcola solo dopo,
+            # in calcola_verdetto): puo' quindi scrivere un messaggio che
+            # da' per scontato l'acquisto a prezzo pieno ("lo prendo
+            # subito") anche quando poi la decisione risulta TRATTA.
+            # Mandare quel testo contraddirebbe la trattativa mostrata
+            # sopra, quindi si sostituisce con un'apertura generica che
+            # propone davvero l'offerta calcolata.
+            testo_messaggio = (
+                f"Ciao! Molto interessato, te lo prenderei subito a "
+                f"€{verdetto['tratta_prezzo_prodotto']:.2f}. Fammi sapere se puo' andare, grazie!"
+            )
+            messaggio_sostituito = True
+    elif dec == "CHIEDI ALTRE FOTO":
+        # Costruito in Python da un saluto fisso + le domande, IGNORANDO
+        # messaggio_venditore_template (bug segnalato dall'utente il
+        # 2026-09-20: il template del cervello ripete in prosa le stesse
+        # richieste gia' elencate in domande_al_venditore -- caso reale,
+        # 3 richieste di foto quasi identiche nello stesso messaggio). Le
+        # domande sono gia' testo diretto e completo, non serve altro
+        # attorno se non un saluto e un ringraziamento -- stesso principio
+        # del resto del sistema ("l'occhio osserva, Python decide"): il
+        # modello fornisce i contenuti (le domande), Python decide come
+        # assemblarli, cosi' niente piu' duplicazioni.
+        domande_incorporate = False
+        if domande:
+            testo_messaggio = "Ciao! Mi interessa molto questo capo. " + " ".join(domande) + " Grazie!"
+            domande_incorporate = True
+        elif template:
+            testo_messaggio = template.replace("{OFFERTA}", "").strip()
+    else:
+        domande_incorporate = False
     if testo_messaggio or domande:
         righe.append("")
         righe.append("💬 **Azioni (tocca per copiare):**")
@@ -6353,7 +6365,12 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
                     "_⚠️ messaggio del cervello sostituito: proponeva l'acquisto a prezzo pieno "
                     "senza nessuna offerta, in contraddizione con la decisione TRATTA._"
                 )
-        if domande:
+        # Su CHIEDI ALTRE FOTO le domande sono gia' dentro testo_messaggio
+        # (vedi sopra): mostrarle di nuovo qui le duplicherebbe una terza
+        # volta, esattamente il difetto di verbosita' segnalato il
+        # 2026-09-20. Restano mostrate separatamente solo su TRATTA, dove
+        # testo_messaggio non le include.
+        if domande and not domande_incorporate:
             domande_pulite = [d.replace("`", chr(39)) for d in domande]
             righe.append(f"`{' '.join(domande_pulite)}`")
 
@@ -6925,8 +6942,16 @@ async def process_listing(parsed, url, cover_photo_bytes):
     # il 2026-09-20): e' un dettaglio diagnostico su come e' stata condotta
     # la ricerca comp, non qualcosa che serve per decidere -- non ha senso
     # occupare una riga in cima, dove il tempo di lettura e' piu' prezioso.
+    # Riga esito in cima anche per lo SKIP (richiesto dall'utente il
+    # 2026-09-20): stesso principio delle altre decisioni (emoji + esito
+    # prima di tutto), qui pero' senza brand/urgenza accodati -- lo SKIP e'
+    # un filtro pre-cervello, non un verdetto con margine, e brand/prezzo
+    # restano comunque visibili subito sotto nella riga titolo esistente.
+    riga_skip = "🚫 *SKIP*\n" if scenario_usato == "SKIP" else ""
+
     header = (
-        f"🆕 *{_escapa_markdown_legacy(listing_info.get('title'))}*\n"
+        riga_skip
+        + f"🆕 *{_escapa_markdown_legacy(listing_info.get('title'))}*\n"
         f"🏷️ {_escapa_markdown_legacy(listing_info.get('brand')) or '?'} · 💰 {listing_info.get('price') or '?'} EUR"
         f"{info_foto}"
         + f"\n{url or ''}\n{'—' * 20}\n"
@@ -6966,17 +6991,38 @@ async def process_listing(parsed, url, cover_photo_bytes):
         )
     output_finale = output_finale + footer_scenario + footer_costo
 
-    # Verdetto in cima al messaggio (richiesto dall'utente il 2026-09-20):
-    # render_messaggio_verdetto scrive la decisione come sua prima riga (per
-    # costruzione, vedi la funzione), quindi basta staccarla e metterla
-    # prima dell'header invece che dopo -- risultato: verdetto, titolo,
-    # prezzo, link, poi il resto. Non tocca lo scenario SKIP: build_skip_report
-    # ha un formato diverso (piu' verboso, "## Verdetto operativo" come
-    # intestazione di sezione, non una riga singola) e non fa parte del
-    # layout compatto riprogettato in questa sessione.
+    # Verdetto + riga economica in cima al messaggio, poi brand accodato alla
+    # riga decisione (richiesto dall'utente il 2026-09-20, secondo giro di
+    # layout: prima si leggeva emoji/decisione/urgenza, poi titolo, poi
+    # prezzo grezzo, poi solo dopo il margine -- troppi salti per un
+    # messaggio pensato per ~3 secondi di lettura su notifica). Ordine
+    # finale: decisione+brand, margine/ROI, titolo, link. La riga col
+    # prezzo grezzo dell'annuncio sparisce come riga a se': e' gia'
+    # implicita nella cifra "acquisto pieno" della riga margine (che include
+    # anche protezione acquisti e spedizione, quindi e' il numero che conta
+    # davvero). render_messaggio_verdetto scrive decisione come prima riga e
+    # margine/ROI (o l'avviso "calcolo non disponibile") come seconda, per
+    # costruzione: si staccano entrambe e si ricompone l'header da zero.
+    # Non tocca lo scenario SKIP: build_skip_report ha un formato diverso
+    # (piu' verboso, "## Verdetto operativo" come intestazione di sezione,
+    # non righe singole) e non fa parte del layout compatto riprogettato in
+    # questa sessione.
     if scenario_usato != "SKIP" and "\n" in output_finale:
-        riga_verdetto, output_finale = output_finale.split("\n", 1)
-        header = riga_verdetto + "\n" + header
+        righe_output = output_finale.split("\n", 2)
+        riga_verdetto = righe_output[0]
+        riga_margine = righe_output[1] if len(righe_output) > 1 else ""
+        output_finale = righe_output[2] if len(righe_output) > 2 else ""
+
+        brand_escapato = _escapa_markdown_legacy(listing_info.get("brand"))
+        riga_verdetto_con_brand = riga_verdetto + (f" · {brand_escapato}" if brand_escapato else "")
+
+        header = (
+            riga_verdetto_con_brand + "\n"
+            + (riga_margine + "\n" if riga_margine else "")
+            + f"🆕 *{_escapa_markdown_legacy(listing_info.get('title'))}*"
+            + info_foto
+            + f"\n{url or ''}\n{'—' * 20}\n"
+        )
 
     await _invia_risultato_telegram(
         listing_info, url, photo_bytes_list,
