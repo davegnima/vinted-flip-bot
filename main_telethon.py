@@ -850,7 +850,15 @@ OCCHIO_RESPONSE_SCHEMA = {
                 ],
             },
             "description": (
-                "Frode che riguarda l'ANNUNCIO, non il capo. Vuoto se nessuno."
+                "Frode che riguarda l'ANNUNCIO, non il capo. Vuoto se nessuno. "
+                "'capi_diversi_tra_le_foto': usalo SOLO se piu' foto mostrano chiaramente "
+                "capi d'abbigliamento diversi tra loro (es. una giacca in una foto, un vestito "
+                "in un'altra). Se una delle foto ricevute NON mostra affatto un capo "
+                "d'abbigliamento ma una persona, un veicolo, un paesaggio o altro soggetto "
+                "estraneo, e' quasi certamente la foto profilo del venditore finita per errore "
+                "nel lotto (capita, e' un bug noto dello scraping, non un segnale di frode): "
+                "ignora quella foto specifica per questo controllo, non usarla come prova di "
+                "'capi diversi'."
             ),
         },
 
@@ -2457,7 +2465,25 @@ async def scrape_vinted_listing(url):
             if 0 < len(foto_tagliate) and len(foto_complete) - len(foto_tagliate) <= 2:
                 best_url_by_photo_id = foto_tagliate
             else:
-                best_url_by_photo_id = foto_complete
+                # BUG TROVATO IN PRODUZIONE il 2026-09-20 (utente): quando il
+                # taglio sopra viene scartato, foto_complete include TUTTO
+                # cio' che sta sul dominio images.vinted.net nella pagina --
+                # anche l'avatar del venditore (stesso pattern URL delle foto
+                # vere del capo, la regex non li distingue) e altri
+                # thumbnail dopo la sezione venditore (es. "consigliati per
+                # te"). Caso reale: 4 foto vere di un top Marni + l'avatar
+                # del venditore (una foto di una moto) passate insieme
+                # all'Occhio, che ha letto la moto come "capo diverso" e
+                # scartato l'annuncio come FRAUDOLENTO. Fix: si ricalcola
+                # cosa compare SOLO dopo il marker (mai prima) ed escludi
+                # SOLO quelle foto da foto_complete -- il ramo foto_tagliate
+                # sopra non ha questo problema per costruzione (contiene solo
+                # HTML precedente al marker, l'avatar non puo' finirci).
+                foto_dopo_marker = _estrai_foto(html_pagina[marker_venditore.start():])
+                ids_solo_dopo_marker = set(foto_dopo_marker) - set(foto_tagliate)
+                best_url_by_photo_id = {
+                    k: v for k, v in foto_complete.items() if k not in ids_solo_dopo_marker
+                }
         else:
             best_url_by_photo_id = foto_complete
 
