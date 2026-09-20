@@ -6966,6 +6966,18 @@ async def process_listing(parsed, url, cover_photo_bytes):
         )
     output_finale = output_finale + footer_scenario + footer_costo
 
+    # Verdetto in cima al messaggio (richiesto dall'utente il 2026-09-20):
+    # render_messaggio_verdetto scrive la decisione come sua prima riga (per
+    # costruzione, vedi la funzione), quindi basta staccarla e metterla
+    # prima dell'header invece che dopo -- risultato: verdetto, titolo,
+    # prezzo, link, poi il resto. Non tocca lo scenario SKIP: build_skip_report
+    # ha un formato diverso (piu' verboso, "## Verdetto operativo" come
+    # intestazione di sezione, non una riga singola) e non fa parte del
+    # layout compatto riprogettato in questa sessione.
+    if scenario_usato != "SKIP" and "\n" in output_finale:
+        riga_verdetto, output_finale = output_finale.split("\n", 1)
+        header = riga_verdetto + "\n" + header
+
     await _invia_risultato_telegram(
         listing_info, url, photo_bytes_list,
         header, output_finale, decisione, e_compra,
