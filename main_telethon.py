@@ -333,6 +333,15 @@ PAUSA_MINIMA_TRA_RICHIESTE_VINTED_SECONDI = 3.0
 # BLOCKLIST VENDITORI
 VENDITORI_BLOCKLIST = {"valeryepippo", "firmadonna98", "cicciodonna779", "hadourif"}
 
+# BLOCKLIST BRAND -- esclusione totale su richiesta esplicita dell'utente,
+# indipendentemente da prezzo/margine/ROI stimati. "escludi intrend sempre.
+# Non lo comprerò mai" (2026-09-20): a differenza delle regole di linea/era
+# sopra (che abbassano il valore di una sottolinea ma valutano comunque il
+# capo), un brand in questa lista non viene MAI comprato, quindi non ha
+# senso nemmeno stimarne il prezzo di rivendita -- si scarta prima ancora
+# di chiamare l'occhio, come un venditore in blocklist.
+BRAND_BLOCKLIST = {"intrend"}
+
 VINTED_BRAND_IDS = {
     "brunello cucinelli": "103740", "rick owens": "145654",
     "arc'teryx": "319730", "arcteryx": "319730", "patagonia": "90804",
@@ -580,6 +589,14 @@ def check_skip_pre_gemini(listing_info):
     if seller and seller in VENDITORI_BLOCKLIST:
         return True, f"[VENDITORE IN BLOCKLIST] L'utente '{seller}' e' nella blocklist."
 
+    # 1b. Blocklist brand -- controllo sia sul campo brand strutturato sia sul
+    # titolo, perche' non tutti gli annunci hanno il campo brand valorizzato
+    # correttamente (es. "brand: altro" con il nome vero solo nel titolo).
+    for brand_escluso in BRAND_BLOCKLIST:
+        if re.search(r'\b' + re.escape(brand_escluso) + r'\b', brand) or \
+           re.search(r'\b' + re.escape(brand_escluso) + r'\b', titolo):
+            return True, f"[BRAND IN BLOCKLIST] '{brand_escluso}' e' un brand escluso a prescindere."
+
     # 2. Categorie mai flippabili (lista minima -- volutamente corta, quelle
     # "teoriche" aggiunte in precedenza non si verificano mai in pratica)
     unflippable = [
@@ -613,7 +630,7 @@ def check_skip_pre_gemini(listing_info):
         # valore, capi economici e molto diffusi rispetto al mainline.
         # "uniqlo" e "h&m" da soli sono termini rari in un annuncio di
         # moda di lusso, rischio di falso positivo basso.
-        "uniqlo", "h&m",
+        "uniqlo",
         "missoni for target", "missoni x target",
     ]
     # Match a PAROLA INTERA (\b), non a sottostringa. Prima questa lista usava
@@ -623,6 +640,18 @@ def check_skip_pre_gemini(listing_info):
     for kw in unflippable:
         if re.search(r'\b' + re.escape(kw) + r'\b', testo_completo):
             return True, f"[CATEGORIA GENERICA NON FLIPPABILE] Rilevata keyword: {kw}"
+
+    # 2a-bis. Collab con H&M, forma "h&m" separata dal resto perche' su Vinted
+    # (e nello scraping) l'ampersand sparisce spesso dal titolo, lasciando
+    # solo "Hm" -- caso reale osservato in produzione: "Marni for Hm trench
+    # jacket" e' passato indenne per anni perche' il filtro cercava solo la
+    # stringa letterale "h&m" con l'apostrofo. "hm" da solo e' troppo rischioso
+    # (collide con l'interiezione "hm"/"hmm" in descrizioni scritte a mano),
+    # quindi si controllano solo i pattern di collab espliciti "for hm"/"x hm"/
+    # "h & m" (con spazi), oltre alla forma originale con l'ampersand.
+    HM_COLLAB_PATTERN = re.compile(r'\b(h\s*&\s*m|for\s+hm|x\s+hm)\b')
+    if HM_COLLAB_PATTERN.search(testo_completo):
+        return True, "[CATEGORIA GENERICA NON FLIPPABILE] Rilevata keyword: collab H&M"
 
     # 2b. Danno grave dichiarato esplicitamente dal venditore, multilingua
     # (IT/EN/DE/FR/ES/PT -- stessa logica delle categorie: il tracker Vinted
@@ -730,8 +759,16 @@ def check_skip_pre_gemini(listing_info):
 # riscontri -> controprova -> verdetto. Il verdetto puo' essere scritto solo
 # dopo che i riscontri concreti sono gia' stati messi per iscritto.
 #
-# maxItems su ogni array: l'input si paga una volta per chiamata, l'output
-# si paga per quanto il modello scrive.
+# maxItems su ogni array. ATTENZIONE (scoperto il 2026-09-20, in produzione):
+# su responseJsonSchema Gemini applica un "complexity budget" interno non
+# documentato, e maxItems su un array di OGGETTI (etichette, difetti,
+# riscontri_autenticita) lo consuma molto piu' di maxItems su un array di
+# stringhe. Superato il budget la risposta e' un 400 INVALID_ARGUMENT generico
+# ("Request contains an invalid argument"), senza indicare quale campo.
+# Lo schema qui sotto resta la fonte di verita' completa (usata per i test e
+# per il troncamento locale in valida_payload_occhio); quello REALMENTE
+# spedito a Gemini e' OCCHIO_RESPONSE_SCHEMA_GEMINI, derivato piu' sotto
+# togliendo maxItems solo dagli array di oggetti.
 
 OCCHIO_RESPONSE_SCHEMA = {
     "type": "OBJECT",
@@ -1185,6 +1222,53 @@ OCCHIO_RESPONSE_SCHEMA = {
 }
 
 
+def _rimuovi_maxitems_da_array_di_oggetti(schema):
+    """Deriva lo schema da spedire davvero a Gemini togliendo maxItems SOLO
+    dagli array il cui items e' di tipo OBJECT.
+
+    Workaround per il complexity budget di Gemini (vedi commento sopra
+    OCCHIO_RESPONSE_SCHEMA): confermato via GitHub issue vercel/ai#21192,
+    che riporta lo stesso identico 400 generico risolto rimuovendo maxItems
+    dagli array di oggetti mantenendo pero' la validazione (e quindi il
+    limite) lato codice. maxItems sugli array di stringhe/numeri resta,
+    perche' e' quello a basso costo e non e' la causa del problema.
+
+    Ricorsiva e non distruttiva: ritorna un nuovo dict, OCCHIO_RESPONSE_SCHEMA
+    resta intatto come fonte di verita' per i test e per il troncamento
+    locale in valida_payload_occhio.
+    """
+    if not isinstance(schema, dict):
+        return schema
+
+    convertito = dict(schema)
+
+    if "properties" in convertito:
+        convertito["properties"] = {
+            nome: _rimuovi_maxitems_da_array_di_oggetti(sotto)
+            for nome, sotto in convertito["properties"].items()
+        }
+
+    if "items" in convertito:
+        convertito["items"] = _rimuovi_maxitems_da_array_di_oggetti(convertito["items"])
+
+    if (
+        convertito.get("type") == "ARRAY"
+        and isinstance(convertito.get("items"), dict)
+        and convertito["items"].get("type") == "OBJECT"
+        and "maxItems" in convertito
+    ):
+        convertito = {k: v for k, v in convertito.items() if k != "maxItems"}
+
+    return convertito
+
+
+# Schema REALMENTE spedito a Gemini: senza maxItems sugli array di oggetti,
+# per non sforare il complexity budget descritto sopra. Il limite di 8 voci
+# per etichette/difetti/riscontri_autenticita resta comunque garantito, ma
+# applicato in Python (valida_payload_occhio) invece che dallo schema.
+OCCHIO_RESPONSE_SCHEMA_GEMINI = _rimuovi_maxitems_da_array_di_oggetti(OCCHIO_RESPONSE_SCHEMA)
+
+
 # ==========================================================================
 # SCARTO PRE-CERVELLO: calcolato, non dichiarato dal modello.
 # Sostituisce check_skip_pre_cervello (~10 substring match su prosa, con due
@@ -1314,6 +1398,13 @@ def valida_payload_occhio(occhio):
         r for r in o["riscontri_autenticita"]
         if isinstance(r, dict) and (r.get("osservazione") or "").strip()
     ]
+
+    # OCCHIO_RESPONSE_SCHEMA_GEMINI (lo schema realmente spedito a Gemini)
+    # non ha piu' maxItems su questi tre array: il limite ora si applica
+    # qui, non piu' lato API. Vedi il commento sopra OCCHIO_RESPONSE_SCHEMA.
+    o["etichette"] = o["etichette"][:8]
+    o["difetti"] = o["difetti"][:8]
+    o["riscontri_autenticita"] = o["riscontri_autenticita"][:8]
 
     # Normalizzazione degli enum ANNIDATI. Lo schema li dichiara minuscoli ma
     # il modello a volte capitalizza ("Grave" invece di "grave"), e su questi
@@ -1505,6 +1596,9 @@ Distingui SEMPRE due casi molto diversi quando l'etichetta reale non corrisponde
 
 Per il caso 2, scrivi ESPLICITAMENTE nella riga "🏷️ Legit:" la frase **"BRAND NON CORRISPONDENTE"** seguita dal nome del brand reale letto sull'etichetta, così il sistema può risparmiare la chiamata al Cervello (verdetto già scontato: NON COMPRARE, senza bisogno di comp di mercato). Usa questa frase SOLO quando sei sicuro che sia un marchio diverso e non correlato, non per semplici dubbi o quando il brand reale è comunque leggibile con Confidenza Bassa — in caso di dubbio, lascia decidere al Cervello.
 
+# IL NOME DEL TESSUTO NON È IL BRAND DEL CAPO
+Caso reale già osservato: un annuncio titolato "Giacca uomo Loro Piana" era in realtà una giacca in pelle **Pineider** — "Loro Piana" indicava solo il FORNITORE del tessuto/materiale usato, non il produttore del capo. Loro Piana (e altri nomi come Zegna, Vitale Barberis Canonico, Scabal, Holland & Sherry, Cerruti) sono spesso citati nei titoli e nelle descrizioni come marchio del TESSUTO impiegato da un'altra maison, non come il brand del capo finito — è una pratica comune specialmente per capispalla in pelle o lana pregiata. Prima di trascrivere questi nomi come `brand_letto_etichetta`, verifica SEMPRE l'etichetta interna, il logo, i bottoni e il tirante della zip: se mostrano un nome diverso, è QUELLO il brand reale, e il nome del tessuto va citato solo come dettaglio di materiale in `materiale_osservato_dalle_foto`/`composizione_da_etichetta`, mai come brand. Se dall'etichetta/hardware non riesci a leggere un brand diverso da quello del tessuto citato nel titolo, dichiara `relazione_brand: "non_leggibile"` invece di assumere che il tessuto e il brand coincidano — un titolo che nomina solo un fornitore di tessuto NON è di per sé una prova di brand.
+
 # MAINLINE VS DIFFUSION — DISTINZIONE CRITICA PER IL MARGINE
 Distingui SEMPRE le linee/ere per i brand, è un fattore critico per il valore. Specifica sempre l'epoca/linea in base alle etichette.
 
@@ -1532,6 +1626,10 @@ Distingui SEMPRE le linee/ere per i brand, è un fattore critico per il valore. 
 **STELLA MCCARTNEY:**
 - ✅ Mainline → valore.
 - ❌ Collaborazioni "adidas" / activewear → basso valore.
+
+**MARNI:**
+- ✅ Mainline → archivio eclettico, valore alto.
+- ❌ "Marni for H&M" / "Marni x H&M" (collab 2012, prodotta in serie, NON è mainline) → basso valore, tratta come diffusion mass-market, mai comp da mainline Marni.
 
 **JUNYA WATANABE / UNDERCOVER / THOM BROWNE / ALAÏA:**
 - ✅ Brand mono-linea, valore costante, rischio fake storicamente basso. Valuta a pieno prezzo.
@@ -1636,6 +1734,7 @@ Prezzo basso = vantaggio, mai sospetto. Se "Primi articoli in vendita" è presen
 | Alexander McQueen | Alexander McQueen | McQ (frazione del valore) |
 | Chloé | Chloé | See by Chloé |
 | Stella McCartney | Mainline | Collab Adidas/activewear |
+| Marni | Mainline | "Marni for H&M" / "Marni x H&M" (collab 2012, mass-market, non mainline) |
 | Helmut Lang | Era Lang 1986-2005 (archivio) | Era Link Theory dal 2006 (commerciale) |
 | Maison Margiela | Linee 1/10/0/22 | MM6 |
 | Missoni | Pattern zigzag; M Missoni solo abiti strutturati | Missoni Sport; M Missoni basics |
@@ -4530,6 +4629,9 @@ def build_skip_report(listing_info, motivo_skip, output_occhi_testo=None):
     elif motivo_skip.startswith("[VENDITORE IN BLOCKLIST"):
         riga_legit = "Venditore in blocklist (possibile truffatore o perditempo)."
         riga_rischio = "MOLTO ALTO — venditore bloccato (filtro pre-Gemini)"
+    elif motivo_skip.startswith("[BRAND IN BLOCKLIST"):
+        riga_legit = "Brand escluso in modo permanente dalle regole di valutazione."
+        riga_rischio = "N/A — brand bloccato su richiesta esplicita (filtro pre-Gemini)"
     else:
         riga_legit = "Motivo di skip automatico non categorizzato."
         riga_rischio = "N/A — filtro automatico"
@@ -5631,7 +5733,7 @@ async def process_listing(parsed, url, cover_photo_bytes):
     if OCCHIO_OUTPUT_JSON:
         output_grezzo, costo_occhi, _ = await chiama_gemini(
             GEMINI_OCCHI_SYSTEM_PROMPT_JSON, user_text_occhi, photo_bytes_list,
-            grounding=False, response_schema=OCCHIO_RESPONSE_SCHEMA)
+            grounding=False, response_schema=OCCHIO_RESPONSE_SCHEMA_GEMINI)
         try:
             occhio_json, problemi_occhio = valida_payload_occhio(json.loads(output_grezzo))
             output_occhi = render_occhio_da_json(occhio_json, problemi_occhio)
