@@ -2216,11 +2216,17 @@ async def _rinnova_token_vinted():
     # richiesta anonima fatta da qualunque altra parte del bot.
     cookies_auth = {k: v for k, v in _VINTED_COOKIES.items() if v}
 
-    # Passo 1: CSRF token fresco dalla home page. Pattern del meta tag non
-    # confermato su una risposta reale -- se fallisce lo si vede nel log qui
-    # sotto e si aggiusta la regex, non si fallisce in silenzio.
+    # Passo 1: CSRF token fresco dalla home page -- SENZA cookie (fix
+    # 2026-09-20, verificato in produzione: mandare qui l'access_token_web
+    # ormai scaduto faceva reindirizzare Vinted a /session-refresh invece di
+    # servire la home page vera, quindi il meta tag CSRF non c'era mai e il
+    # refresh falliva sempre in loop). La home e' una pagina pubblica, non
+    # serve autenticazione per leggerla -- il refresh_token_web va mandato
+    # solo sulla POST di refresh qui sotto, dove serve davvero. Pattern del
+    # meta tag comunque non confermato al 100% su una risposta reale -- se
+    # fallisce ancora lo si vede nel log qui sotto e si aggiusta la regex.
     try:
-        resp_home = await client.get("https://www.vinted.it/", timeout=15.0, cookies=cookies_auth)
+        resp_home = await client.get("https://www.vinted.it/", timeout=15.0)
         resp_home.raise_for_status()
     except Exception as e:
         log.warning("_rinnova_token_vinted: GET home page fallita: %s", e)
