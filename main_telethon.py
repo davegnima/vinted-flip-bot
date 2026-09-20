@@ -2102,6 +2102,61 @@ def _jwt_scaduto(token, margine_secondi=120):
         return True
 
 # ---------------------------------------------------------------------------
+# GEMINI API KEYS (opzionale) -- rotazione su quota esaurita, stesso
+# principio della rotazione proxy qui sotto. Aggiunta il 2026-09-20 su
+# richiesta esplicita dell'utente dopo un caso reale in produzione: il piano
+# gratuito ("generate_content_free_tier_requests, limit: 500") si e' esaurito
+# nel giro di poche ore di traffico normale, con Occhio e Cervello entrambi
+# falliti su piu' annunci nonostante il backoff (i 429 di quota esaurita non
+# sono un rate-limit al minuto che si risolve da solo in pochi secondi: nei
+# log Google chiedeva "retry in 30-60s", molto piu' del backoff massimo di
+# ~14s su 4 tentativi, e nel frattempo il bot continuava a generarne altri).
+#
+# Formato variabile d'ambiente GEMINI_API_KEYS: chiavi separate da virgola
+# (una per account Google/progetto AI Studio, cosi' ognuna ha la sua quota
+# free indipendente), es. "AIzaSy...primo,AIzaSy...secondo". Se non
+# impostata, si usa solo GEMINI_API_KEY (comportamento originale, nessun
+# rischio di rottura). La rotazione e' "sticky": si resta sulla key corrente
+# finche' funziona (niente round-robin ad ogni chiamata, sprecherebbe quota
+# su piu' key per nulla), e si avanza alla prossima SOLO quando una chiamata
+# incassa un 429 di quota esaurita -- vedi chiama_gemini e
+# chiama_gemini_cervello_forzato.
+_GEMINI_API_KEYS_RAW = os.environ.get("GEMINI_API_KEYS", "").strip()
+GEMINI_API_KEYS = (
+    [k.strip() for k in _GEMINI_API_KEYS_RAW.split(",") if k.strip()]
+    if _GEMINI_API_KEYS_RAW else [GEMINI_API_KEY]
+)
+_gemini_key_index = [0]
+
+if len(GEMINI_API_KEYS) > 1:
+    log.info("Gemini: %d API key attive, rotazione automatica su quota esaurita (429).", len(GEMINI_API_KEYS))
+else:
+    log.info("Gemini: 1 sola API key (GEMINI_API_KEYS non impostata) -- nessuna rotazione disponibile.")
+
+
+def _gemini_key_attuale():
+    """Key Gemini da usare nella prossima chiamata."""
+    return GEMINI_API_KEYS[_gemini_key_index[0] % len(GEMINI_API_KEYS)]
+
+
+def _gemini_prossima_key():
+    """Passa alla key successiva (chiamata dopo un 429 di quota esaurita).
+    Ritorna True se si e' davvero cambiata key (ce n'erano altre disponibili
+    oltre a quella corrente), False se c'e' una sola key o si e' gia' fatto
+    il giro completo -- in quel caso ha senso solo il backoff, non un altro
+    switch immediato."""
+    if len(GEMINI_API_KEYS) <= 1:
+        return False
+    indice_prima = _gemini_key_index[0]
+    _gemini_key_index[0] = (_gemini_key_index[0] + 1) % len(GEMINI_API_KEYS)
+    log.warning(
+        "Gemini: key #%d in quota esaurita (429), passo alla key #%d.",
+        indice_prima + 1, _gemini_key_index[0] + 1,
+    )
+    return True
+
+
+# ---------------------------------------------------------------------------
 # PROXY (opzionale) -- rotazione sulle richieste dirette a Vinted, stesso
 # tipo di protezione gia' attiva sul tracker gratuito (Vinted-Notifications).
 # Formato variabile d'ambiente PROXY_LIST: URL completi separati da virgola,
@@ -2847,7 +2902,7 @@ async def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, groundi
     backoff_seconds = 2
     for attempt in range(1, max_retries + 1):
         try:
-            resp = await _client_generico.post(api_url, params={"key": GEMINI_API_KEY}, json=payload, timeout=90)
+            resp = await _client_generico.post(api_url, params={"key": _gemini_key_attuale()}, json=payload, timeout=90)
             if not resp.is_success:
                 log.warning("Gemini HTTP %d: %s", resp.status_code, resp.text[:500])
             if resp.is_success:
@@ -2861,7 +2916,20 @@ async def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, groundi
                     costo = costo_gemini_token(usage, prezzo_input, prezzo_output) + n_query * PREZZO_GROUNDING_PER_QUERY
                     return text, costo, n_query
                 return "[ERRORE: risposta Gemini senza candidates]", 0.0, 0
-            if resp.status_code in {429, 500, 502, 503, 504}:
+            if resp.status_code == 429:
+                # Quota del piano free esaurita (RESOURCE_EXHAUSTED), non un
+                # rate-limit che passa da solo in pochi secondi -- vedi caso
+                # reale del 2026-09-20 (500 richieste/giorno esaurite in
+                # poche ore). Se c'e' un'altra key in GEMINI_API_KEYS si
+                # passa a quella e si ritenta SUBITO (quota diversa, niente
+                # attesa); solo se le key sono finite (o ce n'e' una sola) si
+                # torna al backoff come per gli altri errori transitori.
+                if _gemini_prossima_key():
+                    continue
+                await asyncio.sleep(backoff_seconds)
+                backoff_seconds *= 2
+                continue
+            if resp.status_code in {500, 502, 503, 504}:
                 await asyncio.sleep(backoff_seconds)
                 backoff_seconds *= 2
                 continue
@@ -3557,10 +3625,20 @@ async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca
         for attempt in range(1, tentativi_rimasti + 1):
             try:
                 resp = await _client_generico.post(
-                    api_url, params={"key": GEMINI_API_KEY}, json=payload, timeout=90)
+                    api_url, params={"key": _gemini_key_attuale()}, json=payload, timeout=90)
                 if not resp.is_success:
                     log.warning("Gemini (cervello) HTTP %d: %s", resp.status_code, resp.text[:500])
-                    if resp.status_code in {429, 500, 502, 503, 504} and attempt < tentativi_rimasti:
+                    if resp.status_code == 429 and attempt < tentativi_rimasti:
+                        # Stessa logica di rotazione di chiama_gemini: quota
+                        # free esaurita, non un rate-limit al minuto -- si
+                        # passa a un'altra key se disponibile e si ritenta
+                        # subito, altrimenti backoff come prima.
+                        if _gemini_prossima_key():
+                            continue
+                        await asyncio.sleep(backoff_seconds)
+                        backoff_seconds *= 2
+                        continue
+                    if resp.status_code in {500, 502, 503, 504} and attempt < tentativi_rimasti:
                         await asyncio.sleep(backoff_seconds)
                         backoff_seconds *= 2
                         continue
