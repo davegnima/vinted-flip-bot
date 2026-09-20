@@ -1915,30 +1915,36 @@ def _spezza_per_telegram(text, max_len=3500):
     return chunks or [text]
 
 
-async def telegram_send_message(chat_id, text):
+async def telegram_send_message(chat_id, text, disable_notification=False):
     MAX_LEN = 3500
     for chunk in _spezza_per_telegram(text, MAX_LEN):
         resp = await _client_telegram.post(
             f"{TELEGRAM_API}/sendMessage",
-            json={"chat_id": chat_id, "text": chunk, "parse_mode": "Markdown", "disable_web_page_preview": True},
+            json={
+                "chat_id": chat_id, "text": chunk, "parse_mode": "Markdown",
+                "disable_web_page_preview": True, "disable_notification": disable_notification,
+            },
         )
         if not resp.is_success:
             log.warning("sendMessage Markdown fallita -- HTTP %d: %s -- ritento senza parse_mode", resp.status_code, resp.text[:300])
             await _client_telegram.post(
                 f"{TELEGRAM_API}/sendMessage",
-                json={"chat_id": chat_id, "text": chunk, "disable_web_page_preview": True},
+                json={
+                    "chat_id": chat_id, "text": chunk,
+                    "disable_web_page_preview": True, "disable_notification": disable_notification,
+                },
             )
 
 
-async def telegram_send_photo(chat_id, photo_bytes, caption=None):
+async def telegram_send_photo(chat_id, photo_bytes, caption=None, disable_notification=False):
     files = {"photo": ("photo.jpg", photo_bytes)}
-    data = {"chat_id": chat_id}
+    data = {"chat_id": chat_id, "disable_notification": disable_notification}
     if caption:
         data["caption"] = caption[:1024]
     await _client_telegram.post(f"{TELEGRAM_API}/sendPhoto", data=data, files=files, timeout=30)
 
 
-async def telegram_send_media_group(chat_id, photos_bytes_list, caption=None):
+async def telegram_send_media_group(chat_id, photos_bytes_list, caption=None, disable_notification=False):
     if not photos_bytes_list:
         return
     files = {}
@@ -1952,13 +1958,13 @@ async def telegram_send_media_group(chat_id, photos_bytes_list, caption=None):
         media.append(item)
     await _client_telegram.post(
         f"{TELEGRAM_API}/sendMediaGroup",
-        data={"chat_id": chat_id, "media": json.dumps(media)},
+        data={"chat_id": chat_id, "media": json.dumps(media), "disable_notification": disable_notification},
         files=files,
         timeout=60,
     )
 
 
-async def telegram_send_with_buttons(chat_id, text, url_annuncio, item_id=None):
+async def telegram_send_with_buttons(chat_id, text, url_annuncio, item_id=None, disable_notification=False):
     """Manda 'text' con i bottoni inline in fondo. Bug corretto il 2026-09-19:
     a differenza di telegram_send_message, questa funzione non spezzava mai
     il testo -- oltre 4096 caratteri (limite Telegram per sendMessage) la
@@ -1984,7 +1990,10 @@ async def telegram_send_with_buttons(chat_id, text, url_annuncio, item_id=None):
 
     for i, chunk in enumerate(chunks):
         e_ultimo_chunk = (i == len(chunks) - 1)
-        payload_base = {"chat_id": chat_id, "text": chunk, "disable_web_page_preview": True}
+        payload_base = {
+            "chat_id": chat_id, "text": chunk, "disable_web_page_preview": True,
+            "disable_notification": disable_notification,
+        }
         if e_ultimo_chunk:
             payload_base["reply_markup"] = keyboard
         resp = await _client_telegram.post(
@@ -6539,22 +6548,40 @@ async def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header,
     # variante di wording del modello per sbagliare bersaglio).
     e_compra_urgente = e_compra and urgenza == "Alta" and decisione == "COMPRA"
 
+    # Notifica push solo su COMPRA (richiesto dall'utente il 2026-09-20): il
+    # messaggio arriva SEMPRE nella chat (nessun filtro sui contenuti, resta
+    # tutto consultabile), ma per TRATTA/CHIEDI ALTRE FOTO/NON COMPRA/SKIP
+    # Telegram lo consegna senza suono/vibrazione/badge push -- stesso
+    # meccanismo di "muta le notifiche" che Telegram offre gia' di suo,
+    # applicato messaggio per messaggio invece che sull'intera chat.
+    silenzioso = decisione != "COMPRA"
+
     if len(photo_bytes_list) > 1:
         await telegram_send_media_group(
             TELEGRAM_OWNER_CHAT_ID,
             photo_bytes_list,
-            caption=f"📸 {listing_info.get('title')} · {len(photo_bytes_list)} foto"
+            caption=f"📸 {listing_info.get('title')} · {len(photo_bytes_list)} foto",
+            disable_notification=silenzioso,
         )
     elif len(photo_bytes_list) == 1:
-        await telegram_send_photo(TELEGRAM_OWNER_CHAT_ID, photo_bytes_list[0], caption=listing_info.get("title"))
+        await telegram_send_photo(
+            TELEGRAM_OWNER_CHAT_ID, photo_bytes_list[0], caption=listing_info.get("title"),
+            disable_notification=silenzioso,
+        )
 
     if url:
         if e_compra_urgente:
-            await telegram_send_with_buttons(TELEGRAM_OWNER_CHAT_ID, header + output_finale, url, item_id)
+            await telegram_send_with_buttons(
+                TELEGRAM_OWNER_CHAT_ID, header + output_finale, url, item_id,
+                disable_notification=silenzioso,
+            )
         else:
-            await telegram_send_with_buttons(TELEGRAM_OWNER_CHAT_ID, header + output_finale, url, None)
+            await telegram_send_with_buttons(
+                TELEGRAM_OWNER_CHAT_ID, header + output_finale, url, None,
+                disable_notification=silenzioso,
+            )
     else:
-        await telegram_send_message(TELEGRAM_OWNER_CHAT_ID, header + output_finale)
+        await telegram_send_message(TELEGRAM_OWNER_CHAT_ID, header + output_finale, disable_notification=silenzioso)
 
     if TELEGRAM_ALERT_CHAT_ID and e_compra:
         alert_text = (
