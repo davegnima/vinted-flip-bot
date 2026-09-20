@@ -6921,10 +6921,13 @@ async def process_listing(parsed, url, cover_photo_bytes):
     # parsing Markdown esattamente come il testo del modello altrove (stesso
     # bug del 2026-09-20, qui pero' sulla RIGA PIU' VISTA del messaggio,
     # dentro *asterischi* di grassetto per giunta -- priorita' alta).
+    # Riga "Scenario" spostata in fondo al messaggio (richiesto dall'utente
+    # il 2026-09-20): e' un dettaglio diagnostico su come e' stata condotta
+    # la ricerca comp, non qualcosa che serve per decidere -- non ha senso
+    # occupare una riga in cima, dove il tempo di lettura e' piu' prezioso.
     header = (
         f"🆕 *{_escapa_markdown_legacy(listing_info.get('title'))}*\n"
-        f"🏷️ {_escapa_markdown_legacy(listing_info.get('brand')) or '?'} · 💰 {listing_info.get('price') or '?'} EUR\n"
-        f"🔧 Scenario {scenario_usato}{info_scenario}"
+        f"🏷️ {_escapa_markdown_legacy(listing_info.get('brand')) or '?'} · 💰 {listing_info.get('price') or '?'} EUR"
         f"{info_foto}"
         + f"\n{url or ''}\n{'—' * 20}\n"
     )
@@ -6946,20 +6949,22 @@ async def process_listing(parsed, url, cover_photo_bytes):
             f"{_riepilogo_comp_per_fonte(pool_ricerca_grezzo)}"
         )
 
-    # ---- FOOTER COSTO IA: recap per-modello, per-messaggio ----
+    # ---- FOOTER: scenario + costo IA -- entrambi dettagli diagnostici, non
+    # decisionali, quindi in fondo al messaggio (vedi nota sopra su header) ----
+    footer_scenario = f"\n\n🔧 _Scenario {scenario_usato}{info_scenario}_"
     if scenario_usato == "SKIP":
         footer_costo = (
-            f"\n\n💵 _Costo IA: 👁 {GEMINI_MODEL_OCCHIO} ${costo_occhi:.4f} "
+            f"\n💵 _Costo IA: 👁 {GEMINI_MODEL_OCCHIO} ${costo_occhi:.4f} "
             f"· Cervello non consultato · Totale ${costo_occhi:.4f}_"
         )
     else:
         modello_cervello = OPENAI_MODEL_CERVELLO if CERVELLO_PROVIDER == "openai" else GEMINI_MODEL_CERVELLO
         footer_costo = (
-            f"\n\n💵 _Costo IA: 👁 {GEMINI_MODEL_OCCHIO} ${costo_occhi:.4f} "
+            f"\n💵 _Costo IA: 👁 {GEMINI_MODEL_OCCHIO} ${costo_occhi:.4f} "
             f"+ 🧠 {modello_cervello} ${costo_cervello:.4f} "
             f"= Totale ${costo_totale:.4f}_"
         )
-    output_finale = output_finale + footer_costo
+    output_finale = output_finale + footer_scenario + footer_costo
 
     await _invia_risultato_telegram(
         listing_info, url, photo_bytes_list,
