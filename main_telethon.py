@@ -4828,8 +4828,17 @@ async def _cerca_ebay_sold_con_fallback(brand, categoria, material_per_ricerca=N
     return f"{testo} | fallback Google anch'esso fallito: {testo_fallback}", False
 
 
-async def search_comps_completo(brand, categoria, query_base, catalog_id=None, material_per_ricerca=None, cover_photo_id=None, item_id=None):
+async def search_comps_completo(brand, categoria, query_base, catalog_id=None, material_per_ricerca=None, cover_photo_id=None, item_id=None, nome_sarto=None):
     vinted_url, vinted_per_id = build_vinted_search_url(brand, categoria, material_per_ricerca, catalog_id)
+    # Ricerca extra per nome del sarto/maker (aggiunta il 2026-09-20, vedi il
+    # commento in process_listing su nome_sarto_o_maker): SEMPRE testo libero
+    # (VINTED_BRAND_IDS quasi certamente non mappa sartorie/maker minori),
+    # niente filtro categoria/materiale sul brand_id perche' non ce n'e' uno
+    # -- build_vinted_search_url cade gia' da sola nel ramo search_text puro
+    # quando il brand non e' in mappa, e' il comportamento voluto qui.
+    url_sarto = None
+    if nome_sarto:
+        url_sarto, _ = build_vinted_search_url(nome_sarto, categoria, material_per_ricerca, catalog_id)
     # Se manca l'ingrediente minimo (photo_id o brand mappato) la fonte
     # visuale e' inutile: lo sappiamo gia' qui senza fare rete, quindi non la
     # sottomettiamo affatto all'executor invece di sprecare uno slot/tempo.
@@ -4876,6 +4885,8 @@ async def search_comps_completo(brand, categoria, query_base, catalog_id=None, m
     if tentare_ricerca_visuale:
         lavori.append(_esegui_fonte(
             "vinted_visuale", _recupera_comp_visuali_vinted(item_id, cover_photo_id, brand)))
+    if url_sarto:
+        lavori.append(_esegui_fonte("vinted_sarto", _serper_scrape_page_diretto("VINTED", url_sarto)))
 
     risultati = {}
     successi = {}
@@ -4919,7 +4930,22 @@ async def search_comps_completo(brand, categoria, query_base, catalog_id=None, m
             item_id, brand, visual_comp_puliti,
         )
 
-    n_fonti = 2 if fonte_visuale_riuscita else 1
+    # Fonte extra per nome sarto/maker (aggiunta il 2026-09-20): pulita con
+    # le stesse funzioni delle altre fonti Vinted testuali, TRANNE il filtro
+    # sottolinee (_filtra_comp_per_brand_sottolinee con un nome di sartoria/
+    # maker minore non in BRAND_SOTTOLINEE_DA_ESCLUDERE e' comunque un no-op,
+    # ma non ha senso concettuale applicarlo qui).
+    sarto_comp_puliti = None
+    fonte_sarto_riuscita = bool(url_sarto) and successi.get("vinted_sarto")
+    if fonte_sarto_riuscita:
+        sarto_comp_puliti = _rimuovi_comp_autoreferenziale(risultati.get("vinted_sarto"), query_base)
+        sarto_comp_puliti = _filtra_comp_per_categoria(sarto_comp_puliti, categoria)
+        log.info(
+            "search_comps_completo: comp per nome sarto/maker '%s' DOPO pulizia (item_id=%s) -> %r",
+            nome_sarto, item_id, sarto_comp_puliti,
+        )
+
+    n_fonti = 1 + int(fonte_visuale_riuscita) + int(fonte_sarto_riuscita)
     parti = [f"RICERCA WEB PRE-RACCOLTA ({n_fonti} fonti, base: '{query_base}'):"]
     if nota_brand:
         parti.append(nota_brand)
@@ -4935,6 +4961,13 @@ async def search_comps_completo(brand, categoria, query_base, catalog_id=None, m
         "\n📍 FONTE: VINTED (prezzi ASK — annunci attivi, NON necessariamente venduti; annuncio in analisi gia' escluso)\n"
         f"{vinted_comp_puliti or 'Nessun risultato'}"
     )
+    if url_sarto:
+        parti.append(
+            f"\n📍 FONTE: VINTED — RICERCA PER NOME SARTORIA/MAKER '{nome_sarto}' (letto dall'etichetta, "
+            "diverso dal brand/tessuto dichiarato nell'annuncio -- verifica se il nome del produttore "
+            "reale ha un mercato riconoscibile a se', prezzi ASK)\n"
+            f"{sarto_comp_puliti or 'Nessun risultato'}"
+        )
 
     return "\n".join(parti), serper_ha_funzionato, tentare_ricerca_visuale, fonte_visuale_riuscita
 
@@ -6470,6 +6503,34 @@ async def process_listing(parsed, url, cover_photo_bytes):
                     brand_annuncio, brand_per_ricerca,
                 )
 
+        # Nome del sarto/maker reale, DIVERSO dal brand dichiarato E dalla
+        # sottolinea gia' gestita sopra (aggiunto il 2026-09-20, caso reale:
+        # annuncio con brand Vinted "Loro Piana" -- in realta' solo il nome
+        # del TESSUTO usato -- ma etichetta fisica del vero produttore "I
+        # Caracciolo", sartoria terza che ha usato quel tessuto. Il capo
+        # NON e' una sottolinea di Loro Piana (non esiste "Loro Piana by
+        # Caracciolo"), e' un capo di un maker completamente diverso: la
+        # ricerca comp strutturata su "Loro Piana" resta comunque utile (e'
+        # il mercato di riferimento per capi in quel tessuto), ma da sola
+        # ignora completamente se il nome del sarto abbia un suo valore di
+        # mercato riconoscibile -- vedi il fan-out extra sotto in
+        # search_comps_completo (parametro nome_sarto).
+        nome_sarto_o_maker = None
+        if occhio_json:
+            brand_letto = str(occhio_json.get("brand_letto_etichetta") or "").strip()
+            if (
+                brand_letto
+                and occhio_json.get("relazione_brand") != "sottolinea_stessa_maison"
+                and brand_letto.lower() not in brand_annuncio.lower()
+                and brand_annuncio.lower() not in brand_letto.lower()
+            ):
+                nome_sarto_o_maker = brand_letto
+                log.info(
+                    "process_listing: nome sarto/maker diverso dal brand dichiarato rilevato "
+                    "dall'Occhio: '%s' (brand dichiarato: '%s') -- aggiunta ricerca comp extra.",
+                    nome_sarto_o_maker, brand_annuncio,
+                )
+
         scenario_usato = "F"
         comps_text = None
 
@@ -6485,6 +6546,7 @@ async def process_listing(parsed, url, cover_photo_bytes):
                 brand_per_ricerca, categoria_per_ricerca, titolo_annuncio,
                 catalog_id=catalog_id, material_per_ricerca=material_per_ricerca,
                 cover_photo_id=cover_photo_id, item_id=item_id_annuncio,
+                nome_sarto=nome_sarto_o_maker,
             )
             if serper_ok:
                 scenario_usato = "G"
