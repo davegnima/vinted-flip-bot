@@ -3886,7 +3886,23 @@ async def _risolvi_search_by_image_id_via_serper(url_intermedio):
     il chiamante si comporta come se il fallback non esistesse."""
     if not SERPER_API_KEY:
         return None
-    payload = {"url": url_intermedio, "includeMarkdown": True, "includeRawHtml": True, "includeHtml": True}
+    # "headers" nel payload (tentativo, non documentato/confermato per questo
+    # endpoint Serper): se supportato, inoltra i cookie dell'account dedicato
+    # cosi' la richiesta arriva a Vinted autenticata anche passando dal
+    # fetcher di Serper -- SENZA questo, Serper vede l'URL come richiesta
+    # anonima e Vinted la reindirizza correttamente al login/signup (proprio
+    # come farebbe con un browser vero non loggato), che e' l'ipotesi piu'
+    # probabile per cui il tentativo del 2026-09-20 non ha trovato nessun
+    # search_by_image_id nella risposta: non un fallimento di Serper, ma
+    # Serper-senza-cookie che raggiunge la STESSA pagina di registrazione.
+    # Se il campo non e' supportato, Serper lo ignora e il comportamento
+    # resta quello gia' osservato in produzione (nessun peggioramento).
+    cookies_auth = {k: v for k, v in _VINTED_COOKIES.items() if v}
+    cookie_header = "; ".join(f"{k}={v}" for k, v in cookies_auth.items())
+    payload = {
+        "url": url_intermedio, "includeMarkdown": True, "includeRawHtml": True, "includeHtml": True,
+        "headers": {"Cookie": cookie_header} if cookie_header else {},
+    }
     try:
         resp = await _client_generico.post(
             "https://scrape.serper.dev",
@@ -3902,7 +3918,16 @@ async def _risolvi_search_by_image_id_via_serper(url_intermedio):
         log.info("_risolvi_search_by_image_id_via_serper: chiamata Serper fallita: %s", e)
         return None
 
+    # Diagnostica estesa (aggiunta dopo il primo tentativo in produzione,
+    # 2026-09-20, che ha loggato solo le chiavi e non ha permesso di capire
+    # SU QUALE pagina Serper sia effettivamente atterrato): metadata per
+    # intero (spesso contiene lo status HTTP/URL finale delle API di
+    # scraping) e un frammento di testo, cosi' si vede a colpo d'occhio se
+    # e' la pagina di registrazione (ipotesi sopra) o qualcos'altro.
     log.info("_risolvi_search_by_image_id_via_serper: chiavi ricevute da Serper: %s", list(data.keys()))
+    log.info("_risolvi_search_by_image_id_via_serper: metadata=%r", data.get("metadata"))
+    testo_snippet = (data.get("text") or "")[:300]
+    log.info("_risolvi_search_by_image_id_via_serper: inizio testo pagina=%r", testo_snippet)
 
     # Primo tentativo: un campo che indichi esplicitamente l'URL finale
     # raggiunto da Serper dopo aver seguito eventuali redirect.
