@@ -6145,56 +6145,64 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
     """Costruisce il messaggio Telegram dal verdetto calcolato. E' l'unico
     posto del bot dove si scrivono emoji di decisione e cifre: il modello
     non produce piu' nessuna delle due, quindi non esiste piu' il caso
-    'testo e numeri si contraddicono'."""
+    'testo e numeri si contraddicono'.
+
+    Layout riprogettato il 2026-09-20 su indicazione dell'utente (tempo di
+    lettura su notifica Telegram ~3 secondi): 3 blocchi ad alto contrasto
+    (Deal, Rischio&Liquidita', Azioni con testo copiabile in un tocco via
+    singolo backtick) seguiti da un blocco unico di dettaglio/debug in
+    fondo ("seminterrato": note analista, motivazioni estese, comp, link
+    ricerca visuale, avvisi). Nessuna informazione tolta rispetto a prima,
+    solo riordinata: la vecchia versione mischiava dati finanziari e
+    motivazioni discorsive nello stesso blocco."""
     dec = verdetto["decisione"]
     emoji = EMOJI_DECISIONE.get(dec, "🔵")
 
-    righe = ["## Verdetto", f"{emoji} **{dec}** · {verdetto['urgenza']} urgenza", ""]
+    # === 1. IL DEAL ===
+    righe = [f"{emoji} **{dec}** · {verdetto['urgenza']} urgenza"]
 
     if verdetto["margine"] is None:
         righe.append("💰 Calcolo economico non disponibile: prezzo dell'annuncio non rilevato.")
     else:
         righe.append(
-            f"💰 €{verdetto['acquisto_pieno']:.2f} → €{verdetto['incasso']:.2f} → "
+            f"💰 €{verdetto['acquisto_pieno']:.2f} → €{verdetto['incasso']:.2f} = "
             f"**€{verdetto['margine']:.2f} (ROI {verdetto['roi']:.0f}%)**"
         )
         righe.append(
-            f"📈 Vendita attesa: €{verdetto['vendita_attesa']:.2f} · "
-            f"Prezzo da listare: €{verdetto['prezzo_da_listare']:.2f} · "
-            f"Minimo accettabile: €{verdetto['minimo_accettabile_rivendita']:.2f}"
+            f"📈 Attesa €{verdetto['vendita_attesa']:.2f} · Listino €{verdetto['prezzo_da_listare']:.2f} "
+            f"· Minimo €{verdetto['minimo_accettabile_rivendita']:.2f} · {v.get('linea_o_era_rilevata')}"
         )
-        righe.append(f"Linea: {v.get('linea_o_era_rilevata')}")
+        # --- obiettivo trattativa: mostrato solo quando e' la decisione
+        # presa. L'importo e' quello calcolato al massimo sconto consentito,
+        # non una proposta del modello, quindi margine e ROI qui sotto sono
+        # coerenti con l'incasso del verdetto principale per costruzione.
+        if dec == "TRATTA":
+            righe.append(
+                f"🤝 Offri €{verdetto['tratta_prezzo_prodotto']:.2f} (costo pieno €{verdetto['tratta_costo']:.2f}) "
+                f"→ **€{verdetto['tratta_margine']:.2f} (ROI {verdetto['tratta_roi']:.0f}%)**"
+            )
 
+    # === 2. RISCHIO & LIQUIDITA' ===
+    righe.append("")
     legit = ETICHETTA_LEGIT.get(v["legit_verdetto"], v["legit_verdetto"])
-    righe.append(f"🏷️ Legit: {legit} — {v['legit_motivo_specifico']}")
     righe.append(
-        f"🕐 ~{v['giorni_stimati_vendita']} giorni · Deal {v['deal_score']}/10 · "
-        f"Rischio fake: {ETICHETTA_RISCHIO.get(v['rischio_fake'], '?')} · "
-        f"Confidenza: {ETICHETTA_CONFIDENZA.get(v['confidenza'], '?')}"
+        f"🏷️ {legit} · Rischio fake {ETICHETTA_RISCHIO.get(v['rischio_fake'], '?')} "
+        f"· Conf {ETICHETTA_CONFIDENZA.get(v['confidenza'], '?')}"
     )
+    stagione = f" · 📅 fuori stagione, pubblica da {v['mese_consigliato_pubblicazione']}" if v.get("mese_consigliato_pubblicazione") else ""
+    righe.append(f"🕐 ~{v['giorni_stimati_vendita']}gg · Deal {v['deal_score']}/10{stagione}")
 
-    if v.get("mese_consigliato_pubblicazione"):
-        righe.append(f"📅 Fuori stagione: pubblicare da {v['mese_consigliato_pubblicazione']}")
-
-    # --- obiettivo trattativa: mostrato solo quando e' la decisione presa.
-    # L'importo e' quello calcolato al massimo sconto consentito, non una
-    # proposta del modello, quindi margine e ROI qui sotto sono coerenti con
-    # l'incasso del verdetto principale per costruzione.
-    if dec == "TRATTA":
-        righe.append("")
-        righe.append(
-            f"🤝 Obiettivo trattativa: offrire €{verdetto['tratta_prezzo_prodotto']:.2f} sul prodotto "
-            f"(costo pieno €{verdetto['tratta_costo']:.2f}) → €{verdetto['incasso']:.2f} → "
-            f"**€{verdetto['tratta_margine']:.2f} (ROI {verdetto['tratta_roi']:.0f}%)**"
-        )
-
-    # --- messaggio al venditore e domande: solo dove servono davvero.
+    # === 3. AZIONI (testo copiabile in un tocco: backtick singolo) ===
     # Il vecchio backstop a colpi di regex (rimozione dei blocchi "Messaggio
     # da inviare"/"Da chiedere" da un testo gia' generato) non serve piu':
-    # qui i blocchi si aggiungono, non si tolgono.
+    # qui i blocchi si aggiungono, non si tolgono. Il backtick (invece del
+    # link Markdown o del testo nudo) fa si' che Telegram lo mostri come
+    # blocco monospazio "tocca per copiare" -- comodo per incollarlo diretto
+    # nella chat col venditore, richiesto dall'utente il 2026-09-20.
     serve_messaggio = dec in ("TRATTA", "CHIEDI ALTRE FOTO")
     template = (v.get("messaggio_venditore_template") or "").strip()
     messaggio_sostituito = False
+    testo_messaggio = None
     if serve_messaggio and template:
         if dec == "TRATTA":
             if "{OFFERTA}" in template:
@@ -6218,18 +6226,25 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
             # modello ha lasciato comunque il segnaposto, va tolto invece di
             # finire nel messaggio come testo letterale.
             testo_messaggio = template.replace("{OFFERTA}", "").strip()
-        righe += ["", "---", "📨 **Messaggio da inviare:**", f'"{testo_messaggio}"']
-        if messaggio_sostituito:
-            righe.append(
-                "_⚠️ messaggio del cervello sostituito: proponeva l'acquisto a prezzo pieno "
-                "senza nessuna offerta, in contraddizione con la decisione TRATTA._"
-            )
 
-    if serve_messaggio and v.get("domande_al_venditore"):
-        righe += ["", "---", "❓ **Da chiedere**: " + " ".join(v["domande_al_venditore"])]
+    domande = v.get("domande_al_venditore") if serve_messaggio else None
+    if testo_messaggio or domande:
+        righe.append("")
+        righe.append("💬 **Azioni (tocca per copiare):**")
+        if testo_messaggio:
+            righe.append(f"`{testo_messaggio}`")
+            if messaggio_sostituito:
+                righe.append(
+                    "_⚠️ messaggio del cervello sostituito: proponeva l'acquisto a prezzo pieno "
+                    "senza nessuna offerta, in contraddizione con la decisione TRATTA._"
+                )
+        if domande:
+            righe.append(f"`{' '.join(domande)}`")
 
-    # --- analisi
+    # === 4. SEMINTERRATO: analisi, comp, link, avvisi -- tutto cio' che non
+    # serve alla decisione immediata ma resta consultabile scorrendo giu' ===
     righe += ["", "---", "🧠 **Analisi dell'analista:**", v["note_analista"]]
+    righe.append(f"_{v['legit_motivo_specifico']}_")
     if v.get("motivo_profilo_venditore") and v["motivo_profilo_venditore"] != "non specificato":
         righe.append(f"👤 Venditore: {v['motivo_profilo_venditore']}")
 
