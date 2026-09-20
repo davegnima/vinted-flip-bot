@@ -6594,18 +6594,32 @@ async def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header,
     # sparire del tutto banner/vibrazione: per un silenzio totale sugli
     # altri stati va mutata la chat principale lato Telegram, lasciando
     # sblocca solo questa chat di alert).
+    # Richiesto dall'utente il 2026-09-20, terzo giro: niente piu' testo ad
+    # hoc ("AZIONE RICHIESTA" riassunto) -- nel gruppo alert deve arrivare
+    # LO STESSO messaggio completo (foto + header + output_finale, con gli
+    # stessi bottoni) che va nella chat principale, non un duplicato
+    # semplificato. E' letteralmente un secondo invio dello stesso
+    # contenuto verso una chat diversa, sempre a volume pieno (mai
+    # silenzioso: e' l'unico posto dove vuole davvero il push).
     if TELEGRAM_ALERT_CHAT_ID and decisione == "COMPRA":
-        alert_text = (
-            f"🚨 *AZIONE RICHIESTA*\n"
-            f"*{listing_info.get('title')}*\n"
-            f"🏷️ {listing_info.get('brand') or '?'} · 💰 {listing_info.get('price') or '?'} EUR\n"
-            f"✅ {decisione}\n"
-            f"{url or ''}"
-        )
-        if e_compra_urgente and item_id:
-            await telegram_send_with_buttons(TELEGRAM_ALERT_CHAT_ID, alert_text, url, item_id)
+        if len(photo_bytes_list) > 1:
+            await telegram_send_media_group(
+                TELEGRAM_ALERT_CHAT_ID,
+                photo_bytes_list,
+                caption=f"📸 {listing_info.get('title')} · {len(photo_bytes_list)} foto",
+            )
+        elif len(photo_bytes_list) == 1:
+            await telegram_send_photo(
+                TELEGRAM_ALERT_CHAT_ID, photo_bytes_list[0], caption=listing_info.get("title"),
+            )
+
+        if url:
+            await telegram_send_with_buttons(
+                TELEGRAM_ALERT_CHAT_ID, header + output_finale, url,
+                item_id if (e_compra_urgente and item_id) else None,
+            )
         else:
-            await telegram_send_message(TELEGRAM_ALERT_CHAT_ID, alert_text)
+            await telegram_send_message(TELEGRAM_ALERT_CHAT_ID, header + output_finale)
 
 
 # ---------------------------------------------------------------------------
