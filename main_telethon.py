@@ -6195,16 +6195,20 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
     # dell'interfaccia Vinted una volta atterrati sul catalogo.
     if item_id and cover_photo_id:
         url_ricerca_visuale = f"https://www.vinted.it/items/{item_id}/search_by_image?photo_id={quote(cover_photo_id)}"
-        # Backtick attorno all'URL (bug trovato in produzione il 2026-09-20):
-        # il photo_id contiene underscore (es. "01_00c39_..."), e con
+        # Link Markdown [testo](url) invece di URL nudo (bug trovato in
+        # produzione il 2026-09-20, poi backtick provati e scartati subito
+        # dopo): il photo_id contiene underscore (es. "01_00c39_..."), e con
         # parse_mode=Markdown (legacy Telegram, non MarkdownV2) l'underscore
         # e' un marcatore di corsivo -- con un numero dispari di underscore
         # nel messaggio Telegram falliva il parsing dell'intero messaggio
-        # ("can't find end of the entity") e ripiegava sul retry senza
-        # parse_mode, perdendo TUTTA la formattazione (grassetti, sezioni),
-        # non solo questa riga. Dentro i backtick il testo e' letterale, non
-        # viene scansionato per marcatori di formattazione.
-        righe += ["", f"🔍 Ricerca visuale (manuale): `{url_ricerca_visuale}`"]
+        # ("can't find end of the entity"), perdendo TUTTA la formattazione
+        # nel fallback. I backtick risolvevano il parsing ma rendevano il
+        # link "tocca per copiare" invece che "tocca per aprire" su mobile
+        # (l'utente apre sempre da app Telegram su iPhone). Dentro le
+        # parentesi tonde di un link Markdown l'URL non viene scansionato
+        # per marcatori di formattazione (stessa protezione dei backtick),
+        # ma il risultato resta un link cliccabile su desktop E mobile.
+        righe += ["", f"[🔍 Ricerca visuale (manuale)]({url_ricerca_visuale})"]
 
     if stats_comp and stats_comp.get("n_memoria"):
         n_memoria = stats_comp["n_memoria"]
