@@ -863,7 +863,8 @@ Il campo `fonte` di ogni comp distingue i prezzi che hai davvero davanti (`vinte
 Non scrivere "Alta urgenza": compila `domanda_mercato` e `segnali_domanda` con i fatti concreti (piu' annunci simili venduti di recente, segmento ad alta liquidita' secondo la sezione LIQUIDITA', taglia centrale, pezzo iconico). L'urgenza la decide il sistema incrociando quei segnali con margine e ROI calcolati. `domanda_mercato: "alta"` con `segnali_domanda` vuoto viene trattato come "media": senza fatti la dichiarazione non vale.
 
 # MESSAGGIO AL VENDITORE
-In `messaggio_venditore_template`, se serve indicare una cifra d'offerta scrivi ESATTAMENTE il segnaposto {OFFERTA}: il sistema lo sostituisce con l'importo che ha calcolato al massimo sconto consentito. Non scrivere mai un importo in euro, sarebbe diverso da quello reale. Lascia il campo a null se non c'e' nulla da mandare al venditore.
+**Tu non sai quale decisione finale prendera' il sistema** (COMPRA/TRATTA/NON COMPRARE/CHIEDI ALTRE FOTO: la calcola dopo, in base a margine e ROI che tu non calcoli). Il messaggio che scrivi in `messaggio_venditore_template` viene mostrato all'utente SOLO se la decisione finale e' TRATTA o CHIEDI ALTRE FOTO, mai su COMPRA -- quindi non scrivere MAI un messaggio che accetta o conferma l'acquisto a prezzo pieno ("lo prendo subito", "va bene cosi'", ecc.): se il sistema lo mostra, e' perche' sta negoziando o chiedendo chiarimenti, e un messaggio di accettazione piena lo contraddirebbe.
+Se pensi che possa servire una trattativa (margine risicato al prezzo pieno, anche solo dubbio), scrivi SEMPRE un messaggio che propone un'offerta con il segnaposto ESATTO {OFFERTA}: il sistema lo sostituisce con l'importo calcolato al massimo sconto consentito. Non scrivere mai tu una cifra in euro, sarebbe diversa da quella reale. Lascia il campo a null solo se davvero non c'e' nulla da mandare al venditore in nessuno scenario (es. rifiuto netto per legit-check).
 
 # TRASPARENZA OBBLIGATORIA
 `legit_motivo_specifico` deve sempre dire COSA hai visto: font dell'etichetta e in cosa differisce, proporzioni del logo, cuciture, materiale, wash tag incoerente, hardware. Mai "rischio alto" o "discrepanze evidenti" senza dettaglio: quel testo arriva all'utente cosi' com'e'.
@@ -4432,15 +4433,36 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None):
     # qui i blocchi si aggiungono, non si tolgono.
     serve_messaggio = dec in ("TRATTA", "CHIEDI ALTRE FOTO")
     template = (v.get("messaggio_venditore_template") or "").strip()
+    messaggio_sostituito = False
     if serve_messaggio and template:
         if dec == "TRATTA":
-            testo_messaggio = template.replace("{OFFERTA}", f"€{verdetto['tratta_prezzo_prodotto']:.2f}")
+            if "{OFFERTA}" in template:
+                testo_messaggio = template.replace("{OFFERTA}", f"€{verdetto['tratta_prezzo_prodotto']:.2f}")
+            else:
+                # Il cervello scrive messaggio_venditore_template SENZA sapere
+                # quale decisione prendera' il sistema (la calcola solo dopo,
+                # in calcola_verdetto): puo' quindi scrivere un messaggio che
+                # da' per scontato l'acquisto a prezzo pieno ("lo prendo
+                # subito") anche quando poi la decisione risulta TRATTA.
+                # Mandare quel testo contraddirebbe la trattativa mostrata
+                # sopra, quindi si sostituisce con un'apertura generica che
+                # propone davvero l'offerta calcolata.
+                testo_messaggio = (
+                    f"Ciao! Molto interessato, te lo prenderei subito a "
+                    f"€{verdetto['tratta_prezzo_prodotto']:.2f}. Fammi sapere se puo' andare, grazie!"
+                )
+                messaggio_sostituito = True
         else:
             # Su CHIEDI ALTRE FOTO non c'e' nessuna offerta da fare: se il
             # modello ha lasciato comunque il segnaposto, va tolto invece di
             # finire nel messaggio come testo letterale.
             testo_messaggio = template.replace("{OFFERTA}", "").strip()
         righe += ["", "---", "📨 **Messaggio da inviare:**", f'"{testo_messaggio}"']
+        if messaggio_sostituito:
+            righe.append(
+                "_⚠️ messaggio del cervello sostituito: proponeva l'acquisto a prezzo pieno "
+                "senza nessuna offerta, in contraddizione con la decisione TRATTA._"
+            )
 
     if serve_messaggio and v.get("domande_al_venditore"):
         righe += ["", "---", "❓ **Da chiedere**: " + " ".join(v["domande_al_venditore"])]
