@@ -2231,11 +2231,16 @@ async def _rinnova_token_vinted():
     except Exception as e:
         log.warning("_rinnova_token_vinted: GET home page fallita: %s", e)
         return False
-    m_csrf = re.search(r'<meta[^>]+name="csrf-token"[^>]+content="([^"]+)"', resp_home.text)
+    # Pattern corretto il 2026-09-20 dopo verifica su HTML reale (view-source
+    # fornito dall'utente): NON e' un <meta name="csrf-token">, e' la chiave
+    # "CSRF_TOKEN" dentro un blob di config JSON incorporato nella pagina
+    # (con virgolette escaped, es. \"CSRF_TOKEN\":\"75f6c9fa-...\"). Il
+    # pattern vecchio (meta tag) non ha mai trovato nulla in produzione.
+    m_csrf = re.search(r'CSRF_TOKEN\\?"\s*:\s*\\?"([0-9a-fA-F-]{20,40})', resp_home.text)
     if not m_csrf:
         log.warning(
-            "_rinnova_token_vinted: nessun meta csrf-token trovato nella home page -- "
-            "il markup potrebbe essere diverso da quello atteso. Refresh annullato."
+            "_rinnova_token_vinted: CSRF_TOKEN non trovato nella home page -- "
+            "il markup potrebbe essere cambiato di nuovo. Refresh annullato."
         )
         return False
     csrf_token = m_csrf.group(1)
