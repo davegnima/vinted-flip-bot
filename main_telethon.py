@@ -824,7 +824,8 @@ Codici prodotto o diciture rare citati dall'occhio ("prototipo", "edizione limit
 La "Confidenza" che l'occhio dichiara su un verdetto "Probabilmente falso" NON è affidabile da sola (bias noto: prezzo molto basso può contaminare il giudizio con dettagli vaghi costruiti a posteriori) — se i dettagli citati sono generici e il prezzo è molto basso, verifica con cerca_comp_prezzo prima di confermare NON COMPRARE per sospetto falso.
 
 # MATERIALE DEI COMP DEVE CORRISPONDERE AL CAPO
-Il materiale cambia il valore quasi quanto la linea (es. Cucinelli: cashmere puro >> lana/cotone). Materiale noto (dati annuncio, etichetta leggibile) → scarta o segnala esplicitamente i comp di materiale diverso. Materiale IGNOTO (descrizione generica, nessuna etichetta leggibile) → usa il comp più ECONOMICO disponibile, mai il più caro, e dichiara in Analisi che è una stima prudente per materiale non confermato. Comp di materiali diversi con prezzi molto distanti → non fare la media, sono capi diversi.
+Il materiale cambia il valore quasi quanto la linea (es. Cucinelli: cashmere puro >> lana/cotone). Materiale noto → scarta o segnala esplicitamente i comp di materiale diverso. Materiale IGNOTO → il sistema applica una stima piu' prudente in automatico (mediana dei comp invece del piu' caro).
+**Cosa conta come "noto" (`materiale_confermato: true`)**: il materiale e' noto ogni volta che compare ESPLICITAMENTE in ALMENO UNO di questi posti, anche senza una foto ravvicinata dell'etichetta di composizione: titolo dell'annuncio, descrizione testuale, categoria/attributo strutturato di Vinted, oppure lettura diretta dell'etichetta nella foto. Esempio: titolo "Kaschmir Pullover" → materiale noto (cashmere), `materiale_confermato: true`, anche se non vedi la percentuale esatta di composizione. Segnala il materiale come IGNOTO (`materiale_confermato: false`) SOLO quando non ne parla nessuno di questi posti e staresti indovinando dalla sola foto generica del capo (es. una semplice foto di un maglione senza nessuna menzione testuale del tessuto). Non abbassarlo per eccesso di prudenza quando l'informazione e' gia' scritta da qualche parte nei dati.
 
 # ANCORAGGIO PREZZI — la regola più violata in produzione, massima attenzione
 Tutti i comp Vinted sono **ASK** (annunci attivi, NON necessariamente venduti, spesso sovrastimati rispetto al prezzo di vendita reale) — non hai dati SOLD/venduti confermati per nessuna fonte. Applica SEMPRE uno sconto prudente del 20-30% sul comp ASK scelto prima di trattarlo come stima di vendita realistica, mai citare un ASK come se fosse il prezzo di vendita atteso senza quello sconto.
@@ -852,7 +853,7 @@ Restituisci ESCLUSIVAMENTE un oggetto JSON conforme allo schema fornito. Nessun 
 1. Popola `comp_candidati` con OGNI prezzo comp che hai davanti, uno per oggetto, con il prezzo esatto e il titolo copiato alla lettera. Marca `escluso: true` (con motivo) quelli fuori categoria, di sottolinea sbagliata, o palesemente fuori scala. Non riassumere, non fare medie a mente: elencali.
 2. Ogni comp Vinted e' un prezzo **ASK** (annuncio attivo, spesso sovrastimato), mai un venduto confermato. Scegli il comp di riferimento tra quelli non esclusi e applica uno sconto prudenziale tra il 20% e il 30% (`sconto_ask_applicato_pct`).
 3. `prezzo_target_vendita_eur` non puo' superare il comp di riferimento gia' scontato, ne' un eventuale tetto di linea (`tetto_prezzo_linea_eur`). Il sistema applica comunque entrambi i limiti: se li superi, la tua stima viene abbassata d'ufficio, quindi tanto vale calcolarla giusta.
-4. Materiale non confermato (`materiale_confermato: false`) -> usa il comp piu' ECONOMICO tra quelli validi, mai il piu' caro.
+4. Materiale non confermato (`materiale_confermato: false`, vedi sezione MATERIALE per cosa conta come "noto") -> resta prudente, il sistema comunque abbassa la stima alla mediana dei comp validi se la superi.
 5. Meno di 2 comp validi dopo le esclusioni -> resta sulla fascia bassa e dichiaralo in `note_analista`, mai una stima alta appoggiata a un solo comp isolato.
 
 # PROVENIENZA DEI COMP -- dichiarala, non nasconderla
@@ -872,9 +873,10 @@ In `messaggio_venditore_template`, se serve indicare una cifra d'offerta scrivi 
 # PRIMA DI CHIUDERE IL JSON -- verifica
 1. Ogni prezzo in `comp_candidati` e' copiato alla lettera dai dati, o marcato `memoria_modello`?
 2. `prezzo_target_vendita_eur` rispetta il comp di riferimento scontato e l'eventuale tetto di linea?
-3. Il materiale dei comp non esclusi corrisponde al capo? Se ignoto, hai usato il piu' economico?
-4. `legit_motivo_specifico` e' concreto e descrive una discrepanza reale?
-5. Hai evitato di scrivere margine, ROI, decisione, urgenza e importi di trattativa ovunque?
+3. Il materiale e' davvero ignoto (nessuna menzione da nessuna parte) prima di mettere `materiale_confermato: false`? Se titolo/descrizione/etichetta lo dichiarano, e' `true`.
+4. C'e' un difetto degno di nota sul capo? Se si', `difetto_significativo: true` con `sconto_difetto_pct` proporzionato e `descrizione_difetto` compilata -- e NON gia' scontato a mano dentro `prezzo_target_vendita_eur` (verrebbe scontato due volte).
+5. `legit_motivo_specifico` e' concreto e descrive una discrepanza reale?
+6. Hai evitato di scrivere margine, ROI, decisione, urgenza e importi di trattativa ovunque?
 """.strip()
 
 
@@ -1808,6 +1810,9 @@ CERVELLO_RESPONSE_SCHEMA = {
         "comp_riferimento_eur",
         "sconto_ask_applicato_pct",
         "prezzo_target_vendita_eur",
+        "difetto_significativo",
+        "sconto_difetto_pct",
+        "descrizione_difetto",
         "giorni_stimati_vendita",
         "mese_consigliato_pubblicazione",
         "legit_verdetto",
@@ -1873,9 +1878,12 @@ CERVELLO_RESPONSE_SCHEMA = {
         "materiale_confermato": {
             "type": "BOOLEAN",
             "description": (
-                "true SOLO se letto da etichetta o dai dati strutturati dell'annuncio. "
-                "false = stima: in quel caso il comp di riferimento deve essere il piu' "
-                "economico tra quelli validi."
+                "true se il materiale compare ESPLICITAMENTE nel titolo, nella descrizione, "
+                "nei dati strutturati dell'annuncio, o e' leggibile su etichetta -- non serve "
+                "una foto ravvicinata della sola etichetta di composizione (es. titolo "
+                "'Kaschmir Pullover' = true). false SOLO se il materiale non e' menzionato da "
+                "nessuna parte e andrebbe indovinato dalla sola foto generica: in quel caso il "
+                "sistema abbassa la stima alla mediana dei comp validi invece che al piu' caro."
             ),
         },
         "taglia_rilevata": {"type": "STRING", "nullable": True},
@@ -1965,6 +1973,46 @@ CERVELLO_RESPONSE_SCHEMA = {
                 "riferimento gia' scontato, ne' tetto_prezzo_linea_eur."
             ),
         },
+        # --- difetto del capo (NON il materiale, NON lo sconto ASK dei comp):
+        # riguarda SOLO le condizioni di QUESTO esemplare specifico. Il
+        # sistema applica sconto_difetto_pct come ulteriore riduzione
+        # moltiplicativa sul prezzo target, DOPO tutti gli altri limiti --
+        # prima non esisteva nessun controllo numerico su questo, un difetto
+        # descritto in note_analista poteva non riflettersi affatto nel
+        # prezzo finale se il cervello si "dimenticava" di scontarlo da solo.
+        "difetto_significativo": {
+            "type": "BOOLEAN",
+            "description": (
+                "true se il capo ha un difetto che un compratore noterebbe e che ne riduce "
+                "il valore (macchia, buco, filo tirato, cerniera/bottone rotto, alterazione, "
+                "usura marcata, foro di spilla, scolorimento, ecc.). false per normale segno "
+                "d'uso di un capo second-hand descritto come 'ottime condizioni' senza difetti "
+                "specifici citati."
+            ),
+        },
+        "sconto_difetto_pct": {
+            "type": "NUMBER",
+            "nullable": True,
+            "description": (
+                "Percentuale di sconto (0-50) da applicare al prezzo target per via del "
+                "difetto, proporzionata alla gravita': difetto lieve/quasi invisibile ~5-10%, "
+                "difetto visibile ma non strutturale (piccolo foro, filo tirato, macchia "
+                "leggera) ~15-25%, difetto strutturale o che compromette l'uso (strappo, "
+                "cerniera rotta, macchia estesa) ~30-50%. 0 o null se difetto_significativo "
+                "e' false. Decidilo tu in base a quanto descritto/visto, il sistema si limita "
+                "ad applicarlo: non scontarlo gia' tu dentro prezzo_target_vendita_eur, "
+                "altrimenti verrebbe scontato due volte."
+            ),
+        },
+        "descrizione_difetto": {
+            "type": "STRING",
+            "nullable": True,
+            "description": (
+                "Cosa e' il difetto, in poche parole (es. 'piccolo foro da spilla sulla manica "
+                "sinistra'). null se difetto_significativo e' false."
+            ),
+        },
+
         "giorni_stimati_vendita": {"type": "INTEGER"},
         "mese_consigliato_pubblicazione": {
             "type": "STRING",
@@ -2063,6 +2111,7 @@ CERVELLO_RESPONSE_SCHEMA = {
         "brand_dichiarato_annuncio", "corrispondenza_brand", "linea_o_era_rilevata",
         "categoria_capo", "materiale_confermato", "fascia_taglia",
         "comp_candidati", "sconto_ask_applicato_pct", "prezzo_target_vendita_eur",
+        "difetto_significativo",
         "giorni_stimati_vendita", "legit_verdetto", "legit_motivo_specifico",
         "rischio_fake", "confidenza", "profilo_venditore", "motivo_profilo_venditore",
         "domanda_mercato", "segnali_domanda", "deal_score", "note_analista",
@@ -3995,6 +4044,23 @@ def valida_payload_cervello(verdetto):
         sconto = min(30.0, max(20.0, sconto))
     v["sconto_ask_applicato_pct"] = sconto
 
+    # --- sconto difetto: clamp a 0-50, coerente con difetto_significativo.
+    v["difetto_significativo"] = bool(v.get("difetto_significativo"))
+    sconto_difetto = _a_float(v.get("sconto_difetto_pct"), 0.0) or 0.0
+    if sconto_difetto < 0 or sconto_difetto > 50:
+        problemi.append(f"sconto_difetto_pct {sconto_difetto:.0f}% fuori dal range 0-50, riportato nel range")
+        sconto_difetto = min(50.0, max(0.0, sconto_difetto))
+    if not v["difetto_significativo"] and sconto_difetto > 0:
+        problemi.append(f"sconto_difetto_pct={sconto_difetto:.0f}% ignorato: difetto_significativo=false")
+        sconto_difetto = 0.0
+    if v["difetto_significativo"] and sconto_difetto == 0:
+        # dichiarato un difetto ma nessuno sconto: prudenza minima di default
+        # invece di lasciarlo a zero come se il difetto non pesasse nulla.
+        sconto_difetto = 10.0
+        problemi.append("difetto_significativo=true senza sconto_difetto_pct: applicato 10% di default")
+    v["sconto_difetto_pct"] = sconto_difetto
+    v["descrizione_difetto"] = (v.get("descrizione_difetto") or "").strip() or None
+
     giorni = _a_float(v.get("giorni_stimati_vendita"), 30.0) or 30.0
     v["giorni_stimati_vendita"] = int(min(365, max(1, giorni)))
 
@@ -4209,16 +4275,40 @@ def calcola_verdetto(v, prezzo_prodotto):
             massimo_consentito = max(prezzi_tenuti) * fattore_sconto
             descrizione_limite = f"comp piu' alto €{max(prezzi_tenuti):.2f}"
         else:
-            # Materiale non confermato: si usa il comp piu' ECONOMICO, come
-            # prescrive la regola. Prima era un'istruzione nel prompt che il
-            # modello seguiva a discrezione, ora e' un limite applicato.
-            massimo_consentito = min(prezzi_tenuti) * fattore_sconto
-            descrizione_limite = f"materiale non confermato, comp piu' economico €{min(prezzi_tenuti):.2f}"
+            # Materiale non confermato: si usa la MEDIANA dei comp validi,
+            # non piu' il comp piu' economico. La versione precedente
+            # (comp piu' economico) era troppo punitiva: bastava che il
+            # cervello marcasse per prudenza eccessiva materiale_confermato
+            # a false -- anche quando titolo/etichetta lo dichiaravano gia'
+            # esplicitamente (es. "Kaschmir" nel titolo) -- per far crollare
+            # la stima su un singolo comp isolato in fondo alla forchetta,
+            # producendo un prezzo fuorviante. La mediana resta prudente ma
+            # non si appoggia a un solo valore anomalo.
+            mediana_prezzi = statistics.median(prezzi_tenuti)
+            massimo_consentito = mediana_prezzi * fattore_sconto
+            descrizione_limite = f"materiale non confermato, mediana comp €{mediana_prezzi:.2f}"
         if target > massimo_consentito:
             limiti_applicati.append(
                 f"{descrizione_limite} scontato {v['sconto_ask_applicato_pct']:.0f}% = €{massimo_consentito:.2f}"
             )
             target = massimo_consentito
+
+    # --- limite 4: sconto per difetto dichiarato sul capo. Si applica DOPO
+    # tetto di linea/ancoraggio/materiale perche' riguarda le condizioni di
+    # QUESTO esemplare, non il valore di mercato del modello in generale --
+    # un difetto va scontato sul prezzo gia' corretto per tutto il resto,
+    # non al posto degli altri limiti. Prima non esisteva nessun controllo
+    # numerico qui: un difetto descritto a parole in note_analista poteva
+    # non riflettersi affatto nel prezzo finale.
+    sconto_difetto_pct = v.get("sconto_difetto_pct") or 0.0
+    if sconto_difetto_pct > 0:
+        target_prima_difetto = target
+        target = target * (1 - sconto_difetto_pct / 100.0)
+        descrizione_difetto = v.get("descrizione_difetto")
+        limiti_applicati.append(
+            f"difetto dichiarato ({descrizione_difetto or 'non specificato'}): "
+            f"sconto {sconto_difetto_pct:.0f}% da €{target_prima_difetto:.2f} a €{target:.2f}"
+        )
 
     target = max(0.0, round(target, 2))
 
