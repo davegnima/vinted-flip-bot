@@ -246,6 +246,12 @@ COMMISSIONE_PROTEZIONE_PCT = 0.05      # protezione acquisti Vinted, quota sul p
 COMMISSIONE_PROTEZIONE_FISSA = 0.70    # protezione acquisti Vinted, quota fissa
 SPEDIZIONE_STIMATA_EUR = 2.50          # tariffa IT, la piu' economica
 QUOTA_INCASSO_NETTO = 0.80             # incasso reale = prezzo di vendita x 0.80
+SCONTO_TIPICO_TRATTATIVA_VENDITA = 0.10  # sconto medio che un acquirente strappa in
+                                          # trattativa su Vinted prima di comprare: usato
+                                          # SOLO per calcolare "prezzo da listare" (di
+                                          # quanto listare sopra alla vendita attesa per
+                                          # avere margine di trattativa), NON per la
+                                          # decisione COMPRA/TRATTA che resta invariata
 
 SOGLIA_MARGINE_COMPRA = 20.0           # EUR netti minimi per un COMPRA
 SOGLIA_ROI_COMPRA = 100.0              # % minima di ROI per un COMPRA
@@ -5868,6 +5874,7 @@ def calcola_verdetto(v, prezzo_prodotto):
             "prezzo_prodotto": prezzo_prodotto,
             "acquisto_pieno": None, "incasso": None, "margine": None, "roi": None,
             "prezzo_target": v.get("prezzo_target_vendita_eur"),
+            "vendita_attesa": None, "minimo_accettabile_rivendita": None, "prezzo_da_listare": None,
             "tratta_costo": None, "tratta_margine": None, "tratta_roi": None,
             "comp_usati": [], "comp_scartati_outlier": [],
             "limiti_applicati": ["prezzo dell'annuncio non disponibile: nessun calcolo economico eseguito"],
@@ -5975,6 +5982,40 @@ def calcola_verdetto(v, prezzo_prodotto):
     margine = incasso - acquisto_pieno
     roi = (margine / acquisto_pieno * 100) if acquisto_pieno > 0 else 0.0
 
+    # --- tre cifre distinte per il messaggio (richiesto dall'utente il
+    # 2026-09-20: il precedente "Vendita stimata" unico nascondeva sia il
+    # -20% forfettario di QUOTA_INCASSO_NETTO sia il fatto che il prezzo da
+    # mettere in annuncio deve stare sopra al ricavo realistico, per
+    # lasciare spazio a una trattativa. NON cambiano la decisione
+    # COMPRA/TRATTA/NON COMPRARE ne' margine/ROI qui sopra: sono solo
+    # informative, calcolate sugli stessi target/acquisto_pieno.
+    vendita_attesa = target
+
+    # minimo prezzo di vendita (stesso "spazio" di vendita_attesa, PRIMA
+    # dello sconto di QUOTA_INCASSO_NETTO) sotto il quale l'affare non
+    # supera piu' le soglie di COMPRA (SOGLIA_MARGINE_COMPRA/SOGLIA_ROI_COMPRA).
+    # Deriva algebricamente da margine=incasso-acquisto_pieno e
+    # incasso=target*QUOTA_INCASSO_NETTO, per entrambe le soglie, poi prende
+    # la piu' stringente (di solito quella sul ROI):
+    #   margine >= SOGLIA_MARGINE_COMPRA  =>  target >= (acquisto_pieno + SOGLIA_MARGINE_COMPRA) / QUOTA_INCASSO_NETTO
+    #   roi >= SOGLIA_ROI_COMPRA          =>  target >= acquisto_pieno * (1 + SOGLIA_ROI_COMPRA/100) / QUOTA_INCASSO_NETTO
+    if QUOTA_INCASSO_NETTO > 0:
+        _target_min_margine = (acquisto_pieno + SOGLIA_MARGINE_COMPRA) / QUOTA_INCASSO_NETTO
+        _target_min_roi = (acquisto_pieno * (1 + SOGLIA_ROI_COMPRA / 100.0)) / QUOTA_INCASSO_NETTO
+        minimo_accettabile_rivendita = round(max(_target_min_margine, _target_min_roi, 0.0), 2)
+    else:
+        minimo_accettabile_rivendita = 0.0
+
+    # prezzo consigliato in annuncio: vendita_attesa maggiorata di
+    # SCONTO_TIPICO_TRATTATIVA_VENDITA, cosi' che dopo la trattativa tipica
+    # con l'acquirente si incassi comunque circa vendita_attesa. Non e' il
+    # tetto SCONTO_MAX_TRATTATIVA (quello e' lo sconto massimo che NOI
+    # accettiamo di offrire quando compriamo, concetto diverso).
+    if vendita_attesa > 0 and SCONTO_TIPICO_TRATTATIVA_VENDITA < 1:
+        prezzo_da_listare = round(vendita_attesa / (1 - SCONTO_TIPICO_TRATTATIVA_VENDITA), 2)
+    else:
+        prezzo_da_listare = vendita_attesa
+
     # --- trattativa: SEMPRE al massimo sconto consentito sul solo prodotto,
     # mai sulla spedizione. Sostituisce applica_soglia_trattativa_40_percento,
     # che correggeva l'offerta ma lasciava dichiaratamente incoerenti margine
@@ -6072,6 +6113,9 @@ def calcola_verdetto(v, prezzo_prodotto):
         "roi": roi,
         "prezzo_target": target,
         "prezzo_target_dichiarato": target_dichiarato,
+        "vendita_attesa": vendita_attesa,
+        "minimo_accettabile_rivendita": minimo_accettabile_rivendita,
+        "prezzo_da_listare": prezzo_da_listare,
         "tratta_prezzo_prodotto": prezzo_trattato,
         "tratta_costo": tratta_costo,
         "tratta_margine": tratta_margine,
@@ -6100,7 +6144,12 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
             f"💰 €{verdetto['acquisto_pieno']:.2f} → €{verdetto['incasso']:.2f} → "
             f"**€{verdetto['margine']:.2f} (ROI {verdetto['roi']:.0f}%)**"
         )
-        righe.append(f"📈 Vendita stimata: €{verdetto['prezzo_target']:.2f} · Linea: {v.get('linea_o_era_rilevata')}")
+        righe.append(
+            f"📈 Vendita attesa: €{verdetto['vendita_attesa']:.2f} · "
+            f"Prezzo da listare: €{verdetto['prezzo_da_listare']:.2f} · "
+            f"Minimo accettabile: €{verdetto['minimo_accettabile_rivendita']:.2f}"
+        )
+        righe.append(f"Linea: {v.get('linea_o_era_rilevata')}")
 
     legit = ETICHETTA_LEGIT.get(v["legit_verdetto"], v["legit_verdetto"])
     righe.append(f"🏷️ Legit: {legit} — {v['legit_motivo_specifico']}")
