@@ -2601,6 +2601,40 @@ async def _vinted_get_con_retry(url, timeout=15, max_retries=3, headers_extra=No
     return None
 
 
+def _estrai_foto_gallery(html_sorgente):
+    """Estrae {photo_id: url} delle foto galleria capo da un frammento HTML
+    di una pagina annuncio Vinted. Funzione pura (nessuna rete), spostata a
+    livello di modulo il 2026-09-21 per poterla testare in isolamento da
+    scrape_vinted_listing (vedi test_verdetto.py).
+
+    FIX 2026-09-21 (utente, "Dries Van Noten" segnalato ancora come
+    capi_diversi_tra_le_foto dopo il fix del 2026-09-20 sotto): il taglio
+    per posizione (prima/dopo il marker venditore, in scrape_vinted_listing)
+    presume che l'avatar compaia SEMPRE dopo il marker nell'HTML grezzo. Non
+    e' garantito -- se l'avatar (o altri URL images.vinted.net non legati al
+    capo) compare ANCHE prima del marker (es. dentro un blob di stato/JSON
+    di idratazione della pagina, che su molte SPA moderne sta piu' in alto
+    nell'HTML del blocco venditore renderizzato), il taglio "prima del
+    marker" lo include comunque e nessuno dei due rami in
+    scrape_vinted_listing lo scarta. Le foto vere della galleria capo,
+    osservate su TUTTI i download reali finora loggati (nessuna eccezione),
+    sono sempre servite in risoluzione "f800"; avatar/thumbnail extra usano
+    altre risoluzioni. Si scartano quindi qui, a monte e indipendentemente
+    dalla posizione, i photo_id che non compaiono MAI in f800 -- non si
+    accetta piu' una foto vista solo in risoluzione WIDTHxHEIGHT.
+    """
+    m1 = re.findall(
+        r'https://images\d?\.vinted\.net/t/([a-zA-Z0-9_]+)/(f800)/'
+        r'[^\s"\'\\]+?\.(?:jpe?g|png|webp)(?:\?s=[a-f0-9]+)?', html_sorgente)
+    m2 = re.findall(
+        r'https://images\d?\.vinted\.net/t/[a-zA-Z0-9_]+/f800/'
+        r'[^\s"\'\\]+?\.(?:jpe?g|png|webp)(?:\?s=[a-f0-9]+)?', html_sorgente)
+    diz = {}
+    for (photo_id, resolution), full_url in zip(m1, m2):
+        diz[photo_id] = full_url
+    return diz
+
+
 async def scrape_vinted_listing(url):
     result = {
         "photo_urls": [], "cover_photo_id": None, "size": None, "condition": None, "description": None,
@@ -2620,40 +2654,28 @@ async def scrape_vinted_listing(url):
 
         marker_venditore = re.search(r'data-testid="profile-username"', html_pagina)
 
-        def _estrai_foto(html_sorgente):
-            m1 = re.findall(
-                r'https://images\d?\.vinted\.net/t/([a-zA-Z0-9_]+)/((?:f800|\d+x\d+))/'
-                r'[^\s"\'\\]+?\.(?:jpe?g|png|webp)(?:\?s=[a-f0-9]+)?', html_sorgente)
-            m2 = re.findall(
-                r'https://images\d?\.vinted\.net/t/[a-zA-Z0-9_]+/(?:f800|\d+x\d+)/'
-                r'[^\s"\'\\]+?\.(?:jpe?g|png|webp)(?:\?s=[a-f0-9]+)?', html_sorgente)
-            diz = {}
-            for (photo_id, resolution), full_url in zip(m1, m2):
-                if photo_id not in diz or resolution == "f800":
-                    diz[photo_id] = full_url
-            return diz
-
-        foto_complete = _estrai_foto(html_pagina)
+        foto_complete = _estrai_foto_gallery(html_pagina)
         if marker_venditore:
-            foto_tagliate = _estrai_foto(html_pagina[:marker_venditore.start()])
+            foto_tagliate = _estrai_foto_gallery(html_pagina[:marker_venditore.start()])
             if 0 < len(foto_tagliate) and len(foto_complete) - len(foto_tagliate) <= 2:
                 best_url_by_photo_id = foto_tagliate
             else:
                 # BUG TROVATO IN PRODUZIONE il 2026-09-20 (utente): quando il
                 # taglio sopra viene scartato, foto_complete include TUTTO
                 # cio' che sta sul dominio images.vinted.net nella pagina --
-                # anche l'avatar del venditore (stesso pattern URL delle foto
-                # vere del capo, la regex non li distingue) e altri
-                # thumbnail dopo la sezione venditore (es. "consigliati per
-                # te"). Caso reale: 4 foto vere di un top Marni + l'avatar
-                # del venditore (una foto di una moto) passate insieme
+                # anche altri thumbnail dopo la sezione venditore (es.
+                # "consigliati per te", che SONO in f800 perche' sono foto
+                # vere di ALTRI annunci, quindi non piu' filtrabili dal fix
+                # per risoluzione applicato in _estrai_foto_gallery). Caso
+                # reale: 4 foto vere di un top Marni + l'avatar del
+                # venditore (una foto di una moto) passate insieme
                 # all'Occhio, che ha letto la moto come "capo diverso" e
                 # scartato l'annuncio come FRAUDOLENTO. Fix: si ricalcola
                 # cosa compare SOLO dopo il marker (mai prima) ed escludi
                 # SOLO quelle foto da foto_complete -- il ramo foto_tagliate
-                # sopra non ha questo problema per costruzione (contiene solo
-                # HTML precedente al marker, l'avatar non puo' finirci).
-                foto_dopo_marker = _estrai_foto(html_pagina[marker_venditore.start():])
+                # sopra non ha questo problema per costruzione (contiene
+                # solo HTML precedente al marker).
+                foto_dopo_marker = _estrai_foto_gallery(html_pagina[marker_venditore.start():])
                 ids_solo_dopo_marker = set(foto_dopo_marker) - set(foto_tagliate)
                 best_url_by_photo_id = {
                     k: v for k, v in foto_complete.items() if k not in ids_solo_dopo_marker
