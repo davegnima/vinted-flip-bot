@@ -19,6 +19,7 @@ import logging
 import statistics
 import traceback
 from io import BytesIO
+from datetime import datetime, timezone
 from urllib.parse import quote
 
 import httpx
@@ -2601,6 +2602,32 @@ async def _vinted_get_con_retry(url, timeout=15, max_retries=3, headers_extra=No
     return None
 
 
+def _formatta_durata(secondi):
+    """'2m 14s' / '43s' -- None o negativo (orologi non allineati) -> None,
+    per poter omettere la riga invece di mostrare un numero senza senso."""
+    if secondi is None or secondi < 0:
+        return None
+    secondi = int(round(secondi))
+    m, s = divmod(secondi, 60)
+    return f"{m}m {s:02d}s" if m else f"{s}s"
+
+
+def _parse_created_at_dt(created_at_raw):
+    """Riconverte in datetime tz-aware il 'created_at' prodotto da
+    scrape_vinted_listing (stringa ISO grezza di Vinted o isoformat gia'
+    normalizzato dal ramo epoch, vedi sopra). None se assente o non
+    parsabile -- stesso spirito difensivo del resto dello scraping."""
+    if not created_at_raw:
+        return None
+    try:
+        dt = datetime.fromisoformat(created_at_raw)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except Exception:
+        return None
+
+
 def _estrai_foto_gallery(html_sorgente):
     """Estrae {photo_id: url} delle foto galleria capo da un frammento HTML
     di una pagina annuncio Vinted. Funzione pura (nessuna rete), spostata a
@@ -2732,7 +2759,6 @@ async def scrape_vinted_listing(url):
         if created_match:
             result["created_at"] = created_match.group(1)
             try:
-                from datetime import datetime, timezone
                 created_dt = datetime.fromisoformat(created_match.group(1))
                 if created_dt.tzinfo is None:
                     created_dt = created_dt.replace(tzinfo=timezone.utc)
@@ -2742,7 +2768,6 @@ async def scrape_vinted_listing(url):
                 log.warning("Impossibile calcolare l'eta' dell'annuncio (formato data inatteso: %s).", created_match.group(1))
         elif epoch_match:
             try:
-                from datetime import datetime, timezone
                 ts = int(epoch_match.group(1))
                 if ts > 10**12:  # timestamp in millisecondi
                     ts = ts / 1000
@@ -6708,7 +6733,7 @@ async def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header,
 # PIPELINE PRINCIPALE
 # ---------------------------------------------------------------------------
 
-async def process_listing(parsed, url, cover_photo_bytes):
+async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricevuto_bot=None):
     listing_info = dict(parsed)
     listing_info["url"] = url
     costo_totale = 0.0
@@ -7160,7 +7185,35 @@ async def process_listing(parsed, url, cover_photo_bytes):
             f"+ 🧠 {modello_cervello} ${costo_cervello:.4f} "
             f"= Totale ${costo_totale:.4f}_"
         )
-    output_finale = output_finale + footer_scenario + footer_costo
+    # ---- FOOTER: tempi (richiesto dall'utente il 2026-09-21, "perdo casi
+    # perche' gia' acquistati -- vorrei monitorare il delay tra ogni step:
+    # pubblicazione annuncio -> scrape/messaggio del tracker -> nostra
+    # pipeline -> notifica"). Due tappe misurabili da qui:
+    #   pubblicato -> telegram: da created_at (data pubblicazione Vinted,
+    #     letta dalla pagina annuncio) a event.message.date (quando il
+    #     tracker esterno ha postato l'alert nel gruppo) -- e' il ritardo
+    #     PRIMA di noi (scraping+relay del tracker), fuori dal nostro
+    #     controllo ma utile da vedere separato dal resto.
+    #   telegram -> notifica: da quando il nostro handler ha ricevuto quel
+    #     messaggio (t_ricevuto_bot) a ORA, un attimo prima di inviare --
+    #     questo e' il nostro overhead (scrape Vinted, download foto,
+    #     Occhio, eventuale Cervello) ed e' la parte su cui possiamo agire.
+    # Nessuna delle due parti e' garantita disponibile (created_at manca se
+    # Vinted non espone la data in pagina; msg_date/t_ricevuto_bot mancano
+    # se process_listing viene chiamato da un altro percorso in futuro):
+    # ogni pezzo mancante si omette invece di mostrare un numero fasullo.
+    t_notifica = time.time()
+    created_dt = _parse_created_at_dt(listing_info.get("created_at"))
+    pezzi_tempi = []
+    if created_dt and msg_date:
+        pezzi_tempi.append(f"pubblicato→telegram {_formatta_durata((msg_date - created_dt).total_seconds()) or '?'}")
+    if t_ricevuto_bot:
+        pezzi_tempi.append(f"telegram→notifica {_formatta_durata(t_notifica - t_ricevuto_bot) or '?'}")
+    if created_dt:
+        pezzi_tempi.append(f"totale {_formatta_durata(t_notifica - created_dt.timestamp()) or '?'}")
+    footer_tempi = f"\n⏱ _Tempi: {' · '.join(pezzi_tempi)}_" if pezzi_tempi else ""
+
+    output_finale = output_finale + footer_scenario + footer_costo + footer_tempi
 
     # Verdetto + riga economica in cima al messaggio, poi brand accodato alla
     # riga decisione (richiesto dall'utente il 2026-09-20, secondo giro di
@@ -7244,6 +7297,17 @@ def e_variante_recente(parsed):
 
 @client.on(events.NewMessage(chats=TELEGRAM_GROUP_ID))
 async def on_new_message(event):
+    # Catturati il piu' presto possibile nell'handler (richiesto dall'utente
+    # il 2026-09-21, "monitorare il delay tra ogni step"): t_ricevuto_bot e'
+    # il riferimento per quanto ci mette la NOSTRA pipeline (scrape, foto,
+    # Occhio, Cervello) fino all'invio della notifica; event.message.date e'
+    # il timestamp che Telegram assegna al messaggio del tracker esterno,
+    # confrontato in process_listing con created_at (data di pubblicazione
+    # Vinted, presa dalla pagina annuncio) per isolare il ritardo che sta
+    # PRIMA di noi (pubblicazione -> tracker -> messaggio Telegram), su cui
+    # non abbiamo controllo ma che vale la pena vedere separato dal nostro.
+    t_ricevuto_bot = time.time()
+    msg_date = event.message.date
     try:
         msg_id = event.message.id
         if msg_id in _processed_message_ids:
@@ -7277,7 +7341,7 @@ async def on_new_message(event):
         # annunci vengono elaborati davvero in parallelo, e le lunghe attese
         # di rete (scraping, Serper, Gemini) non occupano piu' un thread
         # ciascuna.
-        await process_listing(parsed, url, cover)
+        await process_listing(parsed, url, cover, msg_date=msg_date, t_ricevuto_bot=t_ricevuto_bot)
     except Exception:
         log.error("Errore generico:\n%s", traceback.format_exc())
 
