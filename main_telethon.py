@@ -753,6 +753,37 @@ def check_skip_pre_gemini(listing_info):
         if "see by chloé" in testo_completo or "see by chloe" in testo_completo:
             return True, "[LINEA/VARIANTE ESCLUSA PER BRAND] Chloé diffusion linea See by Chloé."
 
+    # "Loro Piana" citato come TESSUTO, non come produttore del capo (richiesto
+    # dall'utente il 2026-09-21, caso reale: "Blazer oversize in lana tessuto
+    # Loro Piana" valutato COMPRA sui comp di Loro Piana mainline, quando
+    # l'unica etichetta reale era quella del fornitore di stoffa e il
+    # produttore vero del capo era un sarto/maker ignoto). E' una pratica
+    # sartoriale comune: il tessuto pregiato viene citato per marketing, il
+    # capo NON e' fatto da Loro Piana. Skip a monte, prima ancora delle foto:
+    # basta che una parola "tessuto"/"fabric" (in tutte le lingue Vinted
+    # osservate finora) compaia insieme a "loro piana" nel testo, a
+    # prescindere da cosa dice il campo brand strutturato -- e' un segnale
+    # sufficientemente specifico da non aver bisogno di conferma visiva.
+    # Nota: questo NON copre il caso in cui il testo non lo dichiara ma le
+    # FOTO mostrano solo l'etichetta del tessuto -- quel caso e' coperto piu'
+    # a valle da relazione_brand == "tessuto_non_brand" nell'Occhio.
+    if "loro piana" in testo_completo:
+        TESSUTO_KEYWORDS = (
+            "tessuto",  # IT
+            "fabric", "cloth",  # EN
+            "stoff", "gewebe",  # DE
+            "tissu", "étoffe", "etoffe",  # FR
+            "tejido", "tela",  # ES
+            "tecido", "pano",  # PT
+        )
+        if any(re.search(r'\b' + re.escape(kw) + r'\b', testo_completo) for kw in TESSUTO_KEYWORDS):
+            return True, (
+                "[TESSUTO NON E' IL BRAND] 'Loro Piana' citato insieme a una parola di "
+                "tessuto/stoffa nel titolo o nella descrizione -- quasi certamente il nome "
+                "del fornitore del tessuto, non il produttore del capo, scartato senza "
+                "consultare foto/cervello."
+            )
+
     return False, None
 
 
@@ -956,13 +987,20 @@ OCCHIO_RESPONSE_SCHEMA = {
         "relazione_brand": {
             "type": "STRING",
             "format": "enum",
-            "enum": ["corrisponde", "sottolinea_stessa_maison", "brand_estraneo", "non_leggibile"],
+            "enum": [
+                "corrisponde", "sottolinea_stessa_maison", "brand_estraneo",
+                "tessuto_non_brand", "non_leggibile",
+            ],
             "description": (
                 "'sottolinea_stessa_maison' = MM6 per Margiela, See by Chloe per Chloe, "
                 "Weekend per Max Mara: ha ancora valore. 'brand_estraneo' = marchio diverso e "
                 "NON correlato (es. 'Kapitales' per 'Kapital'): il sistema scarta l'annuncio "
-                "senza altre verifiche, quindi usalo solo se sei sicuro. Nel dubbio "
-                "'non_leggibile'."
+                "senza altre verifiche, quindi usalo solo se sei sicuro. 'tessuto_non_brand' = "
+                "il nome letto (es. Loro Piana, Zegna, Vitale Barberis Canonico) e' SOLO il "
+                "fornitore del tessuto usato per il capo, non il produttore del capo finito -- "
+                "vedi istruzioni dettagliate nel prompt. Nel dubbio tra 'corrisponde' e "
+                "'tessuto_non_brand', usa 'tessuto_non_brand'. 'non_leggibile' solo se non leggi "
+                "NESSUN nome, ne' di brand ne' di tessuto."
             ),
         },
         "nome_sottolinea": {
@@ -1336,6 +1374,22 @@ def calcola_scarto_occhio(o, solo_cover_photo=False, listing_info=None):
             "non consultato, il capo non ha valore nel segmento monitorato."
         )
 
+    # Regola richiesta dall'utente il 2026-09-21 (caso reale: "Blazer oversize
+    # in lana tessuto Loro Piana" valutato COMPRA usando comp di Loro Piana
+    # mainline, quando "Loro Piana" nell'etichetta era solo il fornitore del
+    # tessuto -- il capo era di un sarto/maker ignoto). Il nome del fornitore
+    # di tessuto non e' il brand del capo, quindi non ha senso cercare comp
+    # sul brand del tessuto: si scarta a prescindere, stesso principio dello
+    # skip "brand estraneo" sopra ma per un errore di lettura diverso (non un
+    # marchio sbagliato, ma la categoria di etichetta sbagliata).
+    if _norm(o.get("relazione_brand")) == "tessuto_non_brand":
+        return True, (
+            "[TESSUTO NON E' IL BRAND] L'etichetta letta e' del fornitore del tessuto "
+            f"({o.get('brand_letto_etichetta') or 'non specificato'}), non del produttore "
+            "del capo -- cervello non consultato, i comp del brand del tessuto non sono "
+            "comp validi per un capo di un maker diverso e ignoto."
+        )
+
     # Il falso conclamato richiede anche la controprova anti-bias: senza,
     # e' esattamente il caso Dries Van Noten (autentico a 5,95 EUR scartato
     # come falso con dettagli costruiti a posteriori).
@@ -1436,7 +1490,7 @@ def valida_payload_occhio(occhio):
           {"sufficiente_per_verdetto", "parziale_servono_altre_foto", "insufficiente"},
           "parziale_servono_altre_foto")
     _enum("relazione_brand",
-          {"corrisponde", "sottolinea_stessa_maison", "brand_estraneo", "non_leggibile"},
+          {"corrisponde", "sottolinea_stessa_maison", "brand_estraneo", "tessuto_non_brand", "non_leggibile"},
           "non_leggibile")
     _enum("coerenza_materiale", {"coerente", "incoerente", "non_valutabile"}, "non_valutabile")
     _enum("livello_fattura",
@@ -1666,7 +1720,7 @@ Distingui SEMPRE due casi molto diversi quando l'etichetta reale non corrisponde
 Per il caso 2, scrivi ESPLICITAMENTE nella riga "🏷️ Legit:" la frase **"BRAND NON CORRISPONDENTE"** seguita dal nome del brand reale letto sull'etichetta, così il sistema può risparmiare la chiamata al Cervello (verdetto già scontato: NON COMPRARE, senza bisogno di comp di mercato). Usa questa frase SOLO quando sei sicuro che sia un marchio diverso e non correlato, non per semplici dubbi o quando il brand reale è comunque leggibile con Confidenza Bassa — in caso di dubbio, lascia decidere al Cervello.
 
 # IL NOME DEL TESSUTO NON È IL BRAND DEL CAPO
-Caso reale già osservato: un annuncio titolato "Giacca uomo Loro Piana" era in realtà una giacca in pelle **Pineider** — "Loro Piana" indicava solo il FORNITORE del tessuto/materiale usato, non il produttore del capo. Loro Piana (e altri nomi come Zegna, Vitale Barberis Canonico, Scabal, Holland & Sherry, Cerruti) sono spesso citati nei titoli e nelle descrizioni come marchio del TESSUTO impiegato da un'altra maison, non come il brand del capo finito — è una pratica comune specialmente per capispalla in pelle o lana pregiata. Prima di trascrivere questi nomi come `brand_letto_etichetta`, verifica SEMPRE l'etichetta interna, il logo, i bottoni e il tirante della zip: se mostrano un nome diverso, è QUELLO il brand reale, e il nome del tessuto va citato solo come dettaglio di materiale in `materiale_osservato_dalle_foto`/`composizione_da_etichetta`, mai come brand. Se dall'etichetta/hardware non riesci a leggere un brand diverso da quello del tessuto citato nel titolo, dichiara `relazione_brand: "non_leggibile"` invece di assumere che il tessuto e il brand coincidano — un titolo che nomina solo un fornitore di tessuto NON è di per sé una prova di brand.
+Caso reale già osservato: un annuncio titolato "Giacca uomo Loro Piana" era in realtà una giacca in pelle **Pineider** — "Loro Piana" indicava solo il FORNITORE del tessuto/materiale usato, non il produttore del capo. Un secondo caso reale, stesso meccanismo ma senza nemmeno la scusante del titolo: un "Blazer oversize in lana tessuto Loro Piana" aveva SOLO l'etichetta del tessuto ("Ing. Loro Piana & C.", "Super 110's") cucita dentro, nessun'altra etichetta/logo/bottone che indicasse chi avesse davvero confezionato il capo — eppure è stato valutato come un Loro Piana mainline vero e proprio, con comp e prezzo completamente sbagliati. Loro Piana (e altri nomi come Zegna, Vitale Barberis Canonico, Scabal, Holland & Sherry, Cerruti) sono spesso citati nei titoli, nelle descrizioni E su etichette cucite dentro il capo come marchio del TESSUTO impiegato da un'altra maison, non come il brand del capo finito — è una pratica comune specialmente per capispalla in pelle o lana pregiata, tailoring su misura compreso. Prima di trascrivere questi nomi come `brand_letto_etichetta`, verifica SEMPRE l'etichetta principale, il logo, i bottoni e il tirante della zip: se mostrano un nome diverso, è QUELLO il brand reale, e il nome del tessuto va citato solo come dettaglio di materiale in `materiale_osservato_dalle_foto`/`composizione_da_etichetta`, mai come brand. Se l'UNICA etichetta con quel nome è un cartellino di tessuto (spesso piccolo, separato dall'etichetta principale, con diciture tipo "Super 110's/120's/150's") e nessun'altra evidenza (etichetta principale, logo, bottoni, tirante zip) mostra un produttore — quello stesso o un altro — dichiara `relazione_brand: "tessuto_non_brand"`, MAI `"corrisponde"`: il sistema scarta l'annuncio a prescindere, perché i comp del brand del tessuto non sono comp validi per un capo di un maker ignoto. Usalo anche nel dubbio: il costo di scartare un capo che era davvero mainline è molto minore del costo di valutarlo coi comp del brand sbagliato. `relazione_brand: "non_leggibile"` resta riservato al caso in cui non leggi NESSUN nome, né di brand né di tessuto.
 
 # MAINLINE VS DIFFUSION — DISTINZIONE CRITICA PER IL MARGINE
 Distingui SEMPRE le linee/ere per i brand, è un fattore critico per il valore. Specifica sempre l'epoca/linea in base alle etichette.
@@ -5370,6 +5424,9 @@ def build_skip_report(listing_info, motivo_skip, output_occhi_testo=None):
             if m_legit and m_legit.group(1).strip():
                 riga_legit = m_legit.group(1).strip()
         riga_rischio = "N/A — brand estraneo al segmento monitorato (filtro automatico, cervello non consultato)"
+    elif motivo_skip.startswith("[TESSUTO NON E' IL BRAND"):
+        riga_legit = "Nome citato e' il fornitore del tessuto, non il produttore del capo — comp del brand del tessuto non validi per questo capo."
+        riga_rischio = "N/A — produttore reale del capo ignoto (filtro automatico, cervello non consultato)"
     elif motivo_skip.startswith("[CONDIZIONE DISTRUTTA"):
         riga_legit = "Autentico ma condizione fisica gravemente compromessa — non rivendibile."
         riga_rischio = "BASSO (autenticita') / ALTO (condizione) — cervello non consultato"
