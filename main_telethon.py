@@ -40,10 +40,18 @@ from PIL import Image
 #
 # Ora tutta la rete passa da httpx.AsyncClient e tutte le pause da
 # asyncio.sleep, quindi piu' annunci vengono elaborati davvero in
-# parallelo e le attese di rete non costano nulla. L'unico rate-limit che
-# resta volutamente serializzato e' quello verso Vinted, protetto da
-# _vinted_rate_limit_lock (vedi sotto): li' la pausa minima tra richieste
-# e' una difesa contro il 403, non un collo di bottiglia da eliminare.
+# parallelo e le attese di rete non costano nulla. Il rate-limit verso
+# Vinted resta una difesa voluta contro il 403 (vedi _attendi_turno_vinted
+# piu' sotto), ma dal 2026-09-21 e' pacata PER PROXY invece che con un
+# unico lock globale: con un lock globale, annunci multipli in lavorazione
+# contemporanea (proprio il caso normale in un momento di traffico intenso,
+# quello in cui perdere tempo costa un affare gia' comprato da qualcun
+# altro) si mettevano in coda TUTTI insieme su un'unica pausa minima
+# condivisa, anche usando 53 proxy diversi che a quel punto non
+# accodavano il traffico, lo attendevano soltanto. La stessa pausa minima
+# per singolo IP resta identica (nessuna riduzione della protezione
+# anti-403 per-proxy), cambia solo che IP diversi non si aspettano piu'
+# a vicenda.
 #
 # NOTA httpx >= 0.28: il vecchio parametro "proxies" (plurale, dict) e'
 # stato rimosso. La rotazione proxy e' quindi implementata con un client
@@ -346,8 +354,10 @@ _serper_notifica_esaurimento_inviata = [False]
 # Rate-limiter tra richieste Vinted consecutive: dopo ~13h di attivita'
 # continua Vinted ha iniziato a rispondere 403 Forbidden (probabile blocco
 # per volume di richieste). Impone una pausa minima tra una scrape e la
-# successiva per restare sotto la soglia che scatena il blocco.
-_vinted_timestamp_ultima_richiesta = [0.0]
+# successiva per restare sotto la soglia che scatena il blocco -- dal
+# 2026-09-21 per singolo proxy, non piu' globale (vedi
+# _vinted_timestamp_ultima_richiesta_per_chiave, definito vicino a
+# _attendi_turno_vinted).
 PAUSA_MINIMA_TRA_RICHIESTE_VINTED_SECONDI = 3.0
 
 # BLOCKLIST VENDITORI
@@ -1399,10 +1409,33 @@ def calcola_scarto_occhio(o, solo_cover_photo=False, listing_info=None):
             and o.get("controprova_prezzo_eseguita") is True):
         return True, f"[FALSO CONCLAMATO] {o.get('motivo_sintetico') or 'rilevato dall analisi visiva.'}"
 
-    if o.get("segnali_rischio_annuncio"):
+    # 'capi_diversi_tra_le_foto' RIMOSSO dallo scarto automatico (richiesto
+    # dall'utente il 2026-09-21, dopo ripetuti falsi positivi su annunci
+    # genuini -- caso reale "pull à motif vintage": 4 foto vere in f800,
+    # nessun avatar/estraneo nel lotto (il bug di scraping del 2026-09-20/21
+    # era gia' risolto per questo annuncio), eppure l'Occhio ha comunque
+    # giudicato le foto "capi diversi" e l'annuncio e' stato scartato PRIMA
+    # di arrivare al Cervello. A differenza degli altri segnali di questo
+    # elenco (screenshot di un altro annuncio, watermark, foto di uno
+    # schermo, foto stock...), che sono giudizi quasi binari e affidabili,
+    # "capi diversi tra le foto" richiede un confronto visivo fine tra piu'
+    # immagini che flash-lite sbaglia troppo spesso per giustificare uno
+    # scarto SENZA revisione -- il costo di un falso positivo (un affare
+    # vero mai notificato, silenziosamente) e' piu' alto del costo di
+    # consultare comunque il Cervello su un eventuale falso annuncio vero.
+    # Il segnale resta comunque nello schema e finisce nel testo dell'Occhio
+    # (vedi render_occhio_da_json piu' sotto, riga "⚠️ Segnali di rischio
+    # sull'annuncio"), quindi il Cervello lo VEDE e puo' comunque pesarlo
+    # nel proprio ragionamento -- non e' stato ignorato, solo declassato da
+    # scarto automatico a indizio.
+    segnali_annuncio_affidabili = [
+        s for s in (o.get("segnali_rischio_annuncio") or [])
+        if _norm(s) != "capi_diversi_tra_le_foto"
+    ]
+    if segnali_annuncio_affidabili:
         return True, (
             "[ANNUNCIO FRAUDOLENTO] Segnali sulle immagini: "
-            + ", ".join(str(s) for s in o["segnali_rischio_annuncio"])
+            + ", ".join(str(s) for s in segnali_annuncio_affidabili)
         )
 
     difetti = o.get("difetti") or []
@@ -2289,6 +2322,15 @@ else:
 # Se PROXY_LIST e' vuota il pool contiene un solo client diretto, cioe'
 # esattamente il comportamento originale senza proxy.
 _CLIENT_VINTED_POOL = []
+# Chiave di rate-limit per ogni client del pool, stessa lunghezza/ordine di
+# _CLIENT_VINTED_POOL (vedi _attendi_turno_vinted piu' sotto, FIX 2026-09-21
+# rate-limit globale -> per-IP): e' il proxy_url usato per costruire quel
+# client (o "diretto" se PROXY_LIST e' vuota), NON l'identita' dell'oggetto
+# client -- serve perche' _CLIENT_VINTED_AUTH sotto condivide DELIBERATAMENTE
+# lo stesso proxy dello slot 0 del pool, quindi deve condividere anche la
+# stessa pacatura, altrimenti i due client potrebbero fare burst sullo
+# stesso IP fisico senza che l'uno sappia dell'altro.
+_CLIENT_VINTED_POOL_KEYS = []
 _client_generico = None   # Gemini/OpenAI/Serper/Resellbot: nessun proxy
 _client_telegram = None   # Bot API: timeout piu' corti, chiamate frequenti
 
@@ -2314,6 +2356,7 @@ _client_telegram = None   # Bot API: timeout piu' corti, chiamate frequenti
 # venditori non lo vede mai e resta interamente separato, come richiesto
 # esplicitamente dall'utente.
 _CLIENT_VINTED_AUTH = None
+_CLIENT_VINTED_AUTH_KEY = None  # stessa chiave rate-limit dello slot 0 del pool, vedi sopra
 
 
 def _crea_client_vinted(proxy_url=None):
@@ -2341,12 +2384,14 @@ async def inizializza_client_http():
     mai a import-time: un AsyncClient costruito fuori dal loop che poi lo
     usera' e' una sorgente classica di 'Event loop is closed' e di
     connessioni che non vengono mai riutilizzate."""
-    global _client_generico, _client_telegram, _CLIENT_VINTED_AUTH
+    global _client_generico, _client_telegram, _CLIENT_VINTED_AUTH, _CLIENT_VINTED_AUTH_KEY
     if PROXY_LIST:
         for proxy_url in PROXY_LIST:
             _CLIENT_VINTED_POOL.append(_crea_client_vinted(proxy_url))
+            _CLIENT_VINTED_POOL_KEYS.append(proxy_url)
     else:
         _CLIENT_VINTED_POOL.append(_crea_client_vinted(None))
+        _CLIENT_VINTED_POOL_KEYS.append("diretto")
 
     # Client dedicato all'account Vinted autenticato (vedi commento sopra
     # _CLIENT_VINTED_AUTH): pinnato a UN SOLO proxy (il primo della lista, se
@@ -2355,6 +2400,7 @@ async def inizializza_client_http():
     # IP a meta' sessione autenticata sarebbe un altro segnale anomalo per
     # l'anti-bot, oltre al cookie jar.
     _CLIENT_VINTED_AUTH = _crea_client_vinted(PROXY_LIST[0] if PROXY_LIST else None)
+    _CLIENT_VINTED_AUTH_KEY = _CLIENT_VINTED_POOL_KEYS[0]
 
     _client_generico = httpx.AsyncClient(
         follow_redirects=True,
@@ -2382,13 +2428,21 @@ async def chiudi_client_http():
             await client.aclose()
 
 
+def _prossimo_indice_vinted():
+    """Indice del prossimo client Vinted in rotazione round-robin (uno per
+    proxy) -- estratto da _prossimo_client_vinted il 2026-09-21 per poter
+    ottenere ANCHE la chiave di rate-limit (_CLIENT_VINTED_POOL_KEYS[i])
+    corrispondente al client scelto, vedi _vinted_get_con_retry."""
+    i = _proxy_indice_rotazione[0] % len(_CLIENT_VINTED_POOL)
+    _proxy_indice_rotazione[0] += 1
+    return i
+
+
 def _prossimo_client_vinted():
     """Prossimo client Vinted in rotazione round-robin (uno per proxy).
     Sostituisce _prossimo_proxy: la rotazione ora e' tra client, non tra
     dict di proxy passati alla singola richiesta."""
-    client = _CLIENT_VINTED_POOL[_proxy_indice_rotazione[0] % len(_CLIENT_VINTED_POOL)]
-    _proxy_indice_rotazione[0] += 1
-    return client
+    return _CLIENT_VINTED_POOL[_prossimo_indice_vinted()]
 
 
 _vinted_refresh_lock = asyncio.Lock()
@@ -2530,22 +2584,52 @@ async def _rinnova_token_vinted():
 
 
 # Rate-limit Vinted: la pausa minima tra due richieste consecutive va
-# rispettata GLOBALMENTE, anche ora che piu' annunci vengono elaborati in
-# parallelo. Senza lock, due task concorrenti leggerebbero lo stesso
-# timestamp "ultima richiesta", calcolerebbero la stessa attesa e
-# partirebbero insieme -- cioe' esattamente la raffica che ha prodotto i
-# 403 dopo ~13h di attivita' continua. Il lock serializza SOLO l'attesa e
-# l'aggiornamento del timestamp, non la richiesta vera e propria.
-_vinted_rate_limit_lock = asyncio.Lock()
+# rispettata per ogni IP (proxy) preso singolarmente. Senza lock, due task
+# concorrenti sullo STESSO proxy leggerebbero lo stesso timestamp "ultima
+# richiesta", calcolerebbero la stessa attesa e partirebbero insieme --
+# cioe' esattamente la raffica che ha prodotto i 403 dopo ~13h di attivita'
+# continua. Il lock serializza SOLO l'attesa e l'aggiornamento del
+# timestamp, non la richiesta vera e propria.
+#
+# FIX 2026-09-21 (utente, "sono tempi biblici!!" -- 25s da messaggio
+# Telegram a notifica): prima un UNICO lock/timestamp globale pacava TUTTE
+# le richieste Vinted del bot, di qualsiasi proxy, alla stessa cadenza --
+# con 53 proxy in rotazione ma un solo lock, annunci multipli in
+# lavorazione contemporanea si accodavano comunque uno alla volta su
+# un'unica pausa condivisa, vanificando la rotazione. Ora c'e' un
+# lock/timestamp per CHIAVE (il proxy_url, o "diretto" se PROXY_LIST e'
+# vuota -- vedi _CLIENT_VINTED_POOL_KEYS), cosi' proxy diversi non si
+# aspettano piu' a vicenda: la pausa minima per singolo IP resta la
+# stessa di prima, identica protezione anti-403, ma fino a
+# len(PROXY_LIST) richieste possono davvero procedere in parallelo.
+#
+# I due dict crescono al piu' fino a len(PROXY_LIST)+1 chiavi (tutti i
+# proxy del pool + "diretto"/l'eventuale chiave dedicata dell'account
+# autenticato, che pero' COINCIDE sempre con una chiave gia' nel pool --
+# vedi _CLIENT_VINTED_AUTH_KEY), quindi non c'e' crescita illimitata.
+_vinted_rate_limit_locks = {}
+_vinted_timestamp_ultima_richiesta_per_chiave = {}
 
 
-async def _attendi_turno_vinted():
-    async with _vinted_rate_limit_lock:
-        tempo_trascorso = time.monotonic() - _vinted_timestamp_ultima_richiesta[0]
+def _lock_rate_limit_vinted(chiave):
+    """Lock dedicato a una chiave (proxy), creato al primo utilizzo. Nessun
+    punto di sospensione (await) tra il controllo e la creazione, quindi e'
+    sicuro anche con piu' coroutine che chiamano questa funzione sulla
+    stessa chiave 'in parallelo' -- asyncio e' cooperativo a thread singolo,
+    non gira mai codice sincrono di due task nello stesso istante."""
+    if chiave not in _vinted_rate_limit_locks:
+        _vinted_rate_limit_locks[chiave] = asyncio.Lock()
+        _vinted_timestamp_ultima_richiesta_per_chiave[chiave] = 0.0
+    return _vinted_rate_limit_locks[chiave]
+
+
+async def _attendi_turno_vinted(chiave):
+    async with _lock_rate_limit_vinted(chiave):
+        tempo_trascorso = time.monotonic() - _vinted_timestamp_ultima_richiesta_per_chiave[chiave]
         attesa = PAUSA_MINIMA_TRA_RICHIESTE_VINTED_SECONDI - tempo_trascorso
         if attesa > 0:
             await asyncio.sleep(attesa)
-        _vinted_timestamp_ultima_richiesta[0] = time.monotonic()
+        _vinted_timestamp_ultima_richiesta_per_chiave[chiave] = time.monotonic()
 
 
 async def _vinted_get_con_retry(url, timeout=15, max_retries=3, headers_extra=None, cookies_extra=None, client_override=None):
@@ -2581,9 +2665,16 @@ async def _vinted_get_con_retry(url, timeout=15, max_retries=3, headers_extra=No
 
     ultimo_errore = None
     for tentativo in range(1, max_retries + 1):
-        await _attendi_turno_vinted()
+        # Client (e la sua chiave di rate-limit) scelti PRIMA di attendere il
+        # turno, non dopo (FIX 2026-09-21): serve a sapere su QUALE proxy
+        # pacare l'attesa -- vedi il commento su _vinted_rate_limit_locks.
+        if client_override is not None:
+            client, chiave_rate_limit = client_override, _CLIENT_VINTED_AUTH_KEY
+        else:
+            indice = _prossimo_indice_vinted()
+            client, chiave_rate_limit = _CLIENT_VINTED_POOL[indice], _CLIENT_VINTED_POOL_KEYS[indice]
+        await _attendi_turno_vinted(chiave_rate_limit)
         try:
-            client = client_override if client_override is not None else _prossimo_client_vinted()
             resp = await client.get(url, headers=headers_richiesta, cookies=cookies_extra, timeout=timeout)
             resp.raise_for_status()
             return resp
