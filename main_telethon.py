@@ -2628,6 +2628,50 @@ def _parse_created_at_dt(created_at_raw):
         return None
 
 
+def _calcola_tempi_pipeline(listing_info, msg_date, t_ricevuto_bot, t_riferimento=None):
+    """Le tre tappe del footer '⏱ Tempi' del messaggio Telegram (vedi
+    process_listing), come funzione a se' per poterle anche LOGGARE nei
+    punti in cui process_listing esce presto SENZA notificare (filtro
+    pre-Gemini, gate margine assoluto) -- richiesto dall'utente il
+    2026-09-21 ("vedo nei log poi?"): sono proprio i casi "persi" (capo gia'
+    venduto quando arriva, o mai notificato) piu' interessanti da poter
+    controllare a posteriori nei log di Railway, non solo quelli che
+    arrivano fino a una notifica Telegram vera e propria.
+
+    Ritorna (pezzi: list[str] gia' pronti per essere uniti con ' · ',
+    secondi: dict con le stesse tre misure in secondi grezzi, per chi in
+    futuro volesse aggregarle invece di solo leggerle).
+    """
+    t_riferimento = time.time() if t_riferimento is None else t_riferimento
+    created_dt = _parse_created_at_dt(listing_info.get("created_at"))
+    pezzi, secondi = [], {}
+    if created_dt and msg_date:
+        secondi["pub_telegram"] = (msg_date - created_dt).total_seconds()
+        pezzi.append(f"pubblicato→telegram {_formatta_durata(secondi['pub_telegram']) or '?'}")
+    if t_ricevuto_bot:
+        secondi["telegram_notifica"] = t_riferimento - t_ricevuto_bot
+        pezzi.append(f"telegram→notifica {_formatta_durata(secondi['telegram_notifica']) or '?'}")
+    if created_dt:
+        secondi["totale"] = t_riferimento - created_dt.timestamp()
+        pezzi.append(f"totale {_formatta_durata(secondi['totale']) or '?'}")
+    return pezzi, secondi
+
+
+def _formatta_tappe_pipeline(t_tappe):
+    """Da t_tappe = [(nome, timestamp), ...] in ordine cronologico, la
+    durata di ciascuna tappa rispetto alla precedente -- il dettaglio
+    dietro al 'telegram->notifica' aggregato di _calcola_tempi_pipeline,
+    per capire QUALE chiamata (scrape, Occhio, ricerca comp, Cervello...)
+    si sta mangiando il tempo quando il totale sembra troppo alto (richiesto
+    dall'utente il 2026-09-21, dopo un caso reale da 27s: "sono tempi
+    biblici!!"). Ogni tappa mostrata anche se ~0s: e' piu' onesto di
+    ometterla, e su questa pipeline (scrape + Occhio + ricerca comp +
+    Cervello, tutte chiamate di rete) un 0s vero e' comunque informativo
+    (quello stadio non e' il collo di bottiglia)."""
+    return [f"{nome} {_formatta_durata(t - t_prec) or '0s'}"
+            for (_, t_prec), (nome, t) in zip(t_tappe, t_tappe[1:])]
+
+
 def _estrai_foto_gallery(html_sorgente):
     """Estrae {photo_id: url} delle foto galleria capo da un frammento HTML
     di una pagina annuncio Vinted. Funzione pura (nessuna rete), spostata a
@@ -6738,9 +6782,20 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
     listing_info["url"] = url
     costo_totale = 0.0
 
+    # Cronometro a tappe (richiesto dall'utente il 2026-09-21, dopo aver
+    # visto un "telegram->notifica 27s" e chiesto dove si perde il tempo):
+    # ogni voce e' (nome, timestamp) nell'ordine in cui la pipeline le
+    # attraversa davvero, _formatta_tappe_pipeline le trasforma in durate
+    # consecutive per il footer del messaggio e i log. Parte da
+    # t_ricevuto_bot (quando Telethon ha consegnato il messaggio del
+    # tracker) cosi' la prima tappa "scrape" e' gia' la durata reale dello
+    # scraping, non un t=0 fittizio.
+    t_tappe = [("ricevuto", t_ricevuto_bot if t_ricevuto_bot is not None else time.time())]
+
     photo_bytes_list = []
     if url:
         scraped = await scrape_vinted_listing(url)
+        t_tappe.append(("scrape", time.time()))
         listing_info.update({
             "size": scraped.get("size"), "condition": scraped.get("condition"),
             "description": scraped.get("description"), "age_days": scraped.get("age_days"),
@@ -6762,9 +6817,15 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
         e_skip_pre, motivo_skip_pre = check_skip_pre_gemini(listing_info)
         if e_skip_pre:
             # Silenzioso: nessuna notifica Telegram per le esclusioni pre-Gemini.
-            # Rimane visibile solo nei log (Railway) per debug/controllo.
-            log.info("FILTRO PRE-GEMINI ATTIVATO (silenzioso, no notifica): '%s'. Motivo: %s",
-                     listing_info.get("title"), motivo_skip_pre)
+            # Rimane visibile solo nei log (Railway) per debug/controllo. I
+            # tempi si loggano comunque (richiesto dall'utente il 2026-09-21):
+            # anche un annuncio mai notificato puo' interessare capire quanto
+            # ci ha messo ad arrivare fin qui.
+            pezzi_tempi_skip, _ = _calcola_tempi_pipeline(listing_info, msg_date, t_ricevuto_bot)
+            log.info("FILTRO PRE-GEMINI ATTIVATO (silenzioso, no notifica): '%s'. Motivo: %s%s (%s)",
+                     listing_info.get("title"), motivo_skip_pre,
+                     f" — Tempi: {' · '.join(pezzi_tempi_skip)}" if pezzi_tempi_skip else "",
+                     " · ".join(_formatta_tappe_pipeline(t_tappe)))
             return
 
         photo_urls = scraped.get("photo_urls", [])
@@ -6811,6 +6872,7 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
             url,
         )
     listing_info["fallback_solo_cover_photo"] = fallback_solo_cover_photo
+    t_tappe.append(("foto", time.time()))
     if not photo_bytes_list:
         await telegram_send_message(
             TELEGRAM_OWNER_CHAT_ID,
@@ -6892,6 +6954,7 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
         output_occhi, costo_occhi, _ = await chiama_gemini(
             GEMINI_OCCHI_SYSTEM_PROMPT, user_text_occhi, photo_bytes_list, grounding=False)
     costo_totale += costo_occhi
+    t_tappe.append(("occhio", time.time()))
 
     # Prezzo del prodotto: base di OGNI calcolo economico a valle.
     prezzo_prodotto = _a_float(listing_info.get("price"), None)
@@ -6998,6 +7061,7 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
                 cover_photo_id=cover_photo_id, item_id=item_id_annuncio,
                 nome_sarto=nome_sarto_o_maker,
             )
+            t_tappe.append(("comp", time.time()))
             if serper_ok:
                 scenario_usato = "G"
                 _serper_fallimenti_consecutivi[0] = 0
@@ -7049,6 +7113,7 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
         verdetto_json, errore_cervello, costo_cervello, n_query_grounding, ricerche_extra_raw = await chiama_cervello(
             GEMINI_CERVELLO_SYSTEM_PROMPT, user_text_cervello, forza_ricerca=forza_ricerca)
         costo_totale += costo_cervello
+        t_tappe.append(("cervello", time.time()))
 
         # Pool di TUTTO il testo grezzo di ricerca visto dal cervello per
         # questo item: comp pre-raccolti (Scenario G) + eventuali ricerche
@@ -7102,9 +7167,12 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
             and margine_finale < SOGLIA_MARGINE_ASSOLUTO_NOTIFICA
             and decisione != "NON COMPRARE"
         ):
+            pezzi_tempi_gate, _ = _calcola_tempi_pipeline(listing_info, msg_date, t_ricevuto_bot)
             log.info(
-                "GATE MARGINE ASSOLUTO: notifica soppressa per '%s' (margine=%.2f EUR < soglia %d EUR). Decisione: %s",
+                "GATE MARGINE ASSOLUTO: notifica soppressa per '%s' (margine=%.2f EUR < soglia %d EUR). Decisione: %s%s (%s)",
                 listing_info.get("title"), margine_finale, SOGLIA_MARGINE_ASSOLUTO_NOTIFICA, decisione,
+                f" — Tempi: {' · '.join(pezzi_tempi_gate)}" if pezzi_tempi_gate else "",
+                " · ".join(_formatta_tappe_pipeline(t_tappe)),
             )
             return
 
@@ -7202,16 +7270,19 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
     # Vinted non espone la data in pagina; msg_date/t_ricevuto_bot mancano
     # se process_listing viene chiamato da un altro percorso in futuro):
     # ogni pezzo mancante si omette invece di mostrare un numero fasullo.
-    t_notifica = time.time()
-    created_dt = _parse_created_at_dt(listing_info.get("created_at"))
-    pezzi_tempi = []
-    if created_dt and msg_date:
-        pezzi_tempi.append(f"pubblicato→telegram {_formatta_durata((msg_date - created_dt).total_seconds()) or '?'}")
-    if t_ricevuto_bot:
-        pezzi_tempi.append(f"telegram→notifica {_formatta_durata(t_notifica - t_ricevuto_bot) or '?'}")
-    if created_dt:
-        pezzi_tempi.append(f"totale {_formatta_durata(t_notifica - created_dt.timestamp()) or '?'}")
+    # Tappa finale del cronometro: da qui in poi resta solo costruire il
+    # messaggio e inviarlo (network verso Telegram, non cronometrato a
+    # parte -- e' gia' incluso nel 'totale'/'telegram->notifica' sopra).
+    t_tappe.append(("invio", time.time()))
+    dettaglio_tappe = _formatta_tappe_pipeline(t_tappe)
+
+    pezzi_tempi, _secondi_tempi = _calcola_tempi_pipeline(listing_info, msg_date, t_ricevuto_bot)
     footer_tempi = f"\n⏱ _Tempi: {' · '.join(pezzi_tempi)}_" if pezzi_tempi else ""
+    if dettaglio_tappe:
+        footer_tempi += f"\n   _{' · '.join(dettaglio_tappe)}_"
+    if pezzi_tempi or dettaglio_tappe:
+        log.info("Tempi pipeline per '%s': %s (%s)", listing_info.get("title"),
+                  " · ".join(pezzi_tempi), " · ".join(dettaglio_tappe))
 
     output_finale = output_finale + footer_scenario + footer_costo + footer_tempi
 
