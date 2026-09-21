@@ -2274,17 +2274,18 @@ def _gemini_key_attuale():
 
 
 def _gemini_prossima_key():
-    """Passa alla key successiva (chiamata dopo un 429 di quota esaurita).
-    Ritorna True se si e' davvero cambiata key (ce n'erano altre disponibili
-    oltre a quella corrente), False se c'e' una sola key o si e' gia' fatto
-    il giro completo -- in quel caso ha senso solo il backoff, non un altro
-    switch immediato."""
+    """Passa alla key successiva -- chiamata dopo un 429 (quota esaurita) o,
+    da FIX 2026-09-21, anche dopo un 500/502/503/504 (vedi commento esteso
+    in chiama_gemini). Ritorna True se si e' davvero cambiata key (ce
+    n'erano altre disponibili oltre a quella corrente), False se c'e' una
+    sola key o si e' gia' fatto il giro completo -- in quel caso ha senso
+    solo il backoff, non un altro switch immediato."""
     if len(GEMINI_API_KEYS) <= 1:
         return False
     indice_prima = _gemini_key_index[0]
     _gemini_key_index[0] = (_gemini_key_index[0] + 1) % len(GEMINI_API_KEYS)
     log.warning(
-        "Gemini: key #%d in quota esaurita (429), passo alla key #%d.",
+        "Gemini: key #%d in errore (429/5xx), passo alla key #%d.",
         indice_prima + 1, _gemini_key_index[0] + 1,
     )
     return True
@@ -3198,20 +3199,32 @@ async def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, groundi
                     costo = costo_gemini_token(usage, prezzo_input, prezzo_output) + n_query * PREZZO_GROUNDING_PER_QUERY
                     return text, costo, n_query
                 return "[ERRORE: risposta Gemini senza candidates]", 0.0, 0
-            if resp.status_code == 429:
-                # Quota del piano free esaurita (RESOURCE_EXHAUSTED), non un
-                # rate-limit che passa da solo in pochi secondi -- vedi caso
-                # reale del 2026-09-20 (500 richieste/giorno esaurite in
-                # poche ore). Se c'e' un'altra key in GEMINI_API_KEYS si
-                # passa a quella e si ritenta SUBITO (quota diversa, niente
-                # attesa); solo se le key sono finite (o ce n'e' una sola) si
-                # torna al backoff come per gli altri errori transitori.
+            if resp.status_code == 429 or resp.status_code in {500, 502, 503, 504}:
+                # 429: quota del piano free esaurita (RESOURCE_EXHAUSTED), non
+                # un rate-limit che passa da solo in pochi secondi -- vedi
+                # caso reale del 2026-09-20 (500 richieste/giorno esaurite in
+                # poche ore).
+                #
+                # 500/502/503/504 (FIX 2026-09-21, log utente "vedo tempi
+                # biblici": un blackout Gemini di ~9 minuti di 503 "high
+                # demand" ha fatto accumulare minuti di backoff su Occhio +
+                # fino a 3 chiamate Cervello in sequenza) ruotano ora la key
+                # ESATTAMENTE come il 429, invece di aspettare solo il
+                # backoff sulla stessa: su Google Cloud la capacita' e'
+                # spesso allocata per progetto/key, quindi un 503 puo' essere
+                # specifico della key corrente, non un blackout del modello
+                # per chiunque -- vale la pena provarne subito un'altra
+                # prima di aspettare. Se e' davvero un blackout globale del
+                # modello, la key diversa fallira' anch'essa e si cade
+                # comunque nel backoff sotto: nessun peggioramento nel caso
+                # peggiore, possibile miglioramento in quello buono.
+                #
+                # In entrambi i casi: se c'e' un'altra key in GEMINI_API_KEYS
+                # si passa a quella e si ritenta SUBITO (niente attesa);
+                # solo se le key sono finite (o ce n'e' una sola) si torna al
+                # backoff come per gli altri errori transitori.
                 if _gemini_prossima_key():
                     continue
-                await asyncio.sleep(backoff_seconds)
-                backoff_seconds *= 2
-                continue
-            if resp.status_code in {500, 502, 503, 504}:
                 await asyncio.sleep(backoff_seconds)
                 backoff_seconds *= 2
                 continue
@@ -3910,17 +3923,20 @@ async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca
                     api_url, params={"key": _gemini_key_attuale()}, json=payload, timeout=90)
                 if not resp.is_success:
                     log.warning("Gemini (cervello) HTTP %d: %s", resp.status_code, resp.text[:500])
-                    if resp.status_code == 429 and attempt < tentativi_rimasti:
-                        # Stessa logica di rotazione di chiama_gemini: quota
-                        # free esaurita, non un rate-limit al minuto -- si
-                        # passa a un'altra key se disponibile e si ritenta
-                        # subito, altrimenti backoff come prima.
+                    codici_con_rotazione = {429, 500, 502, 503, 504}
+                    if resp.status_code in codici_con_rotazione and attempt < tentativi_rimasti:
+                        # Stessa logica di rotazione di chiama_gemini (vedi il
+                        # commento esteso li'): 429 e' quota esaurita, non un
+                        # rate-limit al minuto; 5xx da FIX 2026-09-21 (log
+                        # utente "vedo tempi biblici", blackout 503 di ~9
+                        # minuti che ha fatto accumulare minuti di backoff su
+                        # piu' chiamate Cervello in sequenza) rotano ANCHE
+                        # loro ora, perche' su Google Cloud la capacita' e'
+                        # spesso per progetto/key -- se c'e' un'altra key si
+                        # passa a quella e si ritenta subito, altrimenti
+                        # backoff come prima.
                         if _gemini_prossima_key():
                             continue
-                        await asyncio.sleep(backoff_seconds)
-                        backoff_seconds *= 2
-                        continue
-                    if resp.status_code in {500, 502, 503, 504} and attempt < tentativi_rimasti:
                         await asyncio.sleep(backoff_seconds)
                         backoff_seconds *= 2
                         continue
@@ -6602,6 +6618,16 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
     messaggio_sostituito = False
     testo_messaggio = None
     domande = v.get("domande_al_venditore") if serve_messaggio else None
+    # BUG TROVATO IN PRODUZIONE il 2026-09-21 (log utente, crash totale su un
+    # annuncio -- UnboundLocalError, annuncio perso senza notifica): il ramo
+    # "if dec == 'TRATTA' and template:" qui sotto non inizializzava
+    # domande_incorporate, che pero' viene letta piu' sotto ("if domande and
+    # not domande_incorporate"). Bastava un TRATTA con template E domande
+    # valorizzate insieme per andarci a sbattere. Gli altri due rami
+    # (CHIEDI ALTRE FOTO, else) la inizializzavano gia' entrambi -- qui basta
+    # un default prima del blocco if/elif/else invece di doverlo ripetere in
+    # ognuno.
+    domande_incorporate = False
     if dec == "TRATTA" and template:
         if "{OFFERTA}" in template:
             testo_messaggio = template.replace("{OFFERTA}", f"€{verdetto['tratta_prezzo_prodotto']:.2f}")
