@@ -343,6 +343,35 @@ OCCHIO_OUTPUT_JSON = os.environ.get("OCCHIO_OUTPUT_JSON", "false").strip().lower
 # Metti a 0 per disattivare il gate senza altre modifiche.
 SOGLIA_MARGINE_ASSOLUTO_NOTIFICA = 0
 
+# SOGLIA_MARGINE_ALERT_CHIEDI_FOTO (richiesto dall'utente il 2026-09-21, caso
+# reale: pull Ann Demeulemeester margine=67.55 EUR ROI=799%, "CHIEDI ALTRE
+# FOTO" per mancanza del wash tag -- non arrivato nel canale alert perche'
+# quel canale era ristretto a decisione=="COMPRA" il 2026-09-20, secondo giro,
+# proprio per tagliare il rumore di TRATTA/CHIEDI ALTRE FOTO a bassa qualita').
+# Un CHIEDI ALTRE FOTO arriva SEMPRE con margine/ROI gia' sopra la soglia
+# minima di COMPRA (vedi calcola_verdetto: e' lo stesso ramo "supera_soglia",
+# solo con legit_verdetto incerto) -- quindi puo' comunque valere la pena di
+# vederlo nel canale alert, ma non TUTTI i CHIEDI ALTRE FOTO, solo quelli col
+# margine abbastanza alto da giustificare l'attenzione extra di chiedere le
+# foto e aspettare la risposta del venditore. Soglia separata da
+# SOGLIA_MARGINE_COMPRA (25 EUR) apposta: qui il bar e' piu' alto, perche' a
+# differenza di un COMPRA qui il deal non e' ancora chiuso. Metti a 0 (o un
+# numero molto alto) per tornare al comportamento "mai" di prima.
+# Soglia abbassata da 50 a 30 EUR il 2026-09-21, stessa richiesta: il
+# confronto e' stretto (">"), non ">=", quindi un margine di esattamente
+# 30.00 EUR resta escluso.
+SOGLIA_MARGINE_ALERT_CHIEDI_FOTO = 30.0
+
+# Brand esclusi dall'alert su CHIEDI ALTRE FOTO (richiesto dall'utente il
+# 2026-09-21, stesso messaggio della soglia sopra): sono brand a rischio fake
+# storicamente alto o con mercato dell'usato particolarmente insidioso per un
+# capo la cui autenticita' e' ancora "sospetta, servono altre foto" -- vale
+# la pena aspettare la conferma delle foto aggiuntive PRIMA di essere
+# avvisati col push, non dopo. Match su substring del brand dichiarato
+# nell'annuncio (case-insensitive), stessa logica gia' usata altrove nel
+# file per i controlli sul brand.
+BRAND_ESCLUSI_ALERT_CHIEDI_FOTO = ("miu miu", "loewe", "arc'teryx", "arcteryx")
+
 VINTED_TRACKER_NAME_HINTS = ("vinted", "tracker")
 
 _serper_fallimenti_consecutivi = [0]
@@ -724,17 +753,32 @@ def check_skip_pre_gemini(listing_info):
         # IT
         "non originale", "non è originale", "non e' originale", "ispirato a",
         "replica", "imitazione", "copia non originale",
+        # "riproduzione" (caso reale segnalato dall'utente il 2026-09-21:
+        # "Blazer elegante miu miu (riproduzione)" -- il venditore dichiara
+        # ESPLICITAMENTE che e' una riproduzione/copia, ma il termine mancava
+        # da questa lista, quindi l'annuncio non veniva scartato qui e
+        # arrivava intatto all'Occhio, che ha ignorato la dichiarazione del
+        # venditore ("eccesso di cautela") e giudicato il capo autentico sulla
+        # sola analisi visiva -- COMPRA su un pezzo che il venditore stesso
+        # dice essere una riproduzione. Questo filtro e' deterministico e gira
+        # PRIMA di interpellare Gemini, quindi e' la difesa piu' solida:
+        # un'istruzione nel prompt puo' essere reinterpretata dal modello
+        # (come e' successo qui), un match di keyword no.
+        "riproduzione", "riprodotto", "riprodotta",
         # EN
         "not authentic", "not original", "inspired by", "knockoff",
+        "reproduction",
         # DE
         "nicht original", "inspiriert von", "nachahmung", "fälschung",
+        "reproduktion",
         # FR
         "non authentique", "pas authentique", "inspiré de", "inspirée de",
-        "réplique", "contrefaçon",
+        "réplique", "contrefaçon", "reproduction",
         # ES
         "no original", "no es original", "inspirado en", "imitación",
+        "reproducción",
         # PT
-        "não original", "inspirado em", "imitação",
+        "não original", "inspirado em", "imitação", "reprodução",
     ]
     for kw in NON_ORIGINALE_KEYWORDS:
         if re.search(r'\b' + re.escape(kw) + r'\b', testo_completo):
@@ -855,6 +899,7 @@ OCCHIO_RESPONSE_SCHEMA = {
         # 3. IDENTIFICAZIONE: cosa deduco dalle trascrizioni
         "relazione_brand",
         "nome_sottolinea",
+        "sottolinea_max_mara_eccezione",
         "categoria_capo_osservata",
         "linea_o_era",
         "evidenze_datazione",
@@ -1018,6 +1063,27 @@ OCCHIO_RESPONSE_SCHEMA = {
             "type": "STRING",
             "nullable": True,
             "description": "Nome della sottolinea se applicabile (es. 'MM6', 'McQ').",
+        },
+        "sottolinea_max_mara_eccezione": {
+            "type": "STRING",
+            "nullable": True,
+            "description": (
+                "Compila SOLO quando nome_sottolinea e' una sottolinea Max Mara "
+                "non-mainline (Weekend, Studio, Sportmax, Marella, Pennyblack, "
+                "Max&Co): a differenza delle altre sottolinee (MM6, See by Chloe...), "
+                "che il Cervello valuta sempre normalmente, per queste il sistema "
+                "scarta l'annuncio PRIMA del Cervello a meno che tu non descriva qui "
+                "una ragione CONCRETA per cui questo esemplare specifico fa "
+                "eccezione: un modello iconico riconosciuto (coerente con "
+                "modello_riconosciuto) oppure un materiale pregiato dichiarato "
+                "ESPLICITAMENTE sull'etichetta di composizione (cashmere, pelle, "
+                "seta, lana vergine pregiata -- non basta 'lana' generica). null se "
+                "nessuna delle due condizioni ha evidenza concreta nelle foto: in "
+                "quel caso l'annuncio viene scartato senza consultare il Cervello, "
+                "perche' senza eccezione la sottolinea vale troppo poco per "
+                "giustificare la ricerca comp. Non compilare per nessun altro brand "
+                "o sottolinea."
+            ),
         },
         "categoria_capo_osservata": {
             "type": "STRING",
@@ -1401,6 +1467,48 @@ def calcola_scarto_occhio(o, solo_cover_photo=False, listing_info=None):
             "comp validi per un capo di un maker diverso e ignoto."
         )
 
+    # Skip specifico per le sottolinee Max Mara non-mainline (richiesto
+    # dall'utente il 2026-09-21). A differenza delle altre sottolinee/collab
+    # (MM6, See by Chloe...), che restano sempre "sottolinea_stessa_maison" e
+    # vanno al Cervello normalmente, per Max Mara la tabella LINEE E ERE del
+    # Cervello dichiara gia' da tempo che Weekend/Studio/Sportmax/Marella/
+    # Pennyblack/Max&Co valgono "solo se iconici/materiali pregiati" -- una
+    # regola che pero' il Cervello, senza comp reali sotto mano, tende a
+    # ignorare di default (stesso bias di sovrastima gia' osservato su Loro
+    # Piana maglieria). Si sposta quindi la decisione a monte: si scarta
+    # SEMPRE la sottolinea, a meno che l'Occhio non abbia scritto una
+    # giustificazione concreta in sottolinea_max_mara_eccezione (modello
+    # iconico o materiale pregiato dichiarato in etichetta). Il contesto
+    # brand (li) va controllato esplicitamente: "nome_sottolinea" da solo
+    # (es. "Weekend") e' una parola troppo generica per fidarsi senza sapere
+    # che il capo e' comunque un Max Mara.
+    li_contesto = listing_info or {}
+    brand_dichiarato_ctx = _norm(li_contesto.get("brand")) or ""
+    titolo_e_desc_ctx = f"{_norm(li_contesto.get('title')) or ''} {_norm(li_contesto.get('description')) or ''}"
+    nome_sottolinea_norm = _norm(o.get("nome_sottolinea")) or ""
+    e_contesto_max_mara = (
+        "max mara" in brand_dichiarato_ctx
+        or "max mara" in nome_sottolinea_norm
+        or "max mara" in titolo_e_desc_ctx
+    )
+    MAX_MARA_SOTTOLINEE_NON_MAINLINE = (
+        "weekend", "studio", "sportmax", "marella", "pennyblack",
+        "max&co", "max & co", "max e co",
+    )
+    if (
+        _norm(o.get("relazione_brand")) == "sottolinea_stessa_maison"
+        and e_contesto_max_mara
+        and any(s in nome_sottolinea_norm for s in MAX_MARA_SOTTOLINEE_NON_MAINLINE)
+        and not o.get("sottolinea_max_mara_eccezione")
+    ):
+        return True, (
+            f"[MAX MARA SOTTOLINEA SENZA VALORE] Sottolinea non-mainline "
+            f"({o.get('nome_sottolinea') or 'non specificata'}) senza modello iconico ne' "
+            "materiale pregiato dichiarato -- cervello non consultato, sotto questa soglia "
+            "Weekend/Studio/Sportmax/Marella/Pennyblack/Max&Co valgono strutturalmente "
+            "troppo poco per giustificare la ricerca comp."
+        )
+
     # Il falso conclamato richiede anche la controprova anti-bias: senza,
     # e' esattamente il caso Dries Van Noten (autentico a 5,95 EUR scartato
     # come falso con dettagli costruiti a posteriori).
@@ -1609,6 +1717,15 @@ def valida_payload_occhio(occhio):
             o[campo] = ""
         o[campo] = o[campo].strip()
 
+    # Nullable per costruzione (vedi descrizione nello schema): un valore
+    # assente o vuoto significa "nessuna eccezione", non "stringa vuota" --
+    # calcola_scarto_occhio tratta i due casi allo stesso modo, ma tenerlo
+    # None invece di "" evita ambiguita' a chi legge il payload validato.
+    if not isinstance(o.get("sottolinea_max_mara_eccezione"), str) or not o["sottolinea_max_mara_eccezione"].strip():
+        o["sottolinea_max_mara_eccezione"] = None
+    else:
+        o["sottolinea_max_mara_eccezione"] = o["sottolinea_max_mara_eccezione"].strip()
+
     return o, problemi
 
 
@@ -1724,6 +1841,9 @@ Sei l'analista visivo di un flipper professionista di lusso second-hand. Fai due
 # REGOLA ASSOLUTA SUL PREZZO E VENDITORE
 Il prezzo NON e' mai un indicatore di autenticita'. Un Brunello Cucinelli a 8€ con etichette coerenti e' un'opportunita' straordinaria, non un fake. Non citare mai il prezzo nel legit check.
 
+# DICHIARAZIONE DEL VENDITORE SU NON-AUTENTICITÀ HA SEMPRE LA PRECEDENZA
+Caso reale già osservato: un annuncio titolato "Blazer elegante miu miu (riproduzione)" — il venditore dichiara ESPLICITAMENTE che è una riproduzione — è stato comunque giudicato "Probabilmente autentico, Confidenza Alta" sulla sola analisi visiva, liquidando la dichiarazione del venditore come "eccesso di cautela di un utente inesperto". Questo annuncio non sarebbe MAI dovuto arrivare fin qui (esiste un filtro automatico pre-analisi apposta), ma se per qualunque motivo un titolo o una descrizione contiene una dichiarazione esplicita del venditore che il capo NON è originale — "riproduzione", "replica", "imitazione", "copia", "non originale", "ispirato a", "knockoff", o equivalenti in altre lingue — questa dichiarazione ha SEMPRE la precedenza sulla tua analisi visiva, per quanto le etichette ti sembrino coerenti. Non è "eccesso di cautela" da reinterpretare: è un'informazione diretta sul prodotto che stai valutando. In questo caso scrivi "Probabilmente falso" con Confidenza Alta, citando la dichiarazione esatta del venditore come motivo — MAI un verdetto di autenticità che la contraddica o la minimizzi.
+
 # COME VALUTARE IL VENDITORE (non solo dal numero di recensioni)
 Un privato con 0-30 recensioni che vende fast-fashion e ha sviste nel titolo è la "zona d'oro" più chiara. MA un numero alto di recensioni (es. 200, 500+) NON significa automaticamente "privato affidabile che svuota l'armadio" — potrebbe essere un rivenditore esperto che conosce perfettamente il valore dei suoi capi e prezza di conseguenza (meno probabile un vero affare). Il segnale decisivo NON è il conteggio recensioni da solo, ma COSA il venditore vende: se nel campo "Primi articoli in vendita" (quando disponibile) compaiono brand fast-fashion o generici misti a questo capo di lusso, è un forte segnale di privato genuino con guardaroba eterogeneo, anche con centinaia di recensioni accumulate negli anni. Se invece "Primi articoli in vendita" mostra solo brand di lusso/designer, è più probabile un rivenditore esperto — non significa automaticamente "prezzo non conveniente", ma alza la cautela sul fatto che il prezzo sia già "corretto" e non un errore di valutazione. Se il campo "Primi articoli in vendita" è presente nei dati, DEVI citarlo esplicitamente nell'Analisi dell'analista per giustificare il tuo giudizio sul venditore — non limitarti a dedurlo dal solo numero di recensioni. Ignora link a social nella bio (normali) o icone di scraping confuse per capi.
 
@@ -1748,7 +1868,7 @@ Se il verdetto è "Probabilmente falso", la sezione **Analisi visiva** DEVE spec
 
 # BRAND COMPLETAMENTE ESTRANEO (non una sottolinea/diffusion — un marchio diverso)
 Distingui SEMPRE due casi molto diversi quando l'etichetta reale non corrisponde al brand dichiarato nell'annuncio:
-1. **Sottolinea/diffusion della stessa maison** (es. MM6 invece di Margiela mainline, See by Chloé invece di Chloé, Weekend Max Mara invece di Max Mara) — questo NON è un brand estraneo, ha ancora un valore (minore) e il Cervello deve valutarlo normalmente. Non usare il flag sotto per questi casi.
+1. **Sottolinea/diffusion della stessa maison** (es. MM6 invece di Margiela mainline, See by Chloé invece di Chloé, Weekend Max Mara invece di Max Mara) — questo NON è un brand estraneo, ha ancora un valore (minore) e il Cervello deve valutarlo normalmente. Non usare il flag sotto per questi casi. ECCEZIONE Max Mara: Weekend/Studio/Sportmax/Marella/Pennyblack/Max&Co valgono così poco che il sistema li scarta automaticamente PRIMA del Cervello, a meno che tu non compili `sottolinea_max_mara_eccezione` con una ragione concreta (modello iconico riconosciuto, o materiale pregiato — cashmere, pelle, seta, lana vergine pregiata — dichiarato esplicitamente sull'etichetta di composizione). Se non trovi nessuna delle due, lascia il campo null: è la scelta corretta nella maggioranza dei casi, non un fallimento.
 2. **Marchio completamente diverso e non correlato** (es. l'annuncio dichiara "Kapital" ma l'etichetta reale mostra "Kapitales", un brand francese di souvenir personalizzati senza alcun legame col Kapital giapponese; oppure l'annuncio dichiara un brand di lusso ma l'etichetta mostra un marchio fast-fashion generico) — qui il capo non ha alcun valore nel segmento che stai valutando, indipendentemente da condizione o prezzo.
 
 Per il caso 2, scrivi ESPLICITAMENTE nella riga "🏷️ Legit:" la frase **"BRAND NON CORRISPONDENTE"** seguita dal nome del brand reale letto sull'etichetta, così il sistema può risparmiare la chiamata al Cervello (verdetto già scontato: NON COMPRARE, senza bisogno di comp di mercato). Usa questa frase SOLO quando sei sicuro che sia un marchio diverso e non correlato, non per semplici dubbi o quando il brand reale è comunque leggibile con Confidenza Bassa — in caso di dubbio, lascia decidere al Cervello.
@@ -1794,7 +1914,7 @@ Distingui SEMPRE le linee/ere per i brand, è un fattore critico per il valore. 
 **ALTRI BRAND:**
 - MOSCHINO: ✅ Couture/Mainline | ❌ Love Moschino
 - VERSACE: ✅ Mainline | ❌ Versace Jeans Couture / Versus
-- MISSONI: ✅ Pattern colorati | ⚠️ M Missoni (abiti ok, basics no) | ❌ Missoni Sport
+- MISSONI: ✅ Pattern zigzag mainline/archivio | ⚠️ M Missoni (diffusion, vale una frazione del mainline anche negli abiti strutturati) | ❌ Missoni Sport
 - ARMANI: ✅ Giorgio / Collezioni | ❌ Emporio / Exchange
 - MAX MARA: ✅ Mainline | ⚠️ Sottolinee (Weekend, Studio) valgono solo se iconici/materiali pregiati
 
@@ -1894,7 +2014,7 @@ Prezzo basso = vantaggio, mai sospetto. Se "Primi articoli in vendita" è presen
 | Marni | Mainline | "Marni for H&M" / "Marni x H&M" (collab 2012, mass-market, non mainline) |
 | Helmut Lang | Era Lang 1986-2005 (archivio) | Era Link Theory dal 2006 (commerciale) |
 | Maison Margiela | Linee 1/10/0/22 | MM6 |
-| Missoni | Pattern zigzag; M Missoni solo abiti strutturati | Missoni Sport; M Missoni basics |
+| Missoni | Pattern zigzag mainline (archivio) | Missoni Sport; M Missoni — sottolinea diffusion, MAI comp Missoni mainline, tetto esplicito anche per gli abiti strutturati (vedi calibrazione sotto) |
 | Vivienne Westwood | Gold Label (couture, alto); Anglomania (NON è "economica" — ricercatissima, top anche basic €120-250+ usati, pezzi statement/metallici valgono di più) | Red Label / collab retailer |
 | Max Mara | Mainline | Weekend/Studio/Sportmax (salvo modello iconico o materiale pregiato) |
 | Moschino | Couture/Mainline | Love Moschino |
@@ -1911,6 +2031,8 @@ Prezzo basso = vantaggio, mai sospetto. Se "Primi articoli in vendita" è presen
 
 # LIQUIDITÀ PER SEGMENTO (calibra Deal, giorni di vendita, messaggio)
 Archivio eclettico (Missoni, JPG, Pucci, Westwood, Mugler, Montana, Marni, Courrèges, Miu Miu): target 25-45, vendita lenta ma prezzo alto per pezzi iconici, valorizza provenienza/collezione. Quiet luxury 90s (Helmut Lang, Jil Sander, Margiela, Bottega, Max Mara): target 28-45, valorizza decade/collezione specifica, coats iconici molto più liquidi dei basic. Avantgarde (Rick Owens, Yohji, Dries, Ann Demeulemeester, Raf Simons, Loewe, Cucinelli, YSL, Chloé, Stella McCartney, Totême): community insider, alta disponibilità a premium con provenienza documentata. Giapponese/artigianale (Visvim, Kapital, CCP, Haider, The Row, Alaïa, BBS, Sacai, Kiko, Junya, Thom Browne, McQueen, Undercover): community verticale molto informata, taglie piccole 46-48 IT/S-M più liquide.
+
+**M MISSONI — CALIBRAZIONE SPECIFICA (sovrastima ricorrente in produzione), segnalata dall'utente il 2026-09-21.** M Missoni è la sottolinea diffusion di Missoni, non l'archivio zigzag mainline — condivide il nome nei titoli ma è una fascia di prezzo strutturalmente diversa, esattamente come MM6/Margiela o See by Chloé/Chloé. La ricerca comp confonde spesso le due etichette (annunci "Missoni" generici che sono in realtà M Missoni, o viceversa), gonfiando la stima se non correggi esplicitamente: MAI usare un comp Missoni mainline (pattern zigzag pieno, archivio) per stimare un capo M Missoni, in nessun caso. Tetto di rivendita realistico per M Missoni: **maglieria/basics (t-shirt, maglioni semplici, accessori piccoli) €25-45**; **abiti/capispalla strutturati con pattern zigzag riconoscibile €50-90** — resta comunque una FRAZIONE del corrispondente Missoni mainline, mai ancorare alla fascia alta senza un comp M Missoni concordante reale (non un comp Missoni mainline scambiato per tale). Se il tuo prezzo finale per un capo M Missoni supera €90, giustifica esplicitamente in Analisi perché è un'eccezione (pezzo iconico documentato, collezione rara), non limitarti a citare un comp che potrebbe essere mainline mal classificato.
 
 **LORO PIANA MAGLIERIA (maglioni, cardigan, pullover, girocolli, dolcevita) — CALIBRAZIONE SPECIFICA, segnalata dall'utente il 2026-09-21 con dati reali di vendita.** Questo segmento ha un bias di sovrastima ricorrente in produzione: comp ASK trattati come prezzo di vendita realistico su una categoria dove il mercato reale è molto più debole di quanto gli ASK suggeriscano. Dato reale dell'utente: un proprio maglione Loro Piana 100% cashmere, condizioni ottime, resta invenduto a €200 da tempo. Se il capo cashmere top di gamma dell'utente non si vende a €200, un capo generico non iconico (mainline base, non archivio/collezione documentata) vale strutturalmente meno. Target realistico per maglieria Loro Piana USATA, non iconica: **cashmere 100% €90-160**, **lana/misti (non cashmere) €60-110** — mai ancorare la stima alla fascia alta di questi range senza un motivo esplicito (collezione rara, condizioni come-nuovo documentate, più comp concordanti). Un difetto anche lieve (scucitura, pilling, alone) spinge verso il fondo del range o sotto, non basta lo sconto standard 20-30% dell'ANCORAGGIO PREZZI applicato meccanicamente — sii ESPLICITAMENTE più conservativo qui che sugli altri brand quiet-luxury. Se il tuo prezzo finale per un capo di maglieria Loro Piana supera €160, giustifica in Analisi perché questo pezzo è un'eccezione al range, non limitarti a citare il comp scontato.
 
@@ -5628,6 +5750,9 @@ def build_skip_report(listing_info, motivo_skip, output_occhi_testo=None):
     elif motivo_skip.startswith("[TESSUTO NON E' IL BRAND"):
         riga_legit = "Nome citato e' il fornitore del tessuto, non il produttore del capo — comp del brand del tessuto non validi per questo capo."
         riga_rischio = "N/A — produttore reale del capo ignoto (filtro automatico, cervello non consultato)"
+    elif motivo_skip.startswith("[MAX MARA SOTTOLINEA SENZA VALORE"):
+        riga_legit = "Autenticita' non in dubbio — sottolinea Max Mara non-mainline senza modello iconico ne' materiale pregiato dichiarato, valore strutturalmente troppo basso."
+        riga_rischio = "N/A — sottolinea Max Mara sotto soglia (filtro automatico, cervello non consultato)"
     elif motivo_skip.startswith("[CONDIZIONE DISTRUTTA"):
         riga_legit = "Autentico ma condizione fisica gravemente compromessa — non rivendibile."
         riga_rischio = "BASSO (autenticita') / ALTO (condizione) — cervello non consultato"
@@ -6808,7 +6933,8 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
 
 
 async def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header, output_finale,
-                                    decisione, e_compra, scenario_usato, urgenza="Bassa"):
+                                    decisione, e_compra, scenario_usato, urgenza="Bassa",
+                                    margine=None):
     item_id = _estrai_item_id_da_url(url)
     # L'urgenza ora arriva calcolata da calcola_verdetto invece di essere
     # dedotta dal testo del verdetto (_e_urgenza_alta cercava parole come
@@ -6851,17 +6977,14 @@ async def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header,
     else:
         await telegram_send_message(TELEGRAM_OWNER_CHAT_ID, header + output_finale, disable_notification=silenzioso)
 
-    # Ristretto a decisione == "COMPRA" (richiesto dall'utente il 2026-09-20,
-    # secondo giro): questo alert e' un sendMessage separato che NON passa
-    # per silenzioso/disable_notification sopra, quindi finche' il trigger
-    # restava "e_compra" (COMPRA O TRATTA O CHIEDI ALTRE FOTO) continuava a
-    # suonare a piena voce anche per TRATTA/CHIEDI ALTRE FOTO -- probabile
-    # causa reale delle notifiche push ancora ricevute su stati diversi da
-    # COMPRA, a prescindere dal disable_notification sul messaggio
-    # principale (che comunque su Telegram silenzia solo il SUONO, non fa
-    # sparire del tutto banner/vibrazione: per un silenzio totale sugli
-    # altri stati va mutata la chat principale lato Telegram, lasciando
-    # sblocca solo questa chat di alert).
+    # Ristretto a decisione == "COMPRA" il 2026-09-20, secondo giro (questo
+    # alert e' un sendMessage separato che NON passa per silenzioso/
+    # disable_notification sopra, quindi finche' il trigger restava
+    # "e_compra" (COMPRA O TRATTA O CHIEDI ALTRE FOTO) continuava a suonare a
+    # piena voce anche su deal ancora incerti -- probabile causa reale delle
+    # notifiche push ricevute su stati diversi da COMPRA, a prescindere dal
+    # disable_notification sul messaggio principale, che comunque su Telegram
+    # silenzia solo il SUONO, non fa sparire del tutto banner/vibrazione).
     # Richiesto dall'utente il 2026-09-20, terzo giro: niente piu' testo ad
     # hoc ("AZIONE RICHIESTA" riassunto) -- nel gruppo alert deve arrivare
     # LO STESSO messaggio completo (foto + header + output_finale, con gli
@@ -6869,7 +6992,26 @@ async def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header,
     # semplificato. E' letteralmente un secondo invio dello stesso
     # contenuto verso una chat diversa, sempre a volume pieno (mai
     # silenzioso: e' l'unico posto dove vuole davvero il push).
-    if TELEGRAM_ALERT_CHAT_ID and decisione == "COMPRA":
+    #
+    # Riallargato a CHIEDI ALTRE FOTO il 2026-09-21 (caso reale: pull Ann
+    # Demeulemeester margine=67.55 EUR ROI=799%, scartato dall'alert solo
+    # perche' mancava il wash tag nelle foto -- "un CHIEDI ALTRE FOTO con
+    # cotale margine vale la pena essere visto"). Non un blanket come nel
+    # 2026-09-20 (quello ha causato il giro di restrizione): solo quando il
+    # margine supera (">" stretto) SOGLIA_MARGINE_ALERT_CHIEDI_FOTO, e MAI
+    # per i brand in BRAND_ESCLUSI_ALERT_CHIEDI_FOTO -- stessa richiesta,
+    # stesso messaggio: su questi brand l'autenticita' ancora "sospetta"
+    # pesa piu' del margine, meglio aspettare le foto aggiuntive prima del
+    # push.
+    brand_annuncio_alert = (listing_info.get("brand") or "").strip().lower()
+    e_brand_escluso_alert = any(b in brand_annuncio_alert for b in BRAND_ESCLUSI_ALERT_CHIEDI_FOTO)
+    e_chiedi_foto_di_valore = (
+        decisione == "CHIEDI ALTRE FOTO"
+        and margine is not None
+        and margine > SOGLIA_MARGINE_ALERT_CHIEDI_FOTO
+        and not e_brand_escluso_alert
+    )
+    if TELEGRAM_ALERT_CHAT_ID and (decisione == "COMPRA" or e_chiedi_foto_di_valore):
         if len(photo_bytes_list) > 1:
             await telegram_send_media_group(
                 TELEGRAM_ALERT_CHAT_ID,
@@ -7440,6 +7582,7 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
         listing_info, url, photo_bytes_list,
         header, output_finale, decisione, e_compra,
         scenario_usato, urgenza,
+        margine=verdetto_calcolato["margine"] if verdetto_calcolato else None,
     )
 
 
