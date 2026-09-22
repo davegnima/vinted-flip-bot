@@ -2447,7 +2447,23 @@ else:
 
 
 def _gemini_key_attuale():
-    """Key Gemini da usare nella prossima chiamata."""
+    """Key Gemini da usare nella prossima chiamata. Se la key su cui la
+    rotazione sticky si trova al momento e' in cooldown per quota
+    giornaliera esaurita (vedi _gemini_key_in_quota_esaurita) e ce n'e'
+    un'altra disponibile, avanza subito senza aspettare un fallimento --
+    evita di sprecare il primo tentativo di ogni chiamata su una key gia'
+    nota per fallire sempre (caso reale del 2026-09-22, vedi commento
+    esteso su _gemini_key_quota_esaurita_fino)."""
+    if len(GEMINI_API_KEYS) > 1:
+        indice_iniziale = _gemini_key_index[0]
+        for _ in range(len(GEMINI_API_KEYS)):
+            if not _gemini_key_in_quota_esaurita(GEMINI_API_KEYS[_gemini_key_index[0] % len(GEMINI_API_KEYS)]):
+                break
+            _gemini_key_index[0] = (_gemini_key_index[0] + 1) % len(GEMINI_API_KEYS)
+            if _gemini_key_index[0] == indice_iniziale:
+                # Giro completo, tutte in cooldown -- si usa comunque questa,
+                # meglio tentare che restituire un errore senza nemmeno provare.
+                break
     return GEMINI_API_KEYS[_gemini_key_index[0] % len(GEMINI_API_KEYS)]
 
 
@@ -2457,15 +2473,86 @@ def _gemini_prossima_key():
     in chiama_gemini). Ritorna True se si e' davvero cambiata key (ce
     n'erano altre disponibili oltre a quella corrente), False se c'e' una
     sola key o si e' gia' fatto il giro completo -- in quel caso ha senso
-    solo il backoff, non un altro switch immediato."""
+    solo il backoff, non un altro switch immediato.
+
+    Salta le key gia' segnalate come a quota giornaliera esaurita (vedi
+    _gemini_segna_key_quota_esaurita) quando ce ne sono altre disponibili,
+    cosi' la rotazione "sticky" non ci si pianta sopra di nuovo al giro
+    successivo -- vedi caso reale del 2026-09-22 sotto."""
     if len(GEMINI_API_KEYS) <= 1:
         return False
     indice_prima = _gemini_key_index[0]
-    _gemini_key_index[0] = (_gemini_key_index[0] + 1) % len(GEMINI_API_KEYS)
+    for _ in range(len(GEMINI_API_KEYS)):
+        _gemini_key_index[0] = (_gemini_key_index[0] + 1) % len(GEMINI_API_KEYS)
+        if _gemini_key_index[0] == indice_prima:
+            # Giro completo: tutte le altre key sono in cooldown di quota,
+            # non c'e' scelta migliore -- si resta su questa.
+            break
+        if not _gemini_key_in_quota_esaurita(GEMINI_API_KEYS[_gemini_key_index[0]]):
+            break
     log.warning(
         "Gemini: key #%d in errore (429/5xx), passo alla key #%d.",
         indice_prima + 1, _gemini_key_index[0] + 1,
     )
+    return _gemini_key_index[0] != indice_prima
+
+
+# Cooldown per key con quota giornaliera esaurita (429 RESOURCE_EXHAUSTED sul
+# piano free, es. "generate_content_free_tier_requests, limit: 500") --
+# aggiunto il 2026-09-22, caso reale: durante un blackout 503 di ~45 minuti
+# (vedi _gemini_in_blackout piu' sopra) la key #3 tra le 4 configurate
+# risultava SEMPRE in errore 429 di quota esaurita, letteralmente su ogni
+# singola chiamata dell'intera finestra osservata nei log -- non un
+# rate-limit che si risolve da solo (il messaggio di Google suggeriva
+# "retry in" pochi secondi, ma e' una quota GIORNALIERA: il vero reset e'
+# su scala di ore, non secondi). La rotazione "sticky" esistente passava
+# comunque, prima o poi, di nuovo su quella key ad ogni giro, sprecando un
+# tentativo garantito-fallimentare -- particolarmente costoso durante un
+# blackout 503 concorrente, dove i tentativi disponibili sono gia' ridotti
+# a MAX_RETRIES_GEMINI_IN_BLACKOUT (2): un tentativo su una key morta
+# dimezza le vere chance di successo su una key diversa. Con questo
+# cooldown, una volta rilevata una key a quota esaurita, la si esclude
+# dalla rotazione per alcune ore invece di ritentarla ad ogni giro.
+_gemini_key_quota_esaurita_fino = {}
+RAFFREDDAMENTO_QUOTA_ESAURITA_GEMINI_SECONDI = 6 * 3600  # 6 ore, stima prudente verso il basso rispetto al reset giornaliero reale
+
+
+def _gemini_e_errore_quota_giornaliera(status_code, corpo_testo):
+    """True se la risposta 429 e' una vera quota GIORNALIERA esaurita
+    (RESOURCE_EXHAUSTED sul piano free), non un generico rate-limit al
+    minuto -- distinzione fatta sul corpo della risposta Google, non solo
+    sullo status code, perche' un 429 puo' in teoria capitare anche per
+    altri motivi transitori."""
+    if status_code != 429 or not corpo_testo:
+        return False
+    testo_lower = corpo_testo.lower()
+    return "resource_exhausted" in testo_lower or "free_tier" in testo_lower or "exceeded your current quota" in testo_lower
+
+
+def _gemini_segna_key_quota_esaurita(key):
+    """Marca `key` come a quota giornaliera esaurita per
+    RAFFREDDAMENTO_QUOTA_ESAURITA_GEMINI_SECONDI: la rotazione la salta
+    finche' il cooldown non scade (vedi _gemini_prossima_key /
+    _gemini_key_in_quota_esaurita)."""
+    gia_segnalata = _gemini_key_in_quota_esaurita(key)
+    _gemini_key_quota_esaurita_fino[key] = time.time() + RAFFREDDAMENTO_QUOTA_ESAURITA_GEMINI_SECONDI
+    if not gia_segnalata:
+        log.warning(
+            "Gemini: key in errore 429 di quota GIORNALIERA esaurita (non un rate-limit transitorio) "
+            "-- esclusa dalla rotazione per %d minuti.",
+            RAFFREDDAMENTO_QUOTA_ESAURITA_GEMINI_SECONDI // 60,
+        )
+
+
+def _gemini_key_in_quota_esaurita(key):
+    """True se `key` e' attualmente in cooldown per quota giornaliera
+    esaurita (vedi _gemini_segna_key_quota_esaurita)."""
+    scadenza = _gemini_key_quota_esaurita_fino.get(key)
+    if scadenza is None:
+        return False
+    if time.time() >= scadenza:
+        del _gemini_key_quota_esaurita_fino[key]
+        return False
     return True
 
 
@@ -3377,7 +3464,8 @@ async def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, groundi
             # ma se Gemini smette proprio di rispondere invece di restituire
             # un errore, 90s per tentativo x piu' tentativi x piu' round del
             # Cervello e' comunque troppo. 30s resta ampio per foto+prompt.
-            resp = await _client_generico.post(api_url, params={"key": _gemini_key_attuale()}, json=payload, timeout=30)
+            key_usata = _gemini_key_attuale()
+            resp = await _client_generico.post(api_url, params={"key": key_usata}, json=payload, timeout=30)
             if not resp.is_success:
                 log.warning("Gemini HTTP %d: %s", resp.status_code, resp.text[:500])
             if resp.is_success:
@@ -3416,6 +3504,8 @@ async def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, groundi
                 # si passa a quella e si ritenta SUBITO (niente attesa);
                 # solo se le key sono finite (o ce n'e' una sola) si torna al
                 # backoff come per gli altri errori transitori.
+                if _gemini_e_errore_quota_giornaliera(resp.status_code, resp.text):
+                    _gemini_segna_key_quota_esaurita(key_usata)
                 if _gemini_prossima_key():
                     continue
                 await asyncio.sleep(backoff_seconds)
@@ -4131,10 +4221,13 @@ async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca
             try:
                 # Timeout abbassato da 90 a 30s (richiesto dall'utente il
                 # 2026-09-22, stesso motivo di chiama_gemini).
+                key_usata = _gemini_key_attuale()
                 resp = await _client_generico.post(
-                    api_url, params={"key": _gemini_key_attuale()}, json=payload, timeout=30)
+                    api_url, params={"key": key_usata}, json=payload, timeout=30)
                 if not resp.is_success:
                     log.warning("Gemini (cervello) HTTP %d: %s", resp.status_code, resp.text[:500])
+                    if _gemini_e_errore_quota_giornaliera(resp.status_code, resp.text):
+                        _gemini_segna_key_quota_esaurita(key_usata)
                     codici_con_rotazione = {429, 500, 502, 503, 504}
                     if resp.status_code in codici_con_rotazione and attempt < tentativi_effettivi:
                         # Stessa logica di rotazione di chiama_gemini (vedi il
