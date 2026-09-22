@@ -380,6 +380,61 @@ SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO = 3
 RAFFREDDAMENTO_SERPER_SECONDI = 3600 * 6
 _serper_notifica_esaurimento_inviata = [False]
 
+# RILEVAMENTO BLACKOUT GEMINI (richiesto dall'utente il 2026-09-22, log reale:
+# ~12 minuti di 503 "high demand" hanno fatto costare a Occhio/Cervello 1-6
+# minuti a chiamata invece dei pochi secondi normali). La rotazione di key sui
+# 5xx introdotta il 2026-09-21 aiuta quando il 503 e' specifico di UNA key,
+# ma se il blackout e' del MODELLO per chiunque, ogni chiamata continua a
+# bruciare fino a max_retries (4) tentativi x fino a 4 key prima di arrendersi
+# -- decine di secondi reali per tentativo (e' la latenza di Gemini prima di
+# restituire il 503, non un timeout nostro), moltiplicati per ogni round del
+# Cervello. Stessa idea del raffreddamento gia' usato per Serper qui sopra,
+# ma parametri diversi: un blackout Gemini osservato e' uno spike di minuti,
+# non ore, quindi il raffreddamento e' molto piu' corto e si riprova a piena
+# potenza molto prima.
+_gemini_5xx_consecutivi = [0]
+_gemini_timestamp_ultimo_5xx = [0.0]
+SOGLIA_5XX_GEMINI_PER_BLACKOUT = 3      # chiamate Gemini (Occhio o Cervello) di fila
+                                         # finite in errore dopo aver esaurito tutti i
+                                         # tentativi/key, prima di considerarlo un blackout
+RAFFREDDAMENTO_GEMINI_SECONDI = 300     # 5 minuti: passato questo tempo dall'ultimo
+                                         # fallimento si torna a provare a piena potenza
+MAX_RETRIES_GEMINI_IN_BLACKOUT = 2      # tentativi per chiamata durante un blackout rilevato,
+                                         # invece del default 4 -- si fallisce prima e si passa
+                                         # al fallback (prosa/verdetto senza extra) invece di
+                                         # aspettare minuti su una chiamata che quasi certamente
+                                         # fallira' comunque
+
+
+def _gemini_in_blackout():
+    """True se le ultime chiamate Gemini sono finite in errore abbastanza di
+    fila e abbastanza di recente da trattarlo come un blackout in corso
+    (stessa logica di in_raffreddamento gia' usata per Serper piu' sotto)."""
+    if _gemini_5xx_consecutivi[0] < SOGLIA_5XX_GEMINI_PER_BLACKOUT:
+        return False
+    return (time.time() - _gemini_timestamp_ultimo_5xx[0]) < RAFFREDDAMENTO_GEMINI_SECONDI
+
+
+def _gemini_registra_esito(successo):
+    """Aggiorna il contatore di blackout dopo ogni chiamata Gemini completata
+    (con successo o con tutti i tentativi/key esauriti). Chiamata da
+    chiama_gemini e da _chiama_gemini_raw dentro chiama_gemini_cervello_forzato
+    -- stesso stato condiviso, perche' un blackout del modello colpisce
+    Occhio e Cervello allo stesso modo."""
+    if successo:
+        if _gemini_5xx_consecutivi[0] >= SOGLIA_5XX_GEMINI_PER_BLACKOUT:
+            log.info("Gemini: uscito dal blackout 5xx (una chiamata e' andata a buon fine).")
+        _gemini_5xx_consecutivi[0] = 0
+    else:
+        _gemini_5xx_consecutivi[0] += 1
+        _gemini_timestamp_ultimo_5xx[0] = time.time()
+        if _gemini_5xx_consecutivi[0] == SOGLIA_5XX_GEMINI_PER_BLACKOUT:
+            log.warning(
+                "Gemini: rilevato blackout (%d chiamate di fila con tutti i tentativi "
+                "esauriti) -- retry ridotti a %d per le prossime chiamate, per %ds.",
+                _gemini_5xx_consecutivi[0], MAX_RETRIES_GEMINI_IN_BLACKOUT, RAFFREDDAMENTO_GEMINI_SECONDI,
+            )
+
 # Rate-limiter tra richieste Vinted consecutive: dopo ~13h di attivita'
 # continua Vinted ha iniziato a rispondere 403 Forbidden (probabile blocco
 # per volume di richieste). Impone una pausa minima tra una scrape e la
@@ -3304,13 +3359,28 @@ async def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, groundi
     if grounding:
         payload["tools"] = [{"google_search": {}}]
 
+    # Retry ridotti se un blackout Gemini e' gia' in corso (vedi
+    # _gemini_in_blackout piu' sopra): non ha senso impegnarsi per
+    # max_retries pieni quando le ultime chiamate hanno gia' dimostrato che
+    # tutte le key sono in errore -- si fallisce prima e si passa al
+    # fallback (prosa/skip), invece di aspettare minuti su una chiamata che
+    # quasi certamente fallira' comunque.
+    max_retries_effettivi = MAX_RETRIES_GEMINI_IN_BLACKOUT if _gemini_in_blackout() else max_retries
+
     backoff_seconds = 2
-    for attempt in range(1, max_retries + 1):
+    for attempt in range(1, max_retries_effettivi + 1):
         try:
-            resp = await _client_generico.post(api_url, params={"key": _gemini_key_attuale()}, json=payload, timeout=90)
+            # Timeout abbassato da 90 a 30s (richiesto dall'utente il
+            # 2026-09-22): 90s era pensato per una risposta lenta ma valida,
+            # non per un 503 (che nei log arriva in 10-45s, non per timeout) --
+            # ma se Gemini smette proprio di rispondere invece di restituire
+            # un errore, 90s per tentativo x piu' tentativi x piu' round del
+            # Cervello e' comunque troppo. 30s resta ampio per foto+prompt.
+            resp = await _client_generico.post(api_url, params={"key": _gemini_key_attuale()}, json=payload, timeout=30)
             if not resp.is_success:
                 log.warning("Gemini HTTP %d: %s", resp.status_code, resp.text[:500])
             if resp.is_success:
+                _gemini_registra_esito(True)
                 data = resp.json()
                 candidates = data.get("candidates", [])
                 if candidates:
@@ -3352,11 +3422,13 @@ async def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, groundi
                 continue
             resp.raise_for_status()
         except Exception as e:
-            if attempt < max_retries:
+            if attempt < max_retries_effettivi:
                 await asyncio.sleep(backoff_seconds)
                 backoff_seconds *= 2
                 continue
-            return f"[ERRORE: chiamata Gemini fallita dopo {max_retries} tentativi. Eccezione: {e}]", 0.0, 0
+            _gemini_registra_esito(False)
+            return f"[ERRORE: chiamata Gemini fallita dopo {max_retries_effettivi} tentativi. Eccezione: {e}]", 0.0, 0
+    _gemini_registra_esito(False)
     return "[ERRORE: tentativi esauriti]", 0.0, 0
 
 
@@ -4038,15 +4110,24 @@ async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca
             payload["tools"] = [{"function_declarations": [CERVELLO_FUNCTION_DECLARATION]}]
             payload["tool_config"] = {"function_calling_config": function_calling_config}
 
+        # Stesso ragionamento di chiama_gemini (vedi commento esteso li'):
+        # con un blackout gia' rilevato non si spendono tentativi_rimasti
+        # pieni ad ogni round -- si fallisce prima, il round FASE 1 passa
+        # direttamente al verdetto (vedi "si passa comunque al verdetto" nel
+        # chiamante) invece di aspettare minuti in piu' per round.
+        tentativi_effettivi = MAX_RETRIES_GEMINI_IN_BLACKOUT if _gemini_in_blackout() else tentativi_rimasti
+
         backoff_seconds = 2
-        for attempt in range(1, tentativi_rimasti + 1):
+        for attempt in range(1, tentativi_effettivi + 1):
             try:
+                # Timeout abbassato da 90 a 30s (richiesto dall'utente il
+                # 2026-09-22, stesso motivo di chiama_gemini).
                 resp = await _client_generico.post(
-                    api_url, params={"key": _gemini_key_attuale()}, json=payload, timeout=90)
+                    api_url, params={"key": _gemini_key_attuale()}, json=payload, timeout=30)
                 if not resp.is_success:
                     log.warning("Gemini (cervello) HTTP %d: %s", resp.status_code, resp.text[:500])
                     codici_con_rotazione = {429, 500, 502, 503, 504}
-                    if resp.status_code in codici_con_rotazione and attempt < tentativi_rimasti:
+                    if resp.status_code in codici_con_rotazione and attempt < tentativi_effettivi:
                         # Stessa logica di rotazione di chiama_gemini (vedi il
                         # commento esteso li'): 429 e' quota esaurita, non un
                         # rate-limit al minuto; 5xx da FIX 2026-09-21 (log
@@ -4063,13 +4144,16 @@ async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca
                         backoff_seconds *= 2
                         continue
                     resp.raise_for_status()
+                _gemini_registra_esito(True)
                 return resp.json()
             except Exception:
-                if attempt < tentativi_rimasti:
+                if attempt < tentativi_effettivi:
                     await asyncio.sleep(backoff_seconds)
                     backoff_seconds *= 2
                     continue
+                _gemini_registra_esito(False)
                 raise
+        _gemini_registra_esito(False)
         raise RuntimeError("tentativi esauriti")
 
     # ---- FASE 1: giri di ricerca ------------------------------------------
