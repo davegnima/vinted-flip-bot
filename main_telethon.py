@@ -1117,7 +1117,7 @@ OCCHIO_RESPONSE_SCHEMA = {
         "nome_sottolinea": {
             "type": "STRING",
             "nullable": True,
-            "description": "Nome della sottolinea se applicabile (es. 'MM6', 'McQ').",
+            "description": "Nome della sottolinea se applicabile (es. 'MM6', 'McQ', 'M Missoni', 'Weekend Max Mara').",
         },
         "sottolinea_max_mara_eccezione": {
             "type": "STRING",
@@ -2097,6 +2097,7 @@ Archivio eclettico (Missoni, JPG, Pucci, Westwood, Mugler, Montana, Marni, Courr
 
 # RICERCA E VERIFICA (usa cerca_comp_prezzo)
 Comp pre-raccolti scarsi/assenti/fuori tema → cerca_comp_prezzo con query mirata prima di rispondere. Unica fonte comp: Vinted. Gerarchia interna: Ricerca visuale per foto (quando presente: e' lo stesso capo/modello, non solo lo stesso brand, il comp piu' affidabile) > Vinted testo.
+**Se il capo appartiene a una sottolinea o linea/etichetta specifica** (`nome_sottolinea` compilato con `relazione_brand: sottolinea_stessa_maison`, oppure `linea_o_era_rilevata` con un'etichetta letterale spendibile come "M Missoni", "JPG.JEAN'S", "Weekend Max Mara" -- non una generica indicazione di epoca) **la tua query di ricerca DEVE nominare quella sottolinea/linea esplicitamente**, mai solo il brand madre generico: cerca "M Missoni maglione" e non "Missoni maglione", cerca "JPG.JEAN'S camicia" e non solo "Jean Paul Gaultier camicia". Un comp trovato cercando solo il brand madre e' quasi sempre del mainline, sistematicamente piu' caro, e ti porta a sovrastimare un capo di sottolinea. Questo vale per QUALSIASI sottolinea, non solo per gli esempi citati qui.
 Codici prodotto o diciture rare citati dall'occhio ("prototipo", "edizione limitata", ecc.) → verifica che esistano davvero con cerca_comp_prezzo prima di trattarli come prova di valore; se non confermati, tratta come non verificati e abbassa Confidenza, non usarli come giustificazione principale del margine.
 La "Confidenza" che l'occhio dichiara su un verdetto "Probabilmente falso" NON è affidabile da sola (bias noto: prezzo molto basso può contaminare il giudizio con dettagli vaghi costruiti a posteriori) — se i dettagli citati sono generici e il prezzo è molto basso, verifica con cerca_comp_prezzo prima di confermare NON COMPRARE per sospetto falso.
 
@@ -3549,7 +3550,15 @@ CERVELLO_FUNCTION_DECLARATION = {
         "properties": {
             "query": {
                 "type": "string",
-                "description": "Query di ricerca mirata, es. 'YSL camicia vintage uomo venduto eBay' oppure 'Miu Miu codice PMMJ-2016 prototipo collezione'",
+                "description": (
+                    "Query di ricerca mirata, es. 'YSL camicia vintage uomo venduto eBay' "
+                    "oppure 'Miu Miu codice PMMJ-2016 prototipo collezione'. Se il capo "
+                    "appartiene a una sottolinea o linea/etichetta specifica (es. 'M Missoni', "
+                    "'JPG.JEAN'S', 'Weekend Max Mara'), nominala SEMPRE nella query al posto "
+                    "del solo brand madre generico -- es. 'M Missoni maglione zigzag', non "
+                    "'Missoni maglione zigzag', per evitare comp del mainline che sovrastimano "
+                    "un capo di sottolinea."
+                ),
             }
         },
         "required": ["query"],
@@ -5277,6 +5286,91 @@ def _filtra_comp_per_brand_sottolinee(testo_comp, brand):
         log.info("_filtra_comp_per_brand_sottolinee: scartate %d righe di sottolinea/collab per brand '%s'.", scartate, brand)
 
     return "\n".join(righe_filtrate)
+
+
+# Valori di linea_o_era che NON sono un'etichetta letterale spendibile come
+# testo di ricerca (una descrizione di epoca/generica, non qualcosa che
+# compare scritto su un'etichetta o in un titolo Vinted) -- esclusi
+# dall'arricchimento della ricerca comp sotto per non aggiungere rumore.
+LINEA_O_ERA_NON_UTILI_PER_RICERCA = {"mainline", "non determinabile", "non_determinabile"}
+
+
+def _e_linea_o_era_utile_per_ricerca(linea_o_era):
+    """True se linea_o_era e' un'etichetta letterale spendibile in una query
+    di ricerca (es. "JEAN'S PAUL GAULTIER", "JPG.JEAN'S", "Veilance", "Linea
+    10"), False se e' una descrizione di era/epoca generica (es. "Era Lang
+    1986-2005") o un valore segnaposto ("mainline", "non determinabile") che
+    aggiungerebbe solo rumore invece di aiutare la ricerca."""
+    if not linea_o_era or not isinstance(linea_o_era, str):
+        return False
+    testo = linea_o_era.strip()
+    if not testo or testo.lower() in LINEA_O_ERA_NON_UTILI_PER_RICERCA:
+        return False
+    # Una descrizione di era contiene quasi sempre un anno a 4 cifre
+    # ("1986-2005", "post-2006", "pre-2012"): utile per il Cervello come
+    # informazione (resta in linea_o_era_rilevata), ma inutile come testo di
+    # ricerca letterale -- nessuna etichetta reale scrive "post-2006" su un
+    # capo, quindi cercarlo alla lettera non trova nulla.
+    if re.search(r"\b(19|20)\d{2}\b", testo):
+        return False
+    return True
+
+
+def _arricchisci_brand_per_ricerca(brand_annuncio, occhio_json):
+    """Brand/etichetta da usare per la ricerca comp (Serper), arricchito con
+    la sottolinea o la linea/etichetta specifica lette dall'Occhio quando
+    presenti e utili come testo di ricerca. Richiesto dall'utente il
+    2026-09-22 ("assicurati che quando la linea e' M Missoni o Jean's Paul
+    Gaultier il modello usi quella linea per trovare comp -- cosi' per tutte
+    le sottolinee"): generalizza due casi gia' osservati in produzione,
+    entrambi con lo stesso sintomo (comp della linea sbagliata, spesso piu'
+    cari, trattati come validi perche' la ricerca usava solo il brand madre).
+
+    1. Sottolinee con un nome diverso dal brand principale (Weekend Max
+       Mara, M Missoni, MM6...): gia' coperte da nome_sottolinea quando
+       relazione_brand == "sottolinea_stessa_maison" (fix del 2026-09-20).
+    2. Linee/etichette dello STESSO brand nominale ma con un testo di
+       etichetta specifico da cercare alla lettera per non mischiare fasce
+       di prezzo diverse (caso reale JPG: "JEAN'S PAUL GAULTIER" con
+       apostrofo vs "JPG.JEAN'S" sono due diffusion diverse, ma "Jean Paul
+       Gaultier" da solo non fa questa distinzione nella ricerca comp):
+       coperte da linea_o_era, indipendentemente da relazione_brand, filtrato
+       da _e_linea_o_era_utile_per_ricerca per escludere descrizioni di era
+       generiche.
+
+    Il campo brand del listing riflette quasi sempre solo il brand madre
+    scelto dal venditore, mai la sottolinea/linea specifica -- senza questo
+    arricchimento quel testo e' l'unico usato per la ricerca comp.
+    """
+    if not occhio_json:
+        return brand_annuncio
+
+    brand_annuncio_norm = (brand_annuncio or "").strip().lower()
+    etichette_da_aggiungere = []
+
+    if occhio_json.get("relazione_brand") == "sottolinea_stessa_maison":
+        nome_sottolinea = str(occhio_json.get("nome_sottolinea") or "").strip()
+        if nome_sottolinea and nome_sottolinea.lower() not in brand_annuncio_norm:
+            etichette_da_aggiungere.append(nome_sottolinea)
+
+    linea_o_era = str(occhio_json.get("linea_o_era") or "").strip()
+    if (
+        _e_linea_o_era_utile_per_ricerca(linea_o_era)
+        and linea_o_era.lower() not in brand_annuncio_norm
+        and linea_o_era.lower() not in (e.lower() for e in etichette_da_aggiungere)
+    ):
+        etichette_da_aggiungere.append(linea_o_era)
+
+    if not etichette_da_aggiungere:
+        return brand_annuncio
+
+    brand_arricchito = " ".join(etichette_da_aggiungere + [brand_annuncio or ""]).strip()
+    log.info(
+        "process_listing: brand arricchito per la ricerca comp: '%s' -> '%s' "
+        "(sottolinea/linea letta dall'Occhio sull'etichetta).",
+        brand_annuncio, brand_arricchito,
+    )
+    return brand_arricchito
 
 
 def _filtra_comp_per_categoria(testo_comp, categoria):
@@ -7330,34 +7424,14 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
         item_id_annuncio = _estrai_item_id_da_url(url)
 
         # Brand da usare per la RICERCA comp, arricchito con la sottolinea
-        # letta dall'Occhio sull'etichetta quando presente (aggiunto il
-        # 2026-09-20, caso reale: annuncio con brand Vinted "Max Mara" ma
-        # etichetta fotografata "Weekend MaxMara" -- la ricerca comp usava
-        # solo "Max Mara" generico, prendendo cappotti mainline (€200,
-        # €290...) come comp per un capo Weekend, che vale sistematicamente
-        # meno. Il campo brand del listing riflette quasi sempre solo il
-        # brand madre scelto dal venditore, MAI la sottolinea specifica.
-        # _filtra_comp_per_brand_sottolinee (vedi BRAND_SOTTOLINEE_DA_ESCLUDERE)
-        # con brand="Max Mara" avrebbe anzi ATTIVAMENTE scartato eventuali
-        # comp "Weekend Max Mara" gia' trovati, aggravando il problema.
-        # Con brand arricchito a "Weekend Max Mara" quella chiave non esiste
-        # nel dizionario di esclusione (solo "max mara" mainline ce l'ha),
-        # quindi il filtro diventa automaticamente un no-op per questo caso
-        # -- nessuna modifica separata necessaria li'.
-        brand_per_ricerca = brand_annuncio
-        if (
-            occhio_json
-            and occhio_json.get("relazione_brand") == "sottolinea_stessa_maison"
-            and occhio_json.get("nome_sottolinea")
-        ):
-            nome_sottolinea = str(occhio_json["nome_sottolinea"]).strip()
-            if nome_sottolinea and nome_sottolinea.lower() not in brand_annuncio.lower():
-                brand_per_ricerca = f"{nome_sottolinea} {brand_annuncio}".strip()
-                log.info(
-                    "process_listing: brand arricchito per la ricerca comp: '%s' -> '%s' "
-                    "(sottolinea letta dall'Occhio sull'etichetta).",
-                    brand_annuncio, brand_per_ricerca,
-                )
+        # (nome_sottolinea) e/o la linea/etichetta specifica (linea_o_era)
+        # lette dall'Occhio sull'etichetta quando presenti. Vedi il
+        # docstring di _arricchisci_brand_per_ricerca per la casistica
+        # completa (Weekend Max Mara, M Missoni, JPG "JPG.JEAN'S" ecc.) --
+        # generalizzato il 2026-09-22 su richiesta dell'utente per coprire
+        # anche i casi in cui la sottolinea/linea vive in linea_o_era
+        # anziche' in nome_sottolinea.
+        brand_per_ricerca = _arricchisci_brand_per_ricerca(brand_annuncio, occhio_json)
 
         # Nome del sarto/maker reale, DIVERSO dal brand dichiarato E dalla
         # sottolinea gia' gestita sopra (aggiunto il 2026-09-20, caso reale:
