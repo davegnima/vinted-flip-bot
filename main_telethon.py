@@ -272,14 +272,41 @@ SOGLIA_MARGINE_COMPRA = 25.0           # EUR netti minimi per un COMPRA (alzata 
                                         # (insieme a SOGLIA_ROI_COMPRA qui sotto) sia, DA SOLA
                                         # senza il floor ROI, per il "minimo accettabile"
                                         # mostrato in chat.
-SOGLIA_ROI_COMPRA = 100.0              # % minima di ROI per COMPRA/TRATTA. Chiarito il
-                                        # 2026-09-20 su richiesta esplicita dell'utente: resta
-                                        # nella decisione compra/tratta/non-compra, ma NON
-                                        # entra nel calcolo del "minimo accettabile" mostrato
-                                        # in chat (quello usa solo SOGLIA_MARGINE_COMPRA).
+SOGLIA_ROI_COMPRA = 100.0              # % minima di ROI per la via "standard" della decisione
+                                        # COMPRA/TRATTA (margine>=SOGLIA_MARGINE_COMPRA E
+                                        # roi>=SOGLIA_ROI_COMPRA). Il 2026-09-22 l'utente aveva
+                                        # chiesto di toglierla del tutto ("non guardare le
+                                        # percentuali, calcola i soldi in tasca"), ma ha
+                                        # corretto subito dopo: il ROI resta rilevante, solo un
+                                        # margine molto alto lo puo' compensare -- vedi
+                                        # SOGLIA_MARGINE_COMPRA_ALTA / SOGLIA_ROI_COMPRA_RIDOTTA
+                                        # qui sotto per la seconda via alternativa.
+SOGLIA_MARGINE_COMPRA_ALTA = 75.0      # seconda via alternativa (richiesta dall'utente il
+                                        # 2026-09-22): un margine molto alto compensa un ROI%
+                                        # piu' basso. Sotto questa soglia di margine resta
+                                        # valido solo il floor ROI>=SOGLIA_ROI_COMPRA originale.
+                                        # Esempio confermato dall'utente: margine €100/roi 70%
+                                        # -> COMPRA (fallisce la via standard, roi<100%, ma
+                                        # supera questa via: margine>=€75 e roi>=50%).
+SOGLIA_ROI_COMPRA_RIDOTTA = 50.0       # ROI minimo richiesto SOLO quando il margine supera
+                                        # SOGLIA_MARGINE_COMPRA_ALTA (vedi sopra).
 SOGLIA_MARGINE_URGENZA = 30.0          # EUR netti minimi per "Alta urgenza"
 SOGLIA_ROI_URGENZA = 150.0             # % minima di ROI per "Alta urgenza"
 SCONTO_MAX_TRATTATIVA = 0.40           # sconto massimo trattabile sul PRODOTTO
+
+# --- Tre regole di calibrazione richieste dall'utente il 2026-09-22 dopo
+# revisione dello storico verdetti (228 casi, vedi analisi in chat) --
+# vedi i tre punti d'uso in calcola_verdetto per il ragionamento completo.
+SOGLIA_GIORNI_VENDITA_LAMPO = 2        # "si vende in 48 ore": eccezione al floor di margine
+                                        # assoluto SOGLIA_MARGINE_COMPRA qui sopra -- un capo
+                                        # che gira in 2 giorni vale l'acquisto anche con
+                                        # margine sotto soglia, il capitale torna quasi subito.
+SOGLIA_PREZZO_FURTO_ISTANTANEO = 15.0  # sotto questo prezzo pagato, niente fase di
+                                        # trattativa su un ROI enorme (vedi
+                                        # SOGLIA_ROI_FURTO_ISTANTANEO) -- rischiare di perdere
+                                        # un affare del genere per pochi euro di sconto in piu'
+                                        # non vale il tempo della trattativa.
+SOGLIA_ROI_FURTO_ISTANTANEO = 300.0    # ROI (sul prezzo pieno) minimo per l'eccezione sopra.
 
 # Tolleranza (EUR) nel confronto tra un prezzo comp dichiarato dal cervello
 # e i prezzi realmente presenti nel pool di ricerca -- assorbe arrotondamenti
@@ -6018,6 +6045,19 @@ def build_skip_report(listing_info, motivo_skip, output_occhi_testo=None):
             if m_legit and m_legit.group(1).strip():
                 riga_legit = m_legit.group(1).strip()
         riga_rischio = "N/A — brand estraneo al segmento monitorato (filtro automatico, cervello non consultato)"
+    elif motivo_skip.startswith("[ANNUNCIO FRAUDOLENTO"):
+        # BUG reale trovato il 2026-09-22 rileggendo lo storico Telegram: 12
+        # skip su 51 (23%) di questo tipo mostravano tutti il placeholder
+        # generico "Motivo di skip automatico non categorizzato" nel
+        # messaggio finale, perche' mancava questo branch -- il motivo
+        # SPECIFICO (i segnali di rischio annuncio elencati da
+        # calcola_scarto_occhio, es. "screenshot_di_altro_annuncio",
+        # "watermark_di_altro_sito"...) veniva gia' calcolato correttamente
+        # ma andava perso al momento di renderizzare il messaggio, cadendo
+        # nel ramo "else" generico invece che in un caso dedicato. Qui si
+        # riusa motivo_skip stesso, che contiene gia' l'elenco dei segnali.
+        riga_legit = motivo_skip.replace("[ANNUNCIO FRAUDOLENTO] ", "", 1)
+        riga_rischio = "ALTO — segnali di frode sull'annuncio stesso (filtro automatico, cervello non consultato)"
     elif motivo_skip.startswith("[TESSUTO NON E' IL BRAND"):
         riga_legit = "Nome citato e' il fornitore del tessuto, non il produttore del capo — comp del brand del tessuto non validi per questo capo."
         riga_rischio = "N/A — produttore reale del capo ignoto (filtro automatico, cervello non consultato)"
@@ -6848,14 +6888,44 @@ def calcola_verdetto(v, prezzo_prodotto):
     tratta_margine = incasso - tratta_costo
     tratta_roi = (tratta_margine / tratta_costo * 100) if tratta_costo > 0 else 0.0
 
-    # --- decisione: margine minimo E ROI minimo, come da sempre (chiarito il
-    # 2026-09-20: l'utente vuole tenere il floor ROI>=100% qui per
-    # compra/tratta, e toglierlo SOLO dal "minimo accettabile" mostrato in
-    # chat qui sopra, che infatti e' calcolato sul solo margine). Il -20%
-    # forfettario (QUOTA_INCASSO_NETTO) resta tolto: margine/roi qui sono
-    # calcolati sull'incasso = vendita attesa piena, senza sconto.
-    supera_soglia = margine >= SOGLIA_MARGINE_COMPRA and roi >= SOGLIA_ROI_COMPRA
-    tratta_supera_soglia = tratta_margine >= SOGLIA_MARGINE_COMPRA and tratta_roi >= SOGLIA_ROI_COMPRA
+    # --- decisione: due vie alternative (richiesto dall'utente il
+    # 2026-09-22, dopo un primo tentativo -- rimuovere del tutto il floor
+    # ROI -- che l'utente ha corretto subito: il ROI resta rilevante, ma un
+    # margine molto alto lo puo' compensare). Via standard: margine>=
+    # SOGLIA_MARGINE_COMPRA E roi>=SOGLIA_ROI_COMPRA. Via alternativa: un
+    # margine molto piu' alto (SOGLIA_MARGINE_COMPRA_ALTA) con un floor ROI
+    # piu' basso (SOGLIA_ROI_COMPRA_RIDOTTA). Esempi confermati dall'utente:
+    # margine €30/roi 40% -> NON COMPRA; margine €30/roi 120% -> COMPRA (via
+    # standard); margine €100/roi 70% -> COMPRA (via alternativa); margine
+    # €80/roi 45% -> NON COMPRA (roi troppo basso anche per la via
+    # alternativa). Il -20% forfettario (QUOTA_INCASSO_NETTO) resta tolto:
+    # margine/roi qui sono calcolati sull'incasso = vendita attesa piena,
+    # senza sconto.
+    supera_soglia = (
+        (margine >= SOGLIA_MARGINE_COMPRA and roi >= SOGLIA_ROI_COMPRA)
+        or (margine >= SOGLIA_MARGINE_COMPRA_ALTA and roi >= SOGLIA_ROI_COMPRA_RIDOTTA)
+    )
+    tratta_supera_soglia = (
+        (tratta_margine >= SOGLIA_MARGINE_COMPRA and tratta_roi >= SOGLIA_ROI_COMPRA)
+        or (tratta_margine >= SOGLIA_MARGINE_COMPRA_ALTA and tratta_roi >= SOGLIA_ROI_COMPRA_RIDOTTA)
+    )
+
+    # --- eccezione "vendita lampo" (richiesta dall'utente il 2026-09-22):
+    # sotto il floor di margine assoluto, un acquisto resta comunque un
+    # COMPRA se il capo si vende quasi certamente in 48 ore -- capitale che
+    # gira in 2 giorni vale anche con un margine piccolo. Stessa cautela
+    # anti-allucinazione gia' usata per l'urgenza "Alta" qui sotto: mai
+    # fidarsi di domanda_mercato=='alta' senza segnali_domanda concreti a
+    # supporto, altrimenti basterebbe al modello dichiarare "vendo in 2
+    # giorni" per bypassare il floor su qualunque cosa. Il margine deve
+    # comunque restare positivo: questa e' una scorciatoia sulla VELOCITA'
+    # di rientro del capitale, mai una licenza a comprare in perdita.
+    vendita_lampo = (
+        margine > 0
+        and v["giorni_stimati_vendita"] <= SOGLIA_GIORNI_VENDITA_LAMPO
+        and v["domanda_mercato"] == "alta"
+        and v["segnali_domanda"]
+    )
 
     if v["corrispondenza_brand"] == "brand_estraneo":
         decisione = "NON COMPRARE"
@@ -6885,7 +6955,7 @@ def calcola_verdetto(v, prezzo_prodotto):
             f"difetto strutturale grave ({v.get('descrizione_difetto') or 'non specificato'}): "
             "capo invendibile, decisione forzata a NON COMPRARE"
         )
-    elif supera_soglia:
+    elif supera_soglia or vendita_lampo:
         # "non_verificabile" NON puo' cadere nel ramo COMPRA. Significa che
         # non c'e' stata nessuna prova di autenticita' da esaminare (nessuna
         # etichetta leggibile), quindi il margine alto e' calcolato su un capo
@@ -6900,6 +6970,12 @@ def calcola_verdetto(v, prezzo_prodotto):
         #    "non_verificabile" come default prudente quando l'enum non e'
         #    riconosciuto -- prima di questa correzione un JSON sformato del
         #    Cervello si trasformava in un COMPRA.
+        if not supera_soglia:
+            limiti_applicati.append(
+                f"margine €{margine:.2f} sotto la soglia standard €{SOGLIA_MARGINE_COMPRA:.0f}, ma COMPRA "
+                f"confermato per eccezione 'vendita lampo' (~{v['giorni_stimati_vendita']}gg stimati, "
+                "domanda alta con segnali concreti)"
+            )
         if v["legit_verdetto"] in ("sospetto_servono_altre_foto", "non_verificabile"):
             decisione = "CHIEDI ALTRE FOTO"
         else:
@@ -6908,6 +6984,34 @@ def calcola_verdetto(v, prezzo_prodotto):
         decisione = "TRATTA"
     else:
         decisione = "NON COMPRARE"
+
+    # --- "furto istantaneo": elimina la fase di trattativa sotto un prezzo
+    # pagato irrisorio con ROI enorme (richiesto dall'utente il 2026-09-22)
+    # -- rischiare di perdere un capo del genere per pochi euro di sconto in
+    # piu' non vale il tempo della trattativa. Tocca SOLO il ramo TRATTA:
+    # non scavalca mai un NON COMPRARE/CHIEDI ALTRE FOTO deciso sopra per
+    # motivi di autenticita' o difetto strutturale grave, quella e' sicurezza
+    # non economia.
+    if decisione == "TRATTA" and prezzo_prodotto < SOGLIA_PREZZO_FURTO_ISTANTANEO and roi >= SOGLIA_ROI_FURTO_ISTANTANEO:
+        decisione = "COMPRA"
+        limiti_applicati.append(
+            f"'furto istantaneo': prezzo pagato €{prezzo_prodotto:.2f} sotto €{SOGLIA_PREZZO_FURTO_ISTANTANEO:.0f} "
+            f"con ROI {roi:.0f}% -- trattativa saltata, comprato a prezzo pieno subito"
+        )
+
+    # --- taglia estrema/non liquida: mai COMPRA a prezzo pieno, qualunque
+    # sia il brand (richiesto dall'utente il 2026-09-22, "anche se Loro
+    # Piana e' Tier-1, una taglia 54 non liquida non paga le bollette") --
+    # il rischio non e' l'autenticita' ma il capitale bloccato troppo a
+    # lungo su un capo difficile da rivendere. Applicata per ULTIMA, dopo
+    # anche il 'furto istantaneo' qui sopra: la ha sempre l'ultima parola su
+    # qualunque altra logica economica.
+    if v["fascia_taglia"] == "estrema" and decisione == "COMPRA":
+        decisione = "TRATTA" if tratta_supera_soglia else "NON COMPRARE"
+        limiti_applicati.append(
+            "taglia estrema/non liquida: mai COMPRA a prezzo pieno anche con margine sano su carta -- "
+            "capitale bloccato troppo a lungo su un capo difficile da vendere"
+        )
 
     # --- urgenza: mai dedotta dai soli numeri, serve domanda di mercato reale
     comp_reali = [c for c in utilizzabili if c.get("fonte_reale") != "memoria_modello"]
