@@ -8681,6 +8681,22 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
         v, problemi = valida_payload_cervello(verdetto_json)
         stats_comp = classifica_provenienza_comp(v, pool_ricerca_grezzo)
         _assegna_url_ai_comp(v)
+        # Diagnostica temporanea (2026-09-24): i link ai comp non compaiono
+        # quasi mai in produzione e non e' chiaro se il problema sia "il
+        # registro titolo->URL e' vuoto" (le fonti non registrano nulla per
+        # questo annuncio) o "il registro c'e' ma i titoli non combaciano"
+        # (il Cervello riscrive troppo il titolo). Un log, non un'ipotesi.
+        _registro_url_debug = _url_comp_ctx.get() or {}
+        _comp_non_linkati_debug = [
+            (c.get("titolo_verbatim") or "")[:70]
+            for c in v.get("comp_candidati", [])
+            if not c.get("url") and c.get("fonte_reale", c.get("fonte")) != "memoria_modello"
+        ]
+        log.info(
+            "Link comp '%s': registro=%d titoli disponibili %s — comp non-memoria senza url: %s",
+            listing_info.get("title"), len(_registro_url_debug),
+            list(_registro_url_debug.keys())[:8], _comp_non_linkati_debug,
+        )
         verdetto_calcolato = calcola_verdetto(v, prezzo_prodotto, listing_info)
         salva_cache_verdetto(impronta_annuncio, url, prezzo_prodotto, v, problemi, stats_comp)
         decisione = verdetto_calcolato["decisione"]
