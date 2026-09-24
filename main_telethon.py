@@ -14,8 +14,10 @@ import json
 import time
 import uuid
 import asyncio
+import contextvars
 import base64
 import logging
+import math
 import statistics
 import traceback
 from io import BytesIO
@@ -239,7 +241,7 @@ MAX_GALLERY_PHOTOS = 10
 # inequivocabile quale codice sta girando su Railway dopo un deploy, senza
 # doverlo dedurre dai timestamp dei log. Aggiorna la data quando fai una
 # modifica significativa (facoltativo, ma utile per il debug futuro).
-BOT_VERSION = "2026-09-19-cervello-json-strutturato-asyncio"
+BOT_VERSION = "2026-09-24-revisione-verdetti"
 
 # ---------------------------------------------------------------------------
 # PARAMETRI ECONOMICI -- l'unica fonte di verita' per TUTTI i calcoli
@@ -253,7 +255,7 @@ BOT_VERSION = "2026-09-19-cervello-json-strutturato-asyncio"
 # doverli inseguire dentro un prompt.
 COMMISSIONE_PROTEZIONE_PCT = 0.05      # protezione acquisti Vinted, quota sul prezzo
 COMMISSIONE_PROTEZIONE_FISSA = 0.70    # protezione acquisti Vinted, quota fissa
-SPEDIZIONE_STIMATA_EUR = 2.50          # tariffa IT, la piu' economica
+SPEDIZIONE_STIMATA_EUR = 3.50          # tariffa IT (vedi SPEDIZIONE_ITALIA_EUR)
 QUOTA_INCASSO_NETTO = 0.80             # NON PIU' USATA nel calcolo di calcola_verdetto
                                         # (tolta il 2026-09-20 su richiesta esplicita
                                         # dell'utente: raddoppiava lo sconto gia'
@@ -292,7 +294,7 @@ SOGLIA_ROI_COMPRA_RIDOTTA = 50.0       # ROI minimo richiesto SOLO quando il mar
                                         # SOGLIA_MARGINE_COMPRA_ALTA (vedi sopra).
 SOGLIA_MARGINE_URGENZA = 30.0          # EUR netti minimi per "Alta urgenza"
 SOGLIA_ROI_URGENZA = 150.0             # % minima di ROI per "Alta urgenza"
-SCONTO_MAX_TRATTATIVA = 0.40           # sconto massimo trattabile sul PRODOTTO
+# SCONTO_MAX_TRATTATIVA: ridefinito piu' sotto nel blocco "REVISIONE VERDETTI DEL 2026-09-24".
 
 # --- Tre regole di calibrazione richieste dall'utente il 2026-09-22 dopo
 # revisione dello storico verdetti (228 casi, vedi analisi in chat) --
@@ -323,6 +325,149 @@ SOGLIA_ROI_TAGLIA_ESTREMA_ECCEZIONE = 150.0     # calcola_verdetto): AFFINATA il
 # e i prezzi realmente presenti nel pool di ricerca -- assorbe arrotondamenti
 # (89,99 scritto come 90) senza lasciar passare un numero inventato.
 TOLLERANZA_COMP_EUR = 1.0
+
+# ---------------------------------------------------------------------------
+# REVISIONE VERDETTI DEL 2026-09-24 (analisi di ~2 giorni di verdetti reali)
+# ---------------------------------------------------------------------------
+# Punto 4 -- target deterministico. Lo stesso capo valutato due volte dava
+# prezzi diversi (Totême jeans €31.50 vs €55, Max Mara Wollmantel €140 vs
+# €210, Bottega parka €180 vs €350) perche' il prezzo finale era la stima
+# libera del modello, limitata solo dall'alto. Ora, con almeno
+# MIN_COMP_TARGET_DETERMINISTICO comp validi, il target lo calcola Python:
+# 75* percentile dei comp tenuti, meno uno sconto ASK FISSO. Il modello
+# resta responsabile di QUALI comp sono validi (categoria, linea, esclusi),
+# non piu' del numero finale. Il 75* percentile e' la stessa scelta gia' fatta
+# il 2026-09-2x per il materiale non confermato (la mediana si era rivelata
+# troppo severa: caso gonna Marni).
+MIN_COMP_TARGET_DETERMINISTICO = 2
+PERCENTILE_TARGET_DETERMINISTICO = 75
+SCONTO_ASK_FISSO_PCT = 25.0            # prima: 20-30 a scelta del modello, altra fonte di varianza
+
+# Punto 8 -- stagionalita' calcolata in Python dal mese corrente, non piu'
+# dichiarata dal modello (bug reale: cappotti valutati il 22 settembre con
+# "fuori stagione, pubblica da settembre"). Un capo fuori stagione immobilizza
+# il capitale per mesi, quindi alza il ROI minimo richiesto.
+CATEGORIE_INVERNALI = {"cappotto", "maglia", "sciarpa"}
+CATEGORIE_ESTIVE = {"costume", "canotta", "polo"}
+KEYWORD_ESTIVE_TITOLO = ("shorts", "short", "bermuda", "sandali", "sandal", "bikini", "lino", "linen", "leinen", "lin ")
+MESI_FUORI_STAGIONE_INVERNALI = {4, 5, 6, 7}           # si pubblica da settembre
+MESI_FUORI_STAGIONE_ESTIVI = {9, 10, 11, 12, 1, 2}      # si pubblica da marzo/aprile
+MOLTIPLICATORE_ROI_FUORI_STAGIONE = 1.5                 # ROI minimo 100% -> 150% (e 50% -> 75%)
+
+# Punto 10 -- trattativa. Prima l'offerta era sempre ask x 0.60, anche su capi
+# da 6-15 EUR (offerte da 3.60 EUR che fanno solo perdere il pezzo) e anche
+# quando serviva molto meno sconto. Ora l'offerta massima e' il prezzo piu'
+# alto che fa ancora passare il gate; si apre un po' sotto.
+SCONTO_MAX_TRATTATIVA = 0.30           # oltre il -30% sul prezzo chiesto la trattativa quasi
+                                        # mai va in porto: meglio NON COMPRARE che un TRATTA
+                                        # irrealistico (era 0.40, sempre applicato per intero)
+SCONTO_APERTURA_TRATTATIVA = 0.15      # prima offerta: -15% sul prezzo chiesto, se basta
+OFFERTA_MINIMA_EUR = 15.0              # sotto questa cifra non si tratta: o si compra al
+                                        # prezzo pieno o si passa
+
+# Punto 12 -- spedizione in entrata per paese del venditore (prima fissa a
+# 2.50 EUR anche da Germania/Francia/Olanda) e costo di sistemazione per
+# difetto dichiarato (prima il difetto scontava la vendita ma non aggiungeva
+# la tintoria/sarta al costo). Valori prudenziali, da ritoccare con i costi
+# reali pagati.
+SPEDIZIONE_ITALIA_EUR = 3.50            # indicata dall'utente il 2026-09-24
+SPEDIZIONE_ESTERO_EUR = 5.00            # indicata dall'utente il 2026-09-24
+PAESI_ITALIA = {"italia", "italy", "italien", "italie"}
+COSTI_SISTEMAZIONE = (
+    # (etichetta, keyword nella descrizione del difetto, costo EUR)
+    ("tintoria/smacchiatura", ("macchi", "alone", "aloni", "stain", "fleck", "tache", "mancha", "sporc", "tintoria", "ingiallit"), 12.0),
+    ("zip/cerniera", ("zip", "cerniera", "lampo", "reißverschluss", "fermeture", "cremallera"), 10.0),
+    ("sarta (foro/scucitura/rammendo)", ("buc", "foro", "fori", "strapp", "scucit", "cucitur", "rammend", "hole", "loch", "trou", "agujero", "orlo"), 10.0),
+    ("bottoni", ("bottone", "bottoni", "button", "knopf", "bouton", "botón"), 3.0),
+    ("pilling", ("pilling", "pelucch", "palline", "bouloch"), 3.0),
+)
+COSTO_SISTEMAZIONE_MAX = 25.0
+
+# Punto 13 -- sottolinee: NIENTE tetti di prezzo (richiesto dall'utente il
+# 2026-09-24: "le sottolinee valgono meno ma non e' detto che ci sia un tetto,
+# un cappotto di sottolinea puo' valere di piu', una maglietta di meno"). Il
+# prezzo di una sottolinea deve venire da comp REALI DELLA STESSA SOTTOLINEA.
+# Questo registro serve solo a riconoscere la linea del capo e quella di ogni
+# comp dal testo, in modo deterministico:
+#   - capo di sottolinea -> valgono solo i comp il cui titolo nomina la stessa
+#     sottolinea; quelli di un'altra linea (mainline compresa, se riconoscibile)
+#     sono esclusi; quelli generici (solo il brand madre) si usano solo se
+#     mancano comp verificati, e il verdetto lo dichiara;
+#   - capo mainline -> i comp che nominano una sottolinea sono esclusi.
+# Formato: brand madre -> {nome sottolinea: (regex sul testo, affidabile_anche_su_titolo)}.
+# "affidabile_anche_su_titolo" = False per parole generiche ("weekend",
+# "studio", "example") che in un titolo non bastano a dire la linea: per quelle
+# conta solo l'etichetta letta o la linea dichiarata dal Cervello.
+SOTTOLINEE_NOTE = {
+    "missoni": {
+        "M Missoni": (r"\bm\s+missoni\b|\bm-missoni\b|\bmmissoni\b", True),
+        "Missoni Sport": (r"\bmissoni\s+sport\b", True),
+        "Missoni Mare": (r"\bmissoni\s+mare\b", True),
+        "Missoni Home": (r"\bmissoni\s+home\b", True),
+        "Missoni Kids": (r"\bmissoni\s+(?:kids|junior|bambin)", True),
+        "Example": (r"\bexample\b", False),
+    },
+    "max mara": {
+        "Weekend Max Mara": (r"\bweekend\b", False),
+        "'S Max Mara": (r"(?:^|[\s'’])s\s+max\s*mara\b", True),
+        "Max Mara Studio": (r"\bmax\s*mara\s+studio\b|\bstudio\b", False),
+        "Sportmax": (r"\bsportmax\b", True),
+        "Max Mara Leisure": (r"\bleisure\b", False),
+    },
+    "gaultier": {
+        "JEAN'S PAUL GAULTIER": (r"\bjean'?s\s+paul\s+gaultier\b", True),
+        "JPG JEAN'S": (r"\bjpg\.?\s*jean'?s\b|\bgaultier\s+jean'?s\b", True),
+        "Gaultier2": (r"\bgaultier\s*2\b|\bgaultier²", True),
+        "Junior Gaultier": (r"\bjunior\s+gaultier\b", True),
+        "Soleil": (r"\bsoleil\b", False),
+    },
+    "margiela": {"MM6": (r"\bmm6\b|\bmm\s*6\b", True)},
+    "chloe": {"See by Chloé": (r"\bsee\s+by\s+chlo[eé]\b", True)},
+    "mcqueen": {"McQ": (r"\bmcq\b", True)},
+    "yohji": {"Y-3": (r"\by-?3\b", True), "Y's": (r"\by'?s\s+(?:by|for)\b|\by's\b", False)},
+    "helmut lang": {"Helmut Lang Jeans": (r"\bhelmut\s+lang\s+jeans\b", True)},
+    "issey miyake": {
+        "Pleats Please": (r"\bpleats\s+please\b", True),
+        "Homme Plissé": (r"\bhomme\s+pliss", True),
+        "me Issey Miyake": (r"\bme\s+issey\b", True),
+        "Bao Bao": (r"\bbao\s*bao\b", True),
+        "HaaT": (r"\bhaat\b", True),
+    },
+    "moschino": {
+        "Love Moschino": (r"\blove\s+moschino\b", True),
+        "Moschino Jeans": (r"\bmoschino\s+jeans\b", True),
+        "Boutique Moschino": (r"\bboutique\s+moschino\b", True),
+        "Moschino Cheap and Chic": (r"\bcheap\s*(?:and|&)\s*chic\b", True),
+    },
+    "armani": {
+        "Emporio Armani": (r"\bemporio\s+armani\b", True),
+        "Armani Exchange": (r"\barmani\s+exchange\b|\ba\|x\b", True),
+        "Armani Jeans": (r"\barmani\s+jeans\b", True),
+        "Armani Collezioni": (r"\barmani\s+collezioni\b", True),
+    },
+    "versace": {
+        "Versace Jeans": (r"\bversace\s+jeans\b", True),
+        "Versus": (r"\bversus\b", True),
+    },
+    "sonia rykiel": {"Sonia by Sonia Rykiel": (r"\bsonia\s+by\s+sonia\b", True)},
+    "blumarine": {"Blugirl": (r"\bblugirl\b", True)},
+}
+# Alias del brand madre come puo' comparire nel campo brand/titolo.
+ALIAS_BRAND_MADRE = {
+    "jean paul gaultier": "gaultier", "jpg": "gaultier", "gaultier": "gaultier",
+    "maison margiela": "margiela", "martin margiela": "margiela", "margiela": "margiela", "mm6": "margiela",
+    "chloé": "chloe", "chloe": "chloe", "alexander mcqueen": "mcqueen", "mcqueen": "mcqueen",
+    "yohji yamamoto": "yohji", "yohji": "yohji", "y-3": "yohji",
+    "max mara": "max mara", "maxmara": "max mara", "missoni": "missoni",
+    "helmut lang": "helmut lang", "issey miyake": "issey miyake", "pleats please": "issey miyake",
+    "moschino": "moschino", "giorgio armani": "armani", "armani": "armani", "versace": "versace",
+    "sonia rykiel": "sonia rykiel", "blumarine": "blumarine",
+}
+
+# Punto 11 -- deal score calcolato, non piu' dichiarato dal modello (casi
+# reali: "Deal 9/10" con decisione NON COMPRARE).
+DEAL_SCORE_MASSIMO_PER_DECISIONE = {"NON COMPRARE": 4, "DATI INSUFFICIENTI": 3, "TRATTA": 7, "CHIEDI ALTRE FOTO": 7}
+DEAL_SCORE_MINIMO_PER_DECISIONE = {"COMPRA": 6}
 
 # COMP_DA_MEMORIA_AMMESSI: scelta esplicita dell'utente il 2026-09-19. Con
 # l'output JSON strutturato ogni prezzo comp dichiarato dal cervello e' un
@@ -645,6 +790,140 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(
 log = logging.getLogger("vinted_flip_bot")
 
 
+# ---------------------------------------------------------------------------
+# REDAZIONE SEGRETI (aggiunta il 2026-09-24): la chiave Gemini finiva in chiaro
+# nei messaggi Telegram "Valutazione non completata", perche' era passata come
+# ?key=... nell'URL e httpx.raise_for_status() include l'URL completo nel testo
+# dell'eccezione. Tre difese sovrapposte:
+#   1. le chiamate Gemini ora usano l'header x-goog-api-key (niente chiave
+#      nell'URL, quindi niente chiave in eccezioni e log httpx);
+#   2. ogni testo/caption inviato a Telegram passa da _redigi_segreti;
+#   3. un filtro di logging applica la stessa redazione a tutti i log
+#      (httpx logga a INFO l'URL di ogni richiesta, che per Telegram contiene
+#      il token del bot).
+# ---------------------------------------------------------------------------
+_NOMI_ENV_SEGRETI = (
+    "GEMINI_API_KEY", "GEMINI_API_KEYS", "SERPER_API_KEY", "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_API_HASH",
+    "TELEGRAM_SESSION_STRING", "VINTED_ACCESS_TOKEN", "VINTED_REFRESH_TOKEN",
+)
+_RE_SEGRETI = [
+    (re.compile(r"([?&](?:key|api_key|apikey|access_token|token)=)[^&\s'\"<>]+", re.IGNORECASE), r"\1***"),
+    (re.compile(r"\bbot\d{6,}:[A-Za-z0-9_-]{20,}"), "bot***"),
+    (re.compile(r"\bAIza[0-9A-Za-z_-]{20,}"), "AIza***"),
+    (re.compile(r"\bAQ\.[0-9A-Za-z_.-]{20,}"), "AQ.***"),
+    (re.compile(r"\bsk-[A-Za-z0-9_-]{20,}"), "sk-***"),
+    (re.compile(r"(Bearer\s+)[A-Za-z0-9._-]{20,}", re.IGNORECASE), r"\1***"),
+    (re.compile(r"(https?://[^:/\s]+:)[^@\s]+@"), r"\1***@"),  # password nelle URL proxy
+]
+
+
+def _valori_segreti_da_env():
+    valori = []
+    for nome in _NOMI_ENV_SEGRETI:
+        grezzo = os.environ.get(nome) or ""
+        for pezzo in grezzo.split(","):
+            pezzo = pezzo.strip()
+            if len(pezzo) >= 12:
+                valori.append(pezzo)
+    # le piu' lunghe prima, cosi' una chiave che contiene un'altra come
+    # prefisso viene sostituita per intero
+    return sorted(set(valori), key=len, reverse=True)
+
+
+_SEGRETI_LETTERALI = _valori_segreti_da_env()
+
+
+def _redigi_segreti(testo):
+    """Toglie chiavi API/token da qualunque stringa prima che esca dal bot
+    (Telegram o log). Idempotente e sicura su None/non-stringhe."""
+    if not isinstance(testo, str) or not testo:
+        return testo
+    for segreto in _SEGRETI_LETTERALI:
+        if segreto in testo:
+            testo = testo.replace(segreto, "***")
+    for regex, sostituto in _RE_SEGRETI:
+        testo = regex.sub(sostituto, testo)
+    return testo
+
+
+# ---------------------------------------------------------------------------
+# LINK DEI COMP (aggiunto il 2026-09-24): ogni fonte di comp registra qui
+# titolo -> URL dell'annuncio mentre estrae le righe "titolo — €prezzo" che
+# vede il Cervello. Dopo il verdetto, _assegna_url_ai_comp ritrova l'URL di
+# ogni comp citato e il messaggio Telegram lo mostra come link. Il dict vive
+# in una ContextVar impostata da process_listing: ogni annuncio ha il suo,
+# anche quando piu' annunci sono in lavorazione in parallelo.
+# ---------------------------------------------------------------------------
+_url_comp_ctx = contextvars.ContextVar("url_comp", default=None)
+
+
+def _registra_url_comp(titolo, url, prezzo=None):
+    registro = _url_comp_ctx.get()
+    if registro is None or not titolo or not url:
+        return
+    url = url.strip()
+    if url.startswith("/"):
+        url = "https://www.vinted.it" + url
+    if not url.startswith("http") or " " in url or ")" in url:
+        return
+    chiave = re.sub(r"[^a-z0-9àèéìòù]+", " ", str(titolo).lower()).strip()
+    if len(chiave) >= 4:
+        registro.setdefault(chiave, (url, prezzo))
+
+
+def _assegna_url_ai_comp(v):
+    """Aggiunge comp['url'] ai comp di cui la ricerca ha registrato il link.
+    Il titolo citato dal Cervello e' copiato alla lettera, ma per i risultati
+    Google puo' includere anche parte dello snippet: si accetta quindi anche
+    un match per prefisso (min 10 caratteri), preferendo il titolo registrato
+    piu' lungo. Se entrambi hanno un prezzo, deve coincidere (+-1 EUR)."""
+    registro = _url_comp_ctx.get() or {}
+    if not registro:
+        return
+    for comp in v.get("comp_candidati", []):
+        if comp.get("url") or comp.get("fonte_reale", comp.get("fonte")) == "memoria_modello":
+            continue
+        titolo = re.sub(r"[^a-z0-9àèéìòù]+", " ", str(comp.get("titolo_verbatim") or "").lower()).strip()
+        if len(titolo) < 4:
+            continue
+        migliore = None
+        for chiave, (url, prezzo) in registro.items():
+            stesso = chiave == titolo
+            prefisso = min(len(chiave), len(titolo)) >= 10 and (titolo.startswith(chiave) or chiave.startswith(titolo))
+            if not (stesso or prefisso):
+                continue
+            if prezzo is not None and comp.get("prezzo_eur") is not None:
+                try:
+                    if abs(float(prezzo) - float(comp["prezzo_eur"])) > 1.0:
+                        continue
+                except (TypeError, ValueError):
+                    pass
+            if migliore is None or stesso or len(chiave) > len(migliore[0]):
+                migliore = (chiave, url)
+                if stesso:
+                    break
+        if migliore:
+            comp["url"] = migliore[1]
+
+
+class _FiltroRedazioneLog(logging.Filter):
+    def filter(self, record):
+        try:
+            messaggio = record.getMessage()
+        except Exception:
+            return True
+        pulito = _redigi_segreti(messaggio)
+        if pulito != messaggio:
+            record.msg = pulito
+            record.args = None
+        return True
+
+
+for _handler in logging.getLogger().handlers:
+    _handler.addFilter(_FiltroRedazioneLog())
+
+
 def scegli_materiale_per_ricerca(material_value_raw):
     if not material_value_raw:
         return None
@@ -880,6 +1159,28 @@ def check_skip_pre_gemini(listing_info):
     # 2d. Titoli con stringa di ricerca residua "gilet -blanc"
     if "gilet -blanc" in titolo:
         return True, "[TITOLO CON STRINGA DI RICERCA RESIDUA] Rilevato 'gilet -blanc' nel titolo."
+
+    # 2e. Marchi del gruppo Max Mara senza valore di rivendita (aggiunto il
+    # 2026-09-24): iBlues, Marella, Pennyblack, Max&Co, Persona/Marina Rinaldi
+    # arrivano nel watch Max Mara (stesso gruppo, spesso brand Vinted "Max
+    # Mara" o titolo che li cita) e bruciavano Occhio+Cervello per un NON
+    # COMPRARE scontato -- o peggio, Max&Co valutato come "mainline". Weekend,
+    # Studio, Sportmax e 'S Max Mara NON sono qui: restano valutabili (con un
+    # prezzo dai soli comp della stessa sottolinea, vedi SOTTOLINEE_NOTE) perche' possono valere su
+    # capispalla e materiali pregiati.
+    MARCHI_GRUPPO_MAX_MARA_SENZA_VALORE = (
+        r"i\s*blues", r"marella", r"penny\s*black", r"max\s*(?:&|and|e)\s*co\.?",
+        r"persona\s+by\s+marina\s+rinaldi", r"marina\s+rinaldi",
+    )
+    e_contesto_max_mara = "max mara" in brand or "maxmara" in brand or "max mara" in titolo
+    for pattern in MARCHI_GRUPPO_MAX_MARA_SENZA_VALORE:
+        regex = re.compile(r"(?<![a-z0-9])" + pattern + r"(?![a-z0-9])")
+        trovato = regex.search(brand) or (regex.search(titolo) if e_contesto_max_mara else None)
+        if trovato:
+            return True, (
+                f"[SOTTOMARCHIO MAX MARA SENZA VALORE] '{trovato.group(0)}' e' un marchio del gruppo, "
+                "non Max Mara: valore di rivendita sotto il costo della valutazione."
+            )
 
     # 3. Regole specifiche per brand
     if "stella mccartney" in brand and "adidas" in testo_completo:
@@ -1537,6 +1838,15 @@ def calcola_scarto_occhio(o, solo_cover_photo=False, listing_info=None):
     def _norm(valore):
         return valore.strip().lower() if isinstance(valore, str) else valore
 
+    if _norm(o.get("relazione_brand")) == "brand_estraneo" and e_sottolinea_o_collab_mascherata(
+        (listing_info or {}).get("brand"), o.get("brand_letto_etichetta"),
+        (listing_info or {}).get("title"), (listing_info or {}).get("description"),
+    ):
+        # Aggiunto il 2026-09-24: "Missoni Sport" su un annuncio Missoni, o una
+        # collab "Calvin Klein x Raf Simons", non sono brand estranei. Si
+        # prosegue al Cervello, che li valuta sui comp della stessa sottolinea.
+        log.info("Occhio: '%s' reclassificato da brand estraneo a sottolinea/collab.", o.get("brand_letto_etichetta"))
+        o["relazione_brand"] = "sottolinea_stessa_maison"
     if _norm(o.get("relazione_brand")) == "brand_estraneo":
         return True, (
             "[BRAND NON CORRISPONDENTE] L'etichetta mostra un marchio diverso e non "
@@ -2107,7 +2417,7 @@ Prezzo basso = vantaggio, mai sospetto. Se "Primi articoli in vendita" è presen
 | Marni | Mainline | "Marni for H&M" / "Marni x H&M" (collab 2012, mass-market, non mainline) |
 | Helmut Lang | Era Lang 1986-2005 (archivio) | Era Link Theory dal 2006 (commerciale) |
 | Maison Margiela | Linee 1/10/0/22 | MM6 |
-| Missoni | Pattern zigzag mainline (archivio) | Missoni Sport; M Missoni — sottolinea diffusion, MAI comp Missoni mainline, tetto esplicito anche per gli abiti strutturati (vedi calibrazione sotto) |
+| Missoni | Pattern zigzag mainline (archivio) | Missoni Sport; M Missoni — sottolinea diffusion, MAI comp Missoni mainline, fascia di prezzo propria (vedi calibrazione sotto) |
 | Vivienne Westwood | Gold Label (couture, alto); Anglomania (NON è "economica" — ricercatissima, top anche basic €120-250+ usati, pezzi statement/metallici valgono di più) | Red Label / collab retailer |
 | Max Mara | Mainline | Weekend/Studio/Sportmax (salvo modello iconico o materiale pregiato) |
 | Moschino | Couture/Mainline | Love Moschino |
@@ -2118,14 +2428,14 @@ Prezzo basso = vantaggio, mai sospetto. Se "Primi articoli in vendita" è presen
 | Junya Watanabe, Undercover, Thom Browne, Alaïa, Visvim, Kapital, 45RPM, Carol Christian Poell, Haider Ackermann, The Row, Boris Bidjan Saberi, sacai, Kiko Kostadinov | Mono-linea, rischio fake storicamente basso: valuta SEMPRE a pieno prezzo | — |
 
 **JPG — due diffusion facilmente confuse, controlla il testo ESATTO dell'etichetta:**
-"JEAN'S PAUL GAULTIER" (apostrofo dopo "Jean") → tetto rivendita realistico **€30**, non stimare sopra indipendentemente da stampe/loghi. "JPG.JEAN'S" o "JPG JEAN'S" (spesso "Collection N°...", mesh/stampe Y2K) → linea diversa, nessun tetto, valuta sui comp reali. Etichetta non leggibile → non assumere quale sia, abbassa Confidenza invece di applicare il tetto a caso. Tailoring JPG mainline (giacche/cappotti) vale di più, segue regole proprie.
+"JEAN'S PAUL GAULTIER" (apostrofo dopo "Jean") → diffusion economica (fascia tipica intorno a €30): stima SOLO su comp JEAN'S PAUL GAULTIER reali, mai su comp JPG mainline. "JPG.JEAN'S" o "JPG JEAN'S" (spesso "Collection N°...", mesh/stampe Y2K) → linea diversa, valuta sui comp reali della stessa linea. Etichetta non leggibile → non assumere quale sia, abbassa Confidenza. Tailoring JPG mainline (giacche/cappotti) vale di più, segue regole proprie.
 
 **Collaborazioni con altri brand nei comp** (es. Fred Perry x Raf Simons, Y-3, See by Chloé): mai usarle come comp mainline senza dirlo. O le escludi esplicitamente dichiarandolo in Analisi, o — se il capo IN ANALISI è esso stesso quella collab — usi SOLO comp della stessa collab.
 
 # LIQUIDITÀ PER SEGMENTO (calibra Deal, giorni di vendita, messaggio)
 Archivio eclettico (Missoni, JPG, Pucci, Westwood, Mugler, Montana, Marni, Courrèges, Miu Miu): target 25-45, vendita lenta ma prezzo alto per pezzi iconici, valorizza provenienza/collezione. Quiet luxury 90s (Helmut Lang, Jil Sander, Margiela, Bottega, Max Mara): target 28-45, valorizza decade/collezione specifica, coats iconici molto più liquidi dei basic. Avantgarde (Rick Owens, Yohji, Dries, Ann Demeulemeester, Raf Simons, Loewe, Cucinelli, YSL, Chloé, Stella McCartney, Totême): community insider, alta disponibilità a premium con provenienza documentata. Giapponese/artigianale (Visvim, Kapital, CCP, Haider, The Row, Alaïa, BBS, Sacai, Kiko, Junya, Thom Browne, McQueen, Undercover): community verticale molto informata, taglie piccole 46-48 IT/S-M più liquide.
 
-**M MISSONI — CALIBRAZIONE SPECIFICA (sovrastima ricorrente in produzione), segnalata dall'utente il 2026-09-21.** M Missoni è la sottolinea diffusion di Missoni, non l'archivio zigzag mainline — condivide il nome nei titoli ma è una fascia di prezzo strutturalmente diversa, esattamente come MM6/Margiela o See by Chloé/Chloé. La ricerca comp confonde spesso le due etichette (annunci "Missoni" generici che sono in realtà M Missoni, o viceversa), gonfiando la stima se non correggi esplicitamente: MAI usare un comp Missoni mainline (pattern zigzag pieno, archivio) per stimare un capo M Missoni, in nessun caso. Tetto di rivendita realistico per M Missoni: **maglieria/basics (t-shirt, maglioni semplici, accessori piccoli) €25-45**; **abiti/capispalla strutturati con pattern zigzag riconoscibile €50-90** — resta comunque una FRAZIONE del corrispondente Missoni mainline, mai ancorare alla fascia alta senza un comp M Missoni concordante reale (non un comp Missoni mainline scambiato per tale). Se il tuo prezzo finale per un capo M Missoni supera €90, giustifica esplicitamente in Analisi perché è un'eccezione (pezzo iconico documentato, collezione rara), non limitarti a citare un comp che potrebbe essere mainline mal classificato.
+**M MISSONI — CALIBRAZIONE SPECIFICA (sovrastima ricorrente in produzione), segnalata dall'utente il 2026-09-21.** M Missoni è la sottolinea diffusion di Missoni, non l'archivio zigzag mainline — condivide il nome nei titoli ma è una fascia di prezzo strutturalmente diversa, esattamente come MM6/Margiela o See by Chloé/Chloé. La ricerca comp confonde spesso le due etichette (annunci "Missoni" generici che sono in realtà M Missoni, o viceversa), gonfiando la stima se non correggi esplicitamente: MAI usare un comp Missoni mainline (pattern zigzag pieno, archivio) per stimare un capo M Missoni, in nessun caso. Fasce tipiche osservate per M Missoni (orientative, NON tetti: conta il comp M Missoni reale, un capo eccezionale puo' valere di piu'): **maglieria/basics (t-shirt, maglioni semplici, accessori piccoli) €25-45**; **abiti/capispalla strutturati con pattern zigzag riconoscibile €50-90** — resta comunque una FRAZIONE del corrispondente Missoni mainline, mai ancorare alla fascia alta senza un comp M Missoni concordante reale (non un comp Missoni mainline scambiato per tale). Se il tuo prezzo finale per un capo M Missoni supera €90, giustifica esplicitamente in Analisi perché è un'eccezione (pezzo iconico documentato, collezione rara), non limitarti a citare un comp che potrebbe essere mainline mal classificato.
 
 **LORO PIANA MAGLIERIA (maglioni, cardigan, pullover, girocolli, dolcevita) — CALIBRAZIONE SPECIFICA, segnalata dall'utente il 2026-09-21 con dati reali di vendita.** Questo segmento ha un bias di sovrastima ricorrente in produzione: comp ASK trattati come prezzo di vendita realistico su una categoria dove il mercato reale è molto più debole di quanto gli ASK suggeriscano. Dato reale dell'utente: un proprio maglione Loro Piana 100% cashmere, condizioni ottime, resta invenduto a €200 da tempo. Se il capo cashmere top di gamma dell'utente non si vende a €200, un capo generico non iconico (mainline base, non archivio/collezione documentata) vale strutturalmente meno. Target realistico per maglieria Loro Piana USATA, non iconica: **cashmere 100% €90-160**, **lana/misti (non cashmere) €60-110** — mai ancorare la stima alla fascia alta di questi range senza un motivo esplicito (collezione rara, condizioni come-nuovo documentate, più comp concordanti). Un difetto anche lieve (scucitura, pilling, alone) spinge verso il fondo del range o sotto, non basta lo sconto standard 20-30% dell'ANCORAGGIO PREZZI applicato meccanicamente — sii ESPLICITAMENTE più conservativo qui che sugli altri brand quiet-luxury. Se il tuo prezzo finale per un capo di maglieria Loro Piana supera €160, giustifica in Analisi perché questo pezzo è un'eccezione al range, non limitarti a citare il comp scontato.
 
@@ -2169,7 +2479,7 @@ Restituisci ESCLUSIVAMENTE un oggetto JSON conforme allo schema fornito. Nessun 
 # COME COSTRUIRE prezzo_target_vendita_eur
 1. Popola `comp_candidati` con OGNI prezzo comp che hai davanti, uno per oggetto, con il prezzo esatto e il titolo copiato alla lettera. Marca `escluso: true` (con motivo) quelli fuori categoria, di sottolinea sbagliata, o palesemente fuori scala. Non riassumere, non fare medie a mente: elencali.
 2. Ogni comp Vinted e' un prezzo **ASK** (annuncio attivo, spesso sovrastimato), mai un venduto confermato. Scegli il comp di riferimento tra quelli non esclusi e applica uno sconto prudenziale tra il 20% e il 30% (`sconto_ask_applicato_pct`).
-3. `prezzo_target_vendita_eur` non puo' superare il comp di riferimento gia' scontato, ne' un eventuale tetto di linea (`tetto_prezzo_linea_eur`). Il sistema applica comunque entrambi i limiti: se li superi, la tua stima viene abbassata d'ufficio, quindi tanto vale calcolarla giusta.
+3. `prezzo_target_vendita_eur` non puo' superare il comp di riferimento gia' scontato. Non esistono tetti di linea (`tetto_prezzo_linea_eur` lascialo null): il valore di una sottolinea deve venire da comp della STESSA sottolinea. Con almeno 2 comp validi il prezzo lo calcola il sistema dai comp, quindi la cosa piu' importante e' marcare correttamente `stessa_linea` ed `escluso`.
 4. Materiale non confermato (`materiale_confermato: false`, vedi sezione MATERIALE per cosa conta come "noto") -> resta prudente, il sistema comunque abbassa la stima al 75* percentile dei comp validi se la superi.
 5. Meno di 2 comp validi dopo le esclusioni -> resta sulla fascia bassa e dichiaralo in `note_analista`, mai una stima alta appoggiata a un solo comp isolato.
 
@@ -2190,7 +2500,7 @@ Se pensi che possa servire una trattativa (margine risicato al prezzo pieno, anc
 
 # PRIMA DI CHIUDERE IL JSON -- verifica
 1. Ogni prezzo in `comp_candidati` e' copiato alla lettera dai dati, o marcato `memoria_modello`?
-2. `prezzo_target_vendita_eur` rispetta il comp di riferimento scontato e l'eventuale tetto di linea?
+2. `prezzo_target_vendita_eur` rispetta il comp di riferimento scontato, e ogni comp di un'altra linea (mainline o altra sottolinea) e' marcato `stessa_linea: false`?
 3. Il materiale e' davvero ignoto (nessuna menzione da nessuna parte) prima di mettere `materiale_confermato: false`? Se titolo/descrizione/etichetta lo dichiarano, e' `true`.
 4. C'e' un difetto degno di nota sul capo? Se si', `difetto_significativo: true` con `sconto_difetto_pct` proporzionato e `descrizione_difetto` compilata -- e NON gia' scontato a mano dentro `prezzo_target_vendita_eur` (verrebbe scontato due volte). Se il difetto compromette l'uso o la rivendibilita' (buco aperto, strappo, tessuto lacerato, cerniera rotta), aggiungi `difetto_strutturale: true` e valuta `gravita_difetto_strutturale`: SOLO 'grave' porta il verdetto a NON COMPRARE da solo -- 'lieve' (difetto piccolo e localizzato, es. un foro isolato su una manica) e 'moderata' restano un capo normalmente valutabile, scontato tramite `sconto_difetto_pct` come ogni altro difetto. Non confondere "compromette la rivendibilita'" con "e' invendibile": un piccolo foro dichiarato in foto non rende automaticamente invendibile un pezzo d'archivio.
 5. `legit_motivo_specifico` e' concreto e descrive una discrepanza reale?
@@ -2224,6 +2534,7 @@ def _spezza_per_telegram(text, max_len=3500):
 
 async def telegram_send_message(chat_id, text, disable_notification=False):
     MAX_LEN = 3500
+    text = _redigi_segreti(text)
     for chunk in _spezza_per_telegram(text, MAX_LEN):
         resp = await _client_telegram.post(
             f"{TELEGRAM_API}/sendMessage",
@@ -2247,7 +2558,7 @@ async def telegram_send_photo(chat_id, photo_bytes, caption=None, disable_notifi
     files = {"photo": ("photo.jpg", photo_bytes)}
     data = {"chat_id": chat_id, "disable_notification": disable_notification}
     if caption:
-        data["caption"] = caption[:1024]
+        data["caption"] = _redigi_segreti(caption)[:1024]
     await _client_telegram.post(f"{TELEGRAM_API}/sendPhoto", data=data, files=files, timeout=30)
 
 
@@ -2261,7 +2572,7 @@ async def telegram_send_media_group(chat_id, photos_bytes_list, caption=None, di
         files[key] = (f"photo{i}.jpg", photo_bytes, "image/jpeg")
         item = {"type": "photo", "media": f"attach://{key}"}
         if i == 0 and caption:
-            item["caption"] = caption[:1024]
+            item["caption"] = _redigi_segreti(caption)[:1024]
         media.append(item)
     await _client_telegram.post(
         f"{TELEGRAM_API}/sendMediaGroup",
@@ -2285,7 +2596,7 @@ async def telegram_send_with_buttons(chat_id, text, url_annuncio, item_id=None, 
     abbastanza lungo. Ora usa lo stesso chunking di telegram_send_message,
     con i bottoni spostati sull'ULTIMO chunk (dove servono davvero: aprire
     l'annuncio/scrivere al venditore dopo aver letto tutto)."""
-    chunks = _spezza_per_telegram(text, 3500)
+    chunks = _spezza_per_telegram(_redigi_segreti(text), 3500)
 
     keyboard = {"inline_keyboard": [[
         {"text": "🔗 Apri su Vinted", "url": url_annuncio},
@@ -3528,7 +3839,9 @@ async def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, groundi
             # un errore, 90s per tentativo x piu' tentativi x piu' round del
             # Cervello e' comunque troppo. 30s resta ampio per foto+prompt.
             key_usata = _gemini_key_attuale()
-            resp = await _client_generico.post(api_url, params={"key": key_usata}, json=payload, timeout=30)
+            # Chiave nell'header, non nell'URL: vedi _redigi_segreti.
+            resp = await _client_generico.post(
+                api_url, headers={"x-goog-api-key": key_usata}, json=payload, timeout=30)
             if not resp.is_success:
                 log.warning("Gemini HTTP %d: %s", resp.status_code, resp.text[:500])
             if resp.is_success:
@@ -3682,6 +3995,7 @@ async def cerca_serper_mirata(query):
             if _riga_serper_e_rumore(titolo, snippet):
                 scartate += 1
                 continue
+            _registra_url_comp(titolo, r.get("link"))
             lines.append(f"- {titolo}: {snippet}")
     if scartate:
         log.info("cerca_serper_mirata: scartate %d righe di rumore (snippet vuoto/placeholder o valuta non comparabile) per query '%s'.", scartate, query)
@@ -3819,8 +4133,8 @@ CERVELLO_RESPONSE_SCHEMA = {
             "type": "NUMBER",
             "nullable": True,
             "description": (
-                "Tetto di rivendita imposto dalla linea quando la tabella ne prevede uno "
-                "(es. 30 per JEAN'S PAUL GAULTIER). null se nessun tetto si applica."
+                "NON PIU' USATO dal sistema (2026-09-24): lascia sempre null. Il valore "
+                "di una linea si ricava dai comp della stessa linea."
             ),
         },
 
@@ -3926,7 +4240,7 @@ CERVELLO_RESPONSE_SCHEMA = {
             "description": (
                 "Prezzo LORDO di listing previsto. NON calcolare margine, ROI, incasso o "
                 "costo d'acquisto: li calcola il sistema. Non puo' superare il comp di "
-                "riferimento gia' scontato, ne' tetto_prezzo_linea_eur."
+                "riferimento gia' scontato."
             ),
         },
         # --- difetto del capo (NON il materiale, NON lo sconto ASK dei comp):
@@ -4286,7 +4600,7 @@ async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca
                 # 2026-09-22, stesso motivo di chiama_gemini).
                 key_usata = _gemini_key_attuale()
                 resp = await _client_generico.post(
-                    api_url, params={"key": key_usata}, json=payload, timeout=30)
+                    api_url, headers={"x-goog-api-key": key_usata}, json=payload, timeout=30)
                 if not resp.is_success:
                     log.warning("Gemini (cervello) HTTP %d: %s", resp.status_code, resp.text[:500])
                     if _gemini_e_errore_quota_giornaliera(resp.status_code, resp.text):
@@ -5037,6 +5351,9 @@ def _estrai_articoli_vinted(content, max_articoli=15):
         if chiave in visti:
             continue
         visti.add(chiave)
+        m_url = re.search(r"\((https?://[^)\s]*vinted\.[a-z.]+/items/[^)\s]+|/items/\d+[^)\s]*)\)", riga_dec)
+        if m_url:
+            _registra_url_comp(titolo, m_url.group(1), prezzo)
         righe_pulite.append(f"- {titolo} — €{prezzo}")
         if len(righe_pulite) >= max_articoli:
             break
@@ -5602,6 +5919,22 @@ _RE_ALT_PRODOTTO_VINTED = re.compile(
 )
 
 
+def _url_articolo_da_html_intorno(html_content, posizione):
+    """URL dell'annuncio a cui appartiene l'immagine con l'alt trovato in
+    `posizione`. Prima l'ID nel data-testid del tag <img> stesso
+    ("product-item-id-123--image--img"), poi il link /items/ piu' vicino
+    PRIMA dell'immagine nello stesso riquadro prodotto."""
+    inizio_tag = html_content.rfind("<img", 0, posizione)
+    fine_tag = html_content.find(">", posizione)
+    if inizio_tag != -1 and fine_tag != -1:
+        m_id = re.search(r"product-item-id-(\d+)", html_content[inizio_tag:fine_tag])
+        if m_id:
+            return f"https://www.vinted.it/items/{m_id.group(1)}"
+    finestra = html_content[max(0, posizione - 1500):posizione]
+    link = re.findall(r'href="((?:https?://www\.vinted\.[a-z.]+)?/items/\d+[^"]*)"', finestra)
+    return html.unescape(link[-1]) if link else None
+
+
 def _estrai_articoli_da_alt_vinted(html_content, max_articoli=15):
     """Estrae righe 'titolo — prezzo' dagli attributi alt= delle immagini
     prodotto nell'HTML grezzo di una pagina catalogo Vinted (vedi
@@ -5619,6 +5952,9 @@ def _estrai_articoli_da_alt_vinted(html_content, max_articoli=15):
         if chiave in visti:
             continue
         visti.add(chiave)
+        url_articolo = _url_articolo_da_html_intorno(html_content, m.start())
+        if url_articolo:
+            _registra_url_comp(titolo, url_articolo, prezzo)
         righe.append(f"- {titolo} — €{prezzo}")
         if len(righe) >= max_articoli:
             break
@@ -6756,21 +7092,215 @@ def _filtra_outlier(prezzi):
     return tenuti, scartati
 
 
-def calcola_verdetto(v, prezzo_prodotto):
+def _mese_corrente_roma():
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo("Europe/Rome")).month
+    except Exception:
+        return datetime.now(timezone.utc).month
+
+
+def calcola_stagionalita(categoria, titolo="", mese=None):
+    """Ritorna (fuori_stagione: bool, mese_pubblicazione: str|None) calcolati
+    dal mese CORRENTE e dalla categoria, invece che dichiarati dal modello."""
+    mese = mese or _mese_corrente_roma()
+    titolo_l = f" {(titolo or '').lower()} "
+    e_estivo = categoria in CATEGORIE_ESTIVE or any(
+        re.search(r"\b" + re.escape(k.strip()) + r"\b", titolo_l) for k in KEYWORD_ESTIVE_TITOLO
+    )
+    e_invernale = categoria in CATEGORIE_INVERNALI and not e_estivo
+    if e_invernale and mese in MESI_FUORI_STAGIONE_INVERNALI:
+        return True, "settembre"
+    if e_estivo and mese in MESI_FUORI_STAGIONE_ESTIVI:
+        return True, "marzo/aprile"
+    return False, None
+
+
+def spedizione_in_entrata(paese_venditore):
+    """Spedizione in entrata: Italia 3.50 EUR, estero 5.00 EUR (valori
+    dell'utente, 2026-09-24). Paese sconosciuto -> tariffa Italia."""
+    paese = (paese_venditore or "").strip().lower()
+    if not paese or paese in PAESI_ITALIA:
+        return SPEDIZIONE_ITALIA_EUR, ("Italia" if paese else "paese ignoto, tariffa IT")
+    return SPEDIZIONE_ESTERO_EUR, paese_venditore
+
+
+def costo_sistemazione(v):
+    """Costo stimato per sistemare i difetti dichiarati (tintoria, sarta,
+    zip...). Solo se il Cervello ha segnalato un difetto significativo; le
+    keyword si cercano nella sua descrizione del difetto, non nella
+    descrizione del venditore (che spesso dice 'nessuna macchia')."""
+    if not v.get("difetto_significativo"):
+        return 0.0, []
+    testo = (v.get("descrizione_difetto") or "").lower()
+    if not testo:
+        return 0.0, []
+    totale = 0.0
+    voci = []
+    for etichetta, keyword, costo in COSTI_SISTEMAZIONE:
+        if any(k in testo for k in keyword):
+            totale += costo
+            voci.append(etichetta)
+    return min(totale, COSTO_SISTEMAZIONE_MAX), voci
+
+
+def _brand_madre_in_testo(brand_madre, testo):
+    return bool(re.search(r"\b" + re.escape(brand_madre) + r"\b", testo or ""))
+
+
+def _brand_madre_da_testo(*testi):
+    testo = " ".join(str(t or "") for t in testi).lower()
+    for alias in sorted(ALIAS_BRAND_MADRE, key=len, reverse=True):
+        if re.search(r"(?<![a-z0-9])" + re.escape(alias) + r"(?![a-z0-9])", testo):
+            return ALIAS_BRAND_MADRE[alias]
+    return None
+
+
+def _sottolinee_nel_testo(brand_madre, testo, solo_affidabili_su_titolo=False):
+    trovate = []
+    for nome, (regex, affidabile_su_titolo) in SOTTOLINEE_NOTE.get(brand_madre, {}).items():
+        if solo_affidabili_su_titolo and not affidabile_su_titolo:
+            continue
+        if re.search(regex, (testo or "").lower()):
+            trovate.append(nome)
+    return trovate
+
+
+def rileva_linea_capo(v, listing_info=None):
+    """Ritorna (brand_madre, sottolinea) del capo in analisi.
+    sottolinea = None -> mainline (o linea non determinabile) di un brand con
+    sottolinee note. brand_madre = None -> brand senza sottolinee registrate.
+    L'etichetta letta e la linea dichiarata dal Cervello pesano piu' del
+    titolo; sul titolo contano solo i nomi di sottolinea non ambigui."""
+    li = listing_info or {}
+    brand_madre = _brand_madre_da_testo(
+        li.get("brand"), v.get("brand_dichiarato_annuncio"), v.get("brand_reale_etichetta"), li.get("title"),
+    )
+    if not brand_madre:
+        return None, None
+    testo_etichetta = f"{v.get('brand_reale_etichetta') or ''} {v.get('linea_o_era_rilevata') or ''}"
+    trovate = _sottolinee_nel_testo(brand_madre, testo_etichetta)
+    if not trovate:
+        trovate = _sottolinee_nel_testo(brand_madre, li.get("title"), solo_affidabili_su_titolo=True)
+    return brand_madre, (trovate[0] if trovate else None)
+
+
+def classifica_linea_comp(titolo_comp, brand_madre, sottolinea_capo):
+    """'stessa' | 'altra' | 'generico' rispetto alla linea del capo."""
+    # sui comp si usano tutti i pattern: in una ricerca gia' filtrata sul
+    # brand, "Weekend" o "Studio" nel titolo indicano quasi sempre la linea
+    linee_comp = _sottolinee_nel_testo(brand_madre, titolo_comp)
+    if sottolinea_capo:
+        # per le sottolinee dal nome generico ("Weekend") il titolo del comp
+        # che la nomina accanto al brand va bene lo stesso
+        regex_capo = SOTTOLINEE_NOTE[brand_madre][sottolinea_capo][0]
+        if sottolinea_capo in linee_comp or re.search(regex_capo, (titolo_comp or "").lower()):
+            return "stessa"
+        return "altra" if linee_comp else "generico"
+    return "altra" if linee_comp else "stessa"
+
+
+def e_sottolinea_o_collab_mascherata(brand_dichiarato, brand_etichetta, titolo="", descrizione=""):
+    """True quando un 'brand estraneo' e' in realta' una sottolinea o una
+    collab dello stesso brand (casi reali: 'Missoni Sport' su un annuncio
+    Missoni scartato come brand estraneo; tee Calvin Klein x Raf Simons
+    scartata mentre la felpa della stessa collab era COMPRA).
+    - sottolinea: il nome del brand dichiarato compare come PAROLA INTERA
+      nell'etichetta (Missoni -> 'Missoni Sport'), ma non come sottostringa
+      (Kapital -> 'Kapitales' resta estraneo);
+    - collab: titolo o descrizione nominano entrambi i brand con un
+      marcatore di collaborazione (x, ×, for, collab)."""
+    bd = (brand_dichiarato or "").strip().lower()
+    be = (brand_etichetta or "").strip().lower()
+    if not bd or not be or bd in ("altro", "other", "none", "null"):
+        return False
+    if re.search(r"\b" + re.escape(bd) + r"\b", be):
+        return True
+    testo = f"{titolo or ''} {descrizione or ''}".lower()
+    parola_etichetta = be.split()[0] if be.split() else ""
+    if len(parola_etichetta) >= 3 and bd in testo and re.search(r"\b" + re.escape(parola_etichetta) + r"\b", testo):
+        if re.search(r"\s(?:x|×|for|collab|collaboration)\s", testo):
+            return True
+    return False
+
+
+def _costo_pieno(prezzo, spedizione, sistemazione):
+    return prezzo * (1 + COMMISSIONE_PROTEZIONE_PCT) + COMMISSIONE_PROTEZIONE_FISSA + spedizione + sistemazione
+
+
+def _supera_gate(margine, roi, roi_standard, roi_ridotto):
+    return (
+        (margine >= SOGLIA_MARGINE_COMPRA and roi >= roi_standard)
+        or (margine >= SOGLIA_MARGINE_COMPRA_ALTA and roi >= roi_ridotto)
+    )
+
+
+def prezzo_massimo_per_gate(incasso, spedizione, sistemazione, roi_standard, roi_ridotto):
+    """Prezzo PRODOTTO massimo a cui l'affare supera ancora il gate (una
+    delle due vie). Inverso esatto di _costo_pieno + _supera_gate:
+      margine >= M  e  roi >= R   <=>   costo <= min(incasso - M, incasso / (1 + R/100))
+    Ritorna None se nemmeno a prezzo zero l'affare passerebbe."""
+    def _costo_max(m_min, r_min):
+        return min(incasso - m_min, incasso / (1 + r_min / 100.0))
+    costo_max = max(_costo_max(SOGLIA_MARGINE_COMPRA, roi_standard),
+                    _costo_max(SOGLIA_MARGINE_COMPRA_ALTA, roi_ridotto))
+    prezzo = (costo_max - COMMISSIONE_PROTEZIONE_FISSA - spedizione - sistemazione) / (1 + COMMISSIONE_PROTEZIONE_PCT)
+    if prezzo <= 0:
+        return None
+    return math.floor(prezzo * 2) / 2  # arrotondato per difetto al mezzo euro
+
+
+def _interpola(x, punti):
+    """Interpolazione lineare a tratti su punti [(x, y), ...] ordinati."""
+    if x <= punti[0][0]:
+        return punti[0][1]
+    for (x0, y0), (x1, y1) in zip(punti, punti[1:]):
+        if x <= x1:
+            return y0 + (y1 - y0) * (x - x0) / (x1 - x0)
+    return punti[-1][1]
+
+
+def calcola_deal_score(decisione, roi, margine, v, fuori_stagione, solo_comp_memoria):
+    """Deal score 1-10 calcolato dai numeri, coerente con la decisione per
+    costruzione (niente piu' 'Deal 9/10' su un NON COMPRARE)."""
+    if roi is None or margine is None:
+        return 1
+    punteggio = _interpola(roi, [(0, 1), (50, 3), (100, 5), (150, 6), (200, 7), (300, 8), (500, 9)])
+    if margine >= 50:
+        punteggio += 0.5
+    if margine >= 100:
+        punteggio += 0.5
+    penalita = {"alto": 1, "molto_alto": 2}.get(v.get("rischio_fake"), 0)
+    penalita += 1 if v.get("confidenza") == "bassa" else 0
+    penalita += 1 if solo_comp_memoria else 0
+    penalita += 1 if fuori_stagione else 0
+    penalita += 1 if v.get("fascia_taglia") == "estrema" else 0
+    punteggio = round(punteggio - penalita)
+    punteggio = min(punteggio, DEAL_SCORE_MASSIMO_PER_DECISIONE.get(decisione, 10))
+    punteggio = max(punteggio, DEAL_SCORE_MINIMO_PER_DECISIONE.get(decisione, 1))
+    return int(min(10, max(1, punteggio)))
+
+
+def calcola_verdetto(v, prezzo_prodotto, listing_info=None):
     """Trasforma i dati del cervello nel verdetto finale. Unico punto del
     bot dove si decide COMPRA/TRATTA/NON COMPRARE e dove si calcolano
-    margine, ROI e obiettivo di trattativa."""
+    margine, ROI e obiettivo di trattativa.
+
+    Revisione del 2026-09-24 (vedi blocco costanti "REVISIONE VERDETTI"):
+    target deterministico dai comp, stagionalita' e gate calcolati qui,
+    offerta = prezzo massimo che supera il gate, deal score calcolato,
+    spedizione per paese e costi di sistemazione nel costo d'acquisto."""
+    li = listing_info or {}
     limiti_applicati = []
-    # Conta SOLO gli step che riducono davvero il target (limite 1-4 qui
-    # sotto), non le note puramente informative aggiunte piu' avanti
-    # (vendita lampo, furto istantaneo, taglia estrema, difetto strutturale
-    # lieve/moderata non bloccante). Usato in render_messaggio_verdetto per
-    # decidere se mostrare il riepilogo "Stima del modello X ridotta a Y":
-    # con un solo step il riepilogo e' un doppione esatto della singola riga
-    # di dettaglio qui sotto (bug segnalato dall'utente il 2026-09-23 --
-    # sembrava un doppio sconto quando era lo stesso identico step mostrato
-    # due volte).
+    # Conta SOLO gli step che riducono davvero il target, per il riepilogo
+    # "Stima del modello X ridotta a Y" in render_messaggio_verdetto.
     riduzioni_prezzo_target = 0
+
+    categoria = v.get("categoria_capo")
+    fuori_stagione, mese_pubblicazione = calcola_stagionalita(categoria, li.get("title") or "")
+    moltiplicatore_roi = MOLTIPLICATORE_ROI_FUORI_STAGIONE if fuori_stagione else 1.0
+    roi_standard = SOGLIA_ROI_COMPRA * moltiplicatore_roi
+    roi_ridotto = SOGLIA_ROI_COMPRA_RIDOTTA * moltiplicatore_roi
 
     if prezzo_prodotto is None or prezzo_prodotto <= 0:
         # Senza il prezzo dell'annuncio non esiste nessun calcolo economico
@@ -6783,104 +7313,117 @@ def calcola_verdetto(v, prezzo_prodotto):
             "acquisto_pieno": None, "incasso": None, "margine": None, "roi": None,
             "prezzo_target": v.get("prezzo_target_vendita_eur"),
             "vendita_attesa": None, "minimo_accettabile_rivendita": None, "prezzo_da_listare": None,
+            "tratta_prezzo_prodotto": None, "offerta_apertura": None,
+            "sottolinea_capo": None, "n_comp_stessa_linea": None, "linea_non_verificata": False,
             "tratta_costo": None, "tratta_margine": None, "tratta_roi": None,
             "comp_usati": [], "comp_scartati_outlier": [],
             "limiti_applicati": ["prezzo dell'annuncio non disponibile: nessun calcolo economico eseguito"],
+            "deal_score": 1, "fuori_stagione": fuori_stagione, "mese_pubblicazione": mese_pubblicazione,
+            "spedizione_entrata": None, "costo_sistemazione": 0.0,
         }
 
-    acquisto_pieno = (
-        prezzo_prodotto * (1 + COMMISSIONE_PROTEZIONE_PCT)
-        + COMMISSIONE_PROTEZIONE_FISSA
-        + SPEDIZIONE_STIMATA_EUR
-    )
+    # --- costi della gamba d'acquisto (punto 12)
+    spedizione, descr_spedizione = spedizione_in_entrata(li.get("seller_country"))
+    sistemazione, voci_sistemazione = costo_sistemazione(v)
+    if spedizione != SPEDIZIONE_ITALIA_EUR:
+        limiti_applicati.append(f"spedizione in entrata da {descr_spedizione}: €{spedizione:.2f}")
+    if sistemazione > 0:
+        limiti_applicati.append(
+            f"costo di sistemazione stimato €{sistemazione:.2f} ({', '.join(voci_sistemazione)}) aggiunto al costo d'acquisto"
+        )
+    acquisto_pieno = _costo_pieno(prezzo_prodotto, spedizione, sistemazione)
 
-    target = v["prezzo_target_vendita_eur"]
-    target_dichiarato = target
+    target_dichiarato = v["prezzo_target_vendita_eur"]
+    target = target_dichiarato
+    fattore_sconto = 1 - SCONTO_ASK_FISSO_PCT / 100.0
 
-    # --- limite 1: tetto di linea (es. JEAN'S PAUL GAULTIER)
-    tetto = v.get("tetto_prezzo_linea_eur")
-    if tetto and target > tetto:
-        target = tetto
-        limiti_applicati.append(f"tetto di linea €{tetto:.2f} ({v.get('linea_o_era_rilevata')})")
-        riduzioni_prezzo_target += 1
-
-    # --- limite 2: ancoraggio al comp di riferimento, gia' scontato
-    # (era verifica_ancoraggio_prezzo_comp, 140 righe di regex sul testo)
-    fattore_sconto = 1 - v["sconto_ask_applicato_pct"] / 100.0
-    riferimento = v.get("comp_riferimento_eur")
-    if riferimento and riferimento > 0:
-        massimo_consentito = riferimento * fattore_sconto
-        if target > massimo_consentito:
-            limiti_applicati.append(
-                f"ancoraggio al comp di riferimento €{riferimento:.2f} "
-                f"scontato {v['sconto_ask_applicato_pct']:.0f}% = €{massimo_consentito:.2f}"
-            )
-            target = massimo_consentito
-            riduzioni_prezzo_target += 1
-
-    # --- limite 3: filtro outlier sui comp utilizzabili
+    # --- comp utilizzabili: se ce ne sono abbastanza di REALI, quelli da
+    # memoria del modello non entrano nel calcolo (punto 4)
     utilizzabili = _comp_utilizzabili(v)
-    prezzi = sorted(c["prezzo_eur"] for c in utilizzabili)
-    prezzi_tenuti, prezzi_scartati = _filtra_outlier(prezzi)
 
-    if prezzi_tenuti:
-        if v.get("materiale_confermato"):
-            # Materiale noto: il tetto e' il comp piu' alto rimasto dopo il
-            # filtro, scontato.
-            massimo_consentito = max(prezzi_tenuti) * fattore_sconto
-            descrizione_limite = f"comp piu' alto €{max(prezzi_tenuti):.2f}"
-        else:
-            # Materiale non confermato: tetto sul 75* percentile dei comp
-            # validi, non piu' sulla mediana. Storia della regola: prima
-            # usava il comp piu' economico (troppo punitiva: bastava che il
-            # cervello marcasse materiale_confermato a false per prudenza
-            # eccessiva -- anche con titolo/etichetta che lo dichiaravano
-            # gia' esplicitamente -- per far crollare la stima su un singolo
-            # comp isolato in fondo alla forchetta). Corretta alla mediana,
-            # che pero' si e' rivelata a sua volta troppo severa: tagliava
-            # fuori meta' dei comp e, sommata allo sconto ASK del 25-30%
-            # gia' applicato altrove, portava spesso un affare con margine
-            # sano vicino al pareggio (caso reale: gonna Marni, mediana
-            # comp €59 -> tetto €44.25, quando la stima ragionata del
-            # cervello era €55 e i comp arrivavano fino a €100).
-            # Il 75* percentile resta piu' prudente del "comp piu' caro"
-            # riservato al materiale confermato (non si fida del singolo
-            # comp piu' alto, spesso un outlier residuo), ma non scarta piu'
-            # a priori la meta' superiore della forchetta: lascia passare la
-            # stima del cervello quando e' gia' in linea con il grosso dei
-            # comp, e interviene solo quando la supera davvero.
-            percentile_75 = _percentile(prezzi_tenuti, 75)
-            massimo_consentito = percentile_75 * fattore_sconto
-            descrizione_limite = f"materiale non confermato, 75* percentile comp €{percentile_75:.2f}"
-        if target > massimo_consentito:
+    # --- linea del capo vs linea dei comp (punto 13, senza tetti): il prezzo
+    # di una sottolinea deve venire da comp della stessa sottolinea
+    brand_madre, sottolinea_capo = rileva_linea_capo(v, li)
+    linea_non_verificata = False
+    n_comp_stessa_linea = None
+    if brand_madre:
+        per_linea = {"stessa": [], "altra": [], "generico": []}
+        for comp in utilizzabili:
+            per_linea[classifica_linea_comp(comp.get("titolo_verbatim"), brand_madre, sottolinea_capo)].append(comp)
+        if per_linea["altra"]:
             limiti_applicati.append(
-                f"{descrizione_limite} scontato {v['sconto_ask_applicato_pct']:.0f}% = €{massimo_consentito:.2f}"
+                f"esclusi {len(per_linea['altra'])} comp di un'altra linea "
+                f"({'mainline o altra sottolinea' if sottolinea_capo else 'sottolinea'}): "
+                + ", ".join(f"€{c['prezzo_eur']:.2f}" for c in per_linea["altra"][:5])
             )
-            target = massimo_consentito
-            riduzioni_prezzo_target += 1
+        if sottolinea_capo:
+            n_comp_stessa_linea = len(per_linea["stessa"])
+            if len(per_linea["stessa"]) >= MIN_COMP_TARGET_DETERMINISTICO:
+                if per_linea["generico"]:
+                    limiti_applicati.append(
+                        f"capo {sottolinea_capo}: usati solo i {len(per_linea['stessa'])} comp che nominano "
+                        f"{sottolinea_capo}, ignorati {len(per_linea['generico'])} comp generici del brand"
+                    )
+                utilizzabili = per_linea["stessa"]
+            else:
+                utilizzabili = per_linea["stessa"] + per_linea["generico"]
+                linea_non_verificata = bool(utilizzabili)
+        else:
+            utilizzabili = per_linea["stessa"]
 
-    # --- limite 4: sconto per difetto dichiarato sul capo. Si applica DOPO
-    # tetto di linea/ancoraggio/materiale perche' riguarda le condizioni di
-    # QUESTO esemplare, non il valore di mercato del modello in generale --
-    # un difetto va scontato sul prezzo gia' corretto per tutto il resto,
-    # non al posto degli altri limiti. Prima non esisteva nessun controllo
-    # numerico qui: un difetto descritto a parole in note_analista poteva
-    # non riflettersi affatto nel prezzo finale.
+    comp_reali_utilizzabili = [c for c in utilizzabili if c.get("fonte_reale", c.get("fonte")) != "memoria_modello"]
+    base_comp = comp_reali_utilizzabili if len(comp_reali_utilizzabili) >= MIN_COMP_TARGET_DETERMINISTICO else utilizzabili
+    prezzi = sorted(c["prezzo_eur"] for c in base_comp)
+    prezzi_tenuti, prezzi_scartati = _filtra_outlier(prezzi)
+    solo_comp_memoria = bool(prezzi_tenuti) and not comp_reali_utilizzabili
+
+    if len(prezzi_tenuti) >= MIN_COMP_TARGET_DETERMINISTICO:
+        # --- target deterministico (punto 4): stesso insieme di comp ->
+        # stesso prezzo, a prescindere dalla stima libera del modello
+        percentile = _percentile(prezzi_tenuti, PERCENTILE_TARGET_DETERMINISTICO)
+        target = round(percentile * fattore_sconto, 2)
+        riduzioni_prezzo_target += 1 if target < target_dichiarato - 0.01 else 0
+        limiti_applicati.append(
+            f"prezzo calcolato: {PERCENTILE_TARGET_DETERMINISTICO}* percentile di {len(prezzi_tenuti)} comp "
+            f"€{percentile:.2f} − {SCONTO_ASK_FISSO_PCT:.0f}% = €{target:.2f} "
+            f"(stima del modello €{target_dichiarato:.2f} non usata)"
+        )
+    else:
+        # --- pochi comp: resta la stima del modello, limitata come prima
+        riferimento = v.get("comp_riferimento_eur")
+        if riferimento and riferimento > 0 and target > riferimento * fattore_sconto:
+            massimo = riferimento * fattore_sconto
+            limiti_applicati.append(
+                f"ancoraggio al comp di riferimento €{riferimento:.2f} scontato {SCONTO_ASK_FISSO_PCT:.0f}% = €{massimo:.2f}"
+            )
+            target = massimo
+            riduzioni_prezzo_target += 1
+        if prezzi_tenuti:
+            massimo = max(prezzi_tenuti) * fattore_sconto
+            if target > massimo:
+                limiti_applicati.append(
+                    f"unico comp valido €{max(prezzi_tenuti):.2f} scontato {SCONTO_ASK_FISSO_PCT:.0f}% = €{massimo:.2f}"
+                )
+                target = massimo
+                riduzioni_prezzo_target += 1
+        if not prezzi_tenuti:
+            limiti_applicati.append("nessun comp valido: stima del modello non verificata, confidenza da considerare bassa")
+
+    # Nessun tetto di prezzo per linea (tolto il 2026-09-24 su richiesta
+    # dell'utente): il valore di una sottolinea viene dai suoi comp, filtrati
+    # sopra. tetto_prezzo_linea_eur del Cervello resta nello schema ma non
+    # viene piu' applicato.
+
+    # --- sconto per difetto dichiarato sul capo (dopo tutti gli altri limiti)
     sconto_difetto_pct = v.get("sconto_difetto_pct") or 0.0
     if sconto_difetto_pct > 0:
         target_prima_difetto = target
         target = target * (1 - sconto_difetto_pct / 100.0)
-        descrizione_difetto = v.get("descrizione_difetto")
         limiti_applicati.append(
-            f"difetto dichiarato ({descrizione_difetto or 'non specificato'}): "
+            f"difetto dichiarato ({v.get('descrizione_difetto') or 'non specificato'}): "
             f"sconto {sconto_difetto_pct:.0f}% da €{target_prima_difetto:.2f} a €{target:.2f}"
         )
         riduzioni_prezzo_target += 1
-
-    # Difetto strutturale 'lieve'/'moderata' (vedi schema): non forza NON
-    # COMPRARE (lo fa solo 'grave', piu' sotto), ma la nota resta visibile
-    # per una decisione informata invece di sparire dentro il generico
-    # "difetto dichiarato" qui sopra.
     if v.get("difetto_strutturale") and v.get("gravita_difetto_strutturale") in ("lieve", "moderata"):
         limiti_applicati.append(
             f"difetto strutturale {v['gravita_difetto_strutturale']} "
@@ -6889,142 +7432,89 @@ def calcola_verdetto(v, prezzo_prodotto):
         )
 
     target = max(0.0, round(target, 2))
-
-    # --- incasso = vendita attesa, senza sconto forfettario (tolto il
-    # 2026-09-20 su richiesta esplicita dell'utente: il -20% di
-    # QUOTA_INCASSO_NETTO sommato alla soglia ROI>=100% rendeva il "minimo
-    # accettabile" assurdamente piu' alto della vendita attesa reale, es.
-    # caso Missoni: vendita attesa 29.75 ma minimo accettabile 81.50. Da qui
-    # in poi compra/tratta si valutano sulla vendita attesa cosi' com'e'.
-    # QUOTA_INCASSO_NETTO resta definita sopra ma non e' piu' usata qui.
     vendita_attesa = target
     incasso = vendita_attesa
     margine = incasso - acquisto_pieno
     roi = (margine / acquisto_pieno * 100) if acquisto_pieno > 0 else 0.0
-
-    # minimo prezzo di vendita sotto il quale l'affare non rispetta piu' il
-    # margine minimo. Volutamente SENZA il floor ROI>=100% (SOGLIA_ROI_COMPRA)
-    # che invece la decisione compra/tratta qui sotto continua a usare:
-    # chiarito il 2026-09-20 su richiesta esplicita dell'utente. Nella
-    # decisione il floor ROI resta perche' serve a scartare acquisti
-    # economici con margine risicato in percentuale; qui invece lo si vuole
-    # fuori perche' gonfiava il "minimo accettabile" mostrato in chat ben
-    # oltre la vendita attesa reale (es. caso Missoni: vendita attesa 29.75,
-    # minimo accettabile arrivava a 81.50 col floor ROI incluso).
-    #   margine >= SOGLIA_MARGINE_COMPRA  =>  vendita_attesa >= acquisto_pieno + SOGLIA_MARGINE_COMPRA
     minimo_accettabile_rivendita = round(max(acquisto_pieno + SOGLIA_MARGINE_COMPRA, 0.0), 2)
-
-    # prezzo consigliato in annuncio: vendita_attesa maggiorata di
-    # SCONTO_TIPICO_TRATTATIVA_VENDITA, cosi' che dopo la trattativa tipica
-    # con l'acquirente si incassi comunque circa vendita_attesa. Non e' il
-    # tetto SCONTO_MAX_TRATTATIVA (quello e' lo sconto massimo che NOI
-    # accettiamo di offrire quando compriamo, concetto diverso).
     if vendita_attesa > 0 and SCONTO_TIPICO_TRATTATIVA_VENDITA < 1:
         prezzo_da_listare = round(vendita_attesa / (1 - SCONTO_TIPICO_TRATTATIVA_VENDITA), 2)
     else:
         prezzo_da_listare = vendita_attesa
 
-    # --- trattativa: SEMPRE al massimo sconto consentito sul solo prodotto,
-    # mai sulla spedizione. Sostituisce applica_soglia_trattativa_40_percento,
-    # che correggeva l'offerta ma lasciava dichiaratamente incoerenti margine
-    # e ROI della riga corretta (la vecchia nota diceva all'utente di
-    # verificarli a mano). Qui sono ricalcolati sullo stesso incasso.
-    prezzo_trattato = prezzo_prodotto * (1 - SCONTO_MAX_TRATTATIVA)
-    tratta_costo = (
-        prezzo_trattato * (1 + COMMISSIONE_PROTEZIONE_PCT)
-        + COMMISSIONE_PROTEZIONE_FISSA
-        + SPEDIZIONE_STIMATA_EUR
-    )
-    tratta_margine = incasso - tratta_costo
-    tratta_roi = (tratta_margine / tratta_costo * 100) if tratta_costo > 0 else 0.0
+    if fuori_stagione:
+        limiti_applicati.append(
+            f"fuori stagione (si pubblica da {mese_pubblicazione}): ROI minimo alzato a {roi_standard:.0f}% "
+            f"(via margine alto: {roi_ridotto:.0f}%) per il capitale fermo"
+        )
 
-    # --- decisione: due vie alternative (richiesto dall'utente il
-    # 2026-09-22, dopo un primo tentativo -- rimuovere del tutto il floor
-    # ROI -- che l'utente ha corretto subito: il ROI resta rilevante, ma un
-    # margine molto alto lo puo' compensare). Via standard: margine>=
-    # SOGLIA_MARGINE_COMPRA E roi>=SOGLIA_ROI_COMPRA. Via alternativa: un
-    # margine molto piu' alto (SOGLIA_MARGINE_COMPRA_ALTA) con un floor ROI
-    # piu' basso (SOGLIA_ROI_COMPRA_RIDOTTA). Esempi confermati dall'utente:
-    # margine €30/roi 40% -> NON COMPRA; margine €30/roi 120% -> COMPRA (via
-    # standard); margine €100/roi 70% -> COMPRA (via alternativa); margine
-    # €80/roi 45% -> NON COMPRA (roi troppo basso anche per la via
-    # alternativa). Il -20% forfettario (QUOTA_INCASSO_NETTO) resta tolto:
-    # margine/roi qui sono calcolati sull'incasso = vendita attesa piena,
-    # senza sconto.
-    supera_soglia = (
-        (margine >= SOGLIA_MARGINE_COMPRA and roi >= SOGLIA_ROI_COMPRA)
-        or (margine >= SOGLIA_MARGINE_COMPRA_ALTA and roi >= SOGLIA_ROI_COMPRA_RIDOTTA)
-    )
-    tratta_supera_soglia = (
-        (tratta_margine >= SOGLIA_MARGINE_COMPRA and tratta_roi >= SOGLIA_ROI_COMPRA)
-        or (tratta_margine >= SOGLIA_MARGINE_COMPRA_ALTA and tratta_roi >= SOGLIA_ROI_COMPRA_RIDOTTA)
-    )
+    # --- trattativa (punto 10): offerta massima = prezzo piu' alto che fa
+    # ancora passare il gate; apertura un po' sotto
+    supera_soglia = _supera_gate(margine, roi, roi_standard, roi_ridotto)
+    prezzo_max_gate = prezzo_massimo_per_gate(incasso, spedizione, sistemazione, roi_standard, roi_ridotto)
+    offerta_max = None
+    offerta_apertura = None
+    motivo_no_trattativa = None
+    if not supera_soglia:
+        if prezzo_max_gate is None:
+            motivo_no_trattativa = "nessun prezzo d'acquisto rende l'affare sopra soglia"
+        elif prezzo_max_gate < prezzo_prodotto * (1 - SCONTO_MAX_TRATTATIVA):
+            motivo_no_trattativa = (
+                f"servirebbe uno sconto del {(1 - prezzo_max_gate / prezzo_prodotto) * 100:.0f}% "
+                f"(max €{prezzo_max_gate:.2f}), oltre il {SCONTO_MAX_TRATTATIVA * 100:.0f}% realisticamente trattabile"
+            )
+        elif prezzo_max_gate < OFFERTA_MINIMA_EUR:
+            motivo_no_trattativa = f"offerta massima €{prezzo_max_gate:.2f} sotto €{OFFERTA_MINIMA_EUR:.0f}: non vale la trattativa"
+        else:
+            offerta_max = prezzo_max_gate
+            offerta_apertura = max(
+                OFFERTA_MINIMA_EUR,
+                min(offerta_max, math.floor(prezzo_prodotto * (1 - SCONTO_APERTURA_TRATTATIVA))),
+            )
+            offerta_apertura = min(offerta_apertura, offerta_max)
+    if offerta_max is not None:
+        tratta_costo = _costo_pieno(offerta_max, spedizione, sistemazione)
+        tratta_margine = incasso - tratta_costo
+        tratta_roi = (tratta_margine / tratta_costo * 100) if tratta_costo > 0 else 0.0
+    else:
+        tratta_costo = tratta_margine = tratta_roi = None
+    tratta_supera_soglia = offerta_max is not None
 
-    # --- eccezione "vendita lampo" (richiesta dall'utente il 2026-09-22):
-    # sotto il floor di margine assoluto, un acquisto resta comunque un
-    # COMPRA se il capo si vende quasi certamente in 48 ore -- capitale che
-    # gira in 2 giorni vale anche con un margine piccolo. Stessa cautela
-    # anti-allucinazione gia' usata per l'urgenza "Alta" qui sotto: mai
-    # fidarsi di domanda_mercato=='alta' senza segnali_domanda concreti a
-    # supporto, altrimenti basterebbe al modello dichiarare "vendo in 2
-    # giorni" per bypassare il floor su qualunque cosa. Il margine deve
-    # comunque restare positivo: questa e' una scorciatoia sulla VELOCITA'
-    # di rientro del capitale, mai una licenza a comprare in perdita.
+    # --- eccezione "vendita lampo" (invariata)
     vendita_lampo = (
         margine > 0
         and v["giorni_stimati_vendita"] <= SOGLIA_GIORNI_VENDITA_LAMPO
         and v["domanda_mercato"] == "alta"
         and v["segnali_domanda"]
+        and not fuori_stagione
     )
 
-    if v["corrispondenza_brand"] == "brand_estraneo":
+    brand_estraneo = v["corrispondenza_brand"] == "brand_estraneo"
+    if brand_estraneo and e_sottolinea_o_collab_mascherata(
+        v.get("brand_dichiarato_annuncio") or li.get("brand"), v.get("brand_reale_etichetta"),
+        li.get("title"), li.get("description"),
+    ):
+        brand_estraneo = False
+        limiti_applicati.append(
+            f"'{v.get('brand_reale_etichetta')}' trattato come sottolinea/collab del brand dichiarato, non come brand estraneo"
+        )
+
+    if brand_estraneo:
         decisione = "NON COMPRARE"
         limiti_applicati.append("brand reale estraneo al segmento monitorato")
     elif v["legit_verdetto"] == "probabilmente_falso":
         decisione = "NON COMPRARE"
     elif v.get("difetto_strutturale") and v.get("gravita_difetto_strutturale") == "grave":
-        # Regola di dominio che finora viveva solo come frase nel prompt
-        # ("Difetti strutturali = NON COMPRARE sempre, invendibili") e quindi
-        # veniva applicata solo se il modello se ne ricordava. Dopo
-        # l'introduzione di sconto_difetto_pct il rischio era anzi aumentato:
-        # un capo con uno strappo riceveva uno sconto percentuale sul target e,
-        # se il prezzo d'acquisto era basso, tornava comunque COMPRA.
-        # Qui la regola e' aritmetica e non dipende piu' dal buon senso del
-        # modello, a cui resta solo il compito di dire se il difetto c'e'.
-        #
-        # CORRETTO il 2026-09-20 (caso reale: t-shirt Jean Paul Gaultier
-        # d'archivio con un piccolo foro isolato su una manica in tessuto a
-        # rete, comprata comunque dall'utente in trattativa): il blocco
-        # automatico incondizionato era troppo rigido, stesso difetto della
-        # regola "materiale non confermato" prima di essere corretta. Ora
-        # blocca solo la gravita' 'grave'; 'lieve' e 'moderata' restano un
-        # capo normalmente valutabile, gia' scontato da sconto_difetto_pct
-        # qualche riga sopra.
         decisione = "NON COMPRARE"
         limiti_applicati.append(
             f"difetto strutturale grave ({v.get('descrizione_difetto') or 'non specificato'}): "
             "capo invendibile, decisione forzata a NON COMPRARE"
         )
     elif supera_soglia or vendita_lampo:
-        # "non_verificabile" NON puo' cadere nel ramo COMPRA. Significa che
-        # non c'e' stata nessuna prova di autenticita' da esaminare (nessuna
-        # etichetta leggibile), quindi il margine alto e' calcolato su un capo
-        # che potrebbe essere qualsiasi cosa: la risposta giusta e' chiedere
-        # altre foto, non comprare.
-        #
-        # Due percorsi lo rendono raggiungibile, entrambi verificati:
-        # 1. scraping foto fallito (fallback_solo_cover_photo): lo skip
-        #    "nessuna etichetta" viene deliberatamente bypassato per non
-        #    perdere l'annuncio, e il Cervello risponde "non_verificabile";
-        # 2. payload malformato: valida_payload_cervello usa proprio
-        #    "non_verificabile" come default prudente quando l'enum non e'
-        #    riconosciuto -- prima di questa correzione un JSON sformato del
-        #    Cervello si trasformava in un COMPRA.
         if not supera_soglia:
             limiti_applicati.append(
-                f"margine €{margine:.2f} sotto la soglia standard €{SOGLIA_MARGINE_COMPRA:.0f}, ma COMPRA "
-                f"confermato per eccezione 'vendita lampo' (~{v['giorni_stimati_vendita']}gg stimati, "
-                "domanda alta con segnali concreti)"
+                f"margine €{margine:.2f} sotto soglia, ma COMPRA confermato per eccezione 'vendita lampo' "
+                f"(~{v['giorni_stimati_vendita']}gg stimati, domanda alta con segnali concreti)"
             )
         if v["legit_verdetto"] in ("sospetto_servono_altre_foto", "non_verificabile"):
             decisione = "CHIEDI ALTRE FOTO"
@@ -7034,14 +7524,10 @@ def calcola_verdetto(v, prezzo_prodotto):
         decisione = "TRATTA"
     else:
         decisione = "NON COMPRARE"
+        if motivo_no_trattativa:
+            limiti_applicati.append(f"niente trattativa: {motivo_no_trattativa}")
 
-    # --- "furto istantaneo": elimina la fase di trattativa sotto un prezzo
-    # pagato irrisorio con ROI enorme (richiesto dall'utente il 2026-09-22)
-    # -- rischiare di perdere un capo del genere per pochi euro di sconto in
-    # piu' non vale il tempo della trattativa. Tocca SOLO il ramo TRATTA:
-    # non scavalca mai un NON COMPRARE/CHIEDI ALTRE FOTO deciso sopra per
-    # motivi di autenticita' o difetto strutturale grave, quella e' sicurezza
-    # non economia.
+    # --- "furto istantaneo" (invariato)
     if decisione == "TRATTA" and prezzo_prodotto < SOGLIA_PREZZO_FURTO_ISTANTANEO and roi >= SOGLIA_ROI_FURTO_ISTANTANEO:
         decisione = "COMPRA"
         limiti_applicati.append(
@@ -7049,26 +7535,24 @@ def calcola_verdetto(v, prezzo_prodotto):
             f"con ROI {roi:.0f}% -- trattativa saltata, comprato a prezzo pieno subito"
         )
 
-    # --- taglia estrema/non liquida: normalmente niente COMPRA a prezzo
-    # pieno, qualunque sia il brand (richiesto dall'utente il 2026-09-22,
-    # "anche se Loro Piana e' Tier-1, una taglia 54 non liquida non paga le
-    # bollette") -- il rischio non e' l'autenticita' ma il capitale
-    # bloccato troppo a lungo su un capo difficile da rivendere.
-    #
-    # AFFINATA il 2026-09-24 (utente, caso reale Rick Owens taglia estrema
-    # con margine €157.90/ROI 714% declassato comunque a TRATTA): il blocco
-    # incondizionato era troppo rigido su un affare fuori scala. Ora
-    # l'eccezione margine/ROI di SOGLIA_MARGINE_TAGLIA_ESTREMA_ECCEZIONE /
-    # SOGLIA_ROI_TAGLIA_ESTREMA_ECCEZIONE (vedi sopra) lascia passare il
-    # COMPRA quando l'affare e' davvero eccezionale; sotto quella soglia
-    # resta il declassamento automatico di prima. Applicata per ULTIMA,
-    # dopo anche il 'furto istantaneo' qui sopra: ha sempre l'ultima parola
-    # su qualunque altra logica economica, salvo l'eccezione qui sotto.
+    # --- taglia estrema/non liquida (invariato)
     taglia_estrema_eccezione = (
         margine >= SOGLIA_MARGINE_TAGLIA_ESTREMA_ECCEZIONE and roi >= SOGLIA_ROI_TAGLIA_ESTREMA_ECCEZIONE
     )
     if v["fascia_taglia"] == "estrema" and decisione == "COMPRA" and not taglia_estrema_eccezione:
-        decisione = "TRATTA" if tratta_supera_soglia else "NON COMPRARE"
+        # Qui l'ask passa gia' il gate, quindi non c'e' un'offerta "minima"
+        # calcolata: si chiede il -15% come cuscinetto per il rischio di
+        # liquidita' della taglia. Sotto OFFERTA_MINIMA_EUR non si tratta.
+        offerta_max = math.floor(prezzo_prodotto * (1 - SCONTO_APERTURA_TRATTATIVA))
+        if offerta_max < OFFERTA_MINIMA_EUR:
+            decisione = "NON COMPRARE"
+            offerta_max = None
+        else:
+            decisione = "TRATTA"
+            offerta_apertura = offerta_max
+            tratta_costo = _costo_pieno(offerta_max, spedizione, sistemazione)
+            tratta_margine = incasso - tratta_costo
+            tratta_roi = (tratta_margine / tratta_costo * 100) if tratta_costo > 0 else 0.0
         limiti_applicati.append(
             "taglia estrema/non liquida: niente COMPRA a prezzo pieno con margine/ROI ordinari -- "
             "capitale bloccato troppo a lungo su un capo difficile da vendere"
@@ -7092,10 +7576,22 @@ def calcola_verdetto(v, prezzo_prodotto):
         and v["domanda_mercato"] == "alta"
         and v["segnali_domanda"]
         and v["fascia_taglia"] != "estrema"
+        and not fuori_stagione
+        and not linea_non_verificata
         and len(prezzi_tenuti) >= 2
         and (not URGENZA_RICHIEDE_COMP_REALE or comp_reali)
     ):
         urgenza = "Alta"
+
+    roi_per_score = tratta_roi if decisione == "TRATTA" and tratta_roi is not None else roi
+    margine_per_score = tratta_margine if decisione == "TRATTA" and tratta_margine is not None else margine
+    deal_score = calcola_deal_score(decisione, roi_per_score, margine_per_score, v, fuori_stagione, solo_comp_memoria)
+    if linea_non_verificata:
+        deal_score = max(1, deal_score - 2)
+        limiti_applicati.append(
+            f"capo {sottolinea_capo}: meno di {MIN_COMP_TARGET_DETERMINISTICO} comp che nominano {sottolinea_capo}, "
+            "prezzo stimato anche su comp generici del brand -- verifica a mano che non siano della linea principale"
+        )
 
     return {
         "decisione": decisione,
@@ -7110,15 +7606,25 @@ def calcola_verdetto(v, prezzo_prodotto):
         "vendita_attesa": vendita_attesa,
         "minimo_accettabile_rivendita": minimo_accettabile_rivendita,
         "prezzo_da_listare": prezzo_da_listare,
-        "tratta_prezzo_prodotto": prezzo_trattato,
+        "tratta_prezzo_prodotto": offerta_max,
+        "offerta_apertura": offerta_apertura,
         "tratta_costo": tratta_costo,
         "tratta_margine": tratta_margine,
         "tratta_roi": tratta_roi,
+        "prezzo_max_gate": prezzo_max_gate,
         "comp_usati": prezzi_tenuti,
         "comp_scartati_outlier": prezzi_scartati,
         "n_comp_reali": len(comp_reali),
         "limiti_applicati": limiti_applicati,
         "riduzioni_prezzo_target": riduzioni_prezzo_target,
+        "deal_score": deal_score,
+        "fuori_stagione": fuori_stagione,
+        "mese_pubblicazione": mese_pubblicazione,
+        "spedizione_entrata": spedizione,
+        "costo_sistemazione": sistemazione,
+        "sottolinea_capo": sottolinea_capo,
+        "n_comp_stessa_linea": n_comp_stessa_linea,
+        "linea_non_verificata": linea_non_verificata,
     }
 
 
@@ -7152,16 +7658,32 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
         righe.append(
             f"📈 Attesa €{verdetto['vendita_attesa']:.2f} · Listino €{verdetto['prezzo_da_listare']:.2f} "
             f"· Minimo €{verdetto['minimo_accettabile_rivendita']:.2f} · "
-            f"{_escapa_markdown_legacy(v.get('linea_o_era_rilevata'))}"
+            f"{_escapa_markdown_legacy(verdetto.get('sottolinea_capo') or v.get('linea_o_era_rilevata'))}"
         )
+        if verdetto.get("sottolinea_capo"):
+            if verdetto.get("linea_non_verificata"):
+                righe.append(
+                    f"⚠️ **Sottolinea {_escapa_markdown_legacy(verdetto['sottolinea_capo'])}: prezzo NON verificato** "
+                    f"({verdetto.get('n_comp_stessa_linea') or 0} comp della stessa linea) -- controlla i comp"
+                )
+            else:
+                righe.append(
+                    f"🧵 Prezzo da {verdetto.get('n_comp_stessa_linea')} comp {_escapa_markdown_legacy(verdetto['sottolinea_capo'])}"
+                )
         # --- obiettivo trattativa: mostrato solo quando e' la decisione
         # presa. L'importo e' quello calcolato al massimo sconto consentito,
         # non una proposta del modello, quindi margine e ROI qui sotto sono
         # coerenti con l'incasso del verdetto principale per costruzione.
-        if dec == "TRATTA":
+        if dec == "TRATTA" and verdetto.get("tratta_prezzo_prodotto") is not None:
+            apertura = verdetto.get("offerta_apertura") or verdetto["tratta_prezzo_prodotto"]
+            testo_apertura = (
+                f"Apri a €{apertura:.2f}, max €{verdetto['tratta_prezzo_prodotto']:.2f}"
+                if apertura < verdetto["tratta_prezzo_prodotto"] - 0.01
+                else f"Offri €{verdetto['tratta_prezzo_prodotto']:.2f}"
+            )
             righe.append(
-                f"🤝 Offri €{verdetto['tratta_prezzo_prodotto']:.2f} (costo pieno €{verdetto['tratta_costo']:.2f}) "
-                f"→ **€{verdetto['tratta_margine']:.2f} (ROI {verdetto['tratta_roi']:.0f}%)**"
+                f"🤝 {testo_apertura} (costo pieno €{verdetto['tratta_costo']:.2f}) "
+                f"→ **€{verdetto['tratta_margine']:.2f} (ROI {verdetto['tratta_roi']:.0f}%)** al massimo"
             )
 
     # === 2. RISCHIO & LIQUIDITA' ===
@@ -7171,8 +7693,10 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
         f"🏷️ {legit} · Rischio fake {ETICHETTA_RISCHIO.get(v['rischio_fake'], '?')} "
         f"· Conf {ETICHETTA_CONFIDENZA.get(v['confidenza'], '?')}"
     )
-    stagione = f" · 📅 fuori stagione, pubblica da {v['mese_consigliato_pubblicazione']}" if v.get("mese_consigliato_pubblicazione") else ""
-    righe.append(f"🕐 ~{v['giorni_stimati_vendita']}gg · Deal {v['deal_score']}/10{stagione}")
+    # Stagionalita' e deal score calcolati in calcola_verdetto (2026-09-24),
+    # non piu' presi dal modello: vedi CATEGORIE_INVERNALI / calcola_deal_score.
+    stagione = f" · 📅 fuori stagione, pubblica da {verdetto['mese_pubblicazione']}" if verdetto.get("fuori_stagione") else ""
+    righe.append(f"🕐 ~{v['giorni_stimati_vendita']}gg · Deal {verdetto.get('deal_score', v['deal_score'])}/10{stagione}")
 
     # === 3. AZIONI (testo copiabile in un tocco: backtick singolo) ===
     # Il vecchio backstop a colpi di regex (rimozione dei blocchi "Messaggio
@@ -7196,9 +7720,10 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
     # un default prima del blocco if/elif/else invece di doverlo ripetere in
     # ognuno.
     domande_incorporate = False
-    if dec == "TRATTA" and template:
+    offerta_messaggio = verdetto.get("offerta_apertura") or verdetto.get("tratta_prezzo_prodotto")
+    if dec == "TRATTA" and template and offerta_messaggio is not None:
         if "{OFFERTA}" in template:
-            testo_messaggio = template.replace("{OFFERTA}", f"€{verdetto['tratta_prezzo_prodotto']:.2f}")
+            testo_messaggio = template.replace("{OFFERTA}", f"€{offerta_messaggio:.0f}")
         else:
             # Il cervello scrive messaggio_venditore_template SENZA sapere
             # quale decisione prendera' il sistema (la calcola solo dopo,
@@ -7210,7 +7735,7 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
             # propone davvero l'offerta calcolata.
             testo_messaggio = (
                 f"Ciao! Molto interessato, te lo prenderei subito a "
-                f"€{verdetto['tratta_prezzo_prodotto']:.2f}. Fammi sapere se puo' andare, grazie!"
+                f"€{offerta_messaggio:.0f}. Fammi sapere se puo' andare, grazie!"
             )
             messaggio_sostituito = True
     elif dec == "CHIEDI ALTRE FOTO":
@@ -7274,7 +7799,13 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
             titolo = comp["titolo_verbatim"]
             titolo = titolo[:60] + "…" if len(titolo) > 60 else titolo
             titolo = _escapa_markdown_legacy(titolo)
-            righe.append(f"• €{comp['prezzo_eur']:.2f} — {titolo} _[{etichetta}]_")
+            url_comp = comp.get("url")
+            prezzo_txt = f"€{comp['prezzo_eur']:.2f}"
+            if url_comp:
+                # link sul prezzo: dentro le parentesi del link l'URL non viene
+                # interpretato come Markdown (underscore compresi)
+                prezzo_txt = f"[{prezzo_txt}]({url_comp})"
+            righe.append(f"• {prezzo_txt} — {titolo} _[{etichetta}]_")
         # Split per fonte calcolato su TUTTI i comp utilizzabili (non solo i
         # primi 6 mostrati sopra in dettaglio) -- richiesto dall'utente il
         # 2026-09-20 per vedere a colpo d'occhio quanto pesa ciascuna fonte
@@ -7486,12 +8017,236 @@ async def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header,
 
 
 # ---------------------------------------------------------------------------
+# RILEVATORE DI CLUSTER SOSPETTI (aggiunto il 2026-09-24)
+# ---------------------------------------------------------------------------
+# Caso reale: 14+ annunci "T Courrèges" identici in poche ore, 2-3 foto
+# quadrate, venditori a 0 recensioni, €20-25. Il bot ne scartava alcuni per
+# foto stock e valutava gli altri uno per uno (con verdetti diversi e costo
+# IA pieno ogni volta). Uno stesso titolo messo in vendita da piu' account
+# nuovi nello stesso giorno e' il pattern tipico dei falsi seriali: dal
+# CLUSTER_MIN_ANNUNCI-esimo annuncio in poi si scarta prima di Gemini.
+# Serve che TUTTI gli account coinvolti abbiano al massimo
+# CLUSTER_MAX_RECENSIONI recensioni: titoli comuni venduti da utenti veri
+# (es. "Cappotto Max Mara") non fanno scattare nulla.
+CLUSTER_FINESTRA_ORE = 24
+CLUSTER_MIN_ANNUNCI = 3              # questo annuncio + almeno 2 precedenti
+CLUSTER_MAX_RECENSIONI = 1
+_cluster_annunci_visti = {}          # (brand, titolo normalizzato) -> [(ts, venditore, recensioni)]
+
+
+def verifica_cluster_sospetto(listing_info):
+    """Registra l'annuncio e ritorna (scarta, motivo). Solo in memoria: un
+    riavvio azzera la finestra, accettabile per un pattern che si ripete
+    nell'arco di ore."""
+    titolo = _titolo_normalizzato(listing_info.get("title"))
+    brand = (listing_info.get("brand") or "").strip().lower()
+    venditore = _id_venditore(listing_info)
+    recensioni = listing_info.get("seller_feedback_count")
+    if not titolo or not venditore:
+        return False, None
+    ora = time.time()
+    chiave = (brand, titolo)
+    visti = [x for x in _cluster_annunci_visti.get(chiave, []) if ora - x[0] < CLUSTER_FINESTRA_ORE * 3600]
+    if not any(x[1] == venditore for x in visti):
+        visti.append((ora, venditore, recensioni))
+    _cluster_annunci_visti[chiave] = visti
+    # pulizia leggera delle chiavi scadute
+    if len(_cluster_annunci_visti) > 5000:
+        for k in [k for k, lst in _cluster_annunci_visti.items() if all(ora - x[0] >= CLUSTER_FINESTRA_ORE * 3600 for x in lst)]:
+            del _cluster_annunci_visti[k]
+
+    def _account_nuovo(n):
+        return n is not None and n <= CLUSTER_MAX_RECENSIONI
+
+    if not _account_nuovo(recensioni):
+        return False, None
+    venditori_nuovi = {x[1] for x in visti if _account_nuovo(x[2])}
+    if len(venditori_nuovi) >= CLUSTER_MIN_ANNUNCI:
+        return True, (
+            f"[CLUSTER SOSPETTO] '{listing_info.get('title')}' messo in vendita da {len(venditori_nuovi)} "
+            f"account diversi con 0-{CLUSTER_MAX_RECENSIONI} recensioni nelle ultime {CLUSTER_FINESTRA_ORE}h: "
+            "pattern tipico dei falsi seriali."
+        )
+    return False, None
+
+
+# ---------------------------------------------------------------------------
+# CACHE VERDETTI PER RELIST/DUPLICATI (aggiunta il 2026-09-24)
+# ---------------------------------------------------------------------------
+# Casi reali: lo stesso capo (stesso venditore, stesse foto, due ID diversi)
+# valutato due volte con prezzi diversi -- Totême jeans €31.50 NON COMPRARE
+# vs €55 COMPRA, Max Mara Wollmantel €140 vs €210. Ora un annuncio che
+# corrisponde a uno gia' valutato nelle ultime CACHE_VERDETTI_ORE riusa il
+# payload del Cervello (comp, linea, difetti, legit) e ricalcola soltanto
+# l'economia sul prezzo attuale: stesso verdetto, zero costo IA.
+#
+# Corrispondenza: stesso brand E foto principale quasi identica (dHash a 64
+# bit, distanza <= CACHE_DISTANZA_FOTO_MAX), oppure stesso venditore + stesso
+# titolo normalizzato con foto comunque simile (<= CACHE_DISTANZA_FOTO_VENDITORE).
+# Il solo titolo non basta: un reseller puo' avere piu' capi diversi con lo
+# stesso titolo generico.
+CACHE_VERDETTI_FILE = "/data/cache_verdetti.json"
+CACHE_VERDETTI_ORE = 72
+CACHE_VERDETTI_MAX_VOCI = 2000
+CACHE_DISTANZA_FOTO_MAX = 6
+CACHE_DISTANZA_FOTO_VENDITORE = 14
+_cache_verdetti = []
+_cache_verdetti_caricata = [False]
+
+
+def _dhash_foto(foto_bytes):
+    """Hash percettivo (difference hash, 64 bit) della foto: resiste a
+    ricompressione e ridimensionamento che Vinted applica a ogni upload."""
+    try:
+        img = Image.open(BytesIO(foto_bytes)).convert("L").resize((9, 8), Image.LANCZOS)
+        pixel = list(img.getdata())
+        bit = 0
+        for riga in range(8):
+            for col in range(8):
+                bit = (bit << 1) | (1 if pixel[riga * 9 + col] > pixel[riga * 9 + col + 1] else 0)
+        return f"{bit:016x}"
+    except Exception:
+        return None
+
+
+def _distanza_hash(h1, h2):
+    if not h1 or not h2:
+        return 64
+    return bin(int(h1, 16) ^ int(h2, 16)).count("1")
+
+
+def _id_venditore(listing_info):
+    for campo in ("seller_id", "seller_login"):
+        valore = listing_info.get(campo)
+        if valore is not None and str(valore).strip():
+            return str(valore).strip().lower()
+    return ""
+
+
+def _titolo_normalizzato(titolo):
+    return re.sub(r"[^a-z0-9àèéìòù]+", " ", (titolo or "").lower()).strip()
+
+
+def _carica_cache_verdetti():
+    if _cache_verdetti_caricata[0]:
+        return
+    _cache_verdetti_caricata[0] = True
+    try:
+        with open(CACHE_VERDETTI_FILE, encoding="utf-8") as f:
+            dati = json.load(f)
+        if isinstance(dati, list):
+            _cache_verdetti.extend(d for d in dati if isinstance(d, dict))
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        log.warning("Cache verdetti: file illeggibile (%s), si riparte vuota.", e)
+
+
+def _pulisci_e_salva_cache_verdetti():
+    limite = time.time() - CACHE_VERDETTI_ORE * 3600
+    _cache_verdetti[:] = [d for d in _cache_verdetti if d.get("ts", 0) >= limite][-CACHE_VERDETTI_MAX_VOCI:]
+    try:
+        os.makedirs(os.path.dirname(CACHE_VERDETTI_FILE), exist_ok=True)
+        tmp = CACHE_VERDETTI_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(_cache_verdetti, f, ensure_ascii=False)
+        os.replace(tmp, CACHE_VERDETTI_FILE)
+    except Exception as e:
+        log.warning("Cache verdetti: salvataggio fallito (%s) -- resta in memoria.", e)
+
+
+def _impronta_annuncio(listing_info, photo_bytes_list):
+    return {
+        "hash_foto": _dhash_foto(photo_bytes_list[0]) if photo_bytes_list else None,
+        "brand": (listing_info.get("brand") or "").strip().lower(),
+        "venditore": _id_venditore(listing_info),
+        "titolo": _titolo_normalizzato(listing_info.get("title")),
+    }
+
+
+def cerca_cache_verdetto(impronta, url):
+    _carica_cache_verdetti()
+    if not impronta.get("hash_foto"):
+        return None
+    limite = time.time() - CACHE_VERDETTI_ORE * 3600
+    item_id = _estrai_item_id_da_url(url)
+    migliore = None
+    for voce in reversed(_cache_verdetti):
+        if voce.get("ts", 0) < limite or voce.get("brand") != impronta["brand"]:
+            continue
+        distanza = _distanza_hash(voce.get("hash_foto"), impronta["hash_foto"])
+        stesso_venditore_titolo = (
+            impronta["venditore"] and voce.get("venditore") == impronta["venditore"]
+            and voce.get("titolo") == impronta["titolo"]
+        )
+        if distanza <= CACHE_DISTANZA_FOTO_MAX or (stesso_venditore_titolo and distanza <= CACHE_DISTANZA_FOTO_VENDITORE):
+            migliore = voce
+            break
+    return migliore
+
+
+def salva_cache_verdetto(impronta, url, prezzo, v, problemi, stats_comp):
+    if not impronta.get("hash_foto"):
+        return
+    _carica_cache_verdetti()
+    try:
+        voce = dict(impronta)
+        voce.update({
+            "ts": time.time(), "item_id": _estrai_item_id_da_url(url), "prezzo": prezzo,
+            "v": json.loads(json.dumps(v, default=str)),
+            "problemi": list(problemi or []),
+            "stats_comp": json.loads(json.dumps(stats_comp or {}, default=str)),
+        })
+    except Exception as e:
+        log.warning("Cache verdetti: voce non serializzabile (%s), non salvata.", e)
+        return
+    _cache_verdetti.append(voce)
+    _pulisci_e_salva_cache_verdetti()
+
+
+# ---------------------------------------------------------------------------
+# ERRORI IA: NIENTE CODA, SECONDO TENTATIVO SUBITO SU UN'ALTRA API KEY
+# ---------------------------------------------------------------------------
+# Richiesto dall'utente il 2026-09-24: un annuncio fallito non si rimette in
+# coda (i deal si chiudono in secondi/minuti) e non si cambia modello. Se la
+# chiamata all'Occhio o al Cervello fallisce, si ritenta SUBITO la sola fase
+# fallita, con lo stesso modello ma passando alla chiave Gemini successiva di
+# GEMINI_API_KEYS. Se fallisce anche quella (o c'e' una sola chiave), arriva
+# l'avviso "Valutazione non completata".
+
+def _e_errore_gemini(testo):
+    return isinstance(testo, str) and testo.startswith("[ERRORE")
+
+
+def _gemini_passa_ad_altra_key():
+    """True se c'e' un'altra chiave su cui ritentare (e ci si e' spostati)."""
+    if len(GEMINI_API_KEYS) <= 1:
+        return False
+    return _gemini_prossima_key()
+
+
+async def _avvisa_valutazione_non_completata(listing_info, url, motivo, costo_sostenuto):
+    motivo = _redigi_segreti(str(motivo))
+    log.warning("Valutazione non completata per '%s': %s", listing_info.get("title"), motivo[:300])
+    await telegram_send_message(
+        TELEGRAM_OWNER_CHAT_ID,
+        f"⚠️ *Valutazione non completata* — {_escapa_markdown_legacy(listing_info.get('title'))}\n"
+        f"{_escapa_markdown_legacy(motivo[:300])}\n{url or ''}\n"
+        f"_Costo sostenuto: ${costo_sostenuto:.4f}_",
+        disable_notification=True,
+    )
+
+
+# ---------------------------------------------------------------------------
 # PIPELINE PRINCIPALE
 # ---------------------------------------------------------------------------
 
 async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricevuto_bot=None):
     listing_info = dict(parsed)
     listing_info["url"] = url
+    # Link dei comp raccolti durante la ricerca di QUESTO annuncio (vedi
+    # _registra_url_comp): un dict nuovo per ogni annuncio.
+    _url_comp_ctx.set({})
     costo_totale = 0.0
 
     # Cronometro a tappe (richiesto dall'utente il 2026-09-21, dopo aver
@@ -7527,6 +8282,8 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
 
         # FILTRO PRE-GEMINI
         e_skip_pre, motivo_skip_pre = check_skip_pre_gemini(listing_info)
+        if not e_skip_pre:
+            e_skip_pre, motivo_skip_pre = verifica_cluster_sospetto(listing_info)
         if e_skip_pre:
             # Silenzioso: nessuna notifica Telegram per le esclusioni pre-Gemini.
             # Rimane visibile solo nei log (Railway) per debug/controllo. I
@@ -7641,32 +8398,59 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
     # In entrambi i casi il resto della pipeline riceve `output_occhi` come
     # testo: in modalita' JSON e' il rendering del dict, cosi' build_skip_report
     # e il prompt del Cervello continuano a funzionare senza modifiche.
+    # Relist/duplicato gia' valutato? (vedi CACHE VERDETTI) -- se si', niente
+    # Occhio ne' Cervello: si riusa il payload e si ricalcola l'economia.
+    impronta_annuncio = _impronta_annuncio(listing_info, photo_bytes_list)
+    voce_cache = cerca_cache_verdetto(impronta_annuncio, url) if url else None
     occhio_json = None
     problemi_occhio = []
-    if OCCHIO_OUTPUT_JSON:
-        output_grezzo, costo_occhi, _ = await chiama_gemini(
-            GEMINI_OCCHI_SYSTEM_PROMPT_JSON, user_text_occhi, photo_bytes_list,
-            grounding=False, response_schema=OCCHIO_RESPONSE_SCHEMA_GEMINI)
-        try:
-            occhio_json, problemi_occhio = valida_payload_occhio(json.loads(output_grezzo))
-            output_occhi = render_occhio_da_json(occhio_json, problemi_occhio)
-            if problemi_occhio:
-                log.info("Occhio JSON con %d anomalie: %s", len(problemi_occhio), problemi_occhio)
-        except (json.JSONDecodeError, TypeError, ValueError) as e:
-            # Fallback esplicito e non silenzioso: se il JSON non e'
-            # parsabile si prosegue col testo grezzo sul ramo prosa, cosi'
-            # un annuncio non va perso per un problema di formato. Se
-            # compare spesso nei log, e' il segnale che flash-lite non
-            # regge lo schema e conviene rimettere OCCHIO_OUTPUT_JSON=false.
-            log.warning("Occhio: JSON non parsabile (%s), fallback al ramo prosa. Grezzo: %s",
-                        e, (output_grezzo or "")[:400])
-            occhio_json = None
-            output_occhi = output_grezzo
-    else:
-        output_occhi, costo_occhi, _ = await chiama_gemini(
-            GEMINI_OCCHI_SYSTEM_PROMPT, user_text_occhi, photo_bytes_list, grounding=False)
-    costo_totale += costo_occhi
-    t_tappe.append(("occhio", time.time()))
+    output_occhi = ""
+    costo_occhi = 0.0
+    if voce_cache is None:
+        if OCCHIO_OUTPUT_JSON:
+            output_grezzo, costo_occhi, _ = await chiama_gemini(
+                GEMINI_OCCHI_SYSTEM_PROMPT_JSON, user_text_occhi, photo_bytes_list,
+                grounding=False, response_schema=OCCHIO_RESPONSE_SCHEMA_GEMINI)
+            if _e_errore_gemini(output_grezzo) and _gemini_passa_ad_altra_key():
+                log.warning("Occhio fallito (%s) -- ritento subito con un'altra API key.", _redigi_segreti(output_grezzo[:200]))
+                output_grezzo, costo_bis, _ = await chiama_gemini(
+                    GEMINI_OCCHI_SYSTEM_PROMPT_JSON, user_text_occhi, photo_bytes_list,
+                    grounding=False, response_schema=OCCHIO_RESPONSE_SCHEMA_GEMINI)
+                costo_occhi += costo_bis
+            try:
+                occhio_json, problemi_occhio = valida_payload_occhio(json.loads(output_grezzo))
+                output_occhi = render_occhio_da_json(occhio_json, problemi_occhio)
+                if problemi_occhio:
+                    log.info("Occhio JSON con %d anomalie: %s", len(problemi_occhio), problemi_occhio)
+            except (json.JSONDecodeError, TypeError, ValueError) as e:
+                # Fallback esplicito e non silenzioso: se il JSON non e'
+                # parsabile si prosegue col testo grezzo sul ramo prosa, cosi'
+                # un annuncio non va perso per un problema di formato. Se
+                # compare spesso nei log, e' il segnale che flash-lite non
+                # regge lo schema e conviene rimettere OCCHIO_OUTPUT_JSON=false.
+                log.warning("Occhio: JSON non parsabile (%s), fallback al ramo prosa. Grezzo: %s",
+                            e, (output_grezzo or "")[:400])
+                occhio_json = None
+                output_occhi = output_grezzo
+        else:
+            output_occhi, costo_occhi, _ = await chiama_gemini(
+                GEMINI_OCCHI_SYSTEM_PROMPT, user_text_occhi, photo_bytes_list, grounding=False)
+            if _e_errore_gemini(output_occhi) and _gemini_passa_ad_altra_key():
+                log.warning("Occhio fallito (%s) -- ritento subito con un'altra API key.", _redigi_segreti(output_occhi[:200]))
+                output_occhi, costo_bis, _ = await chiama_gemini(
+                    GEMINI_OCCHI_SYSTEM_PROMPT, user_text_occhi, photo_bytes_list, grounding=False)
+                costo_occhi += costo_bis
+        costo_totale += costo_occhi
+        t_tappe.append(("occhio", time.time()))
+
+        # Errore IA sull'Occhio (503/429/timeout): prima il testo "[ERRORE: ...]"
+        # proseguiva come se fosse un'analisi visiva e finiva al Cervello, che di
+        # solito falliva a sua volta. Ora (dopo il secondo tentativo con un'altra
+        # chiave, sopra) ci si ferma con un avviso.
+        testo_occhio_grezzo = output_grezzo if OCCHIO_OUTPUT_JSON else output_occhi
+        if _e_errore_gemini(testo_occhio_grezzo):
+            await _avvisa_valutazione_non_completata(listing_info, url, f"Occhio: {testo_occhio_grezzo}", costo_totale)
+            return
 
     # Prezzo del prodotto: base di OGNI calcolo economico a valle.
     prezzo_prodotto = _a_float(listing_info.get("price"), None)
@@ -7681,13 +8465,38 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
     forza_ricerca = None
     verdetto_calcolato = None
 
-    e_skip, motivo_skip = check_skip_pre_cervello(output_occhi, listing_info, occhio_json=occhio_json)
+    if voce_cache is not None:
+        e_skip, motivo_skip = False, None
+    else:
+        e_skip, motivo_skip = check_skip_pre_cervello(output_occhi, listing_info, occhio_json=occhio_json)
     if e_skip:
         log.info("FILTRO PRE-CERVELLO ATTIVATO. Motivo: %s", motivo_skip)
         if motivo_skip.startswith("[FALSO CONCLAMATO"):
             log.info("FALSO CONCLAMATO -- output occhi grezzo per '%s':\n%s", listing_info.get("title"), output_occhi)
         output_finale = build_skip_report(listing_info, motivo_skip, output_occhi_testo=output_occhi)
         scenario_usato = "SKIP"
+    elif voce_cache is not None:
+        scenario_usato = "CACHE"
+        v = voce_cache["v"]
+        problemi = voce_cache.get("problemi") or []
+        stats_comp = voce_cache.get("stats_comp") or {}
+        verdetto_calcolato = calcola_verdetto(v, prezzo_prodotto, listing_info)
+        decisione = verdetto_calcolato["decisione"]
+        urgenza = verdetto_calcolato["urgenza"]
+        output_finale = render_messaggio_verdetto(
+            v, verdetto_calcolato, problemi, stats_comp,
+            item_id=_estrai_item_id_da_url(url), cover_photo_id=listing_info.get("cover_photo_id"),
+            brand=listing_info.get("brand"), catalog_id=listing_info.get("catalog_id"),
+        )
+        ore_fa = (time.time() - voce_cache.get("ts", time.time())) / 3600
+        prezzo_prima = voce_cache.get("prezzo")
+        output_finale += (
+            f"\n\n♻️ _Stesso capo gia' valutato {ore_fa:.0f}h fa (annuncio {voce_cache.get('item_id') or '?'}"
+            + (f" a €{prezzo_prima:.2f}" if isinstance(prezzo_prima, (int, float)) else "")
+            + "): comp e stima riusati, margine ricalcolato sul prezzo attuale, nessun costo IA._"
+        )
+        log.info("Cache verdetti: '%s' riconosciuto come relist di %s -- %s.",
+                 listing_info.get("title"), voce_cache.get("item_id"), decisione)
     else:
         titolo_annuncio = listing_info.get("title") or ""
         brand_annuncio = listing_info.get("brand") or ""
@@ -7804,6 +8613,13 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
         )
         verdetto_json, errore_cervello, costo_cervello, n_query_grounding, ricerche_extra_raw = await chiama_cervello(
             GEMINI_CERVELLO_SYSTEM_PROMPT, user_text_cervello, forza_ricerca=forza_ricerca)
+        if errore_cervello and CERVELLO_PROVIDER != "openai" and _gemini_passa_ad_altra_key():
+            log.warning("Cervello fallito (%s) -- ritento subito con un'altra API key.", _redigi_segreti(str(errore_cervello)[:200]))
+            verdetto_json, errore_cervello, costo_bis, n_bis, ricerche_bis = await chiama_cervello(
+                GEMINI_CERVELLO_SYSTEM_PROMPT, user_text_cervello, forza_ricerca=forza_ricerca)
+            costo_cervello += costo_bis
+            n_query_grounding += n_bis
+            ricerche_extra_raw = list(ricerche_extra_raw) + list(ricerche_bis)
         costo_totale += costo_cervello
         t_tappe.append(("cervello", time.time()))
 
@@ -7817,18 +8633,15 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
             # Un errore qui e' definitivo: senza il JSON non c'e' verdetto da
             # calcolare. Si avvisa invece di restare in silenzio, perche' un
             # annuncio valutato a meta' e' peggio di uno non valutato.
-            log.warning("Cervello fallito per '%s': %s", listing_info.get("title"), errore_cervello)
-            await telegram_send_message(
-                TELEGRAM_OWNER_CHAT_ID,
-                f"⚠️ *Valutazione non completata* — {listing_info.get('title')}\n"
-                f"{errore_cervello}\n{url or ''}\n"
-                f"_Costo comunque sostenuto: ${costo_totale:.4f}_"
-            )
+            log.warning("Cervello fallito per '%s': %s", listing_info.get("title"), _redigi_segreti(str(errore_cervello)))
+            await _avvisa_valutazione_non_completata(listing_info, url, f"Cervello: {errore_cervello}", costo_totale)
             return
 
         v, problemi = valida_payload_cervello(verdetto_json)
         stats_comp = classifica_provenienza_comp(v, pool_ricerca_grezzo)
-        verdetto_calcolato = calcola_verdetto(v, prezzo_prodotto)
+        _assegna_url_ai_comp(v)
+        verdetto_calcolato = calcola_verdetto(v, prezzo_prodotto, listing_info)
+        salva_cache_verdetto(impronta_annuncio, url, prezzo_prodotto, v, problemi, stats_comp)
         decisione = verdetto_calcolato["decisione"]
         urgenza = verdetto_calcolato["urgenza"]
         output_finale = render_messaggio_verdetto(
@@ -7870,6 +8683,8 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
 
     if scenario_usato == "SKIP":
         info_scenario = " · filtro pre-cervello (occhi soli)"
+    elif scenario_usato == "CACHE":
+        info_scenario = " · verdetto riusato da un annuncio identico (relist)"
     elif scenario_usato == "F":
         info_scenario = " · nessun comp pre-raccolto, ricerca forzata"
         info_scenario += f" ({n_query_grounding} extra)" if n_query_grounding else ""
