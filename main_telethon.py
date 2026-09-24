@@ -366,22 +366,16 @@ OFFERTA_MINIMA_EUR = 15.0              # sotto questa cifra non si tratta: o si 
                                         # prezzo pieno o si passa
 
 # Punto 12 -- spedizione in entrata per paese del venditore (prima fissa a
-# 2.50 EUR anche da Germania/Francia/Olanda) e costo di sistemazione per
-# difetto dichiarato (prima il difetto scontava la vendita ma non aggiungeva
-# la tintoria/sarta al costo). Valori prudenziali, da ritoccare con i costi
-# reali pagati.
+# 2.50 EUR anche da Germania/Francia/Olanda). Valori indicati dall'utente.
+# NOTA (2026-09-24, seconda richiesta): il costo di sistemazione per difetto
+# (tintoria/sarta aggiunto al costo d'acquisto) e' stato TOLTO su richiesta
+# esplicita dell'utente -- "preferisco attenermi allo sconto difetto": il
+# difetto continua a scontare il prezzo target (sconto_difetto_pct, gia'
+# esistente prima di questa revisione) ma non aggiunge piu' un costo fisso
+# separato nella gamba d'acquisto.
 SPEDIZIONE_ITALIA_EUR = 3.50            # indicata dall'utente il 2026-09-24
 SPEDIZIONE_ESTERO_EUR = 5.00            # indicata dall'utente il 2026-09-24
 PAESI_ITALIA = {"italia", "italy", "italien", "italie"}
-COSTI_SISTEMAZIONE = (
-    # (etichetta, keyword nella descrizione del difetto, costo EUR)
-    ("tintoria/smacchiatura", ("macchi", "alone", "aloni", "stain", "fleck", "tache", "mancha", "sporc", "tintoria", "ingiallit"), 12.0),
-    ("zip/cerniera", ("zip", "cerniera", "lampo", "reißverschluss", "fermeture", "cremallera"), 10.0),
-    ("sarta (foro/scucitura/rammendo)", ("buc", "foro", "fori", "strapp", "scucit", "cucitur", "rammend", "hole", "loch", "trou", "agujero", "orlo"), 10.0),
-    ("bottoni", ("bottone", "bottoni", "button", "knopf", "bouton", "botón"), 3.0),
-    ("pilling", ("pilling", "pelucch", "palline", "bouloch"), 3.0),
-)
-COSTO_SISTEMAZIONE_MAX = 25.0
 
 # Punto 13 -- sottolinee: NIENTE tetti di prezzo (richiesto dall'utente il
 # 2026-09-24: "le sottolinee valgono meno ma non e' detto che ci sia un tetto,
@@ -7125,25 +7119,6 @@ def spedizione_in_entrata(paese_venditore):
     return SPEDIZIONE_ESTERO_EUR, paese_venditore
 
 
-def costo_sistemazione(v):
-    """Costo stimato per sistemare i difetti dichiarati (tintoria, sarta,
-    zip...). Solo se il Cervello ha segnalato un difetto significativo; le
-    keyword si cercano nella sua descrizione del difetto, non nella
-    descrizione del venditore (che spesso dice 'nessuna macchia')."""
-    if not v.get("difetto_significativo"):
-        return 0.0, []
-    testo = (v.get("descrizione_difetto") or "").lower()
-    if not testo:
-        return 0.0, []
-    totale = 0.0
-    voci = []
-    for etichetta, keyword, costo in COSTI_SISTEMAZIONE:
-        if any(k in testo for k in keyword):
-            totale += costo
-            voci.append(etichetta)
-    return min(totale, COSTO_SISTEMAZIONE_MAX), voci
-
-
 def _brand_madre_in_testo(brand_madre, testo):
     return bool(re.search(r"\b" + re.escape(brand_madre) + r"\b", testo or ""))
 
@@ -7289,7 +7264,8 @@ def calcola_verdetto(v, prezzo_prodotto, listing_info=None):
     Revisione del 2026-09-24 (vedi blocco costanti "REVISIONE VERDETTI"):
     target deterministico dai comp, stagionalita' e gate calcolati qui,
     offerta = prezzo massimo che supera il gate, deal score calcolato,
-    spedizione per paese e costi di sistemazione nel costo d'acquisto."""
+    spedizione per paese nel costo d'acquisto (il difetto sconta solo il
+    prezzo target, nessun costo di sistemazione aggiunto)."""
     li = listing_info or {}
     limiti_applicati = []
     # Conta SOLO gli step che riducono davvero il target, per il riepilogo
@@ -7324,13 +7300,12 @@ def calcola_verdetto(v, prezzo_prodotto, listing_info=None):
 
     # --- costi della gamba d'acquisto (punto 12)
     spedizione, descr_spedizione = spedizione_in_entrata(li.get("seller_country"))
-    sistemazione, voci_sistemazione = costo_sistemazione(v)
+    # Costo di sistemazione per difetto TOLTO (2026-09-24, richiesto
+    # dall'utente): il difetto continua a scontare il target piu' sotto
+    # (sconto_difetto_pct) ma non aggiunge piu' un costo fisso qui.
+    sistemazione = 0.0
     if spedizione != SPEDIZIONE_ITALIA_EUR:
         limiti_applicati.append(f"spedizione in entrata da {descr_spedizione}: €{spedizione:.2f}")
-    if sistemazione > 0:
-        limiti_applicati.append(
-            f"costo di sistemazione stimato €{sistemazione:.2f} ({', '.join(voci_sistemazione)}) aggiunto al costo d'acquisto"
-        )
     acquisto_pieno = _costo_pieno(prezzo_prodotto, spedizione, sistemazione)
 
     target_dichiarato = v["prezzo_target_vendita_eur"]
