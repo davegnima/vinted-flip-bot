@@ -22,7 +22,7 @@ import statistics
 import traceback
 from io import BytesIO
 from datetime import datetime, timezone
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import httpx
 from telethon import TelegramClient, events
@@ -851,6 +851,26 @@ def _redigi_segreti(testo):
 # ---------------------------------------------------------------------------
 _url_comp_ctx = contextvars.ContextVar("url_comp", default=None)
 
+# Bug reale del 2026-09-24: un comp Our Legacy si e' visto linkare il negozio
+# ufficiale del brand invece di un annuncio second-hand, perche' la ricerca
+# on-demand del cervello (cerca_serper_mirata) registra QUALSIASI risultato
+# Google, sito ufficiale/editoriale compreso, e nulla filtrava il dominio. Un
+# comp deve sempre poter essere ricondotto a un mercato dell'usato: se l'URL
+# non e' di uno di questi domini, non si registra proprio, quindi non potra'
+# mai finire ne' come link ne' (per estensione) confuso con un prezzo reale.
+_RE_DOMINIO_SECONDHAND = re.compile(
+    r"(?:^|\.)(vinted|vestiairecollective|grailed|ebay|depop|wallapop|stockx|goat|therealreal|poshmark|videdressing)\.",
+    re.IGNORECASE,
+)
+
+
+def _e_dominio_secondhand(url):
+    try:
+        host = (urlparse(url).netloc or "").lower()
+    except Exception:
+        return False
+    return bool(_RE_DOMINIO_SECONDHAND.search(host))
+
 
 def _registra_url_comp(titolo, url, prezzo=None):
     registro = _url_comp_ctx.get()
@@ -860,6 +880,8 @@ def _registra_url_comp(titolo, url, prezzo=None):
     if url.startswith("/"):
         url = "https://www.vinted.it" + url
     if not url.startswith("http") or " " in url or ")" in url:
+        return
+    if not _e_dominio_secondhand(url):
         return
     titolo = str(titolo)
     chiave = re.sub(r"[^a-z0-9àèéìòù]+", " ", titolo.lower()).strip()
@@ -894,6 +916,33 @@ def _parole_comp(testo):
     return {p for p in testo.split() if len(p) >= 3 and p not in _PAROLE_GENERICHE_MATCH_COMP}
 
 
+def _parole_generiche_per_registro(registro):
+    """Parole che compaiono nella maggioranza dei RISULTATI DISTINTI (per
+    URL, non per chiave: la stessa pagina puo' avere due chiavi registrate,
+    quella intera e quella corta) registrati per QUESTO annuncio -- tipicamente
+    il nome del brand, ripetuto in ogni risultato -- e vanno escluse dal
+    punteggio di somiglianza: altrimenti 'our'+'legacy' bastano da soli a far
+    scattare un match qualsiasi sia il prodotto reale (bug reale del
+    2026-09-24, comp Our Legacy linkato al negozio ufficiale invece che a un
+    annuncio second-hand). Con un solo URL distinto in registro non c'e' modo
+    di distinguere 'parola del brand' da 'parola del prodotto', quindi non si
+    esclude nulla."""
+    if not registro:
+        return set()
+    parole_per_url = {}
+    for chiave, (url, _prezzo) in registro.items():
+        parole_per_url.setdefault(url, set()).update(_parole_comp(chiave))
+    n_url = len(parole_per_url)
+    if n_url < 2:
+        return set()
+    frequenza = {}
+    for parole in parole_per_url.values():
+        for parola in parole:
+            frequenza[parola] = frequenza.get(parola, 0) + 1
+    soglia = max(2, math.ceil(n_url * 0.6))
+    return {parola for parola, conteggio in frequenza.items() if conteggio >= soglia}
+
+
 def _assegna_url_ai_comp(v):
     """Aggiunge comp['url'] ai comp di cui la ricerca ha registrato il link.
     Il titolo citato dal Cervello dovrebbe essere copiato alla lettera, ma in
@@ -907,6 +956,7 @@ def _assegna_url_ai_comp(v):
     registro = _url_comp_ctx.get() or {}
     if not registro:
         return
+    parole_generiche_registro = _parole_generiche_per_registro(registro)
     for comp in v.get("comp_candidati", []):
         if comp.get("url") or comp.get("fonte_reale", comp.get("fonte")) == "memoria_modello":
             continue
@@ -941,7 +991,7 @@ def _assegna_url_ai_comp(v):
         # viceversa) e un numero minimo di parole condivise, per evitare
         # falsi positivi su titoli brevi o generici; se piu' di un candidato
         # raggiunge lo stesso punteggio migliore, e' ambiguo e non si linka.
-        parole_titolo = _parole_comp(titolo)
+        parole_titolo = _parole_comp(titolo) - parole_generiche_registro
         if len(parole_titolo) < 2:
             continue
         candidati_a_pari_merito = []
@@ -949,7 +999,7 @@ def _assegna_url_ai_comp(v):
         for chiave, (url, prezzo) in registro.items():
             if not _prezzo_compatibile(prezzo):
                 continue
-            parole_chiave = _parole_comp(chiave)
+            parole_chiave = _parole_comp(chiave) - parole_generiche_registro
             if len(parole_chiave) < 2:
                 continue
             comuni = parole_titolo & parole_chiave
