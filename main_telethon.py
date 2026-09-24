@@ -861,17 +861,49 @@ def _registra_url_comp(titolo, url, prezzo=None):
         url = "https://www.vinted.it" + url
     if not url.startswith("http") or " " in url or ")" in url:
         return
-    chiave = re.sub(r"[^a-z0-9àèéìòù]+", " ", str(titolo).lower()).strip()
+    titolo = str(titolo)
+    chiave = re.sub(r"[^a-z0-9àèéìòù]+", " ", titolo.lower()).strip()
     if len(chiave) >= 4:
         registro.setdefault(chiave, (url, prezzo))
+    # Titoli SERP (Google/Grailed/eBay/ecc.) spesso portano un suffisso di
+    # sito dopo '|', '-' o '–' (es. "Undercover Cargo Pants | Grailed"): il
+    # Cervello, riscrivendo il titolo, tende a tenere solo la parte prodotto.
+    # Si registra anche quella come chiave alternativa, cosi' il match esatto
+    # o per prefisso in _assegna_url_ai_comp la trova senza dover ricorrere
+    # al livello per somiglianza di parole.
+    parte_prodotto = re.split(r"\s[|\-–]\s", titolo, maxsplit=1)[0]
+    if parte_prodotto != titolo:
+        chiave_corta = re.sub(r"[^a-z0-9àèéìòù]+", " ", parte_prodotto.lower()).strip()
+        if len(chiave_corta) >= 4:
+            registro.setdefault(chiave_corta, (url, prezzo))
+
+
+_PAROLE_GENERICHE_MATCH_COMP = {
+    "com", "www", "http", "https", "size", "taglia", "new", "nuovo", "nuova",
+    "used", "usato", "usata", "original", "originale", "vintage", "grailed",
+    "ebay", "vinted", "depop", "etsy", "the", "for", "and", "con", "per",
+    "una", "uno", "gli", "del", "della", "delle", "sale", "vendita", "shop",
+    "store", "official", "men", "women", "uomo", "donna", "unisex",
+}
+
+
+def _parole_comp(testo):
+    """Token 'significativi' di un titolo (>=3 caratteri, esclusi i termini
+    da marketplace/generici che non aiutano a distinguere un capo da un
+    altro): usati solo per il match a somiglianza, mai per quello esatto."""
+    return {p for p in testo.split() if len(p) >= 3 and p not in _PAROLE_GENERICHE_MATCH_COMP}
 
 
 def _assegna_url_ai_comp(v):
     """Aggiunge comp['url'] ai comp di cui la ricerca ha registrato il link.
-    Il titolo citato dal Cervello e' copiato alla lettera, ma per i risultati
-    Google puo' includere anche parte dello snippet: si accetta quindi anche
-    un match per prefisso (min 10 caratteri), preferendo il titolo registrato
-    piu' lungo. Se entrambi hanno un prezzo, deve coincidere (+-1 EUR)."""
+    Il titolo citato dal Cervello dovrebbe essere copiato alla lettera, ma in
+    pratica per i risultati di ricerca on-demand (cerca_serper_mirata, titoli
+    SERP spesso lunghi/sporchi con suffissi di sito, taglie, ecc.) il modello
+    lo riscrive/accorcia comunque, quindi oltre al match esatto e per
+    prefisso (min 10 caratteri) si tenta un terzo livello per somiglianza di
+    parole (utile solo quando l'esatto/prefisso non trova nulla, e solo se il
+    risultato e' univoco: meglio nessun link che un link sbagliato). Se
+    entrambi hanno un prezzo, deve coincidere (+-1 EUR)."""
     registro = _url_comp_ctx.get() or {}
     if not registro:
         return
@@ -881,24 +913,58 @@ def _assegna_url_ai_comp(v):
         titolo = re.sub(r"[^a-z0-9àèéìòù]+", " ", str(comp.get("titolo_verbatim") or "").lower()).strip()
         if len(titolo) < 4:
             continue
+
+        def _prezzo_compatibile(prezzo):
+            if prezzo is None or comp.get("prezzo_eur") is None:
+                return True
+            try:
+                return abs(float(prezzo) - float(comp["prezzo_eur"])) <= 1.0
+            except (TypeError, ValueError):
+                return True
+
         migliore = None
         for chiave, (url, prezzo) in registro.items():
             stesso = chiave == titolo
             prefisso = min(len(chiave), len(titolo)) >= 10 and (titolo.startswith(chiave) or chiave.startswith(titolo))
-            if not (stesso or prefisso):
+            if not (stesso or prefisso) or not _prezzo_compatibile(prezzo):
                 continue
-            if prezzo is not None and comp.get("prezzo_eur") is not None:
-                try:
-                    if abs(float(prezzo) - float(comp["prezzo_eur"])) > 1.0:
-                        continue
-                except (TypeError, ValueError):
-                    pass
             if migliore is None or stesso or len(chiave) > len(migliore[0]):
                 migliore = (chiave, url)
                 if stesso:
                     break
         if migliore:
             comp["url"] = migliore[1]
+            continue
+
+        # Terzo livello: somiglianza di parole. Richiede che le parole del
+        # titolo del comp siano quasi tutte incluse nel titolo registrato (o
+        # viceversa) e un numero minimo di parole condivise, per evitare
+        # falsi positivi su titoli brevi o generici; se piu' di un candidato
+        # raggiunge lo stesso punteggio migliore, e' ambiguo e non si linka.
+        parole_titolo = _parole_comp(titolo)
+        if len(parole_titolo) < 2:
+            continue
+        candidati_a_pari_merito = []
+        punteggio_migliore = 0.0
+        for chiave, (url, prezzo) in registro.items():
+            if not _prezzo_compatibile(prezzo):
+                continue
+            parole_chiave = _parole_comp(chiave)
+            if len(parole_chiave) < 2:
+                continue
+            comuni = parole_titolo & parole_chiave
+            if len(comuni) < 2:
+                continue
+            rapporto = len(comuni) / min(len(parole_titolo), len(parole_chiave))
+            if rapporto < 0.6:
+                continue
+            if rapporto > punteggio_migliore + 1e-9:
+                punteggio_migliore = rapporto
+                candidati_a_pari_merito = [url]
+            elif abs(rapporto - punteggio_migliore) <= 1e-9:
+                candidati_a_pari_merito.append(url)
+        if punteggio_migliore > 0 and len(set(candidati_a_pari_merito)) == 1:
+            comp["url"] = candidati_a_pari_merito[0]
 
 
 class _FiltroRedazioneLog(logging.Filter):
