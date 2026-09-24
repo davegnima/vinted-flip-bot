@@ -3139,6 +3139,31 @@ async def scrape_vinted_listing(url):
             best_url_by_photo_id = foto_complete
 
         result["photo_urls"] = list(best_url_by_photo_id.values())[:MAX_GALLERY_PHOTOS]
+
+        # --- diagnostica temporanea (aggiunta 2026-09-24, utente): dal
+        # 23/09 pomeriggio TUTTI gli scrape restituiscono 0 foto pur senza
+        # nessun errore HTTP (_vinted_get_con_retry non solleva mai
+        # eccezione -- risposta sempre 2xx). Il regex di _estrai_foto_gallery
+        # e' stato verificato a mano contro un vero URL/frammento HTML
+        # forniti dall'utente (copiati dal SUO browser, con sessione/cookie
+        # reali) e funziona correttamente su quel testo. Questo suggerisce
+        # che la pagina scaricata dal bot (client anonimo, nessun cookie di
+        # sessione reale) sia DIVERSA da quella che vede un browser vero --
+        # non una rottura del regex. Log temporaneo per confermarlo dai
+        # prossimi run reali: lunghezza pagina, status HTTP, se "f800"
+        # compare comunque da qualche parte nel testo grezzo (regex
+        # troppo stretto sul contesto) o se manca del tutto (pagina
+        # diversa/bloccata), e i primi 200 caratteri per riconoscere una
+        # eventuale pagina di verifica/blocco al posto dell'annuncio vero.
+        # Va tolto una volta capita la causa.
+        if not result["photo_urls"]:
+            log.warning(
+                "DIAGNOSTICA scrape foto vuoto per %s: status=%s len(html)=%d "
+                "'f800' presente nel testo grezzo=%s primi 200 char=%r",
+                url, resp.status_code, len(html_pagina), "f800" in html_pagina,
+                html_pagina[:200],
+            )
+
         # Il photo_id della cover (prima foto) e' potenzialmente lo stesso ID
         # accettato dal parametro "search_by_image_id" del bottone Vinted
         # "Cerca articoli simili" (stesso formato osservato in produzione:
@@ -6725,6 +6750,16 @@ def calcola_verdetto(v, prezzo_prodotto):
     bot dove si decide COMPRA/TRATTA/NON COMPRARE e dove si calcolano
     margine, ROI e obiettivo di trattativa."""
     limiti_applicati = []
+    # Conta SOLO gli step che riducono davvero il target (limite 1-4 qui
+    # sotto), non le note puramente informative aggiunte piu' avanti
+    # (vendita lampo, furto istantaneo, taglia estrema, difetto strutturale
+    # lieve/moderata non bloccante). Usato in render_messaggio_verdetto per
+    # decidere se mostrare il riepilogo "Stima del modello X ridotta a Y":
+    # con un solo step il riepilogo e' un doppione esatto della singola riga
+    # di dettaglio qui sotto (bug segnalato dall'utente il 2026-09-23 --
+    # sembrava un doppio sconto quando era lo stesso identico step mostrato
+    # due volte).
+    riduzioni_prezzo_target = 0
 
     if prezzo_prodotto is None or prezzo_prodotto <= 0:
         # Senza il prezzo dell'annuncio non esiste nessun calcolo economico
@@ -6756,6 +6791,7 @@ def calcola_verdetto(v, prezzo_prodotto):
     if tetto and target > tetto:
         target = tetto
         limiti_applicati.append(f"tetto di linea €{tetto:.2f} ({v.get('linea_o_era_rilevata')})")
+        riduzioni_prezzo_target += 1
 
     # --- limite 2: ancoraggio al comp di riferimento, gia' scontato
     # (era verifica_ancoraggio_prezzo_comp, 140 righe di regex sul testo)
@@ -6769,6 +6805,7 @@ def calcola_verdetto(v, prezzo_prodotto):
                 f"scontato {v['sconto_ask_applicato_pct']:.0f}% = €{massimo_consentito:.2f}"
             )
             target = massimo_consentito
+            riduzioni_prezzo_target += 1
 
     # --- limite 3: filtro outlier sui comp utilizzabili
     utilizzabili = _comp_utilizzabili(v)
@@ -6809,6 +6846,7 @@ def calcola_verdetto(v, prezzo_prodotto):
                 f"{descrizione_limite} scontato {v['sconto_ask_applicato_pct']:.0f}% = €{massimo_consentito:.2f}"
             )
             target = massimo_consentito
+            riduzioni_prezzo_target += 1
 
     # --- limite 4: sconto per difetto dichiarato sul capo. Si applica DOPO
     # tetto di linea/ancoraggio/materiale perche' riguarda le condizioni di
@@ -6826,6 +6864,7 @@ def calcola_verdetto(v, prezzo_prodotto):
             f"difetto dichiarato ({descrizione_difetto or 'non specificato'}): "
             f"sconto {sconto_difetto_pct:.0f}% da €{target_prima_difetto:.2f} a €{target:.2f}"
         )
+        riduzioni_prezzo_target += 1
 
     # Difetto strutturale 'lieve'/'moderata' (vedi schema): non forza NON
     # COMPRARE (lo fa solo 'grave', piu' sotto), ma la nota resta visibile
@@ -7051,6 +7090,7 @@ def calcola_verdetto(v, prezzo_prodotto):
         "comp_scartati_outlier": prezzi_scartati,
         "n_comp_reali": len(comp_reali),
         "limiti_applicati": limiti_applicati,
+        "riduzioni_prezzo_target": riduzioni_prezzo_target,
     }
 
 
@@ -7287,7 +7327,17 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
     # informazione, ma dichiarata prima del calcolo invece che rattoppata dopo.
     if verdetto.get("limiti_applicati"):
         righe.append("")
-        if verdetto.get("prezzo_target_dichiarato") and verdetto.get("prezzo_target") is not None:
+        # Il riepilogo "Stima del modello X ridotta a Y" ha senso solo come
+        # somma di PIU' step in cascata (es. tetto di linea + difetto): con
+        # un solo step che ha ridotto il prezzo, la riga di dettaglio
+        # qui sotto gia' mostra lo stesso identico prima/dopo con anche il
+        # motivo -- ripeterlo qui sembra un secondo sconto separato (bug
+        # segnalato dall'utente il 2026-09-23: caso con un solo sconto per
+        # difetto, mostrato due volte, letto come due sconti in cascata).
+        if (
+            verdetto.get("prezzo_target_dichiarato") and verdetto.get("prezzo_target") is not None
+            and verdetto.get("riduzioni_prezzo_target", 0) > 1
+        ):
             if verdetto["prezzo_target_dichiarato"] > verdetto["prezzo_target"] + 0.01:
                 righe.append(
                     f"⚠️ _Stima del modello €{verdetto['prezzo_target_dichiarato']:.2f} "
