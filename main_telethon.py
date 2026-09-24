@@ -308,6 +308,17 @@ SOGLIA_PREZZO_FURTO_ISTANTANEO = 15.0  # sotto questo prezzo pagato, niente fase
                                         # non vale il tempo della trattativa.
 SOGLIA_ROI_FURTO_ISTANTANEO = 300.0    # ROI (sul prezzo pieno) minimo per l'eccezione sopra.
 
+SOGLIA_MARGINE_TAGLIA_ESTREMA_ECCEZIONE = 50.0  # taglia estrema/non liquida (vedi uso in
+SOGLIA_ROI_TAGLIA_ESTREMA_ECCEZIONE = 150.0     # calcola_verdetto): AFFINATA il 2026-09-24 su
+# richiesta esplicita dell'utente -- il blocco incondizionato del 2026-09-22 ("mai COMPRA a
+# prezzo pieno, qualunque sia il brand") si e' rivelato troppo rigido su un caso reale (Rick
+# Owens taglia estrema, margine €157.90/ROI 714% declassato comunque a TRATTA): "le taglie
+# hanno impatto sui gg di turnover e magari un pochino sul prezzo di vendita ma non devono
+# impattare in questa forma cosi' rigida l'esito". Ora la taglia estrema declassa COMPRA a
+# TRATTA solo se l'affare NON supera anche questa soglia alternativa (margine E roi, non solo
+# uno dei due) -- un margine/ROI davvero fuori scala vale comunque il rischio di liquidita'
+# sulla taglia. Sotto questa soglia resta il declassamento automatico di prima.
+
 # Tolleranza (EUR) nel confronto tra un prezzo comp dichiarato dal cervello
 # e i prezzi realmente presenti nel pool di ricerca -- assorbe arrotondamenti
 # (89,99 scritto come 90) senza lasciar passare un numero inventato.
@@ -7038,18 +7049,35 @@ def calcola_verdetto(v, prezzo_prodotto):
             f"con ROI {roi:.0f}% -- trattativa saltata, comprato a prezzo pieno subito"
         )
 
-    # --- taglia estrema/non liquida: mai COMPRA a prezzo pieno, qualunque
-    # sia il brand (richiesto dall'utente il 2026-09-22, "anche se Loro
-    # Piana e' Tier-1, una taglia 54 non liquida non paga le bollette") --
-    # il rischio non e' l'autenticita' ma il capitale bloccato troppo a
-    # lungo su un capo difficile da rivendere. Applicata per ULTIMA, dopo
-    # anche il 'furto istantaneo' qui sopra: la ha sempre l'ultima parola su
-    # qualunque altra logica economica.
-    if v["fascia_taglia"] == "estrema" and decisione == "COMPRA":
+    # --- taglia estrema/non liquida: normalmente niente COMPRA a prezzo
+    # pieno, qualunque sia il brand (richiesto dall'utente il 2026-09-22,
+    # "anche se Loro Piana e' Tier-1, una taglia 54 non liquida non paga le
+    # bollette") -- il rischio non e' l'autenticita' ma il capitale
+    # bloccato troppo a lungo su un capo difficile da rivendere.
+    #
+    # AFFINATA il 2026-09-24 (utente, caso reale Rick Owens taglia estrema
+    # con margine €157.90/ROI 714% declassato comunque a TRATTA): il blocco
+    # incondizionato era troppo rigido su un affare fuori scala. Ora
+    # l'eccezione margine/ROI di SOGLIA_MARGINE_TAGLIA_ESTREMA_ECCEZIONE /
+    # SOGLIA_ROI_TAGLIA_ESTREMA_ECCEZIONE (vedi sopra) lascia passare il
+    # COMPRA quando l'affare e' davvero eccezionale; sotto quella soglia
+    # resta il declassamento automatico di prima. Applicata per ULTIMA,
+    # dopo anche il 'furto istantaneo' qui sopra: ha sempre l'ultima parola
+    # su qualunque altra logica economica, salvo l'eccezione qui sotto.
+    taglia_estrema_eccezione = (
+        margine >= SOGLIA_MARGINE_TAGLIA_ESTREMA_ECCEZIONE and roi >= SOGLIA_ROI_TAGLIA_ESTREMA_ECCEZIONE
+    )
+    if v["fascia_taglia"] == "estrema" and decisione == "COMPRA" and not taglia_estrema_eccezione:
         decisione = "TRATTA" if tratta_supera_soglia else "NON COMPRARE"
         limiti_applicati.append(
-            "taglia estrema/non liquida: mai COMPRA a prezzo pieno anche con margine sano su carta -- "
+            "taglia estrema/non liquida: niente COMPRA a prezzo pieno con margine/ROI ordinari -- "
             "capitale bloccato troppo a lungo su un capo difficile da vendere"
+        )
+    elif v["fascia_taglia"] == "estrema" and decisione == "COMPRA" and taglia_estrema_eccezione:
+        limiti_applicati.append(
+            f"taglia estrema/non liquida, ma margine €{margine:.2f}/ROI {roi:.0f}% fuori scala "
+            f"(oltre €{SOGLIA_MARGINE_TAGLIA_ESTREMA_ECCEZIONE:.0f}/{SOGLIA_ROI_TAGLIA_ESTREMA_ECCEZIONE:.0f}%): "
+            "COMPRA confermato, vale il rischio di liquidita' sulla taglia"
         )
 
     # --- urgenza: mai dedotta dai soli numeri, serve domanda di mercato reale
