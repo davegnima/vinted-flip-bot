@@ -487,13 +487,29 @@ def _gemini_registra_esito(successo):
 # "high demand", si passa SUBITO al modello di riserva per
 # RAFFREDDAMENTO_MODELLO_SOVRACCARICO_SECONDI, poi si riprova il principale.
 #
-# GEMINI_MODEL_FALLBACK: env var, default gemini-3.1-flash-lite (il modello
-# su cui il bot girava prima del passaggio alla famiglia 3.5, quindi gia'
-# provato con questi prompt/schema). Stringa vuota = fallback disattivato,
-# comportamento di prima.
-GEMINI_MODEL_FALLBACK = os.environ.get("GEMINI_MODEL_FALLBACK", "gemini-3.1-flash-lite").strip()
+# GEMINI_MODEL_FALLBACK: env var, lista di modelli di riserva separati da
+# virgola, provati IN ORDINE dopo il principale. Default
+# "gemini-3.1-flash-lite,gemini-2.5-flash-lite". Stringa vuota = fallback
+# disattivato, comportamento di prima.
+#
+# AGGIORNATO il 2026-09-24 sera (log dopo il primo deploy del fallback): il
+# 503 "high demand" colpiva ANCHE gemini-3.1-flash-lite, quindi una sola
+# riserva non basta -- ora e' una catena. Ogni modello che risponde
+# "high demand" viene escluso per RAFFREDDAMENTO_MODELLO_SOVRACCARICO_SECONDI
+# e si passa subito al successivo; un modello che risponde 404 (nome non piu'
+# servito da Google) viene escluso per RAFFREDDAMENTO_MODELLO_INESISTENTE_SECONDI
+# invece di sprecarci un tentativo a ogni chiamata. Solo quando TUTTI i
+# modelli della catena sono esclusi si torna alla rotazione key + backoff di
+# prima sul principale.
+GEMINI_MODELLI_RISERVA = [
+    m.strip() for m in os.environ.get(
+        "GEMINI_MODEL_FALLBACK", "gemini-3.1-flash-lite,gemini-2.5-flash-lite").split(",")
+    if m.strip()
+]
+GEMINI_MODEL_FALLBACK = GEMINI_MODELLI_RISERVA[0] if GEMINI_MODELLI_RISERVA else ""
 RAFFREDDAMENTO_MODELLO_SOVRACCARICO_SECONDI = 15 * 60
-_gemini_modello_sovraccarico_fino = [0.0]
+RAFFREDDAMENTO_MODELLO_INESISTENTE_SECONDI = 24 * 3600
+_gemini_modello_escluso_fino = {}
 
 
 def _gemini_e_sovraccarico_modello(status_code, corpo_testo):
@@ -505,22 +521,69 @@ def _gemini_e_sovraccarico_modello(status_code, corpo_testo):
     return "high demand" in t or "overloaded" in t or "unavailable" in t
 
 
-def _gemini_segna_modello_sovraccarico():
-    if GEMINI_MODEL_FALLBACK and time.time() >= _gemini_modello_sovraccarico_fino[0]:
-        log.warning(
-            "Gemini: modello principale in sovraccarico (503 high demand) -- passo al modello di "
-            "riserva %s per %d minuti.", GEMINI_MODEL_FALLBACK, RAFFREDDAMENTO_MODELLO_SOVRACCARICO_SECONDI // 60,
-        )
-    _gemini_modello_sovraccarico_fino[0] = time.time() + RAFFREDDAMENTO_MODELLO_SOVRACCARICO_SECONDI
+def _gemini_e_modello_inesistente(status_code, corpo_testo):
+    """True se il modello richiesto non esiste (piu') per questa API."""
+    if status_code != 404:
+        return False
+    t = (corpo_testo or "").lower()
+    return "not found" in t or "not supported" in t or "is not found" in t or not t
+
+
+def _gemini_modello_da_url(api_url):
+    m = re.search(r"/models/([^:/]+):", api_url)
+    return m.group(1) if m else None
+
+
+def _gemini_modello_escluso(modello):
+    scadenza = _gemini_modello_escluso_fino.get(modello)
+    if scadenza is None:
+        return False
+    if time.time() >= scadenza:
+        del _gemini_modello_escluso_fino[modello]
+        return False
+    return True
+
+
+def _gemini_segna_modello_non_disponibile(modello, secondi, motivo):
+    if not _gemini_modello_escluso(modello):
+        log.warning("Gemini: modello %s %s -- escluso per %d minuti, passo al successivo della catena.",
+                    modello, motivo, secondi // 60)
+    _gemini_modello_escluso_fino[modello] = time.time() + secondi
 
 
 def _gemini_url_effettivo(api_url):
-    """URL del modello principale, o del modello di riserva se il
-    principale e' in sovraccarico (vedi sopra). Sostituisce solo il nome del
-    modello nel path, quindi vale sia per l'Occhio sia per il Cervello."""
-    if not GEMINI_MODEL_FALLBACK or time.time() >= _gemini_modello_sovraccarico_fino[0]:
+    """URL del primo modello disponibile della catena principale ->
+    GEMINI_MODELLI_RISERVA. Se sono tutti esclusi si torna al principale
+    (e da li' valgono rotazione key e backoff come prima). Sostituisce solo il
+    nome del modello nel path, quindi vale per Occhio e Cervello."""
+    principale = _gemini_modello_da_url(api_url)
+    if not principale or not GEMINI_MODELLI_RISERVA:
         return api_url
-    return re.sub(r"/models/[^:/]+:", f"/models/{GEMINI_MODEL_FALLBACK}:", api_url)
+    catena = [principale] + [m for m in GEMINI_MODELLI_RISERVA if m != principale]
+    for modello in catena:
+        if not _gemini_modello_escluso(modello):
+            if modello == principale:
+                return api_url
+            return re.sub(r"/models/[^:/]+:", f"/models/{modello}:", api_url)
+    return api_url
+
+
+def _gemini_gestisci_modello_non_disponibile(api_url, url_usato, status_code, corpo_testo):
+    """Chiamata dopo una risposta non-2xx. Se l'errore dice che il MODELLO
+    (non la key) non e' disponibile, lo esclude e ritorna True quando esiste
+    un altro modello della catena su cui ritentare subito."""
+    if not GEMINI_MODELLI_RISERVA:
+        return False
+    modello = _gemini_modello_da_url(url_usato)
+    if _gemini_e_sovraccarico_modello(status_code, corpo_testo):
+        _gemini_segna_modello_non_disponibile(
+            modello, RAFFREDDAMENTO_MODELLO_SOVRACCARICO_SECONDI, "in sovraccarico (503 high demand)")
+    elif _gemini_e_modello_inesistente(status_code, corpo_testo):
+        _gemini_segna_modello_non_disponibile(
+            modello, RAFFREDDAMENTO_MODELLO_INESISTENTE_SECONDI, "non disponibile (404)")
+    else:
+        return False
+    return _gemini_url_effettivo(api_url) != url_usato
 
 # Rate-limiter tra richieste Vinted consecutive: dopo ~13h di attivita'
 # continua Vinted ha iniziato a rispondere 403 Forbidden (probabile blocco
@@ -3578,15 +3641,17 @@ async def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, groundi
             # Cervello e' comunque troppo. 30s resta ampio per foto+prompt.
             key_usata = _gemini_key_attuale()
             url_usato = _gemini_url_effettivo(api_url)
-            resp = await _client_generico.post(url_usato, params={"key": key_usata}, json=payload, timeout=30)
+            # Key nell'header e non nella query string (FIX 2026-09-24): come
+            # parametro "?key=" finiva in chiaro nei log httpx su Railway.
+            resp = await _client_generico.post(
+                url_usato, headers={"x-goog-api-key": key_usata}, json=payload, timeout=30)
             if not resp.is_success:
                 log.warning("Gemini HTTP %d: %s", resp.status_code, resp.text[:500])
-                # Sovraccarico del modello principale: niente rotazione key
-                # (inutile, e' il modello), si passa subito al modello di
-                # riserva -- vedi GEMINI_MODEL_FALLBACK.
-                if (url_usato == api_url and GEMINI_MODEL_FALLBACK and attempt < max_retries_effettivi
-                        and _gemini_e_sovraccarico_modello(resp.status_code, resp.text)):
-                    _gemini_segna_modello_sovraccarico()
+                # Modello (non key) non disponibile: niente rotazione key,
+                # si passa subito al modello successivo della catena -- vedi
+                # GEMINI_MODELLI_RISERVA.
+                if attempt < max_retries_effettivi and _gemini_gestisci_modello_non_disponibile(
+                        api_url, url_usato, resp.status_code, resp.text):
                     continue
             if resp.is_success:
                 _gemini_registra_esito(True)
@@ -4344,13 +4409,12 @@ async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca
                 key_usata = _gemini_key_attuale()
                 url_usato = _gemini_url_effettivo(api_url)
                 resp = await _client_generico.post(
-                    url_usato, params={"key": key_usata}, json=payload, timeout=30)
+                    url_usato, headers={"x-goog-api-key": key_usata}, json=payload, timeout=30)
                 if not resp.is_success:
                     log.warning("Gemini (cervello) HTTP %d: %s", resp.status_code, resp.text[:500])
                     # Stesso fallback di modello di chiama_gemini.
-                    if (url_usato == api_url and GEMINI_MODEL_FALLBACK and attempt < tentativi_effettivi
-                            and _gemini_e_sovraccarico_modello(resp.status_code, resp.text)):
-                        _gemini_segna_modello_sovraccarico()
+                    if attempt < tentativi_effettivi and _gemini_gestisci_modello_non_disponibile(
+                            api_url, url_usato, resp.status_code, resp.text):
                         continue
                     if _gemini_e_errore_quota_giornaliera(resp.status_code, resp.text):
                         _gemini_segna_key_quota_esaurita(key_usata)
