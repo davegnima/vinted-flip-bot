@@ -5754,6 +5754,66 @@ def _estrai_articoli_da_alt_vinted(html_content, max_articoli=15):
     return "\n".join(righe)
 
 
+# Pattern gemello di _RE_ALT_PRODOTTO_VINTED che cattura ANCHE l'ID
+# dell'articolo (Punto 3 concordato il 2026-09-25: link cliccabili nei
+# comp, rimappati in Python al rendering finale usando titolo+prezzo come
+# chiave, MAI passati al Cervello -- vedi la discussione su allucinazioni
+# di link e troncamento Markdown di Telegram). Confermato sul frammento
+# HTML reale fornito dall'utente lo stesso giorno: ogni box prodotto ha un
+# div contenitore con data-testid="product-item-id-NNNN" (l'ID nudo, senza
+# suffisso) che precede sempre l'alt= della sua stessa immagine -- i due
+# suffissi "--image" e "--overlay-link" sugli altri elementi dello stesso
+# box hanno un "--" subito dopo le cifre, quindi non superano il gruppo
+# (\d+)" (cifre seguite direttamente da virgolette) e non vengono presi.
+#
+# Non serve leggere l'href dell'<a>: lo stesso frammento fornito dall'utente
+# arrivava con l'href gia' rovinato in sintassi Markdown da uno strumento di
+# copia (ulteriore controprova che fidarsi del testo dell'href e' fragile),
+# mentre https://www.vinted.it/items/{id} da solo e' un URL valido -- Vinted
+# fa redirect alla pagina completa con lo slug anche senza di esso.
+_RE_PRODOTTO_VINTED_CON_ID = re.compile(
+    r'data-testid="product-item-id-(\d+)".*?'
+    r'alt="([^"]+?),\s*Brand:.*?,\s*Condizioni:.*?,\s*Taglia:[^,"]*,\s*([\d]+(?:[.,]\d+)?)\s*€',
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _normalizza_titolo_per_link(titolo):
+    """Normalizzazione MINIMA (minuscolo, spazi compattati) per il lookup
+    titolo->URL comp. Deliberatamente diversa da _normalizza_titolo_per_dedup,
+    che droppa l'ultima parola del titolo -- pensata per confrontare il
+    titolo dell'annuncio contro un comp con la taglia in coda, non per
+    riconoscere due copie dello stesso identico titolo comp (qui perdere
+    l'ultima parola creerebbe falsi mancati match)."""
+    if not titolo:
+        return ""
+    return re.sub(r"\s+", " ", titolo.strip().lower())
+
+
+def _estrai_mappa_url_comp_vinted(html_content):
+    """Costruisce {(titolo_normalizzato, prezzo_2f): url} dallo stesso HTML
+    grezzo passato a _estrai_articoli_da_alt_vinted (vedi
+    _RE_PRODOTTO_VINTED_CON_ID), cosi' il rendering finale del messaggio puo'
+    riattaccare un link cliccabile al comp che il Cervello ha ricopiato nel
+    suo JSON -- un semplice dict.get() su titolo+prezzo, senza fuzzy
+    matching che rischierebbe di agganciare il comp sbagliato. Il prezzo e'
+    la chiave nello stesso formato ".2f" prodotto da calcola_verdetto sui
+    comp validati (vedi comp['prezzo_eur'] = round(prezzo, 2))."""
+    mappa = {}
+    for m in _RE_PRODOTTO_VINTED_CON_ID.finditer(html_content or ""):
+        item_id, titolo_grezzo, prezzo_grezzo = m.group(1), m.group(2), m.group(3)
+        titolo = html.unescape(titolo_grezzo).strip()
+        if not titolo or len(titolo) < 3:
+            continue
+        try:
+            prezzo_norm = f"{float(prezzo_grezzo.replace(',', '.')):.2f}"
+        except ValueError:
+            continue
+        chiave = (_normalizza_titolo_per_link(titolo), prezzo_norm)
+        mappa.setdefault(chiave, f"https://www.vinted.it/items/{item_id}")
+    return mappa
+
+
 async def _scrape_catalogo_vinted_diretto(url):
     """Scarica la pagina catalogo search_by_image_id con il client HTTP GIA'
     autenticato del bot (stesso pool/proxy usato per annunci e profili
@@ -5773,11 +5833,72 @@ async def _scrape_catalogo_vinted_diretto(url):
     sopra) invece che via markdown generico: un primo tentativo con
     markdownify (HTML->markdown) metteva titolo e prezzo su righe separate
     quando erano in tag diversi, rompendo il parser esistente che li vuole
-    sulla stessa riga -- scartato prima del deploy."""
+    sulla stessa riga -- scartato prima del deploy.
+
+    Ritorna (testo, ok, mappa_url) invece del vecchio (testo, ok): la mappa
+    (vedi _estrai_mappa_url_comp_vinted) e' costruita dallo stesso HTML gia'
+    scaricato qui, a costo zero di richieste aggiuntive, per rimappare i
+    link cliccabili al rendering finale (Punto 3, 2026-09-25)."""
     resp = await _vinted_get_con_retry(url, timeout=15, max_retries=2)
     if resp is None:
-        return "  Scrape diretto Vinted fallito (nessuna risposta dopo i retry).", False
-    return _estrai_articoli_da_alt_vinted(resp.text), True
+        return "  Scrape diretto Vinted fallito (nessuna risposta dopo i retry).", False, {}
+    return _estrai_articoli_da_alt_vinted(resp.text), True, _estrai_mappa_url_comp_vinted(resp.text)
+
+
+# Timeout dedicati alla ricerca testuale Vinted con fallback (2026-09-25):
+# lo scrape diretto ha un budget corto, cosi' se Vinted e' lento o risponde
+# 403 resta tempo per il tentativo Serper dentro il timeout complessivo della
+# fonte (TIMEOUT_FONTE_VINTED_CON_FALLBACK_SECONDI in search_comps_completo).
+TIMEOUT_SCRAPE_DIRETTO_VINTED_TESTO_SECONDI = 8
+TIMEOUT_FONTE_VINTED_CON_FALLBACK_SECONDI = 25
+MARKER_NESSUN_ARTICOLO_VINTED = "Nessun articolo trovato"
+
+
+async def _cerca_vinted_testo_diretto_con_fallback_serper(url):
+    """Ricerca comp testuale su Vinted: PRIMA lo scrape diretto della pagina
+    catalogo (stesso client/proxy e stesso parser su alt= gia' usati per la
+    ricerca visuale, vedi _scrape_catalogo_vinted_diretto), POI Serper solo
+    se il diretto fallisce o non estrae nessun articolo.
+
+    Aggiunta il 2026-09-25 su richiesta dell'utente per risparmiare crediti
+    Serper sulla ricerca testuale (una chiamata a ogni annuncio, piu' una
+    per il sarto quando c'e'). Serper resta come rete di sicurezza e non
+    viene tolto: lo scrape diretto aggiunge 1-2 richieste a Vinted per
+    annuncio dallo stesso IP, e il bot ha gia' preso 403 da Vinted dopo molte
+    ore di attivita' (vedi PAUSA_MINIMA_TRA_RICHIESTE_VINTED_SECONDI). Se
+    succede, il fallback copre l'annuncio invece di lasciarlo senza comp.
+
+    Stesso contratto di ritorno delle altre fonti: (testo, ok, mappa_url),
+    con il testo nel formato '- titolo — €prezzo' una riga per articolo.
+    mappa_url (aggiunta il 2026-09-25, vedi _estrai_mappa_url_comp_vinted)
+    e' popolata SOLO sul ramo di scrape diretto: l'HTML che arriva da
+    Serper (_serper_scrape_page_diretto) e' gia' passato per un'estrazione
+    di contenuto che non preserva i data-testid, quindi su quel ramo il
+    dizionario resta vuoto -- niente link per quei comp, non un errore."""
+    motivo_fallback = None
+    try:
+        resp = await asyncio.wait_for(
+            _vinted_get_con_retry(url, timeout=TIMEOUT_SCRAPE_DIRETTO_VINTED_TESTO_SECONDI, max_retries=1),
+            timeout=TIMEOUT_SCRAPE_DIRETTO_VINTED_TESTO_SECONDI + 4,
+        )
+    except asyncio.TimeoutError:
+        resp = None
+        motivo_fallback = "timeout scrape diretto"
+    if resp is not None:
+        testo = _estrai_articoli_da_alt_vinted(resp.text)
+        if MARKER_NESSUN_ARTICOLO_VINTED not in testo:
+            log.info("Comp Vinted testo: scrape diretto OK (%d articoli), Serper non usato -- %s",
+                     testo.count("\n") + 1, url)
+            return testo, True, _estrai_mappa_url_comp_vinted(resp.text)
+        motivo_fallback = f"scrape diretto senza articoli estratti (status {resp.status_code}, len {len(resp.text)})"
+    elif motivo_fallback is None:
+        motivo_fallback = "scrape diretto fallito (nessuna risposta)"
+
+    log.info("Comp Vinted testo: %s -- uso Serper come riserva per %s", motivo_fallback, url)
+    testo_serper, ok_serper = await _serper_scrape_page_diretto("VINTED", url)
+    if ok_serper:
+        return testo_serper, True, {}
+    return f"  {motivo_fallback}; fallback Serper anch'esso fallito: {testo_serper.strip()}", False, {}
 
 
 async def _recupera_comp_visuali_vinted(item_id, photo_id, brand):
@@ -5788,9 +5909,11 @@ async def _recupera_comp_visuali_vinted(item_id, photo_id, brand):
     invece di bloccarne l'avvio. Fa due passi in sequenza al suo interno
     (risolvi ID -> scrape del catalogo con quell'ID), ma dal punto di vista
     dell'executor e' un solo task con lo stesso contratto di ritorno
-    (testo, ok) degli altri. ok=False (non un'eccezione) quando manca un
-    ingrediente o la risoluzione fallisce, cosi' il chiamante lo tratta come
-    fonte assente senza differenziare i log dalle altre query fallite.
+    (testo, ok, mappa_url) degli altri (mappa_url aggiunta il 2026-09-25,
+    vedi _estrai_mappa_url_comp_vinted). ok=False (non un'eccezione) quando
+    manca un ingrediente o la risoluzione fallisce, cosi' il chiamante lo
+    tratta come fonte assente senza differenziare i log dalle altre query
+    fallite.
 
     Scrape diretto (non Serper) dal 2026-09-20: vedi docstring di
     _scrape_catalogo_vinted_diretto per il perche'."""
@@ -5800,13 +5923,13 @@ async def _recupera_comp_visuali_vinted(item_id, photo_id, brand):
             "_recupera_comp_visuali_vinted: fonte non disponibile per item_id=%s "
             "(photo_id/brand mancante o risoluzione ID fallita).", item_id,
         )
-        return "  Fonte non disponibile (photo_id/brand mancante o risoluzione ID falsa).", False
-    testo, ok = await _scrape_catalogo_vinted_diretto(url)
+        return "  Fonte non disponibile (photo_id/brand mancante o risoluzione ID falsa).", False, {}
+    testo, ok, mappa_url = await _scrape_catalogo_vinted_diretto(url)
     log.info(
         "_recupera_comp_visuali_vinted: scrape catalogo grezzo per item_id=%s ok=%s -> %r",
         item_id, ok, testo,
     )
-    return testo, ok
+    return testo, ok, mappa_url
 
 
 async def _cerca_ebay_sold_con_fallback(brand, categoria, material_per_ricerca=None):
@@ -5876,27 +5999,37 @@ async def search_comps_completo(brand, categoria, query_base, catalog_id=None, m
     # che nessuno avrebbe piu' letto.
     TIMEOUT_PER_FONTE_SECONDI = 15
 
-    async def _esegui_fonte(nome, coroutine):
+    async def _esegui_fonte(nome, coroutine, timeout=TIMEOUT_PER_FONTE_SECONDI):
         try:
-            testo, ok = await asyncio.wait_for(coroutine, timeout=TIMEOUT_PER_FONTE_SECONDI)
-            return nome, testo, ok
+            testo, ok, mappa_url = await asyncio.wait_for(coroutine, timeout=timeout)
+            return nome, testo, ok, mappa_url
         except asyncio.TimeoutError:
-            return nome, f"  Timeout (fonte troppo lenta, oltre {TIMEOUT_PER_FONTE_SECONDI}s).", False
+            return nome, f"  Timeout (fonte troppo lenta, oltre {timeout}s).", False, {}
         except Exception as e:
-            return nome, f"  Query fallita: {e}", False
+            return nome, f"  Query fallita: {e}", False, {}
 
-    lavori = [_esegui_fonte("vinted", _serper_scrape_page_diretto("VINTED", vinted_url))]
+    # Ricerca testuale Vinted (e per sarto): scrape diretto con Serper come
+    # riserva dal 2026-09-25, vedi _cerca_vinted_testo_diretto_con_fallback_serper.
+    # Timeout piu' ampio delle altre fonti perche' nel caso peggiore fa due
+    # tentativi in sequenza (diretto, poi Serper).
+    lavori = [_esegui_fonte(
+        "vinted", _cerca_vinted_testo_diretto_con_fallback_serper(vinted_url),
+        timeout=TIMEOUT_FONTE_VINTED_CON_FALLBACK_SECONDI)]
     if tentare_ricerca_visuale:
         lavori.append(_esegui_fonte(
             "vinted_visuale", _recupera_comp_visuali_vinted(item_id, cover_photo_id, brand)))
     if url_sarto:
-        lavori.append(_esegui_fonte("vinted_sarto", _serper_scrape_page_diretto("VINTED", url_sarto)))
+        lavori.append(_esegui_fonte(
+            "vinted_sarto", _cerca_vinted_testo_diretto_con_fallback_serper(url_sarto),
+            timeout=TIMEOUT_FONTE_VINTED_CON_FALLBACK_SECONDI))
 
     risultati = {}
     successi = {}
-    for nome, testo, ok in await asyncio.gather(*lavori):
+    mappe_url = {}
+    for nome, testo, ok, mappa_url in await asyncio.gather(*lavori):
         risultati[nome] = testo
         successi[nome] = ok
+        mappe_url[nome] = mappa_url
 
     serper_ha_funzionato = any(successi.values())
 
@@ -5973,7 +6106,22 @@ async def search_comps_completo(brand, categoria, query_base, catalog_id=None, m
             f"{sarto_comp_puliti or 'Nessun risultato'}"
         )
 
-    return "\n".join(parti), serper_ha_funzionato, tentare_ricerca_visuale, fonte_visuale_riuscita
+    # Mappa URL comp unita da tutte le fonti che l'hanno popolata (solo
+    # scrape diretto, vedi _cerca_vinted_testo_diretto_con_fallback_serper) --
+    # usata al rendering finale per riattaccare un link cliccabile al comp
+    # che il Cervello cita nel suo JSON, mai passata al prompt (Punto 3,
+    # 2026-09-25). Sull'eventuale, rara collisione di chiave (stesso
+    # titolo+prezzo su due fonti diverse) vince l'ultima fonte unita: non ha
+    # importanza, l'URL punta comunque a un annuncio con lo stesso
+    # titolo/prezzo esatto.
+    mappa_url_comp = {}
+    for nome in ("vinted", "vinted_visuale", "vinted_sarto"):
+        mappa_url_comp.update(mappe_url.get(nome) or {})
+
+    return (
+        "\n".join(parti), serper_ha_funzionato, tentare_ricerca_visuale,
+        fonte_visuale_riuscita, mappa_url_comp,
+    )
 
 
 def _estrai_margine_e_roi_da_blocco(blocco_testo):
@@ -7249,7 +7397,7 @@ def calcola_verdetto(v, prezzo_prodotto):
     }
 
 
-def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_id=None, cover_photo_id=None, brand=None, catalog_id=None):
+def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_id=None, cover_photo_id=None, brand=None, catalog_id=None, mappa_url_comp=None):
     """Costruisce il messaggio Telegram dal verdetto calcolato. E' l'unico
     posto del bot dove si scrivono emoji di decisione e cifre: il modello
     non produce piu' nessuna delle due, quindi non esiste piu' il caso
@@ -7259,10 +7407,19 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
     lettura su notifica Telegram ~3 secondi): 3 blocchi ad alto contrasto
     (Deal, Rischio&Liquidita', Azioni con testo copiabile in un tocco via
     singolo backtick) seguiti da un blocco unico di dettaglio/debug in
-    fondo ("seminterrato": note analista, motivazioni estese, comp, link
-    ricerca visuale, avvisi). Nessuna informazione tolta rispetto a prima,
-    solo riordinata: la vecchia versione mischiava dati finanziari e
-    motivazioni discorsive nello stesso blocco."""
+    fondo ("seminterrato": note analista, motivazioni estese, comp, avvisi).
+    Nessuna informazione tolta rispetto a prima, solo riordinata: la vecchia
+    versione mischiava dati finanziari e motivazioni discorsive nello stesso
+    blocco.
+
+    mappa_url_comp: {(titolo_normalizzato, prezzo_2f): url}, costruita da
+    search_comps_completo SOLO sui comp arrivati via scrape diretto (vedi
+    _estrai_mappa_url_comp_vinted) e passata qui per riattaccare un link
+    cliccabile ai comp elencati sotto -- MAI passata al Cervello, che vede
+    solo '- titolo — €prezzo' senza URL (Punto 3 concordato il 2026-09-25:
+    rimappare in Python al rendering finale evita sia le allucinazioni di
+    link del modello sia la rottura del link quando il titolo viene troncato
+    a 60 caratteri o sfuggito da _escapa_markdown_legacy)."""
     dec = verdetto["decisione"]
     emoji = EMOJI_DECISIONE.get(dec, "🔵")
 
@@ -7401,7 +7558,20 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
             titolo = comp["titolo_verbatim"]
             titolo = titolo[:60] + "…" if len(titolo) > 60 else titolo
             titolo = _escapa_markdown_legacy(titolo)
-            righe.append(f"• €{comp['prezzo_eur']:.2f} — {titolo} _[{etichetta}]_")
+            # Link cliccabile al comp (Punto 3, 2026-09-25): lookup deterministico
+            # nella mappa costruita da search_comps_completo, MAI un URL scritto
+            # dal Cervello. _escapa_markdown_legacy sfugge anche '[' nel titolo,
+            # quindi il '[' aggiunto qui sotto per il link resta l'unico non
+            # sfuggito -- niente rischio che il titolo stesso apra un altro link.
+            url_comp = None
+            if mappa_url_comp:
+                chiave = (
+                    _normalizza_titolo_per_link(comp["titolo_verbatim"]),
+                    f"{comp['prezzo_eur']:.2f}",
+                )
+                url_comp = mappa_url_comp.get(chiave)
+            titolo_reso = f"[{titolo}]({url_comp})" if url_comp else titolo
+            righe.append(f"• €{comp['prezzo_eur']:.2f} — {titolo_reso} _[{etichetta}]_")
         # Split per fonte calcolato su TUTTI i comp utilizzabili (non solo i
         # primi 6 mostrati sopra in dettaglio) -- richiesto dall'utente il
         # 2026-09-20 per vedere a colpo d'occhio quanto pesa ciascuna fonte
@@ -7422,40 +7592,13 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
         if split_txt:
             righe.append(f"_Split fonti: {split_txt}_")
 
-    # --- link per fare a mano la ricerca visuale (aggiunto il 2026-09-20):
-    # il bot non riesce piu' a risolverla da solo (VISUAL_SEARCH_ATTIVA=false,
-    # vedi la lunga indagine nella docstring di _risolvi_search_by_image_id --
-    # l'endpoint blocca sia il client diretto che il fallback Serper), ma lo
-    # stesso identico URL, aperto a mano in un browser vero gia' loggato
-    # sull'account Vinted dedicato, funziona (verificato dall'utente via
-    # DevTools il 2026-09-18/19). Qui si da' solo l'URL intermedio (quello che
-    # Vinted stesso rimbalza al catalogo visuale corretto), cosi' l'utente puo'
-    # farlo con un click quando gli serve, senza che il bot debba riprovare a
-    # farlo in automatico.
-    #
-    # NIENTE parametri di filtro appesi qui (ne' sull'URL intermedio ne' come
-    # suffisso da incollare a mano, entrambi tentati e poi tolti il
-    # 2026-09-20): il primo non sopravvive al redirect 307 (Vinted ricostruisce
-    # l'URL di destinazione da zero, non inoltra la querystring originale),
-    # il secondo e' scomodo da incollare dall'app iPhone (l'utente apre sempre
-    # da li'). Piu' rapido selezionare brand/categoria a tocco nei filtri
-    # dell'interfaccia Vinted una volta atterrati sul catalogo.
-    if item_id and cover_photo_id:
-        url_ricerca_visuale = f"https://www.vinted.it/items/{item_id}/search_by_image?photo_id={quote(cover_photo_id)}"
-        # Link Markdown [testo](url) invece di URL nudo (bug trovato in
-        # produzione il 2026-09-20, poi backtick provati e scartati subito
-        # dopo): il photo_id contiene underscore (es. "01_00c39_..."), e con
-        # parse_mode=Markdown (legacy Telegram, non MarkdownV2) l'underscore
-        # e' un marcatore di corsivo -- con un numero dispari di underscore
-        # nel messaggio Telegram falliva il parsing dell'intero messaggio
-        # ("can't find end of the entity"), perdendo TUTTA la formattazione
-        # nel fallback. I backtick risolvevano il parsing ma rendevano il
-        # link "tocca per copiare" invece che "tocca per aprire" su mobile
-        # (l'utente apre sempre da app Telegram su iPhone). Dentro le
-        # parentesi tonde di un link Markdown l'URL non viene scansionato
-        # per marcatori di formattazione (stessa protezione dei backtick),
-        # ma il risultato resta un link cliccabile su desktop E mobile.
-        righe += ["", f"[🔍 Ricerca visuale (manuale)]({url_ricerca_visuale})"]
+    # Link manuale alla ricerca visuale: rimosso il 2026-09-25 su richiesta
+    # dell'utente (non usa piu' la ricerca visuale per ora, quindi anche il
+    # link "fai da te" nel messaggio Telegram non serve). item_id/cover_photo_id
+    # restano nella firma della funzione: non fanno piu' nulla qui, ma non e'
+    # stato tolto il parametro per non toccare i call site -- coerente con la
+    # scelta di lasciare VISUAL_SEARCH_ATTIVA=false innocuo invece di buttare
+    # codice.
 
     if stats_comp and stats_comp.get("n_memoria"):
         n_memoria = stats_comp["n_memoria"]
@@ -7865,6 +8008,7 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
 
         scenario_usato = "F"
         comps_text = None
+        mappa_url_comp = {}
 
         tempo_trascorso = time.time() - _serper_timestamp_ultimo_fallimento[0]
         in_raffreddamento = (
@@ -7874,7 +8018,7 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
         serper_disponibile = bool(SERPER_API_KEY) and not in_raffreddamento
 
         if serper_disponibile:
-            comps_text, serper_ok, tentare_ricerca_visuale, fonte_visuale_riuscita = await search_comps_completo(
+            comps_text, serper_ok, tentare_ricerca_visuale, fonte_visuale_riuscita, mappa_url_comp = await search_comps_completo(
                 brand_per_ricerca, categoria_per_ricerca, titolo_annuncio,
                 catalog_id=catalog_id, material_per_ricerca=material_per_ricerca,
                 cover_photo_id=cover_photo_id, item_id=item_id_annuncio,
@@ -7961,7 +8105,7 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
         output_finale = render_messaggio_verdetto(
             v, verdetto_calcolato, problemi, stats_comp,
             item_id=item_id_annuncio, cover_photo_id=cover_photo_id, brand=brand_per_ricerca,
-            catalog_id=catalog_id,
+            catalog_id=catalog_id, mappa_url_comp=mappa_url_comp,
         )
 
         log.info(
