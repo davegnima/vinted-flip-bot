@@ -5443,7 +5443,7 @@ async def _query_resellbot_raw(varianti_query, timeout):
     return "\n".join(righe[:20]), True, mappa_url
 
 
-async def _cerca_ebay_sold_via_resellbot(brand, categoria, material_per_ricerca=None, dettaglio_distintivo=None, timeout=6):
+async def _cerca_ebay_sold_via_resellbot(brand, categoria, material_per_ricerca=None, dettaglio_distintivo=None, timeout=12):
     """Fonte PRIMARIA per eBay SOLD, aggiunta il 2026-09-19: interroga
     direttamente l'API pubblica di Resellbot (scan-api.resellbot.com/api/search),
     lo stesso endpoint usato dalla pagina https://resellbot.com/ebay-sold-listings/
@@ -5469,6 +5469,21 @@ async def _cerca_ebay_sold_via_resellbot(brand, categoria, material_per_ricerca=
     bloccare le richieste dirette da Railway (mancando il fingerprint TLS/JS
     di un vero browser), ok=False fa scattare comunque il fallback Google
     sotto -- questa fonte non e' un punto di fallimento singolo.
+
+    timeout alzato da 6 a 12s il 2026-09-25 dopo analisi dei log Railway di
+    produzione (richiesta dall'utente, che notava comp eBay/Poshmark quasi
+    mai citati nei messaggi Telegram): su un campione di ~85 chiamate reali,
+    OGNI fallimento (~18%, sempre "Resellbot fallito:  -- uso fallback
+    Google" con messaggio d'errore VUOTO, la firma di un httpx.ReadTimeout)
+    cadeva a 5.96-6.14s dalla richiesta -- esattamente il bordo del timeout
+    di 6s, non un errore reale del servizio (le risposte riuscite variavano
+    0-4.65s). La causa e' quasi certamente il passaggio del 2026-09-25 da
+    query singola a 3 varianti in una sola chiamata (vedi _query_resellbot_raw):
+    Resellbot impiega piu' tempo a elaborarle tutte e tre, e il vecchio
+    timeout tarato sulla query singola e' rimasto troppo stretto. 12s lascia
+    margine, e il budget totale (12s Resellbot + 8s fallback Google = 20s)
+    resta sotto i 25s di TIMEOUT_FONTE_VINTED_CON_FALLBACK_SECONDI riusato
+    per questa fonte nel fan-out di search_comps_completo.
 
     material_per_ricerca (aggiunto il 2026-09-19) restringe la query
     aggiungendo il materiale dichiarato (es. "cashmere", "lana") quando
@@ -5596,12 +5611,14 @@ async def _serper_batch_query_ebay_sold(brand, categoria, material_per_ricerca=N
         resp = await _client_generico.post(
             "https://google.serper.dev/search",
             headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
-            # timeout ridotto a 8s (era 15s): questa funzione e' anche il
-            # FALLBACK di _cerca_ebay_sold_con_fallback, chiamato DOPO il
-            # tentativo Resellbot (fino a 6s) -- il budget totale deve restare
-            # sotto i 15s del timeout dell'executor in search_comps_completo,
-            # altrimenti la fonte eBay verrebbe scartata come "troppo lenta"
-            # anche quando il fallback stava per riuscire.
+            # timeout 8s: questa funzione e' anche il FALLBACK di
+            # _cerca_ebay_sold_con_fallback, chiamato DOPO il tentativo
+            # Resellbot (fino a 12s dal 2026-09-25, vedi
+            # _cerca_ebay_sold_via_resellbot) -- il budget totale (12+8=20s)
+            # deve restare sotto i 25s di TIMEOUT_FONTE_VINTED_CON_FALLBACK_SECONDI
+            # riusato per la fonte "ebay_poshmark" nel fan-out di
+            # search_comps_completo, altrimenti la fonte verrebbe scartata
+            # come "troppo lenta" anche quando il fallback stava per riuscire.
             json=payload, timeout=8,
         )
         if _e_errore_crediti_serper(resp):
@@ -6203,8 +6220,9 @@ async def search_comps_completo(brand, categoria, query_base, catalog_id=None, m
     # eBay/Poshmark via Resellbot (con fallback Google), sempre tentata --
     # reintrodotta nel fan-out il 2026-09-25, vedi commento sopra e
     # _cerca_ebay_sold_con_fallback. Timeout piu' ampio delle fonti Vinted
-    # semplici per lo stesso motivo (caso peggiore: Resellbot fino a 6s poi
-    # fallback Google fino a 8s).
+    # semplici per lo stesso motivo (caso peggiore: Resellbot fino a 12s poi
+    # fallback Google fino a 8s, vedi il timeout di _cerca_ebay_sold_via_resellbot
+    # alzato da 6 a 12s lo stesso giorno dopo l'analisi dei log di produzione).
     lavori.append(_esegui_fonte(
         "ebay_poshmark",
         _cerca_ebay_sold_con_fallback(brand, categoria, material_per_ricerca, dettaglio_distintivo),
