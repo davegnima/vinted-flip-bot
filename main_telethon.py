@@ -1109,6 +1109,7 @@ OCCHIO_RESPONSE_SCHEMA = {
         "linea_o_era",
         "evidenze_datazione",
         "modello_riconosciuto",
+        "dettaglio_distintivo_ricerca",
 
         # 4. OSSERVAZIONE FISICA
         "materiale_osservato_dalle_foto",
@@ -1322,6 +1323,20 @@ OCCHIO_RESPONSE_SCHEMA = {
             "description": (
                 "Nome del modello se riconoscibile come pezzo d'archivio noto. null se non "
                 "lo riconosci con certezza: non tirare a indovinare un nome iconico."
+            ),
+        },
+        "dettaglio_distintivo_ricerca": {
+            "type": "STRING",
+            "nullable": True,
+            "description": (
+                "Un dettaglio di taglio o design che distingue questo capo da un capo "
+                "generico dello stesso brand+categoria (es. 'ruffle sleeve', 'asymmetric "
+                "hem', 'puff sleeve', 'cropped fit', 'peplum waist'), in 2-4 parole "
+                "INGLESI pronte per una query di ricerca su marketplace americani (eBay, "
+                "Poshmark) -- non in italiano, non una frase completa. null se il capo non "
+                "ha un dettaglio chiaramente distintivo da segnalare: non inventarne uno "
+                "per riempire il campo, un taglio generico (es. un maglione girocollo "
+                "senza altro) resta null."
             ),
         },
 
@@ -1931,6 +1946,15 @@ def valida_payload_occhio(occhio):
     else:
         o["sottolinea_max_mara_eccezione"] = o["sottolinea_max_mara_eccezione"].strip()
 
+    # dettaglio_distintivo_ricerca (aggiunto il 2026-09-25): stessa
+    # normalizzazione nullable-per-costruzione di sottolinea_max_mara_eccezione
+    # sopra -- usato per la query Resellbot/eBay/Poshmark, vedi
+    # _cerca_ebay_sold_via_resellbot.
+    if not isinstance(o.get("dettaglio_distintivo_ricerca"), str) or not o["dettaglio_distintivo_ricerca"].strip():
+        o["dettaglio_distintivo_ricerca"] = None
+    else:
+        o["dettaglio_distintivo_ricerca"] = o["dettaglio_distintivo_ricerca"].strip()
+
     return o, problemi
 
 
@@ -2246,7 +2270,7 @@ Archivio eclettico (Missoni, JPG, Pucci, Westwood, Mugler, Montana, Marni, Courr
 **Stagionalità**: capo fuori stagione (invernale pesante in estate, o viceversa) = STESSO valore ma tempo di vendita più lungo — mai abbassare il prezzo per questo. Dichiara il mese consigliato per pubblicare (capispalla invernali da settembre, capi estivi da aprile).
 
 # RICERCA E VERIFICA (usa cerca_comp_prezzo)
-Comp pre-raccolti scarsi/assenti/fuori tema → cerca_comp_prezzo con query mirata prima di rispondere. Unica fonte comp: Vinted. Gerarchia interna: Ricerca visuale per foto (quando presente: e' lo stesso capo/modello, non solo lo stesso brand, il comp piu' affidabile) > Vinted testo.
+Comp pre-raccolti scarsi/assenti/fuori tema → cerca_comp_prezzo con query mirata prima di rispondere. Fonti comp pre-raccolte: Vinted (mercato italiano) ed eBay/Poshmark via Resellbot (mercato USA, alcuni prezzi sono VENDITE CONFERMATE, vedi ANCORAGGIO PREZZI sotto). Gerarchia interna: Ricerca visuale per foto (quando presente: e' lo stesso capo/modello, non solo lo stesso brand, il comp piu' affidabile) > Vinted testo > eBay/Poshmark (stesso brand/modello ma mercato diverso dal tuo, usalo per calibrare non per ancorare esattamente).
 **Se il capo appartiene a una sottolinea o linea/etichetta specifica** (`nome_sottolinea` compilato con `relazione_brand: sottolinea_stessa_maison`, oppure `linea_o_era_rilevata` con un'etichetta letterale spendibile come "M Missoni", "JPG.JEAN'S", "Weekend Max Mara" -- non una generica indicazione di epoca) **la tua query di ricerca DEVE nominare quella sottolinea/linea esplicitamente**, mai solo il brand madre generico: cerca "M Missoni maglione" e non "Missoni maglione", cerca "JPG.JEAN'S camicia" e non solo "Jean Paul Gaultier camicia". Un comp trovato cercando solo il brand madre e' quasi sempre del mainline, sistematicamente piu' caro, e ti porta a sovrastimare un capo di sottolinea. Questo vale per QUALSIASI sottolinea, non solo per gli esempi citati qui.
 Codici prodotto o diciture rare citati dall'occhio ("prototipo", "edizione limitata", ecc.) → verifica che esistano davvero con cerca_comp_prezzo prima di trattarli come prova di valore; se non confermati, tratta come non verificati e abbassa Confidenza, non usarli come giustificazione principale del margine.
 La "Confidenza" che l'occhio dichiara su un verdetto "Probabilmente falso" NON è affidabile da sola (bias noto: prezzo molto basso può contaminare il giudizio con dettagli vaghi costruiti a posteriori) — se i dettagli citati sono generici e il prezzo è molto basso, verifica con cerca_comp_prezzo prima di confermare NON COMPRARE per sospetto falso.
@@ -2256,8 +2280,9 @@ Il materiale cambia il valore quasi quanto la linea (es. Cucinelli: cashmere pur
 **Cosa conta come "noto" (`materiale_confermato: true`)**: il materiale e' noto ogni volta che compare ESPLICITAMENTE in ALMENO UNO di questi posti, anche senza una foto ravvicinata dell'etichetta di composizione: titolo dell'annuncio, descrizione testuale, categoria/attributo strutturato di Vinted, oppure lettura diretta dell'etichetta nella foto. Esempio: titolo "Kaschmir Pullover" → materiale noto (cashmere), `materiale_confermato: true`, anche se non vedi la percentuale esatta di composizione. Segnala il materiale come IGNOTO (`materiale_confermato: false`) SOLO quando non ne parla nessuno di questi posti e staresti indovinando dalla sola foto generica del capo (es. una semplice foto di un maglione senza nessuna menzione testuale del tessuto). Non abbassarlo per eccesso di prudenza quando l'informazione e' gia' scritta da qualche parte nei dati.
 
 # ANCORAGGIO PREZZI — la regola più violata in produzione, massima attenzione
-Tutti i comp Vinted sono **ASK** (annunci attivi, NON necessariamente venduti, spesso sovrastimati rispetto al prezzo di vendita reale) — non hai dati SOLD/venduti confermati per nessuna fonte. Applica SEMPRE uno sconto prudente del 20-30% sul comp ASK scelto prima di trattarlo come stima di vendita realistica, mai citare un ASK come se fosse il prezzo di vendita atteso senza quello sconto.
-**Controllo numerico obbligatorio, ogni volta prima di scrivere il prezzo**: la tua stima di vendita non può MAI superare il comp ASK più alto (già scontato 20-30%) che tu stesso citi in Analisi — se lo supera, non è "prudente", è un errore: abbassala.
+Tutti i comp Vinted sono **ASK** (annunci attivi, NON necessariamente venduti, spesso sovrastimati rispetto al prezzo di vendita reale) — applica SEMPRE uno sconto prudente del 20-30% sul comp ASK scelto prima di trattarlo come stima di vendita realistica, mai citare un ASK come se fosse il prezzo di vendita atteso senza quello sconto.
+**Comp eBay/Poshmark (via Resellbot) taggati `[venduto: YYYY-MM-DD]` sono VENDITE CONFERMATE, non ASK** — NON applicare a questi lo sconto 20-30% dei comp Vinted, sarebbe doppiamente prudente su un dato gia' reale. Restano pero' dati del mercato USA, strutturalmente diverso da quello italiano/europeo in cui vendi davvero (prezzi generalmente piu' alti, community diversa, capi vintage/archivio spesso piu' ricercati la' che qui): usali per calibrare un tetto plausibile o confermare l'autenticita' del prezzo, non ancorare la tua stima di vendita italiana esattamente al prezzo SOLD USA senza una riduzione esplicita e motivata in Analisi. Un comp eBay/Poshmark SENZA `[venduto: ...]` (quindi ASK, non SOLD) va invece trattato come un ASK a tutti gli effetti, stesso sconto 20-30% dei comp Vinted.
+**Controllo numerico obbligatorio, ogni volta prima di scrivere il prezzo**: la tua stima di vendita non può MAI superare il comp ASK più alto (già scontato 20-30%, o il comp SOLD più alto se stai usando quello come riferimento) che tu stesso citi in Analisi — se lo supera, non è "prudente", è un errore: abbassala.
 **Cita SEMPRE almeno 2 prezzi ESATTI verbatim** dai dati ricevuti in Analisi (mai un range parafrasato a memoria) — se il range che stai per scrivere non corrisponde a due prezzi realmente ricevuti, ricontrolla, non l'hai calcolato bene.
 
 **PROCEDURA OBBLIGATORIA DI FILTRO OUTLIER, PRIMA di scrivere qualsiasi stima** — violazione osservata in produzione: un capo di categoria/prezzo minore (es. un singolo capo sartoriale) valutato usando come comp un capo di categoria completamente diversa e molto più costosa (es. un abito completo o un capospalla) comparso per errore nella stessa ricerca, ignorando tutti gli altri comp coerenti disponibili.
@@ -3781,9 +3806,22 @@ def _riga_serper_e_rumore(titolo, snippet):
 
 async def cerca_serper_mirata(query):
     """Ricerca aggiuntiva mirata, richiamabile dal cervello quando i comp
-    pre-raccolti sono insufficienti o fuori tema."""
+    pre-raccolti sono insufficienti o fuori tema.
+
+    Ritorna (testo, mappa_url) dal 2026-09-25 (Punto 3 esteso alla ricerca
+    on-demand, richiesto dall'utente): mappa_url e' costruita da r['link']
+    (il campo con l'URL della pagina, gia' restituito da Serper ma prima
+    scartato qui) SOLO per le righe dove riusciamo anche a isolare un
+    prezzo dal titolo+snippet con lo stesso regex €/EUR usato per il pool
+    (_estrai_prezzi_da_pool_ricerca) -- a differenza di Vinted/Resellbot, qui
+    non c'e' un prezzo strutturato garantito riga per riga (e' testo libero
+    di uno snippet Google), quindi il match e' best-effort: se il prezzo non
+    si isola in modo univoco, quella riga resta senza link piuttosto che
+    rischiare di agganciarne uno sbagliato. L'URL non viene MAI passato al
+    Cervello (resta fuori dal testo restituito) -- stesso principio delle
+    altre fonti, il link si riattacca in Python al rendering finale."""
     if not SERPER_API_KEY:
-        return "Ricerca non eseguita (SERPER_API_KEY non impostata)."
+        return "Ricerca non eseguita (SERPER_API_KEY non impostata).", {}
     payload = [{"q": query, "gl": "it", "hl": "it", "num": 10}]
     try:
         resp = await _client_generico.post(
@@ -3794,8 +3832,9 @@ async def cerca_serper_mirata(query):
         resp.raise_for_status()
         results = resp.json()
     except Exception as e:
-        return f"Ricerca fallita: {e}"
+        return f"Ricerca fallita: {e}", {}
     lines = []
+    mappa_url = {}
     scartate = 0
     for batch in results:
         for r in batch.get("organic", [])[:8]:
@@ -3805,9 +3844,21 @@ async def cerca_serper_mirata(query):
                 scartate += 1
                 continue
             lines.append(f"- {titolo}: {snippet}")
+            link = (r.get("link") or "").strip()
+            if link:
+                prezzi_riga = _estrai_prezzi_da_pool_ricerca(f"{titolo} {snippet}")
+                # Solo se il prezzo e' univoco su questa riga: due prezzi
+                # diversi nello stesso snippet (es. prezzo originale +
+                # scontato) renderebbero la chiave ambigua, meglio nessun
+                # link che uno sbagliato.
+                if len(prezzi_riga) == 1:
+                    prezzo = next(iter(prezzi_riga))
+                    chiave = (_normalizza_titolo_per_link(titolo), f"{prezzo:.2f}")
+                    mappa_url.setdefault(chiave, link)
     if scartate:
         log.info("cerca_serper_mirata: scartate %d righe di rumore (snippet vuoto/placeholder o valuta non comparabile) per query '%s'.", scartate, query)
-    return "\n".join(lines) if lines else "Nessun risultato trovato per questa query."
+    testo = "\n".join(lines) if lines else "Nessun risultato trovato per questa query."
+    return testo, mappa_url
 
 
 CERVELLO_FUNCTION_DECLARATION = {
@@ -4003,8 +4054,9 @@ CERVELLO_RESPONSE_SCHEMA = {
                     "fonte": {
                         "type": "STRING",
                         "format": "enum",
-                        "enum": ["vinted_testo", "vinted_visuale", "memoria_modello"],
+                        "enum": ["vinted_testo", "vinted_visuale", "ebay_poshmark", "memoria_modello"],
                         "description": (
+                            "'ebay_poshmark' = comp dai dati eBay/Poshmark pre-raccolti (via Resellbot). "
                             "'memoria_modello' = prezzo che ricordi tu, non presente nei dati "
                             "ricevuti in questa conversazione. Dichiararlo e' obbligatorio e non "
                             "comporta alcuna penalizzazione."
@@ -4318,7 +4370,8 @@ def _estrai_testo_da_parts(parts):
 async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca=True, max_retries=4,
                                          api_url=GEMINI_API_URL_CERVELLO,
                                          prezzo_input=PREZZO_CERVELLO_INPUT,
-                                         prezzo_output=PREZZO_CERVELLO_OUTPUT):
+                                         prezzo_output=PREZZO_CERVELLO_OUTPUT,
+                                         mappa_url_ricerche_extra=None):
     """Cervello Gemini in DUE FASI, imposte da un vincolo dell'API.
 
     FASE 1 -- RICERCA (fino a MAX_ROUNDS_FUNZIONE giri): function calling
@@ -4350,7 +4403,13 @@ async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca
     Ritorna una tupla di 5 elementi:
       (verdetto_dict | None, errore | None, costo_totale, n_query_extra,
        ricerche_extra_raw)
-    """
+
+    mappa_url_ricerche_extra (aggiunto il 2026-09-25, Punto 3 esteso alla
+    ricerca on-demand): dict opzionale fornito dal chiamante, AGGIORNATO IN
+    PLACE (non nel valore di ritorno, per non cambiare la tupla usata
+    dall'unico chiamante attuale) con la mappa URL di ogni query
+    cerca_serper_mirata riuscita in questa chiamata -- vedi cerca_serper_mirata
+    per come viene costruita."""
     contents = [{"role": "user", "parts": [{"text": user_text}]}]
     costo_totale = 0.0
     n_query_extra = 0
@@ -4478,11 +4537,13 @@ async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca
         query_richiesta = function_call.get("args", {}).get("query", "")
         log.info("Cervello Gemini ha richiesto ricerca mirata (giro %d/%d): '%s'",
                  round_idx + 1, MAX_ROUNDS_FUNZIONE, query_richiesta)
-        risultato_ricerca = await cerca_serper_mirata(query_richiesta)
+        risultato_ricerca, mappa_url_query = await cerca_serper_mirata(query_richiesta)
         n_query_extra += 1
         ricerche_extra_raw.append(
             f"\n📍 FONTE: RICERCA ON-DEMAND CERVELLO (Serper google search, query: '{query_richiesta}')\n{risultato_ricerca}"
         )
+        if mappa_url_ricerche_extra is not None:
+            mappa_url_ricerche_extra.update(mappa_url_query)
 
         contents.append({"role": "model", "parts": parts})
         contents.append({
@@ -4625,7 +4686,8 @@ async def _chiama_openai_raw(messages, tentativi_rimasti, tools=None, tool_choic
     raise RuntimeError("tentativi esauriti")
 
 
-async def chiama_openai_cervello_forzato(system_prompt, user_text, forza_ricerca=True, max_retries=4):
+async def chiama_openai_cervello_forzato(system_prompt, user_text, forza_ricerca=True, max_retries=4,
+                                         mappa_url_ricerche_extra=None):
     """Equivalente OpenAI del cervello Gemini, stessa firma di ritorno a 5
     elementi per restare intercambiabile via CERVELLO_PROVIDER.
 
@@ -4688,11 +4750,13 @@ async def chiama_openai_cervello_forzato(system_prompt, user_text, forza_ricerca
                 query_richiesta = ""
             log.info("Cervello OpenAI ha richiesto ricerca mirata (giro %d/%d): '%s'",
                      round_idx + 1, MAX_ROUNDS_FUNZIONE, query_richiesta)
-            risultato_ricerca = await cerca_serper_mirata(query_richiesta)
+            risultato_ricerca, mappa_url_query = await cerca_serper_mirata(query_richiesta)
             n_query_extra += 1
             ricerche_extra_raw.append(
                 f"\n📍 FONTE: RICERCA ON-DEMAND CERVELLO (Serper google search, query: '{query_richiesta}')\n{risultato_ricerca}"
             )
+            if mappa_url_ricerche_extra is not None:
+                mappa_url_ricerche_extra.update(mappa_url_query)
             messages.append({
                 "role": "tool",
                 "tool_call_id": call.get("id", ""),
@@ -5260,13 +5324,44 @@ async def _serper_batch_query_vestiaire(brand, categoria):
     return ("\n".join(lines) if lines else "Nessun risultato trovato."), True
 
 
-async def _query_resellbot_raw(query_testo, timeout):
-    """Esegue UNA chiamata a Resellbot con la query testuale gia' costruita e
-    ritorna (righe_di_testo, ok). Estratta da _cerca_ebay_sold_via_resellbot
-    il 2026-09-19 per permettere il retry senza materiale (vedi sopra)."""
+# Tasso di cambio USD->EUR fisso, hardcoded (scelta dell'utente il
+# 2026-09-25 discutendo il fix del bug qui sotto): niente chiamata a
+# un'API di cambio live, per non aggiungere un'altra dipendenza di rete sul
+# percorso critico di ogni item -- un comp e' gia' un segnale di mercato
+# indicativo, non un prezzo legale, e il cambio reale oscilla poco (qualche
+# punto percentuale l'anno) rispetto all'incertezza gia' presente nei comp
+# stessi. Valore preso da un tasso USD/EUR reale del 25/09/2026 (~0.878),
+# arrotondato: VA AGGIORNATO A MANO ogni tanto (non automaticamente) se il
+# cambio si muove in modo significativo.
+TASSO_USD_EUR = 0.88
+
+
+async def _query_resellbot_raw(varianti_query, timeout):
+    """Esegue UNA chiamata a Resellbot con la LISTA di varianti di query
+    gia' costruita (dalla piu' specifica alla piu' ampia) e ritorna
+    (righe_di_testo, ok, mappa_url) -- mappa_url aggiunta il 2026-09-25
+    (Punto 3 esteso a Resellbot), stesso contratto {(titolo_norm, prezzo_2f):
+    url} delle fonti Vinted, ma qui costruita direttamente da item['url']
+    invece che ricostruita da un ID.
+
+    Riscritta il 2026-09-25 da query singola a lista di varianti: prima
+    (dal 19/09) questa funzione prendeva UNA query e _cerca_ebay_sold_via_resellbot
+    faceva un retry sequenziale via Python (chiamata con materiale, poi se
+    zero risultati una seconda chiamata senza) quando serviva allargare la
+    ricerca. Controllando insieme all'utente via DevTools la richiesta VERA
+    che il sito resellbot.com manda (25/09), risulta che il payload accetta
+    gia' un array 'queries' con piu' varianti e relativa 'specificity'
+    ('exact'/'broad'/'fallback') IN UNA SOLA richiesta -- e' il backend di
+    Resellbot stesso a restituire i risultati della variante piu' stretta
+    che ne trova, marcando ogni listing con 'sourceQuery' (la variante che
+    l'ha trovato). Riprodurre lo stesso schema qui elimina la seconda
+    chiamata HTTP sequenziale quando la piu' specifica non basta: piu'
+    veloce e coerente con come l'endpoint e' pensato di essere usato,
+    invece di reinventare lato Python una cascata che il servizio gia' fa
+    da solo."""
     payload = {
         "searchId": str(uuid.uuid4()),
-        "queries": [{"query": query_testo, "specificity": "exact"}],
+        "queries": varianti_query,
         "resultMode": "raw",
     }
     headers = {
@@ -5279,31 +5374,44 @@ async def _query_resellbot_raw(query_testo, timeout):
             "(KHTML, like Gecko) Chrome/153.0.0.0 Mobile Safari/537.36"
         ),
     }
-    log.info("Resellbot: richiesta in corso -- query='%s'", query_testo)
+    log.info("Resellbot: richiesta in corso -- varianti=%r", varianti_query)
     try:
         resp = await _client_generico.post(
             "https://scan-api.resellbot.com/api/search",
             headers=headers, json=payload, timeout=timeout,
         )
         if resp.status_code in (401, 403, 429):
-            log.info("Resellbot: bloccato/rate-limited (HTTP %d) per query='%s' -- uso fallback Google.", resp.status_code, query_testo)
-            return f"  Resellbot bloccato/rate-limited (HTTP {resp.status_code}) -- uso fallback Google.", False
+            log.info("Resellbot: bloccato/rate-limited (HTTP %d) per varianti=%r -- uso fallback Google.", resp.status_code, varianti_query)
+            return f"  Resellbot bloccato/rate-limited (HTTP {resp.status_code}) -- uso fallback Google.", False, {}
         resp.raise_for_status()
         data = resp.json()
     except Exception as e:
-        log.info("Resellbot: fallito per query='%s' -- %s -- uso fallback Google.", query_testo, e)
-        return f"  Resellbot fallito: {e} -- uso fallback Google.", False
+        log.info("Resellbot: fallito per varianti=%r -- %s -- uso fallback Google.", varianti_query, e)
+        return f"  Resellbot fallito: {e} -- uso fallback Google.", False, {}
 
     risultati_per_piattaforma = data.get("results") or []
     righe = []
+    mappa_url = {}
     for blocco_piattaforma in risultati_per_piattaforma:
         piattaforma = (blocco_piattaforma.get("platform") or "").strip()
         for item in blocco_piattaforma.get("listings") or []:
             titolo = (item.get("title") or "").strip()
-            prezzo = item.get("price")
-            if not titolo or prezzo is None:
+            prezzo_usd = item.get("price")
+            if not titolo or prezzo_usd is None:
                 continue
-            spedizione = item.get("shipping") or 0
+            # BUG CORRETTO il 2026-09-25 (causa root del blocco del 19/09):
+            # l'API non ha MAI un campo currency -- price arriva sempre in
+            # dollari (eBay.com US, Poshmark US, confermato via DevTools con
+            # l'utente lo stesso giorno) -- ma qui si stampava il simbolo €
+            # davanti al numero grezzo senza nessuna conversione. Un
+            # price:278 (dollari) diventava letteralmente "€278.00" nel
+            # testo dato al Cervello, gonfiando ogni comp Resellbot di
+            # circa il 12-15% (vedi TASSO_USD_EUR sopra per la scelta del
+            # tasso fisso). Spedizione convertita allo stesso modo, stessa
+            # valuta della fonte.
+            prezzo = prezzo_usd * TASSO_USD_EUR
+            spedizione_usd = item.get("shipping") or 0
+            spedizione = spedizione_usd * TASSO_USD_EUR
             sold_at = (item.get("soldAt") or "")[:10]  # solo YYYY-MM-DD
             condizione = (item.get("condition") or "").strip()
             pezzi = [f"- {titolo} — €{prezzo:.2f}"]
@@ -5317,14 +5425,25 @@ async def _query_resellbot_raw(query_testo, timeout):
                 pezzi.append(f"[cond: {condizione}]")
             righe.append(" ".join(pezzi))
 
+            # Mappa URL comp (Punto 3, estesa a Resellbot il 2026-09-25):
+            # qui l'URL e' gia' diretto nel JSON (item['url']), niente
+            # ricostruzione da ID come per Vinted (_estrai_mappa_url_comp_vinted)
+            # -- solo lookup titolo+prezzo normalizzati come le altre fonti,
+            # cosi' render_messaggio_verdetto riattacca il link senza sapere
+            # da quale fonte viene il comp.
+            url_item = (item.get("url") or "").strip()
+            if url_item:
+                chiave = (_normalizza_titolo_per_link(titolo), f"{prezzo:.2f}")
+                mappa_url.setdefault(chiave, url_item)
+
     if not righe:
-        log.info("Resellbot: risposta OK ma 0 listing per query='%s'.", query_testo)
-        return None, True  # successo ma zero righe -- distinto da "fallito"
-    log.info("Resellbot: risposta OK, %d listing trovati per query='%s'.", len(righe), query_testo)
-    return "\n".join(righe[:20]), True
+        log.info("Resellbot: risposta OK ma 0 listing per varianti=%r.", varianti_query)
+        return None, True, {}  # successo ma zero righe -- distinto da "fallito"
+    log.info("Resellbot: risposta OK, %d listing trovati per varianti=%r.", len(righe), varianti_query)
+    return "\n".join(righe[:20]), True, mappa_url
 
 
-async def _cerca_ebay_sold_via_resellbot(brand, categoria, material_per_ricerca=None, timeout=6):
+async def _cerca_ebay_sold_via_resellbot(brand, categoria, material_per_ricerca=None, dettaglio_distintivo=None, timeout=6):
     """Fonte PRIMARIA per eBay SOLD, aggiunta il 2026-09-19: interroga
     direttamente l'API pubblica di Resellbot (scan-api.resellbot.com/api/search),
     lo stesso endpoint usato dalla pagina https://resellbot.com/ebay-sold-listings/
@@ -5339,6 +5458,9 @@ async def _cerca_ebay_sold_via_resellbot(brand, categoria, material_per_ricerca=
     di vendita CONFERMATI con data (soldAt), non uno snippet testuale con la
     parola "sold" che puo' riferirsi a un annuncio ancora attivo.
 
+    Ritorna (testo, ok, mappa_url) dal 2026-09-25 -- vedi _query_resellbot_raw
+    per il contratto della mappa URL (Punto 3).
+
     Nessuna autenticazione richiesta (verificato via DevTools: solo header
     CORS standard, Origin/Referer che imitano il browser). Rate limit
     dichiarato dal servizio stesso via header di risposta: 700 richieste/5min,
@@ -5352,51 +5474,60 @@ async def _cerca_ebay_sold_via_resellbot(brand, categoria, material_per_ricerca=
     aggiungendo il materiale dichiarato (es. "cashmere", "lana") quando
     disponibile -- utile soprattutto sui brand di lusso dove il materiale
     sposta molto il prezzo (un maglione Brunello Cucinelli in cashmere vale
-    parecchio piu' di uno in cotone). Include un retry automatico SENZA
-    materiale se la prima query non trova nulla: la specificity "exact" di
-    Resellbot puo' azzerare i risultati quando la query e' troppo stretta,
-    soprattutto su brand di nicchia con pochi listing totali -- meglio
-    allargare che restituire zero comp per un dettaglio in piu'."""
+    parecchio piu' di uno in cotone).
+
+    dettaglio_distintivo (aggiunto il 2026-09-25, vedi
+    occhio_schema.dettaglio_distintivo_ricerca) restringe ulteriormente
+    quando l'Occhio ha rilevato un dettaglio di taglio/design che distingue
+    questo capo da uno generico dello stesso brand+categoria (es. 'ruffle
+    sleeve', 'asymmetric hem') -- richiesto dall'utente il 2026-09-25 per
+    ridurre il rumore visto nei risultati reali (Chloe, Max Mara spacciati
+    per Missoni; un outlier di prezzo palese).
+
+    Le tre varianti (brand+categoria+materiale+dettaglio, brand+categoria
+    +materiale, brand+categoria) vengono mandate in UNA sola richiesta a
+    Resellbot con le rispettive specificity ('exact'/'broad'/'fallback') --
+    vedi _query_resellbot_raw per il perche' del passaggio da retry
+    sequenziale via Python a query multiple nella stessa chiamata."""
     brand_pulito = (brand or "").strip()
     categoria_per_query = (categoria or "").strip()
     if not categoria_per_query:
         return (
             "Categoria non rilevata dal titolo dell'annuncio -- query eBay "
             "(Resellbot) saltata per evitare risultati fuorvianti."
-        ), False
+        ), False, {}
 
     termine_en = CATEGORIA_TERMINE_EN.get(categoria_per_query, categoria_per_query)
-    query_base = f'{brand_pulito} {termine_en}'.strip() if brand_pulito else termine_en
+    query_fallback = f'{brand_pulito} {termine_en}'.strip() if brand_pulito else termine_en
     materiale_pulito = (material_per_ricerca or "").strip()
+    dettaglio_pulito = (dettaglio_distintivo or "").strip()
 
-    if materiale_pulito:
-        query_con_materiale = f'{query_base} {materiale_pulito}'
-        testo, ok = await _query_resellbot_raw(query_con_materiale, timeout)
-        if not ok:
-            return testo, False  # errore di rete/rate-limit: nessun retry, va al fallback Google
-        if testo is not None:
-            return testo, True  # trovato qualcosa con il materiale incluso
-        # Zero risultati con il materiale -- riprova con la query piu' ampia.
-        log.info(
-            "Resellbot: 0 risultati con materiale ('%s') -- retry senza materiale ('%s').",
-            query_con_materiale, query_base,
-        )
-        testo_ampio, ok_ampio = await _query_resellbot_raw(query_base, timeout)
-        if not ok_ampio:
-            return testo_ampio, False
-        if testo_ampio is not None:
-            return testo_ampio, True
-        return "  Nessun venduto trovato su Resellbot per questa query.", True
+    query_broad = f'{query_fallback} {materiale_pulito}' if materiale_pulito else None
+    if query_broad and dettaglio_pulito:
+        query_exact = f'{query_broad} {dettaglio_pulito}'
+    elif dettaglio_pulito:
+        # Niente materiale ma c'e' un dettaglio: resta comunque piu'
+        # specifico del solo fallback, va nello slot "exact".
+        query_exact = f'{query_fallback} {dettaglio_pulito}'
+    else:
+        query_exact = None
 
-    testo, ok = await _query_resellbot_raw(query_base, timeout)
+    varianti, gia_viste = [], set()
+    for query, specificity in ((query_exact, "exact"), (query_broad, "broad"), (query_fallback, "fallback")):
+        if not query or query in gia_viste:
+            continue
+        gia_viste.add(query)
+        varianti.append({"query": query, "specificity": specificity})
+
+    testo, ok, mappa_url = await _query_resellbot_raw(varianti, timeout)
     if not ok:
-        return testo, False
+        return testo, False, {}
     if testo is None:
-        return "  Nessun venduto trovato su Resellbot per questa query.", True
-    return testo, True
+        return "  Nessun venduto trovato su Resellbot per questa query.", True, {}
+    return testo, True, mappa_url
 
 
-async def _serper_batch_query_ebay_sold(brand, categoria, material_per_ricerca=None):
+async def _serper_batch_query_ebay_sold(brand, categoria, material_per_ricerca=None, dettaglio_distintivo=None):
     """FALLBACK per eBay SOLD (fonte primaria: _cerca_ebay_sold_via_resellbot
     sopra) -- stesso schema di _serper_batch_query_vestiaire (Google search
     via Serper, non scrape diretto della pagina eBay).
@@ -5407,6 +5538,10 @@ async def _serper_batch_query_ebay_sold(brand, categoria, material_per_ricerca=N
     materiale" come per Resellbot: Google gestisce query piu' lunghe senza
     azzerare i risultati come farebbe una specificity "exact" letterale, si
     limita a pesarlo come termine di rilevanza in piu'.
+
+    dettaglio_distintivo (aggiunto il 2026-09-25, stessa fonte e stesso
+    motivo di material_per_ricerca -- vedi _cerca_ebay_sold_via_resellbot):
+    stesso trattamento, un termine tra virgolette in piu'.
 
     Sostituisce il vecchio approccio (_serper_scrape_page_diretto +
     _estrai_articoli_ebay) che scrapava direttamente l'URL di ricerca eBay
@@ -5451,6 +5586,9 @@ async def _serper_batch_query_ebay_sold(brand, categoria, material_per_ricerca=N
     materiale_pulito = (material_per_ricerca or "").strip()
     if materiale_pulito:
         base = f'{base} "{materiale_pulito}"'
+    dettaglio_pulito = (dettaglio_distintivo or "").strip()
+    if dettaglio_pulito:
+        base = f'{base} "{dettaglio_pulito}"'
     query_serper = f'{base} (venduto OR sold) (site:ebay.it OR site:ebay.com)'
 
     payload = [{"q": query_serper, "gl": "it", "hl": "it", "num": 10}]
@@ -5778,6 +5916,30 @@ _RE_PRODOTTO_VINTED_CON_ID = re.compile(
 )
 
 
+def _etichetta_piattaforma_da_url(url):
+    """Determina eBay/Poshmark/Vinted dal DOMINIO dell'URL del comp, invece
+    di fidarsi dell'etichetta di fonte generica ('eBay/Poshmark', 'ricerca
+    on-demand') -- aggiunto il 2026-09-25 su richiesta dell'utente: il pool
+    interno gia' sapeva distinguere eBay da Poshmark riga per riga (tag
+    '[ebay]'/'[poshmark]', vedi _query_resellbot_raw), ma quell'informazione
+    si perdeva non appena il Cervello ricopiava il comp nel suo JSON (il
+    campo fonte e' un enum a grana piu' larga, 'ebay_poshmark'). Il dominio
+    dell'URL e' un dato oggettivo, deciso in Python, mai dal modello -- stesso
+    principio delle altre reti di sicurezza deterministiche in questo file.
+    Ritorna None se il dominio non e' uno di quelli riconosciuti (lascia
+    l'etichetta generica invariata)."""
+    if not url:
+        return None
+    u = url.lower()
+    if "poshmark." in u:
+        return "Poshmark"
+    if "ebay." in u:
+        return "eBay"
+    if "vinted." in u:
+        return "Vinted"
+    return None
+
+
 def _normalizza_titolo_per_link(titolo):
     """Normalizzazione MINIMA (minuscolo, spazi compattati) per il lookup
     titolo->URL comp. Deliberatamente diversa da _normalizza_titolo_per_dedup,
@@ -5932,7 +6094,7 @@ async def _recupera_comp_visuali_vinted(item_id, photo_id, brand):
     return testo, ok, mappa_url
 
 
-async def _cerca_ebay_sold_con_fallback(brand, categoria, material_per_ricerca=None):
+async def _cerca_ebay_sold_con_fallback(brand, categoria, material_per_ricerca=None, dettaglio_distintivo=None):
     """Wrapper per l'executor: prova prima Resellbot (dati di vendita
     confermati, veri, vedi _cerca_ebay_sold_via_resellbot), e solo se fallisce
     (bloccato, rate-limited, errore di rete, o semplicemente 'nessun venduto
@@ -5941,21 +6103,30 @@ async def _cerca_ebay_sold_con_fallback(brand, categoria, material_per_ricerca=N
     sequenziali (non in parallelo) per non raddoppiare le chiamate quando la
     prima fonte funziona, che e' il caso comune.
 
-    material_per_ricerca (aggiunto il 2026-09-19) viene inoltrato a entrambe
-    le fonti per restringere la query quando il materiale e' noto (vedi
-    docstring di _cerca_ebay_sold_via_resellbot per il dettaglio sul retry
-    automatico senza materiale se la query ristretta non trova nulla)."""
-    testo, ok = await _cerca_ebay_sold_via_resellbot(brand, categoria, material_per_ricerca)
+    material_per_ricerca (aggiunto il 2026-09-19) e dettaglio_distintivo
+    (aggiunto il 2026-09-25, vedi occhio_schema.dettaglio_distintivo_ricerca)
+    vengono inoltrati a entrambe le fonti per restringere la query -- vedi
+    docstring di _cerca_ebay_sold_via_resellbot per come le varianti vengono
+    combinate in una sola chiamata a Resellbot.
+
+    Ritorna (testo, ok, mappa_url) dal 2026-09-25: mappa_url e' popolata solo
+    sul ramo Resellbot (fonte primaria), vuota sul ramo fallback Google."""
+    testo, ok, mappa_url = await _cerca_ebay_sold_via_resellbot(brand, categoria, material_per_ricerca, dettaglio_distintivo)
     if ok:
-        return testo, ok
+        return testo, ok, mappa_url
     log.info("_cerca_ebay_sold_con_fallback: Resellbot fallito (%s), tento fallback Google.", testo)
-    testo_fallback, ok_fallback = await _serper_batch_query_ebay_sold(brand, categoria, material_per_ricerca)
+    testo_fallback, ok_fallback = await _serper_batch_query_ebay_sold(brand, categoria, material_per_ricerca, dettaglio_distintivo)
     if ok_fallback:
-        return f"{testo_fallback}\n(Nota: fonte primaria Resellbot fallita, questi risultati vengono da Google/eBay.)", True
-    return f"{testo} | fallback Google anch'esso fallito: {testo_fallback}", False
+        # Nessuna mappa_url dal fallback Google (stesso limite del fallback
+        # Serper per Vinted, vedi _cerca_vinted_testo_diretto_con_fallback_serper):
+        # gli snippet Google non danno un URL diretto all'annuncio abbastanza
+        # affidabile per il lookup titolo+prezzo, quindi niente link Punto 3
+        # per i comp arrivati da questo ramo.
+        return f"{testo_fallback}\n(Nota: fonte primaria Resellbot fallita, questi risultati vengono da Google/eBay.)", True, {}
+    return f"{testo} | fallback Google anch'esso fallito: {testo_fallback}", False, {}
 
 
-async def search_comps_completo(brand, categoria, query_base, catalog_id=None, material_per_ricerca=None, cover_photo_id=None, item_id=None, nome_sarto=None):
+async def search_comps_completo(brand, categoria, query_base, catalog_id=None, material_per_ricerca=None, cover_photo_id=None, item_id=None, nome_sarto=None, dettaglio_distintivo=None):
     vinted_url, vinted_per_id = build_vinted_search_url(brand, categoria, material_per_ricerca, catalog_id)
     # Ricerca extra per nome del sarto/maker (aggiunta il 2026-09-20, vedi il
     # commento in process_listing su nome_sarto_o_maker): SEMPRE testo libero
@@ -5987,9 +6158,16 @@ async def search_comps_completo(brand, categoria, query_base, catalog_id=None, m
     # log osservati (Loro Piana, Missoni, Jil Sander): non stava sbagliando,
     # stava ragionando su comp gonfiati da un bug di dati a monte. Decisione
     # operativa: tenere solo Vinted (gia' in EUR, mercato italiano reale) +
-    # la conoscenza generale di Gemini (grounding). Se in futuro si vuole
-    # reintrodurre eBay, va prima risolta la conversione valuta in
-    # _cerca_ebay_sold_via_resellbot.
+    # la conoscenza generale di Gemini (grounding).
+    #
+    # AGGIORNAMENTO 2026-09-25: la conversione valuta in
+    # _cerca_ebay_sold_via_resellbot / _query_resellbot_raw e' stata
+    # corretta (vedi TASSO_USD_EUR). Su richiesta esplicita dell'utente,
+    # eBay/Poshmark (via Resellbot, con fallback Google) rientra ora nel
+    # fan-out qui sotto come fonte SEMPRE tentata (non condizionale come la
+    # ricerca visuale) -- stessi filtri di pulizia gia' usati su Vinted
+    # (autoreferenziale, categoria, non il filtro sottolinee: non ha senso
+    # concettuale su un mercato USA generico). Vedi _cerca_ebay_sold_con_fallback.
     # Fan-out delle fonti comp con asyncio.gather invece del vecchio
     # ThreadPoolExecutor. Due vantaggi concreti oltre al non bloccare il loop:
     # il timeout e' PER FONTE (prima era complessivo sull'as_completed, quindi
@@ -6022,6 +6200,15 @@ async def search_comps_completo(brand, categoria, query_base, catalog_id=None, m
         lavori.append(_esegui_fonte(
             "vinted_sarto", _cerca_vinted_testo_diretto_con_fallback_serper(url_sarto),
             timeout=TIMEOUT_FONTE_VINTED_CON_FALLBACK_SECONDI))
+    # eBay/Poshmark via Resellbot (con fallback Google), sempre tentata --
+    # reintrodotta nel fan-out il 2026-09-25, vedi commento sopra e
+    # _cerca_ebay_sold_con_fallback. Timeout piu' ampio delle fonti Vinted
+    # semplici per lo stesso motivo (caso peggiore: Resellbot fino a 6s poi
+    # fallback Google fino a 8s).
+    lavori.append(_esegui_fonte(
+        "ebay_poshmark",
+        _cerca_ebay_sold_con_fallback(brand, categoria, material_per_ricerca, dettaglio_distintivo),
+        timeout=TIMEOUT_FONTE_VINTED_CON_FALLBACK_SECONDI))
 
     risultati = {}
     successi = {}
@@ -6082,7 +6269,22 @@ async def search_comps_completo(brand, categoria, query_base, catalog_id=None, m
             nome_sarto, item_id, sarto_comp_puliti,
         )
 
-    n_fonti = 1 + int(fonte_visuale_riuscita) + int(fonte_sarto_riuscita)
+    # Fonte eBay/Poshmark (Resellbot, con fallback Google) -- reintrodotta nel
+    # fan-out il 2026-09-25. Pulita con le stesse funzioni delle fonti Vinted
+    # testuali TRANNE il filtro sottolinee (_filtra_comp_per_brand_sottolinee
+    # e' pensato per collab/sottolinee di maison italiane su Vinted, non ha
+    # senso concettuale su un pool eBay/Poshmark USA generico).
+    ebay_comp_puliti = None
+    fonte_ebay_riuscita = successi.get("ebay_poshmark")
+    if fonte_ebay_riuscita:
+        ebay_comp_puliti = _rimuovi_comp_autoreferenziale(risultati.get("ebay_poshmark"), query_base)
+        ebay_comp_puliti = _filtra_comp_per_categoria(ebay_comp_puliti, categoria)
+        log.info(
+            "search_comps_completo: comp eBay/Poshmark DOPO pulizia (item_id=%s, brand=%s) -> %r",
+            item_id, brand, ebay_comp_puliti,
+        )
+
+    n_fonti = 1 + int(fonte_visuale_riuscita) + int(fonte_sarto_riuscita) + int(fonte_ebay_riuscita)
     parti = [f"RICERCA WEB PRE-RACCOLTA ({n_fonti} fonti, base: '{query_base}'):"]
     if nota_brand:
         parti.append(nota_brand)
@@ -6105,17 +6307,25 @@ async def search_comps_completo(brand, categoria, query_base, catalog_id=None, m
             "reale ha un mercato riconoscibile a se', prezzi ASK)\n"
             f"{sarto_comp_puliti or 'Nessun risultato'}"
         )
+    if fonte_ebay_riuscita:
+        parti.append(
+            "\n📍 FONTE: EBAY / POSHMARK (via Resellbot -- prezzi di VENDITA CONFERMATA "
+            "quando taggati '[venduto: YYYY-MM-DD]', mercato USA in dollari gia' convertiti "
+            "in euro a tasso fisso -- NON il mercato italiano/europeo, usa come riferimento "
+            "di prezzo generale del brand, non come comp diretto senza aggiustamento)\n"
+            f"{ebay_comp_puliti or 'Nessun risultato'}"
+        )
 
     # Mappa URL comp unita da tutte le fonti che l'hanno popolata (solo
     # scrape diretto, vedi _cerca_vinted_testo_diretto_con_fallback_serper) --
     # usata al rendering finale per riattaccare un link cliccabile al comp
     # che il Cervello cita nel suo JSON, mai passata al prompt (Punto 3,
-    # 2026-09-25). Sull'eventuale, rara collisione di chiave (stesso
-    # titolo+prezzo su due fonti diverse) vince l'ultima fonte unita: non ha
-    # importanza, l'URL punta comunque a un annuncio con lo stesso
-    # titolo/prezzo esatto.
+    # 2026-09-25, esteso a eBay/Poshmark lo stesso giorno). Sull'eventuale,
+    # rara collisione di chiave (stesso titolo+prezzo su due fonti diverse)
+    # vince l'ultima fonte unita: non ha importanza, l'URL punta comunque a
+    # un annuncio con lo stesso titolo/prezzo esatto.
     mappa_url_comp = {}
-    for nome in ("vinted", "vinted_visuale", "vinted_sarto"):
+    for nome in ("vinted", "vinted_visuale", "vinted_sarto", "ebay_poshmark"):
         mappa_url_comp.update(mappe_url.get(nome) or {})
 
     return (
@@ -6722,6 +6932,7 @@ ETICHETTA_CONFIDENZA = {"alta": "A", "media": "M", "bassa": "B"}
 ETICHETTA_FONTE_COMP = {
     "vinted_testo": "Vinted",
     "vinted_visuale": "Vinted visuale",
+    "ebay_poshmark": "eBay/Poshmark",
     "memoria_modello": "memoria modello",
 }
 
@@ -6734,6 +6945,7 @@ PREFISSI_FONTE_POOL = [
     ("vintedricercavisuale", "Vinted visuale"),
     ("ricercaondemand", "ricerca on-demand"),
     ("vinted", "Vinted"),
+    ("ebayposhmark", "eBay/Poshmark"),
     ("ebaysold", "eBay"),
     ("vestiairecollective", "Vestiaire"),
     ("depop", "Depop"),
@@ -7571,6 +7783,14 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
                 )
                 url_comp = mappa_url_comp.get(chiave)
             titolo_reso = f"[{titolo}]({url_comp})" if url_comp else titolo
+            # Raffina l'etichetta generica ('eBay/Poshmark', 'ricerca
+            # on-demand') con la piattaforma reale letta dal dominio
+            # dell'URL, quando disponibile -- vedi _etichetta_piattaforma_da_url.
+            # Le etichette gia' specifiche (es. 'Vinted visuale') restano
+            # invariate: qui si vuole solo togliere ambiguita', non
+            # sostituire un'informazione gia' piu' precisa.
+            if url_comp and etichetta in ("eBay/Poshmark", "ricerca on-demand"):
+                etichetta = _etichetta_piattaforma_da_url(url_comp) or etichetta
             righe.append(f"• €{comp['prezzo_eur']:.2f} — {titolo_reso} _[{etichetta}]_")
         # Split per fonte calcolato su TUTTI i comp utilizzabili (non solo i
         # primi 6 mostrati sopra in dettaglio) -- richiesto dall'utente il
@@ -7586,7 +7806,7 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
             conteggio_fonti[fonte] = conteggio_fonti.get(fonte, 0) + 1
         split_txt = " · ".join(
             f"{ETICHETTA_FONTE_COMP.get(fonte, fonte)}: {conteggio_fonti[fonte]}"
-            for fonte in ("vinted_testo", "vinted_visuale", "memoria_modello")
+            for fonte in ("vinted_testo", "vinted_visuale", "ebay_poshmark", "memoria_modello")
             if conteggio_fonti.get(fonte)
         )
         if split_txt:
@@ -8006,6 +8226,15 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
                     nome_sarto_o_maker, brand_annuncio,
                 )
 
+        # Dettaglio distintivo di taglio/design (aggiunto il 2026-09-25, vedi
+        # occhio_schema.dettaglio_distintivo_ricerca): usato per restringere
+        # la query eBay/Poshmark su Resellbot oltre a brand+categoria+materiale
+        # -- stesso schema di nome_sarto_o_maker sopra, letto qui dal JSON
+        # dell'Occhio e inoltrato a search_comps_completo.
+        dettaglio_distintivo = None
+        if occhio_json:
+            dettaglio_distintivo = (str(occhio_json.get("dettaglio_distintivo_ricerca") or "").strip() or None)
+
         scenario_usato = "F"
         comps_text = None
         mappa_url_comp = {}
@@ -8022,7 +8251,7 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
                 brand_per_ricerca, categoria_per_ricerca, titolo_annuncio,
                 catalog_id=catalog_id, material_per_ricerca=material_per_ricerca,
                 cover_photo_id=cover_photo_id, item_id=item_id_annuncio,
-                nome_sarto=nome_sarto_o_maker,
+                nome_sarto=nome_sarto_o_maker, dettaglio_distintivo=dettaglio_distintivo,
             )
             t_tappe.append(("comp", time.time()))
             if serper_ok:
@@ -8073,10 +8302,22 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
             chiama_openai_cervello_forzato if CERVELLO_PROVIDER == "openai"
             else chiama_gemini_cervello_forzato
         )
+        # Mappa URL delle ricerche on-demand (Punto 3 esteso il 2026-09-25):
+        # riempita IN PLACE da chiama_cervello mentre elabora le eventuali
+        # chiamate a cerca_comp_prezzo -- vedi mappa_url_ricerche_extra in
+        # chiama_gemini_cervello_forzato/chiama_openai_cervello_forzato.
+        mappa_url_ricerche_extra = {}
         verdetto_json, errore_cervello, costo_cervello, n_query_grounding, ricerche_extra_raw = await chiama_cervello(
-            GEMINI_CERVELLO_SYSTEM_PROMPT, user_text_cervello, forza_ricerca=forza_ricerca)
+            GEMINI_CERVELLO_SYSTEM_PROMPT, user_text_cervello, forza_ricerca=forza_ricerca,
+            mappa_url_ricerche_extra=mappa_url_ricerche_extra)
         costo_totale += costo_cervello
         t_tappe.append(("cervello", time.time()))
+
+        # Unione con la mappa dei comp pre-raccolti (Vinted/Resellbot): in
+        # caso di chiave duplicata vince quest'ultima, piu' affidabile (dati
+        # strutturati con ID/URL diretto, non un match best-effort su
+        # titolo+prezzo estratto da uno snippet Google).
+        mappa_url_comp = {**mappa_url_ricerche_extra, **mappa_url_comp}
 
         # Pool di TUTTO il testo grezzo di ricerca visto dal cervello per
         # questo item: comp pre-raccolti (Scenario G) + eventuali ricerche
