@@ -501,9 +501,23 @@ def _gemini_registra_esito(successo):
 # invece di sprecarci un tentativo a ogni chiamata. Solo quando TUTTI i
 # modelli della catena sono esclusi si torna alla rotazione key + backoff di
 # prima sul principale.
+#
+# AGGIORNATO il 2026-09-26 (log 24-25/09, ~24 item persi): gemini-2.5-flash-lite
+# tolto dal default. Non e' un 503 transitorio ne' un problema di quota: e'
+# un 404 "not found" costante (confermato anche dalla pagina modelli di
+# Google -- l'accesso ai modelli 2.5 e' limitato ai soli progetti che li
+# hanno gia' usati attivamente in passato, e il nostro non l'ha mai fatto,
+# quindi per noi resta bloccato in modo permanente). Aggravato da un bug
+# separato (vedi _gemini_gestisci_modello_non_disponibile piu' sotto): la
+# marcatura di esclusione non scattava mai quando il 404 capitava
+# sull'ultimo tentativo disponibile -- il caso comune durante un blackout,
+# quando i tentativi scendono a MAX_RETRIES_GEMINI_IN_BLACKOUT. Risultato:
+# 67 errori 404 su questo modello nei log, 0 marcature di esclusione
+# registrate, e diversi item persi invece che semplicemente instradati sul
+# prossimo modello della catena.
 GEMINI_MODELLI_RISERVA = [
     m.strip() for m in os.environ.get(
-        "GEMINI_MODEL_FALLBACK", "gemini-3.1-flash-lite,gemini-2.5-flash-lite").split(",")
+        "GEMINI_MODEL_FALLBACK", "gemini-3.1-flash-lite").split(",")
     if m.strip()
 ]
 GEMINI_MODEL_FALLBACK = GEMINI_MODELLI_RISERVA[0] if GEMINI_MODELLI_RISERVA else ""
@@ -3675,8 +3689,21 @@ async def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, groundi
                 # Modello (non key) non disponibile: niente rotazione key,
                 # si passa subito al modello successivo della catena -- vedi
                 # GEMINI_MODELLI_RISERVA.
-                if attempt < max_retries_effettivi and _gemini_gestisci_modello_non_disponibile(
-                        api_url, url_usato, resp.status_code, resp.text):
+                #
+                # FIX 2026-09-26: la marcatura di esclusione (dentro la
+                # funzione qui sotto) va SEMPRE eseguita, anche se e' l'ultimo
+                # tentativo disponibile -- prima era dietro "attempt <
+                # max_retries_effettivi and ...", quindi in cortocircuito non
+                # veniva mai chiamata sull'ultimo tentativo. In un blackout
+                # (tentativi ridotti a MAX_RETRIES_GEMINI_IN_BLACKOUT) e'
+                # proprio li' che capitava quasi sempre il 404 di riserva,
+                # cosi' il modello rotto non veniva mai escluso e si
+                # ripresentava identico ad ogni chiamata successiva (vedi
+                # log 24-25/09: 67 404 su gemini-2.5-flash-lite, 0 marcature).
+                # Ora si continua solo se resta budget di tentativi.
+                modello_cambiato = _gemini_gestisci_modello_non_disponibile(
+                    api_url, url_usato, resp.status_code, resp.text)
+                if modello_cambiato and attempt < max_retries_effettivi:
                     continue
             if resp.is_success:
                 _gemini_registra_esito(True)
@@ -4471,9 +4498,12 @@ async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca
                     url_usato, headers={"x-goog-api-key": key_usata}, json=payload, timeout=30)
                 if not resp.is_success:
                     log.warning("Gemini (cervello) HTTP %d: %s", resp.status_code, resp.text[:500])
-                    # Stesso fallback di modello di chiama_gemini.
-                    if attempt < tentativi_effettivi and _gemini_gestisci_modello_non_disponibile(
-                            api_url, url_usato, resp.status_code, resp.text):
+                    # Stesso fallback di modello di chiama_gemini, stesso FIX
+                    # 2026-09-26: la marcatura di esclusione va sempre eseguita,
+                    # anche sull'ultimo tentativo (vedi commento esteso li').
+                    modello_cambiato = _gemini_gestisci_modello_non_disponibile(
+                        api_url, url_usato, resp.status_code, resp.text)
+                    if modello_cambiato and attempt < tentativi_effettivi:
                         continue
                     if _gemini_e_errore_quota_giornaliera(resp.status_code, resp.text):
                         _gemini_segna_key_quota_esaurita(key_usata)
