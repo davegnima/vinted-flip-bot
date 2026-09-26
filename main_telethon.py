@@ -72,6 +72,16 @@ TELEGRAM_ALERT_CHAT_ID = os.environ.get("TELEGRAM_ALERT_CHAT_ID")
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 SERPER_API_KEY = os.environ.get("SERPER_API_KEY")
 
+# REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET: opzionali, servono SOLO per la
+# verifica dei codici prodotto su Reddit (vedi sezione VERIFICA CODICI
+# PRODOTTO piu' sotto). App Reddit di tipo "script", autenticazione OAuth
+# "application only" (grant_type=client_credentials): sola lettura, non
+# richiede MAI la password dell'account Reddit. Se non configurate, la
+# verifica si disattiva da sola senza rompere nulla (REDDIT_ABILITATO=False).
+REDDIT_CLIENT_ID = os.environ.get("REDDIT_CLIENT_ID", "").strip()
+REDDIT_CLIENT_SECRET = os.environ.get("REDDIT_CLIENT_SECRET", "").strip()
+REDDIT_USERNAME = os.environ.get("REDDIT_USERNAME", "vinted-flip-oracle").strip()
+
 # VINTED_ACCESS_TOKEN / VINTED_REFRESH_TOKEN: opzionali, servono SOLO per la
 # ricerca visuale Vinted (search_by_image), l'unica fonte che richiede una
 # sessione autenticata -- vedi la lunga docstring di _risolvi_search_by_image_id
@@ -6185,6 +6195,271 @@ async def _cerca_ebay_sold_con_fallback(brand, categoria, material_per_ricerca=N
     return f"{testo} | fallback Google anch'esso fallito: {testo_fallback}", False, {}
 
 
+# ---------------------------------------------------------------------------
+# VERIFICA CODICI PRODOTTO SU REDDIT (aggiunto 2026-09-26, richiesto dall'utente)
+# ---------------------------------------------------------------------------
+# I contraffattori spesso riusano lo stesso codice prodotto/etichetta su capi
+# diversi (altro modello, altro colore, a volte altro brand) perche' e' piu'
+# comodo stampare un lotto di etichette identiche che farne una diversa per
+# ogni pezzo. Se il codice che l'Occhio ha letto sull'etichetta compare online
+# associato a un capo VISIBILMENTE diverso (altro brand noto), e' un segnale
+# forte di contraffazione che oggi il pipeline non controlla affatto.
+#
+# Fonte scelta: ricerca Reddit, non Google/Serper. Motivo (vedi conversazione
+# 2026-09-26): l'utente vuole questa parte a costo zero per sempre, e nel
+# 2026 le API di ricerca web gratuite sono sparite (Google Custom Search ha
+# chiuso il livello gratuito ai nuovi utenti a gennaio 2026, Brave Search ha
+# eliminato il suo). Reddit invece resta gratis per uso personale non
+# commerciale: 100 query/minuto via OAuth "application only"
+# (grant_type=client_credentials), che NON richiede mai la password
+# dell'account Reddit, solo client_id/client_secret di un'app di tipo
+# "script". Ricerca su TUTTO Reddit, nessun subreddit fisso: restringere a
+# pochi subreddit scelti a mano rischierebbe di perdere la discussione giusta
+# finita altrove (vedi conversazione, l'utente ha chiesto esplicitamente se
+# fosse necessario sceglierli -- non lo e').
+#
+# Se REDDIT_CLIENT_ID/REDDIT_CLIENT_SECRET non sono configurate su Railway,
+# tutta questa sezione si disattiva da sola: REDDIT_ABILITATO=False,
+# verifica_codici_prodotto_reddit ritorna subito stringa vuota, zero chiamate
+# di rete, il resto del bot funziona esattamente come prima.
+REDDIT_USER_AGENT = f"python:vinted-flip-oracle-codecheck:v1.0 (by /u/{REDDIT_USERNAME})"
+REDDIT_ABILITATO = bool(REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET)
+
+_reddit_token_cache = {"token": None, "scadenza": 0.0}
+
+# Cache persistente su Volume (stesso pattern di TOKEN_FILE piu' sopra per i
+# token Vinted): un codice gia' verificato non viene mai ricercato una
+# seconda volta, ne' dopo un riavvio. Tiene il bot ben sotto le 100 query/min
+# concesse gratis e velocizza i codici che ricorrono spesso (stesso lotto di
+# contraffazioni rivenduto da piu' venditori).
+CODICI_REDDIT_CACHE_FILE = "/data/codici_reddit_cache.json"
+_codici_reddit_cache = {}
+if os.path.exists(CODICI_REDDIT_CACHE_FILE):
+    try:
+        with open(CODICI_REDDIT_CACHE_FILE, "r") as f:
+            _codici_reddit_cache = json.load(f)
+    except Exception as e:
+        log.warning("Impossibile leggere %s (probabilmente non esiste ancora): %s", CODICI_REDDIT_CACHE_FILE, e)
+
+
+def _salva_cache_codici_reddit():
+    try:
+        os.makedirs(os.path.dirname(CODICI_REDDIT_CACHE_FILE), exist_ok=True)
+        with open(CODICI_REDDIT_CACHE_FILE, "w") as f:
+            json.dump(_codici_reddit_cache, f)
+    except Exception as e:
+        log.warning("Impossibile scrivere %s: %s", CODICI_REDDIT_CACHE_FILE, e)
+
+
+async def _reddit_ottieni_token():
+    """Token OAuth 'application only': sola lettura, non serve mai la
+    password dell'account Reddit. Valido 1h (di solito), rigenerato solo
+    quando serve, con 60s di margine per non usarne uno che scade a meta'
+    di una richiesta in corso."""
+    if _reddit_token_cache["token"] and time.time() < _reddit_token_cache["scadenza"] - 60:
+        return _reddit_token_cache["token"]
+    resp = await _client_generico.post(
+        "https://www.reddit.com/api/v1/access_token",
+        data={"grant_type": "client_credentials"},
+        auth=(REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET),
+        headers={"User-Agent": REDDIT_USER_AGENT},
+        timeout=15,
+    )
+    resp.raise_for_status()
+    dati = resp.json()
+    _reddit_token_cache["token"] = dati["access_token"]
+    _reddit_token_cache["scadenza"] = time.time() + dati.get("expires_in", 3600)
+    return _reddit_token_cache["token"]
+
+
+def _estrai_codici_prodotto_da_occhio(occhio_json):
+    """Codici prodotto/etichetta letti dall'Occhio (etichette[].tipo ==
+    'codice_prodotto'), filtrati per lunghezza minima e leggibilita' -- un
+    codice illeggibile o troppo corto produrrebbe solo rumore in ricerca.
+    Al massimo 2 per annuncio, per restare leggeri (in parallelo alla
+    ricerca comp, non deve mai diventare lui il collo di bottiglia)."""
+    if not occhio_json:
+        return []
+    etichette = occhio_json.get("etichette") or []
+    codici = []
+    for e in etichette:
+        if e.get("tipo") != "codice_prodotto":
+            continue
+        if e.get("leggibilita") == "illeggibile":
+            continue
+        testo = str(e.get("testo_verbatim") or "").strip()
+        testo_pulito = re.sub(r"\[.*?\]", "", testo).strip()
+        if len(testo_pulito) < 4:
+            continue
+        if testo_pulito not in codici:
+            codici.append(testo_pulito)
+    return codici[:2]
+
+
+# Brand di lusso comuni, usati per rilevare quando un codice compare online
+# insieme a un brand DIVERSO dal nostro -- il segnale concreto di "codice
+# riciclato su capi diversi". Lista euristica, non esaustiva di proposito:
+# aiuta a beccare i casi piu' comuni, non deve essere mantenuta completa.
+_BRAND_NOTI_PER_INCROCIO_REDDIT = [
+    "gucci", "prada", "chanel", "louis vuitton", "dior", "miu miu", "loewe",
+    "balenciaga", "burberry", "fendi", "versace", "valentino", "bottega veneta",
+    "saint laurent", "ysl", "brunello cucinelli", "loro piana", "max mara",
+    "missoni", "jil sander", "rick owens", "moncler", "stone island",
+    "comme des garcons", "issey miyake", "margiela",
+]
+
+
+def _titoli_menzionano_altro_brand_reddit(testi, brand_nostro):
+    """True/insieme se tra i risultati Reddit compare un brand noto DIVERSO
+    dal nostro accanto al codice cercato. Segnala il caso piu' grossolano
+    (codice riciclato tra brand diversi)."""
+    brand_nostro_norm = (brand_nostro or "").strip().lower()
+    trovati = set()
+    for t in testi:
+        tl = t.lower()
+        for b in _BRAND_NOTI_PER_INCROCIO_REDDIT:
+            if b in tl and b not in brand_nostro_norm and brand_nostro_norm not in b:
+                trovati.add(b)
+    return trovati
+
+
+# Riusa la stessa mappa IT->EN gia' usata per le query di ricerca comp
+# (CATEGORIA_TERMINE_EN, vedi piu' sopra): serve a riconoscere quando un
+# risultato Reddit parla di un capo di categoria DIVERSA dalla nostra pur
+# citando lo stesso codice E lo stesso brand -- il caso piu' subdolo e piu'
+# comune (richiesto esplicitamente dall'utente il 2026-09-26): i
+# contraffattori di solito NON usano un codice di un altro brand (troppo
+# facile da beccare), usano un codice nel formato giusto per IL brand ma
+# preso da un lotto/prodotto diverso (es. lo stesso codice stampato sia su
+# una borsa che su un maglione).
+def _titoli_menzionano_categoria_diversa_reddit(testi, categoria_en_nostra):
+    """Insieme di categorie (in inglese) DIVERSE dalla nostra trovate nei
+    risultati Reddit insieme al codice. Richiede categoria_en_nostra (gia'
+    tradotta) per sapere quale escludere dal confronto."""
+    if not categoria_en_nostra:
+        return set()
+    categoria_en_nostra = categoria_en_nostra.lower()
+    trovate = set()
+    for t in testi:
+        tl = t.lower()
+        for cat_en in set(CATEGORIA_TERMINE_EN.values()):
+            if cat_en == categoria_en_nostra:
+                continue
+            if re.search(r"\b" + re.escape(cat_en) + r"\b", tl):
+                trovate.add(cat_en)
+    return trovate
+
+
+async def _reddit_verifica_codice(codice, brand, categoria_en=None):
+    """Cerca '"codice" brand' su tutto Reddit. Ritorna una riga di testo
+    pronta per il prompt del Cervello, o None se non c'e' niente da
+    segnalare (nessun risultato -- il caso piu' comune: e' un esito
+    neutro, NON va spacciato per una conferma di autenticita', quindi in
+    quel caso non si aggiunge nulla al prompt piuttosto che scrivere un
+    falso rassicurante).
+
+    Due controlli distinti, non uno solo (aggiunto il 2026-09-26 su
+    richiesta esplicita dell'utente): il codice compare con un BRAND
+    diverso (grossolano, raro) o con la stessa marca ma una CATEGORIA di
+    prodotto diversa (il caso vero: codice in formato coerente col brand ma
+    riciclato da un altro lotto/prodotto). Il secondo e' il controllo che
+    conta davvero, il primo resta come rete di sicurezza per il caso
+    limite."""
+    chiave = f"{codice.lower()}|{(brand or '').lower()}|{(categoria_en or '').lower()}"
+    if chiave in _codici_reddit_cache:
+        return _codici_reddit_cache[chiave]
+
+    risultato = None
+    try:
+        token = await _reddit_ottieni_token()
+        resp = await _client_generico.get(
+            "https://oauth.reddit.com/search",
+            params={"q": f"\"{codice}\" {brand}", "sort": "relevance", "limit": 10},
+            headers={"Authorization": f"Bearer {token}", "User-Agent": REDDIT_USER_AGENT},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        posts = resp.json().get("data", {}).get("children", [])
+        testi = []
+        link_esempio = None
+        for p in posts:
+            d = p.get("data", {})
+            titolo = d.get("title", "")
+            corpo = (d.get("selftext", "") or "")[:300]
+            if codice.lower() in (titolo + " " + corpo).lower():
+                testi.append(f"{titolo} {corpo}")
+                if not link_esempio:
+                    link_esempio = f"https://reddit.com{d.get('permalink', '')}"
+        if not testi:
+            risultato = None
+        else:
+            altri_brand = _titoli_menzionano_altro_brand_reddit(testi, brand)
+            altre_categorie = _titoli_menzionano_categoria_diversa_reddit(testi, categoria_en)
+            if altri_brand or altre_categorie:
+                pezzi = []
+                if altre_categorie:
+                    pezzi.append(
+                        f"su un capo di categoria diversa ({', '.join(sorted(altre_categorie))} "
+                        f"invece di {categoria_en})"
+                    )
+                if altri_brand:
+                    pezzi.append(f"anche su un altro brand ({', '.join(sorted(altri_brand))})")
+                risultato = (
+                    f"[VERIFICA CODICE '{codice}' SU REDDIT] Lo stesso codice, formato coerente "
+                    f"col brand dichiarato '{brand}', compare online " + " e ".join(pezzi) +
+                    f" -- probabile codice riciclato da contraffattori, NON e' una prova che il "
+                    f"codice sia sbagliato per formato ma che e' condiviso tra prodotti diversi. "
+                    f"Fonte: {link_esempio}"
+                )
+            else:
+                risultato = (
+                    f"[VERIFICA CODICE '{codice}' SU REDDIT] {len(testi)} menzione/i trovate, "
+                    f"nessuna su un brand o una categoria diversi da '{brand}'"
+                    + (f"/{categoria_en}" if categoria_en else "") +
+                    ". Non e' una conferma di autenticita', solo l'assenza del segnale di "
+                    "allarme piu' comune."
+                )
+    except Exception as e:
+        log.warning("Verifica codice Reddit fallita per '%s': %s", codice, e)
+        risultato = None  # un errore di rete non deve MAI bloccare la pipeline
+
+    _codici_reddit_cache[chiave] = risultato
+    _salva_cache_codici_reddit()
+    return risultato
+
+
+async def verifica_codici_prodotto_reddit(occhio_json, brand, categoria_per_ricerca=None):
+    """Punto d'ingresso da process_listing. Va lanciata in parallelo alla
+    ricerca comp (asyncio.gather nel chiamante), cosi' non aggiunge secondi
+    alla pipeline. Ritorna una stringa da accodare a output_occhi, o stringa
+    vuota se non c'e' niente da dire (Reddit non configurato, nessun codice
+    leggibile sull'etichetta, o nessun riscontro trovato).
+
+    categoria_per_ricerca e' la stessa categoria (in italiano, es. 'maglia')
+    gia' calcolata da estrai_categoria_da_titolo per la ricerca comp --
+    viene tradotta in inglese con CATEGORIA_TERMINE_EN per il confronto coi
+    risultati Reddit (quasi sempre in inglese)."""
+    if not REDDIT_ABILITATO:
+        return ""
+    codici = _estrai_codici_prodotto_da_occhio(occhio_json)
+    if not codici:
+        return ""
+    categoria_en = CATEGORIA_TERMINE_EN.get((categoria_per_ricerca or "").strip().lower())
+    log.info("Verifica codici Reddit: interrogo %s per brand='%s' categoria='%s'.", codici, brand, categoria_en)
+    righe = []
+    for codice in codici:
+        riga = await _reddit_verifica_codice(codice, brand, categoria_en=categoria_en)
+        if riga:
+            righe.append(riga)
+    if righe:
+        log.info("Verifica codici Reddit: %d segnal/e trovato/i.", len(righe))
+    else:
+        log.info("Verifica codici Reddit: nessun segnale (nessun risultato o tutto coerente).")
+    if not righe:
+        return ""
+    return "\n\n--- VERIFICA CODICI PRODOTTO (Reddit) ---\n" + "\n".join(righe)
+
+
 async def search_comps_completo(brand, categoria, query_base, catalog_id=None, material_per_ricerca=None, cover_photo_id=None, item_id=None, nome_sarto=None, dettaglio_distintivo=None):
     vinted_url, vinted_per_id = build_vinted_search_url(brand, categoria, material_per_ricerca, catalog_id)
     # Ricerca extra per nome del sarto/maker (aggiunta il 2026-09-20, vedi il
@@ -8306,12 +8581,21 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
         )
         serper_disponibile = bool(SERPER_API_KEY) and not in_raffreddamento
 
+        # Verifica codici prodotto su Reddit (aggiunta 2026-09-26): lanciata
+        # in parallelo alla ricerca comp con asyncio.gather, cosi' non
+        # aggiunge secondi alla pipeline -- gira anche quando Serper non e'
+        # disponibile, e' del tutto indipendente da lui. Se REDDIT_ABILITATO
+        # e' False (credenziali non configurate) ritorna subito "" senza
+        # fare alcuna chiamata di rete.
         if serper_disponibile:
-            comps_text, serper_ok, tentare_ricerca_visuale, fonte_visuale_riuscita, mappa_url_comp = await search_comps_completo(
-                brand_per_ricerca, categoria_per_ricerca, titolo_annuncio,
-                catalog_id=catalog_id, material_per_ricerca=material_per_ricerca,
-                cover_photo_id=cover_photo_id, item_id=item_id_annuncio,
-                nome_sarto=nome_sarto_o_maker, dettaglio_distintivo=dettaglio_distintivo,
+            (comps_text, serper_ok, tentare_ricerca_visuale, fonte_visuale_riuscita, mappa_url_comp), testo_verifica_codici = await asyncio.gather(
+                search_comps_completo(
+                    brand_per_ricerca, categoria_per_ricerca, titolo_annuncio,
+                    catalog_id=catalog_id, material_per_ricerca=material_per_ricerca,
+                    cover_photo_id=cover_photo_id, item_id=item_id_annuncio,
+                    nome_sarto=nome_sarto_o_maker, dettaglio_distintivo=dettaglio_distintivo,
+                ),
+                verifica_codici_prodotto_reddit(occhio_json, brand_per_ricerca, categoria_per_ricerca=categoria_per_ricerca),
             )
             t_tappe.append(("comp", time.time()))
             if serper_ok:
@@ -8330,6 +8614,11 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
                             TELEGRAM_OWNER_CHAT_ID,
                             f"⚠️ *Serper ha esaurito i crediti o non risponde*.\nFallback a Scenario F per {RAFFREDDAMENTO_SERPER_SECONDI/3600:.0f} ore."
                         )
+        else:
+            testo_verifica_codici = await verifica_codici_prodotto_reddit(occhio_json, brand_per_ricerca, categoria_per_ricerca=categoria_per_ricerca)
+
+        if testo_verifica_codici:
+            output_occhi += testo_verifica_codici
 
         contesto_listing = (
             f"{user_text_occhi}\n"
