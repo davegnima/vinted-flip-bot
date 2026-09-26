@@ -2356,20 +2356,32 @@ Se pensi che possa servire una trattativa (margine risicato al prezzo pieno, anc
 def _spezza_per_telegram(text, max_len=3500):
     """Chunking condiviso da telegram_send_message e telegram_send_with_buttons
     (prima duplicato identico in entrambe). Taglia preferibilmente su riga
-    vuota, poi su a capo, e solo come ultima risorsa a lunghezza fissa."""
+    vuota, poi su a capo, e solo come ultima risorsa a lunghezza fissa.
+
+    FIX 2026-09-26 (bot congelato in produzione dalle 07:41 UTC, memoria da
+    0,3 a 7,3 GB in un'ora): il resto dopo un taglio iniziava con lo stesso
+    separatore "\\n\\n" su cui si era tagliato. Se nei successivi max_len
+    caratteri non c'era un'altra riga vuota, rfind restituiva 0 (non -1),
+    quindi split_at=0: si aggiungeva un chunk vuoto e il resto restava
+    identico -> loop infinito sincrono che bloccava l'intero event loop
+    (nessun log, nessun messaggio, nessun nuovo annuncio) e riempiva la RAM
+    di stringhe vuote. Ora la ricerca parte da 1, il resto viene ripulito
+    dagli a capo iniziali e un taglio a 0 non e' piu' possibile."""
     chunks = []
     remaining = text
     while remaining:
         if len(remaining) <= max_len:
             chunks.append(remaining)
             break
-        split_at = remaining.rfind("\n\n", 0, max_len)
-        if split_at == -1:
-            split_at = remaining.rfind("\n", 0, max_len)
-        if split_at == -1:
+        split_at = remaining.rfind("\n\n", 1, max_len)
+        if split_at <= 0:
+            split_at = remaining.rfind("\n", 1, max_len)
+        if split_at <= 0:
             split_at = max_len
-        chunks.append(remaining[:split_at])
-        remaining = remaining[split_at:]
+        pezzo = remaining[:split_at]
+        if pezzo.strip():
+            chunks.append(pezzo)
+        remaining = remaining[split_at:].lstrip("\n")
     return chunks or [text]
 
 
