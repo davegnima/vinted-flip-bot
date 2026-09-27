@@ -18,6 +18,8 @@ import base64
 import logging
 import statistics
 import traceback
+import zlib
+import importlib.util
 from io import BytesIO
 from datetime import datetime, timezone
 from urllib.parse import quote, urlparse
@@ -249,7 +251,7 @@ MAX_GALLERY_PHOTOS = 10
 # inequivocabile quale codice sta girando su Railway dopo un deploy, senza
 # doverlo dedurre dai timestamp dei log. Aggiorna la data quando fai una
 # modifica significativa (facoltativo, ma utile per il debug futuro).
-BOT_VERSION = "2026-09-19-cervello-json-strutturato-asyncio"
+BOT_VERSION = "2026-09-27-filtro-pre-scrape-logging-proxy"
 
 # ---------------------------------------------------------------------------
 # PARAMETRI ECONOMICI -- l'unica fonte di verita' per TUTTI i calcoli
@@ -2855,6 +2857,270 @@ def _logga_riepilogo_proxy():
 
 
 # ---------------------------------------------------------------------------
+# CONTABILITA' BANDA PROXY (aggiunta 2026-09-27, utente: "come faccio a
+# consumare meno banda?", in vista del passaggio a proxy residenziali a
+# consumo). Misura i byte REALI passati in rete (compressi, quelli che il
+# provider fattura: resp.num_bytes_downloaded di httpx) separati per tipo di
+# richiesta, cosi' si vede cosa pesa davvero invece di stimarlo. Riga da
+# cercare nei log Railway: "RIEPILOGO BANDA".
+# ---------------------------------------------------------------------------
+_BANDA_PER_TIPO = {}
+_BANDA_REGISTRAZIONI = [0]
+INTERVALLO_RIEPILOGO_BANDA = 50
+
+
+def _tipo_richiesta_vinted(url):
+    u = url or ""
+    if "vinted.net" in u:
+        return "foto"
+    if "/items/" in u:
+        return "pagina_annuncio"
+    if "/member/" in u:
+        return "profilo_venditore"
+    if "/catalog" in u:
+        return "catalogo_comp"
+    return "altro"
+
+
+def _registra_banda(url, resp):
+    """Registra i byte di UNA risposta gia' letta per intero. Mai bloccante:
+    qualunque errore qui viene ignorato, la contabilita' non deve rompere lo
+    scraping."""
+    try:
+        tipo = _tipo_richiesta_vinted(url)
+        rete = int(getattr(resp, "num_bytes_downloaded", 0) or 0)
+        decodificati = len(resp.content or b"")
+        s = _BANDA_PER_TIPO.setdefault(tipo, {"n": 0, "rete": 0, "decod": 0})
+        s["n"] += 1
+        s["rete"] += rete
+        s["decod"] += decodificati
+        _BANDA_REGISTRAZIONI[0] += 1
+        if _BANDA_REGISTRAZIONI[0] % INTERVALLO_RIEPILOGO_BANDA == 0:
+            _logga_riepilogo_banda()
+    except Exception:
+        pass
+
+
+def _logga_riepilogo_banda():
+    tot_rete = sum(s["rete"] for s in _BANDA_PER_TIPO.values()) or 1
+    pezzi = []
+    for tipo, s in sorted(_BANDA_PER_TIPO.items(), key=lambda kv: -kv[1]["rete"]):
+        media_rete = s["rete"] / s["n"] / 1024 if s["n"] else 0
+        media_decod = s["decod"] / s["n"] / 1024 if s["n"] else 0
+        pezzi.append(
+            f"{tipo}: {s['n']} richieste, {s['rete'] / 1048576:.1f}MB in rete "
+            f"({s['rete'] / tot_rete * 100:.0f}% del totale), media {media_rete:.0f}KB/richiesta "
+            f"(decompressi {media_decod:.0f}KB)"
+        )
+    log.info("RIEPILOGO BANDA (dall'avvio, %.1fMB totali in rete): %s",
+             tot_rete / 1048576, " | ".join(pezzi))
+
+
+# ---------------------------------------------------------------------------
+# SONDA STRUTTURA PAGINA (aggiunta 2026-09-27, utente: "voglio testare sia
+# brotli che leggere solo l'inizio della pagina, e capire cosa pesa").
+# Sulle prime SONDA_BANDA_CAMPIONI pagine annuncio VERE (non pagine di
+# blocco) dall'avvio, in background senza rallentare la pipeline, misura:
+#   1. dove stanno nell'HTML i dati che estraiamo davvero (offset in KB di
+#      foto, taglia, descrizione, venditore...) -> quanto inizio di pagina
+#      basterebbe leggere, e quanta banda si risparmierebbe;
+#   2. di cosa e' fatto il peso della pagina (script inline, payload React,
+#      stili, SVG, resto) -> il bot scarica SOLO il documento HTML, mai
+#      CSS/JS/immagini collegati, quindi ogni risparmio possibile e' dentro
+#      questo documento;
+#   3. brotli: stessa pagina richiesta anche con Accept-Encoding "br" (solo
+#      se il pacchetto brotli e' installato), confronto dei byte in rete;
+#   4. foto senza proxy: la prima foto scaricata DIRETTA (IP Railway,
+#      nessun proxy) per vedere se il CDN immagini la serve comunque -- se
+#      si', le foto potrebbero non consumare piu' banda proxy.
+# SONDA_BANDA_CAMPIONI=0 su Railway la disattiva del tutto.
+# ---------------------------------------------------------------------------
+SONDA_BANDA_CAMPIONI = int(os.environ.get("SONDA_BANDA_CAMPIONI", "10"))
+_sonda_campioni_fatti = [0]
+_sonda_task_attivi = set()
+BROTLI_DISPONIBILE = (importlib.util.find_spec("brotli") is not None
+                      or importlib.util.find_spec("brotlicffi") is not None)
+
+_REGEX_FOTO_F800 = re.compile(
+    r'https://images\d?\.vinted\.net/t/[a-zA-Z0-9_]+/f800/'
+    r'[^\s"\'\\]+?\.(?:jpe?g|png|webp)(?:\?s=[a-f0-9]+)?')
+
+# (nome, regex, prendi_ultima_occorrenza) -- STESSI pattern usati in
+# scrape_vinted_listing, cosi' gli offset misurati sono quelli reali.
+_SONDA_CAMPI = [
+    ("taglia", re.compile(r'"size_title"\s*:\s*"([^"]+)"'), False),
+    ("condizione", re.compile(r'itemprop="status"[^>]*>.*?<span[^>]*>([^<]+)', re.DOTALL), False),
+    ("descrizione", re.compile(r'"description"\s*:\s*"((?:[^"\\]|\\.)*)"'), False),
+    ("data_pubblicazione", re.compile(r'\\?"(?:created_at_ts|created_at|createdAt)\\?"\s*:\s*\\?"?[^",\\]+'), False),
+    ("categoria", re.compile(r'/catalog/(\d+)-[a-z0-9-]+?\?referrer=item-crumbs"'), True),
+    ("materiale", re.compile(r'itemprop="material"[^>]*>.*?<span[^>]*>([^<]+)', re.DOTALL), False),
+    ("colore", re.compile(r'itemprop="color"[^>]*>.*?<span[^>]*>([^<]+)', re.DOTALL), False),
+    ("venditore_login", re.compile(r'data-testid="profile-username"[^>]*>([^<]{2,40})<'), False),
+    ("venditore_id", re.compile(r'href="/member/(\d+)"'), False),
+    ("venditore_rating", re.compile(r'valutazione di\s+([\d.,]+)\s+su\s+5\s+stelle', re.IGNORECASE), False),
+    ("venditore_n_feedback", re.compile(r'web_ui__Rating__label[^>]*>\s*<span[^>]*>\s*(\d+)\s*<'), False),
+    ("venditore_n_articoli", re.compile(r'"items_count"\s*:\s*(\d+)'), False),
+    ("venditore_paese", re.compile(r'"country_title_local"\s*:\s*"([^"]{2,30})"'), False),
+]
+
+
+def _sonda_e_pagina_vera(html_pagina):
+    """Le pagine di blocco osservate il 27/9 pesano ~21KB, quelle vere
+    ~1.7MB: sotto i 200KB o senza nessun marker tipico non la si analizza
+    (misurerebbe la pagina di blocco, non l'annuncio)."""
+    return len(html_pagina) > 200_000 and (
+        'data-testid="profile-username"' in html_pagina or '"size_title"' in html_pagina)
+
+
+def _sonda_analizza_offset(html_pagina):
+    """Offset (fine del match, in caratteri) di ogni campo estratto, piu' la
+    fine dell'ultima foto galleria prima del blocco venditore. Pura, testabile."""
+    offset = {}
+    marker = re.search(r'data-testid="profile-username"', html_pagina)
+    zona_galleria = html_pagina[:marker.start()] if marker else html_pagina
+    fine_ultima_foto = None
+    for m in _REGEX_FOTO_F800.finditer(zona_galleria):
+        fine_ultima_foto = m.end()
+    offset["foto_galleria"] = fine_ultima_foto
+    for nome, rx, ultima in _SONDA_CAMPI:
+        fine = None
+        if ultima:
+            for m in rx.finditer(html_pagina):
+                fine = m.end()
+        else:
+            m = rx.search(html_pagina)
+            fine = m.end() if m else None
+        offset[nome] = fine
+    return offset
+
+
+def _sonda_composizione(html_pagina):
+    """Quanto pesa ogni tipo di blocco dentro il documento HTML (caratteri)."""
+    comp = {"script_payload_react": 0, "script_altri": 0, "json_ld": 0, "style": 0, "svg": 0}
+    for m in re.finditer(r'<script\b([^>]*)>(.*?)</script>', html_pagina, re.DOTALL | re.IGNORECASE):
+        attrs, corpo = m.group(1), m.group(2)
+        if "ld+json" in attrs:
+            comp["json_ld"] += len(m.group(0))
+        elif "self.__next_f" in corpo or "__NEXT_DATA__" in attrs:
+            comp["script_payload_react"] += len(m.group(0))
+        else:
+            comp["script_altri"] += len(m.group(0))
+    for m in re.finditer(r'<style\b.*?</style>', html_pagina, re.DOTALL | re.IGNORECASE):
+        comp["style"] += len(m.group(0))
+    for m in re.finditer(r'<svg\b.*?</svg>', html_pagina, re.DOTALL | re.IGNORECASE):
+        comp["svg"] += len(m.group(0))
+    comp["resto_html"] = max(0, len(html_pagina) - sum(comp.values()))
+    return comp
+
+
+def _sonda_stima_lettura_parziale(html_pagina, offset, byte_rete_reali):
+    """Quanti caratteri iniziali servirebbero (ultimo campo trovato + 10% di
+    margine) e quanta banda in rete si risparmierebbe, stimata comprimendo
+    in gzip il prefisso e la pagina intera (stesso algoritmo del server)."""
+    trovati = [v for v in offset.values() if v]
+    if not trovati:
+        return None
+    necessari = min(len(html_pagina), int(max(trovati) * 1.10))
+    full_gz = len(zlib.compress(html_pagina.encode("utf-8", "ignore"), 6)) or 1
+    pref_gz = len(zlib.compress(html_pagina[:necessari].encode("utf-8", "ignore"), 6))
+    rete_stimata_prefisso = byte_rete_reali * pref_gz / full_gz if byte_rete_reali else pref_gz
+    return {
+        "caratteri_necessari": necessari,
+        "percentuale_pagina": necessari / len(html_pagina) * 100,
+        "rete_stimata_prefisso": rete_stimata_prefisso,
+        "risparmio_stimato": max(0.0, (byte_rete_reali or full_gz) - rete_stimata_prefisso),
+    }
+
+
+def _sonda_avvia_se_serve(url, resp, html_pagina):
+    """Chiamata da scrape_vinted_listing. Non attende nulla: se il campione
+    serve, lancia la sonda in background e ritorna subito."""
+    if SONDA_BANDA_CAMPIONI <= 0 or _sonda_campioni_fatti[0] >= SONDA_BANDA_CAMPIONI:
+        return
+    if not _sonda_e_pagina_vera(html_pagina):
+        return
+    _sonda_campioni_fatti[0] += 1
+    n = _sonda_campioni_fatti[0]
+    task = asyncio.create_task(_sonda_struttura_pagina(n, url, resp, html_pagina))
+    _sonda_task_attivi.add(task)
+    task.add_done_callback(_sonda_task_attivi.discard)
+
+
+async def _sonda_struttura_pagina(n, url, resp, html_pagina):
+    try:
+        kb = lambda x: f"{x / 1024:.0f}KB" if x is not None else "non trovato"
+        byte_rete = int(getattr(resp, "num_bytes_downloaded", 0) or 0)
+        encoding = resp.headers.get("content-encoding", "nessuna")
+
+        offset = _sonda_analizza_offset(html_pagina)
+        comp = _sonda_composizione(html_pagina)
+        stima = _sonda_stima_lettura_parziale(html_pagina, offset, byte_rete)
+
+        log.info(
+            "SONDA BANDA %d/%d [%s] pagina: %s decompressa, %s in rete (compressione '%s', x%.1f) -- %s",
+            n, SONDA_BANDA_CAMPIONI, getattr(resp, "_proxy_etichetta", "?"),
+            kb(len(html_pagina)), kb(byte_rete), encoding,
+            (len(resp.content) / byte_rete) if byte_rete else 0, url,
+        )
+        log.info(
+            "SONDA BANDA %d posizione dei dati nella pagina (KB dall'inizio, su %s): %s",
+            n, kb(len(html_pagina)),
+            ", ".join(f"{k}={kb(v)}" for k, v in sorted(offset.items(), key=lambda kv: kv[1] or 10**12)),
+        )
+        log.info(
+            "SONDA BANDA %d composizione pagina: %s",
+            n, ", ".join(f"{k} {kb(v)} ({v / len(html_pagina) * 100:.0f}%)"
+                         for k, v in sorted(comp.items(), key=lambda kv: -kv[1])),
+        )
+        if stima:
+            log.info(
+                "SONDA BANDA %d lettura parziale: basterebbero i primi %s (%.0f%% della pagina) -> "
+                "~%s in rete invece di %s, risparmio stimato ~%s per pagina annuncio",
+                n, kb(stima["caratteri_necessari"]), stima["percentuale_pagina"],
+                kb(stima["rete_stimata_prefisso"]), kb(byte_rete), kb(stima["risparmio_stimato"]),
+            )
+
+        # 3. Brotli, stessa pagina, una sola richiesta extra.
+        if BROTLI_DISPONIBILE:
+            resp_br = await _vinted_get_con_retry(
+                url, timeout=15, max_retries=1,
+                headers_extra={"Accept-Encoding": "br, gzip, deflate"})
+            if resp_br is not None:
+                rete_br = int(getattr(resp_br, "num_bytes_downloaded", 0) or 0)
+                log.info(
+                    "SONDA BANDA %d brotli: server ha risposto con '%s', %s in rete (contro %s con '%s')%s",
+                    n, resp_br.headers.get("content-encoding", "nessuna"), kb(rete_br), kb(byte_rete), encoding,
+                    "" if _sonda_e_pagina_vera(resp_br.text) else " -- ATTENZIONE: risposta brotli non e' una pagina vera",
+                )
+            else:
+                log.info("SONDA BANDA %d brotli: richiesta di confronto fallita.", n)
+        else:
+            log.info("SONDA BANDA %d brotli: pacchetto 'brotli' non installato su Railway, test saltato "
+                     "(aggiungere 'brotli' a requirements.txt).", n)
+
+        # 4. Prima foto della galleria scaricata SENZA proxy.
+        foto = [m.group(0) for m in _REGEX_FOTO_F800.finditer(html_pagina)]
+        if foto and _client_generico is not None:
+            headers_foto = dict(IMAGE_DOWNLOAD_HEADERS)
+            headers_foto["Referer"] = url
+            t0 = time.time()
+            try:
+                r = await _client_generico.get(foto[0], headers=headers_foto, timeout=15)
+                log.info(
+                    "SONDA BANDA %d foto SENZA proxy: status %s, %s, %.1fs -- %s",
+                    n, r.status_code, kb(len(r.content)), time.time() - t0,
+                    "il CDN immagini risponde anche senza proxy" if r.is_success and len(r.content) > 5000
+                    else "il CDN NON serve la foto senza proxy",
+                )
+            except Exception as e:
+                log.info("SONDA BANDA %d foto SENZA proxy: fallita (%s)", n, e)
+        if n == SONDA_BANDA_CAMPIONI:
+            _logga_riepilogo_banda()
+    except Exception:
+        log.warning("SONDA BANDA %d: errore interno (ignorato):\n%s", n, traceback.format_exc())
+
+
+# ---------------------------------------------------------------------------
 # CLIENT HTTP ASINCRONI
 # ---------------------------------------------------------------------------
 # Un client per ogni destinazione, costruiti una volta sola e riusati per
@@ -3232,6 +3498,7 @@ async def _vinted_get_con_retry(url, timeout=15, max_retries=3, headers_extra=No
         await _attendi_turno_vinted(chiave_rate_limit)
         try:
             resp = await client.get(url, headers=headers_richiesta, cookies=cookies_extra, timeout=timeout)
+            _registra_banda(url, resp)  # anche su 4xx: i byte in rete si pagano comunque
             resp.raise_for_status()
             _registra_esito_proxy(chiave_rate_limit, ok=True)
             # Etichetta proxy attaccata alla response stessa (non al contratto
@@ -3387,6 +3654,7 @@ async def scrape_vinted_listing(url):
         if resp is None:
             return result
         html_pagina = resp.text
+        _sonda_avvia_se_serve(url, resp, html_pagina)  # in background, non rallenta
 
         marker_venditore = re.search(r'data-testid="profile-username"', html_pagina)
 
@@ -3692,6 +3960,7 @@ async def download_image_bytes(url, referer="https://www.vinted.it/", max_retrie
         try:
             client = _prossimo_client_vinted()
             resp = await client.get(url, headers=headers, timeout=18)
+            _registra_banda(url, resp)
             if resp.is_success:
                 return resp.content
             ultimo_dettaglio = f"HTTP {resp.status_code}"
@@ -8443,6 +8712,31 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
 
     photo_bytes_list = []
     if url:
+        # FILTRO PRE-SCRAPE (aggiunto 2026-09-27, utente: ridurre il consumo
+        # di banda dei proxy in vista del passaggio a proxy residenziali a
+        # consumo, dopo il blocco sistemico del pool datacenter). Riusa
+        # check_skip_pre_gemini SULLE SOLE INFO GIA' note dal messaggio del
+        # tracker Telegram (listing_info ha gia' title/brand/price da
+        # 'parsed', ma NESSUNA descrizione ne' venditore -- quelli arrivano
+        # solo con lo scrape qui sotto) per scartare i casi ovvi (brand in
+        # blocklist, categoria mai flippabile, linea/variante esclusa per
+        # brand, "gilet -blanc"...) PRIMA di spendere una richiesta HTTP
+        # (in media ~1.7MB per pagina annuncio, vedi DIAGNOSTICA scrape
+        # foto vuoto) su un annuncio che verrebbe scartato comunque un
+        # attimo dopo. Nessuna perdita di accuratezza: e' lo STESSO
+        # controllo, solo con testo_completo limitato al titolo (niente
+        # descrizione ancora) -- puo' quindi mancare un match che serve
+        # solo la descrizione, mai aggiungerne uno falso. Il controllo
+        # invariato di prima (via listing_info aggiornato con lo scrape,
+        # poco sotto) resta come rete di sicurezza per quei casi.
+        e_skip_ante, motivo_skip_ante = check_skip_pre_gemini(listing_info)
+        if e_skip_ante:
+            log.info(
+                "FILTRO PRE-SCRAPE ATTIVATO (silenzioso, no notifica, NESSUNA richiesta a Vinted): '%s'. Motivo: %s",
+                listing_info.get("title"), motivo_skip_ante,
+            )
+            return
+
         scraped = await scrape_vinted_listing(url)
         t_tappe.append(("scrape", time.time()))
         listing_info.update({
