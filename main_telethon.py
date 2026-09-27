@@ -251,7 +251,7 @@ MAX_GALLERY_PHOTOS = 10
 # inequivocabile quale codice sta girando su Railway dopo un deploy, senza
 # doverlo dedurre dai timestamp dei log. Aggiorna la data quando fai una
 # modifica significativa (facoltativo, ma utile per il debug futuro).
-BOT_VERSION = "2026-09-27-foto-ip-railway-comando-test-proxy"
+BOT_VERSION = "2026-09-27-fix-log-token-telegram-retry-dedup-coda"
 
 # ---------------------------------------------------------------------------
 # PARAMETRI ECONOMICI -- l'unica fonte di verita' per TUTTI i calcoli
@@ -781,6 +781,13 @@ CATEGORIA_TERMINE_EN = {
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 log = logging.getLogger("vinted_flip_bot")
+# httpx logga a INFO l'URL completo di OGNI richiesta ("HTTP Request: POST
+# https://api.telegram.org/bot<TOKEN>/sendMessage ..."): con il livello
+# globale a INFO il token del bot Telegram finiva in chiaro nei log Railway
+# (stesso problema gia' risolto per la key Gemini spostandola nell'header,
+# vedi chiama_gemini). A WARNING restano solo gli errori veri di httpx.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 
 def scegli_materiale_per_ricerca(material_value_raw):
@@ -2397,25 +2404,76 @@ def _spezza_per_telegram(text, max_len=3500):
     return chunks or [text]
 
 
+TELEGRAM_MAX_TENTATIVI = 3
+TELEGRAM_MAX_ATTESA_429_SECONDI = 60
+
+
+async def _telegram_post(metodo, max_tentativi=TELEGRAM_MAX_TENTATIVI, **kwargs):
+    """POST alla Bot API con retry su 429 (flood control, rispettando il
+    retry_after indicato da Telegram) e su errori di rete. Prima ogni
+    chiamata era un singolo post senza controllo dell'esito: un 429 durante
+    un burst di annunci, o un timeout, faceva sparire la notifica senza
+    nessuna traccia nei log. Ritorna la response (anche se non is_success:
+    gli errori 400, es. Markdown non valido, li gestisce il chiamante) oppure
+    None se tutti i tentativi sono falliti per errore di rete.
+
+    Nei log NON compare mai l'URL (contiene il token del bot): solo il nome
+    del metodo, lo status e il corpo della risposta di Telegram."""
+    resp = None
+    for tentativo in range(1, max_tentativi + 1):
+        try:
+            resp = await _client_telegram.post(f"{TELEGRAM_API}/{metodo}", **kwargs)
+        except Exception as e:
+            log.warning("Telegram %s: errore di rete (tentativo %d/%d): %s",
+                        metodo, tentativo, max_tentativi, type(e).__name__)
+            resp = None
+            if tentativo < max_tentativi:
+                await asyncio.sleep(2 * tentativo)
+            continue
+        if resp.status_code == 429 and tentativo < max_tentativi:
+            try:
+                retry_after = float(resp.json().get("parameters", {}).get("retry_after", 5))
+            except Exception:
+                retry_after = 5.0
+            attesa = min(retry_after, TELEGRAM_MAX_ATTESA_429_SECONDI) + 0.5
+            log.warning("Telegram %s: 429 flood control, attendo %.1fs (tentativo %d/%d)",
+                        metodo, attesa, tentativo, max_tentativi)
+            await asyncio.sleep(attesa)
+            continue
+        return resp
+    return resp
+
+
+def _telegram_esito_ok(resp, metodo, contesto=""):
+    """True se la chiamata e' andata a buon fine, altrimenti logga a ERROR
+    (non piu' fallimenti silenziosi) e ritorna False."""
+    if resp is not None and resp.is_success:
+        return True
+    dettaglio = f"HTTP {resp.status_code}: {resp.text[:300]}" if resp is not None else "nessuna risposta (errore di rete)"
+    log.error("Telegram %s FALLITA%s -- %s", metodo, f" ({contesto})" if contesto else "", dettaglio)
+    return False
+
+
 async def telegram_send_message(chat_id, text, disable_notification=False):
     MAX_LEN = 3500
     for chunk in _spezza_per_telegram(text, MAX_LEN):
-        resp = await _client_telegram.post(
-            f"{TELEGRAM_API}/sendMessage",
+        resp = await _telegram_post(
+            "sendMessage",
             json={
                 "chat_id": chat_id, "text": chunk, "parse_mode": "Markdown",
                 "disable_web_page_preview": True, "disable_notification": disable_notification,
             },
         )
-        if not resp.is_success:
+        if resp is not None and not resp.is_success:
             log.warning("sendMessage Markdown fallita -- HTTP %d: %s -- ritento senza parse_mode", resp.status_code, resp.text[:300])
-            await _client_telegram.post(
-                f"{TELEGRAM_API}/sendMessage",
+            resp = await _telegram_post(
+                "sendMessage",
                 json={
                     "chat_id": chat_id, "text": chunk,
                     "disable_web_page_preview": True, "disable_notification": disable_notification,
                 },
             )
+        _telegram_esito_ok(resp, "sendMessage", "senza parse_mode")
 
 
 async def telegram_send_photo(chat_id, photo_bytes, caption=None, disable_notification=False):
@@ -2423,7 +2481,8 @@ async def telegram_send_photo(chat_id, photo_bytes, caption=None, disable_notifi
     data = {"chat_id": chat_id, "disable_notification": disable_notification}
     if caption:
         data["caption"] = caption[:1024]
-    await _client_telegram.post(f"{TELEGRAM_API}/sendPhoto", data=data, files=files, timeout=30)
+    resp = await _telegram_post("sendPhoto", data=data, files=files, timeout=30)
+    _telegram_esito_ok(resp, "sendPhoto")
 
 
 async def telegram_send_media_group(chat_id, photos_bytes_list, caption=None, disable_notification=False):
@@ -2438,12 +2497,13 @@ async def telegram_send_media_group(chat_id, photos_bytes_list, caption=None, di
         if i == 0 and caption:
             item["caption"] = caption[:1024]
         media.append(item)
-    await _client_telegram.post(
-        f"{TELEGRAM_API}/sendMediaGroup",
+    resp = await _telegram_post(
+        "sendMediaGroup",
         data={"chat_id": chat_id, "media": json.dumps(media), "disable_notification": disable_notification},
         files=files,
         timeout=60,
     )
+    _telegram_esito_ok(resp, "sendMediaGroup", f"{len(media)} foto")
 
 
 async def telegram_send_with_buttons(chat_id, text, url_annuncio, item_id=None, disable_notification=False):
@@ -2478,16 +2538,17 @@ async def telegram_send_with_buttons(chat_id, text, url_annuncio, item_id=None, 
         }
         if e_ultimo_chunk:
             payload_base["reply_markup"] = keyboard
-        resp = await _client_telegram.post(
-            f"{TELEGRAM_API}/sendMessage",
+        resp = await _telegram_post(
+            "sendMessage",
             json={**payload_base, "parse_mode": "Markdown"},
         )
-        if not resp.is_success:
+        if resp is not None and not resp.is_success:
             log.warning(
                 "telegram_send_with_buttons: Markdown fallita -- HTTP %d: %s -- ritento senza parse_mode",
                 resp.status_code, resp.text[:300],
             )
-            await _client_telegram.post(f"{TELEGRAM_API}/sendMessage", json=payload_base)
+            resp = await _telegram_post("sendMessage", json=payload_base)
+        _telegram_esito_ok(resp, "sendMessage", f"con bottoni, chunk {i + 1}/{len(chunks)}")
 
 
 # ---------------------------------------------------------------------------
@@ -2507,6 +2568,9 @@ BRAND_REGEX = re.compile(
     r"(?:Brand\s*:\s*|Marca\s*:\s*|🏷️\s*|🛍️\s*)(.+)",
     re.IGNORECASE,
 )
+
+
+TITOLO_NON_RILEVATO = "Titolo non rilevato"
 
 
 def parse_vinted_tracker_message(text):
@@ -2532,7 +2596,7 @@ def parse_vinted_tracker_message(text):
     price_match = PRICE_REGEX.search(text)
     brand_match = BRAND_REGEX.search(text)
     return {
-        "title": title or "Titolo non rilevato",
+        "title": title or TITOLO_NON_RILEVATO,
         "price": price_match.group(1) if price_match else None,
         "brand": brand_match.group(1).strip() if brand_match else None,
     }
@@ -9412,6 +9476,9 @@ _recent_listings_seen = {}
 
 DEDUP_CONTENUTO_WINDOW_SECONDS = 300
 
+MAX_ANALISI_PARALLELE = max(1, int(os.environ.get("MAX_ANALISI_PARALLELE", "4")))
+_semaforo_analisi = asyncio.Semaphore(MAX_ANALISI_PARALLELE)
+
 
 def _normalizza_titolo_per_dedup(title):
     if not title:
@@ -9426,19 +9493,43 @@ def _normalizza_titolo_per_dedup(title):
     return re.sub(r"\s+", " ", base).strip().lower()
 
 
-def e_variante_recente(parsed):
-    chiave = (
-        _normalizza_titolo_per_dedup(parsed.get("title")),
-        (parsed.get("brand") or "").strip().lower(),
-        (parsed.get("price") or "").strip(),
-    )
+def _chiavi_dedup(parsed, url=None):
+    """Chiavi con cui un annuncio viene riconosciuto come gia' visto. Pura,
+    testabile senza rete.
+
+    FIX 2026-09-27: prima la chiave era SOLO (titolo normalizzato, brand,
+    prezzo). Quando il messaggio del tracker non si parsava, tutti gli
+    annunci diventavano ("titolo non", "", "") -- "Titolo non rilevato" meno
+    l'ultima parola, brand e prezzo vuoti -- e per 5 minuti solo il PRIMO
+    veniva elaborato, gli altri scartati come "varianti". Ora:
+    - l'item id Vinted (dall'URL) e' sempre una chiave: lo stesso annuncio
+      ricevuto due volte e' un doppione certo;
+    - la chiave per contenuto (che serve a riconoscere le varianti dello
+      stesso capo ripubblicate con id diversi) si usa solo se il parsing
+      ha trovato un titolo vero E almeno brand o prezzo -- altrimenti
+      annunci diversi collasserebbero sulla stessa chiave vuota."""
+    chiavi = []
+    item_id = _estrai_item_id_da_url(url)
+    if item_id:
+        chiavi.append(("item_id", item_id))
+    titolo = parsed.get("title")
+    brand = (parsed.get("brand") or "").strip().lower()
+    prezzo = (parsed.get("price") or "").strip()
+    if titolo and titolo != TITOLO_NON_RILEVATO and (brand or prezzo):
+        chiavi.append(("contenuto", _normalizza_titolo_per_dedup(titolo), brand, prezzo))
+    return chiavi
+
+
+def e_variante_recente(parsed, url=None):
+    chiavi = _chiavi_dedup(parsed, url)
     now = time.time()
     scadute = [k for k, ts in _recent_listings_seen.items() if now - ts > DEDUP_CONTENUTO_WINDOW_SECONDS]
     for k in scadute:
         del _recent_listings_seen[k]
-    if chiave in _recent_listings_seen:
+    if any(k in _recent_listings_seen for k in chiavi):
         return True
-    _recent_listings_seen[chiave] = now
+    for k in chiavi:
+        _recent_listings_seen[k] = now
     return False
 
 
@@ -9576,9 +9667,9 @@ async def on_new_message(event):
 
         text = event.message.message or ""
         parsed = parse_vinted_tracker_message(text)
-        if e_variante_recente(parsed):
-            return
 
+        # URL estratto PRIMA del dedup (fix 2026-09-27): l'item id e' la
+        # chiave di dedup piu' affidabile, vedi _chiavi_dedup.
         url = extract_url_from_text(text)
         if not url and event.message.buttons:
             for row in event.message.buttons:
@@ -9586,6 +9677,9 @@ async def on_new_message(event):
                     if "vinted." in (getattr(btn, "url", None) or ""):
                         url = getattr(btn, "url", None)
                         break
+
+        if e_variante_recente(parsed, url):
+            return
 
         cover = await event.message.download_media(bytes) if event.message.photo else None
         # Prima: asyncio.to_thread(process_listing, ...), necessario perche'
@@ -9595,7 +9689,17 @@ async def on_new_message(event):
         # annunci vengono elaborati davvero in parallelo, e le lunghe attese
         # di rete (scraping, Serper, Gemini) non occupano piu' un thread
         # ciascuna.
-        await process_listing(parsed, url, cover, msg_date=msg_date, t_ricevuto_bot=t_ricevuto_bot)
+        # Tetto alle analisi in parallelo (fix 2026-09-27): senza, un burst
+        # di N annunci faceva partire N pipeline complete insieme (scrape,
+        # Gemini, Serper), bruciando la quota Gemini e la RAM tutto in una
+        # volta. Gli annunci in eccesso aspettano il loro turno qui; l'attesa
+        # resta visibile nei tempi della pipeline perche' t_ricevuto_bot e'
+        # gia' stato preso sopra.
+        if _semaforo_analisi.locked():
+            log.info("Analisi in coda (%d gia' in corso, max %d): %s",
+                     MAX_ANALISI_PARALLELE, MAX_ANALISI_PARALLELE, url)
+        async with _semaforo_analisi:
+            await process_listing(parsed, url, cover, msg_date=msg_date, t_ricevuto_bot=t_ricevuto_bot)
     except Exception:
         log.error("Errore generico:\n%s", traceback.format_exc())
 
