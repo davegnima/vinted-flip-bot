@@ -20,7 +20,7 @@ import statistics
 import traceback
 from io import BytesIO
 from datetime import datetime, timezone
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import httpx
 from telethon import TelegramClient, events
@@ -2786,6 +2786,75 @@ else:
 
 
 # ---------------------------------------------------------------------------
+# LOGGING PER-PROXY (aggiunto 2026-09-27, utente: "non e' che alcuni miei ip
+# sono bruciati?"): prima di questo non esisteva ALCUN modo di sapere, dai
+# log, quale proxy/IP avesse gestito una data richiesta -- ogni fallimento
+# di scraping era anonimo rispetto al pool di 53 proxy in rotazione. Senza
+# questo dato non si puo' distinguere "alcuni IP bruciati" (atteso: un mix
+# di successi e fallimenti nella rotazione) da un blocco sistemico che
+# colpisce l'intero pool allo stesso modo (osservato oggi: 0 successi su
+# centinaia di richieste su TUTTI i proxy per 5+ ore) -- vedi anche il
+# commento sul blocco totale del 27/9 in _vinted_get_con_retry piu' sotto.
+#
+# _etichetta_proxy: identificativo leggibile SENZA credenziali (host:porta),
+# cosi' i log restano correlabili proxy-per-proxy senza scrivere utente/
+# password in chiaro (i proxy_url in PROXY_LIST li contengono, es.
+# "http://utente:password@host:porta").
+def _etichetta_proxy(chiave):
+    if chiave == "diretto":
+        return "diretto"
+    try:
+        p = urlparse(chiave)
+        return f"{p.hostname or '?'}:{p.port or '?'}"
+    except Exception:
+        return "proxy-sconosciuto"
+
+
+# Popolato in inizializza_client_http() una volta creato il pool: mappa
+# chiave (proxy_url o "diretto", vedi _CLIENT_VINTED_POOL_KEYS) -> etichetta
+# leggibile "#indice host:porta", stabile per tutta la vita del processo.
+_ETICHETTA_PER_CHIAVE_PROXY = {}
+
+# Contatori cumulativi per proxy (chiave -> {"ok": int, "falliti": int}),
+# per poter loggare periodicamente un riepilogo "quali IP stanno fallendo
+# sistematicamente" senza dover rileggere migliaia di righe di log grezzi.
+_PROXY_STATS = {}
+_PROXY_STATS_RICHIESTE_TOTALI = [0]
+# Ogni quante richieste totali (su tutti i proxy) stampare il riepilogo --
+# abbastanza spesso da essere utile su un pool di 53 proxy senza inondare i
+# log a ogni singola chiamata.
+INTERVALLO_RIEPILOGO_PROXY = 40
+
+
+def _registra_esito_proxy(chiave, ok):
+    stats = _PROXY_STATS.setdefault(chiave, {"ok": 0, "falliti": 0})
+    stats["ok" if ok else "falliti"] += 1
+    _PROXY_STATS_RICHIESTE_TOTALI[0] += 1
+    if _PROXY_STATS_RICHIESTE_TOTALI[0] % INTERVALLO_RIEPILOGO_PROXY == 0:
+        _logga_riepilogo_proxy()
+
+
+def _logga_riepilogo_proxy():
+    """Una riga per proxy, ordinate dalla piu' problematica: 'X/Y falliti'.
+    Uno sguardo a questa riga (grep 'RIEPILOGO PROXY' nei log Railway) basta
+    per vedere se il pool e' colpito in modo uniforme (tutti con un tasso di
+    fallimento simile, blocco sistemico) o se pochi IP concentrano quasi
+    tutti i fallimenti (IP davvero bruciati, da rimuovere da PROXY_LIST)."""
+    righe = []
+    for chiave, s in _PROXY_STATS.items():
+        tot = s["ok"] + s["falliti"]
+        tasso = (s["falliti"] / tot * 100) if tot else 0.0
+        etichetta = _ETICHETTA_PER_CHIAVE_PROXY.get(chiave, _etichetta_proxy(chiave))
+        righe.append((tasso, etichetta, s["falliti"], tot))
+    righe.sort(reverse=True)
+    log.info(
+        "RIEPILOGO PROXY (dopo %d richieste totali): %s",
+        _PROXY_STATS_RICHIESTE_TOTALI[0],
+        " | ".join(f"{et} {f}/{t} falliti ({tasso:.0f}%)" for tasso, et, f, t in righe),
+    )
+
+
+# ---------------------------------------------------------------------------
 # CLIENT HTTP ASINCRONI
 # ---------------------------------------------------------------------------
 # Un client per ogni destinazione, costruiti una volta sola e riusati per
@@ -2869,6 +2938,13 @@ async def inizializza_client_http():
     else:
         _CLIENT_VINTED_POOL.append(_crea_client_vinted(None))
         _CLIENT_VINTED_POOL_KEYS.append("diretto")
+
+    # Etichette leggibili per il logging per-proxy (vedi _registra_esito_proxy
+    # piu' sopra): "#indice host:porta", costruite una sola volta qui perche'
+    # l'ordine di _CLIENT_VINTED_POOL_KEYS e' stabile per tutta la vita del
+    # processo.
+    for _i, _chiave in enumerate(_CLIENT_VINTED_POOL_KEYS):
+        _ETICHETTA_PER_CHIAVE_PROXY[_chiave] = f"#{_i} {_etichetta_proxy(_chiave)}"
 
     # Client dedicato all'account Vinted autenticato (vedi commento sopra
     # _CLIENT_VINTED_AUTH): pinnato a UN SOLO proxy (il primo della lista, se
@@ -3141,6 +3217,7 @@ async def _vinted_get_con_retry(url, timeout=15, max_retries=3, headers_extra=No
     headers_richiesta = VINTED_HEADERS if not headers_extra else {**VINTED_HEADERS, **headers_extra}
 
     ultimo_errore = None
+    etichette_provate = []
     for tentativo in range(1, max_retries + 1):
         # Client (e la sua chiave di rate-limit) scelti PRIMA di attendere il
         # turno, non dopo (FIX 2026-09-21): serve a sapere su QUALE proxy
@@ -3150,13 +3227,30 @@ async def _vinted_get_con_retry(url, timeout=15, max_retries=3, headers_extra=No
         else:
             indice = _prossimo_indice_vinted()
             client, chiave_rate_limit = _CLIENT_VINTED_POOL[indice], _CLIENT_VINTED_POOL_KEYS[indice]
+        etichetta = _ETICHETTA_PER_CHIAVE_PROXY.get(chiave_rate_limit) or _etichetta_proxy(chiave_rate_limit)
+        etichette_provate.append(etichetta)
         await _attendi_turno_vinted(chiave_rate_limit)
         try:
             resp = await client.get(url, headers=headers_richiesta, cookies=cookies_extra, timeout=timeout)
             resp.raise_for_status()
+            _registra_esito_proxy(chiave_rate_limit, ok=True)
+            # Etichetta proxy attaccata alla response stessa (non al contratto
+            # di ritorno della funzione, per non dover toccare tutti i
+            # chiamanti): chi vuole correlare un esito applicativo (es. pagina
+            # vuota/di blocco pur con HTTP 200, vedi DIAGNOSTICA in
+            # scrape_vinted_listing) la legge con getattr(resp,
+            # "_proxy_etichetta", None) senza cambiare la propria firma.
+            resp._proxy_etichetta = etichetta
+            # LOGGING PER-PROXY (2026-09-27): una riga per richiesta riuscita,
+            # a livello DEBUG per non gonfiare i log in condizioni normali --
+            # con un blocco sistemico in corso non ce ne sono comunque (vedi
+            # il warning sotto, che invece resta a WARNING/livello visibile).
+            log.debug("Vinted [%s] OK status=%s len=%d -- %s", etichetta, resp.status_code, len(resp.text), url)
             return resp
         except Exception as e:
             ultimo_errore = e
+            _registra_esito_proxy(chiave_rate_limit, ok=False)
+            log.info("Vinted [%s] fallito (tentativo %d/%d): %s -- %s", etichetta, tentativo, max_retries, e, url)
             if tentativo < max_retries:
                 # Su 403 (probabile rate-limit) attende piu' a lungo del
                 # normale backoff, dando al blocco lato Vinted il tempo di
@@ -3166,7 +3260,10 @@ async def _vinted_get_con_retry(url, timeout=15, max_retries=3, headers_extra=No
                 attesa = (6.0 * tentativo) if e_403 else (1.5 * tentativo)
                 await asyncio.sleep(attesa)
                 continue
-    log.warning("Scraping Vinted fallito dopo %d tentativi per %s: %s", max_retries, url, ultimo_errore)
+    log.warning(
+        "Scraping Vinted fallito dopo %d tentativi (proxy provati: %s) per %s: %s",
+        max_retries, ", ".join(etichette_provate), url, ultimo_errore,
+    )
     return None
 
 
@@ -3341,11 +3438,18 @@ async def scrape_vinted_listing(url):
         # eventuale pagina di verifica/blocco al posto dell'annuncio vero.
         # Va tolto una volta capita la causa.
         if not result["photo_urls"]:
+            # Etichetta proxy aggiunta il 2026-09-27 (vedi _vinted_get_con_retry):
+            # correla il fallimento "applicativo" (pagina 200 ma senza foto vere)
+            # allo specifico IP che l'ha servito, cosa impossibile prima -- se
+            # nei log e' sempre un piccolo sottoinsieme di proxy a comparire
+            # qui, sono davvero quei pochi IP a essere compromessi; se compaiono
+            # (quasi) tutti indistintamente, e' un blocco sistemico e non ha
+            # senso rimuoverli uno per uno da PROXY_LIST.
             log.warning(
-                "DIAGNOSTICA scrape foto vuoto per %s: status=%s len(html)=%d "
+                "DIAGNOSTICA scrape foto vuoto per %s: proxy=%s status=%s len(html)=%d "
                 "'f800' presente nel testo grezzo=%s primi 200 char=%r",
-                url, resp.status_code, len(html_pagina), "f800" in html_pagina,
-                html_pagina[:200],
+                url, getattr(resp, "_proxy_etichetta", "?"), resp.status_code, len(html_pagina),
+                "f800" in html_pagina, html_pagina[:200],
             )
 
         # Il photo_id della cover (prima foto) e' potenzialmente lo stesso ID
@@ -6117,11 +6221,19 @@ async def _cerca_vinted_testo_diretto_con_fallback_serper(url):
         motivo_fallback = "timeout scrape diretto"
     if resp is not None:
         testo = _estrai_articoli_da_alt_vinted(resp.text)
+        # Etichetta proxy (2026-09-27, vedi _vinted_get_con_retry) anche qui:
+        # stessa logica del catalogo che sopra, applicata al lato testuale
+        # "senza articoli estratti" -- e' l'ALTRO caso applicativo (oltre alle
+        # foto) in cui Vinted risponde 200 ma con una pagina non utilizzabile.
+        etichetta_proxy = getattr(resp, "_proxy_etichetta", "?")
         if MARKER_NESSUN_ARTICOLO_VINTED not in testo:
-            log.info("Comp Vinted testo: scrape diretto OK (%d articoli), Serper non usato -- %s",
-                     testo.count("\n") + 1, url)
+            log.info("Comp Vinted testo: scrape diretto OK (%d articoli, proxy=%s), Serper non usato -- %s",
+                     testo.count("\n") + 1, etichetta_proxy, url)
             return testo, True, _estrai_mappa_url_comp_vinted(resp.text)
-        motivo_fallback = f"scrape diretto senza articoli estratti (status {resp.status_code}, len {len(resp.text)})"
+        motivo_fallback = (
+            f"scrape diretto senza articoli estratti (proxy={etichetta_proxy}, "
+            f"status {resp.status_code}, len {len(resp.text)})"
+        )
     elif motivo_fallback is None:
         motivo_fallback = "scrape diretto fallito (nessuna risposta)"
 
