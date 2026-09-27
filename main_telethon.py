@@ -251,7 +251,7 @@ MAX_GALLERY_PHOTOS = 10
 # inequivocabile quale codice sta girando su Railway dopo un deploy, senza
 # doverlo dedurre dai timestamp dei log. Aggiorna la data quando fai una
 # modifica significativa (facoltativo, ma utile per il debug futuro).
-BOT_VERSION = "2026-09-27-filtro-pre-scrape-logging-proxy"
+BOT_VERSION = "2026-09-27-foto-ip-railway-comando-test-proxy"
 
 # ---------------------------------------------------------------------------
 # PARAMETRI ECONOMICI -- l'unica fonte di verita' per TUTTI i calcoli
@@ -9410,6 +9410,110 @@ def e_variante_recente(parsed):
         return True
     _recent_listings_seen[chiave] = now
     return False
+
+
+# ---------------------------------------------------------------------------
+# TEST PROXY A COMANDO (aggiunto 2026-09-27, utente: "come testo i miei
+# proxy?"). Una richiesta REALE a Vinted per OGNUNO dei proxy del pool,
+# riusando lo stesso parsing gia' in produzione per i comp catalogo
+# (_estrai_articoli_da_alt_vinted / MARKER_NESSUN_ARTICOLO_VINTED): un proxy
+# e' "ok" solo se estrae davvero articoli, non solo se risponde 200 -- e'
+# proprio la distinzione (200 ma pagina di blocco) che ha reso il problema
+# del 27/9 difficile da diagnosticare da un singolo status HTTP.
+# ---------------------------------------------------------------------------
+URL_TEST_PROXY_DEFAULT = "https://www.vinted.it/catalog?order=newest_first"
+
+
+async def testa_pool_proxy(url_test=None, timeout=15, max_concorrenza=10):
+    """Testa OGNI client del pool proxy con una singola richiesta (nessun
+    retry: un fallimento qui e' il dato, non un errore da nascondere), con
+    una concorrenza limitata (max_concorrenza) per non sparare 53 richieste
+    simultanee su Vinted -- oltre a essere piu' prudente, e' anche piu'
+    realistico rispetto al traffico normale della pipeline, che non usa mai
+    tutti i proxy nello stesso istante.
+
+    Ritorna una lista di dict, uno per proxy, nello stesso ordine del pool:
+    {"etichetta", "ok", "status", "durata_s", "len_html", "dettaglio"}."""
+    url = url_test or URL_TEST_PROXY_DEFAULT
+    sem = asyncio.Semaphore(max_concorrenza)
+    risultati = [None] * len(_CLIENT_VINTED_POOL)
+
+    async def _test_uno(indice):
+        client_proxy = _CLIENT_VINTED_POOL[indice]
+        chiave = _CLIENT_VINTED_POOL_KEYS[indice]
+        etichetta = _ETICHETTA_PER_CHIAVE_PROXY.get(chiave) or _etichetta_proxy(chiave)
+        t0 = time.time()
+        async with sem:
+            try:
+                resp = await client_proxy.get(url, headers=VINTED_HEADERS, timeout=timeout)
+                durata = time.time() - t0
+                testo = _estrai_articoli_da_alt_vinted(resp.text)
+                ok = resp.status_code == 200 and MARKER_NESSUN_ARTICOLO_VINTED not in testo
+                if ok:
+                    dettaglio = None
+                elif resp.status_code != 200:
+                    dettaglio = f"HTTP {resp.status_code}"
+                else:
+                    dettaglio = "200 ma nessun articolo estratto (probabile pagina di blocco/verifica)"
+                risultati[indice] = {
+                    "etichetta": etichetta, "ok": ok, "status": resp.status_code,
+                    "durata_s": durata, "len_html": len(resp.text), "dettaglio": dettaglio,
+                }
+            except Exception as e:
+                risultati[indice] = {
+                    "etichetta": etichetta, "ok": False, "status": None,
+                    "durata_s": time.time() - t0, "len_html": 0,
+                    "dettaglio": f"{type(e).__name__}: {e}",
+                }
+
+    await asyncio.gather(*(_test_uno(i) for i in range(len(_CLIENT_VINTED_POOL))))
+    return risultati
+
+
+def _formatta_risultati_test_proxy(risultati):
+    """Testo leggibile per Telegram: totale, poi un elenco -- prima i
+    falliti (quelli che servono davvero attenzione), poi i funzionanti in
+    breve. Pura, testabile senza rete."""
+    if not risultati:
+        return "Nessun proxy nel pool (PROXY_LIST vuota -- richieste dirette senza proxy)."
+    ok_list = [r for r in risultati if r["ok"]]
+    ko_list = [r for r in risultati if not r["ok"]]
+    durata_media_ok = (sum(r["durata_s"] for r in ok_list) / len(ok_list)) if ok_list else 0.0
+    righe = [
+        f"🔍 Test proxy: {len(ok_list)}/{len(risultati)} funzionanti"
+        f"{f', tempo medio {durata_media_ok:.1f}s' if ok_list else ''}."
+    ]
+    if ko_list:
+        righe.append(f"\n❌ Falliti ({len(ko_list)}):")
+        for r in ko_list:
+            righe.append(f"  {r['etichetta']}: {r['dettaglio']}")
+    if ok_list:
+        righe.append(f"\n✅ Funzionanti ({len(ok_list)}):")
+        righe.append("  " + ", ".join(r["etichetta"] for r in ok_list))
+    return "\n".join(righe)
+
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'(?i)^/test_?proxy\b'))
+async def on_comando_test_proxy(event):
+    """Comando digitato dal proprietario in QUALSIASI chat (e' il suo stesso
+    account Telethon: un messaggio 'outgoing' puo' venire solo da lui, da
+    qualunque dispositivo) -- risponde nella STESSA chat via event.respond,
+    senza passare dal bot Telegram separato (niente accoppiamento con
+    TELEGRAM_OWNER_CHAT_ID, che comunque e' un ID diverso da questo lato).
+    NON richiede modifiche a PROXY_LIST ne' deploy: gira sul pool gia'
+    attivo in produzione in questo momento."""
+    try:
+        await event.respond(f"🔍 Test di {len(_CLIENT_VINTED_POOL)} proxy in corso, un attimo...")
+        risultati = await testa_pool_proxy()
+        testo = _formatta_risultati_test_proxy(risultati)
+        for pezzo in _spezza_per_telegram(testo):
+            await event.respond(pezzo)
+    except Exception:
+        log.error("Errore nel comando /test_proxy:\n%s", traceback.format_exc())
+        try:
+            await event.respond("⚠️ Test proxy fallito per un errore interno, vedi i log Railway.")
+        except Exception:
+            pass
 
 
 @client.on(events.NewMessage(chats=TELEGRAM_GROUP_ID))
