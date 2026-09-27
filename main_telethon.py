@@ -2781,6 +2781,36 @@ _PROXY_LIST_RAW = os.environ.get("PROXY_LIST", "").strip()
 PROXY_LIST = [p.strip() for p in _PROXY_LIST_RAW.split(",") if p.strip()] if _PROXY_LIST_RAW else []
 _proxy_indice_rotazione = [0]
 
+# PROXY_ESCLUSI (aggiunto 2026-09-27, utente: "elimina quelli in 403"):
+# elenco "host:porta" separati da virgola da scartare da PROXY_LIST
+# all'avvio, senza dover riscrivere PROXY_LIST (che contiene le credenziali
+# e su Railway non e' rileggibile in chiaro dagli strumenti). Stesso formato
+# che il comando /test_proxy stampa per ogni proxy, quindi basta copiare gli
+# indirizzi dei falliti. Togliere un indirizzo da qui lo rimette in rotazione.
+_PROXY_ESCLUSI = {
+    p.strip().lower() for p in os.environ.get("PROXY_ESCLUSI", "").split(",") if p.strip()
+}
+
+
+def _host_porta_proxy(proxy_url):
+    try:
+        p = urlparse(proxy_url)
+        return f"{p.hostname}:{p.port}".lower()
+    except Exception:
+        return ""
+
+
+if _PROXY_ESCLUSI and PROXY_LIST:
+    _prima = len(PROXY_LIST)
+    PROXY_LIST = [p for p in PROXY_LIST if _host_porta_proxy(p) not in _PROXY_ESCLUSI]
+    _trovati = _prima - len(PROXY_LIST)
+    log.info(
+        "PROXY_ESCLUSI: scartati %d proxy su %d indicati (%d restano in rotazione)%s.",
+        _trovati, len(_PROXY_ESCLUSI), len(PROXY_LIST),
+        "" if _trovati == len(_PROXY_ESCLUSI)
+        else " -- ATTENZIONE: alcuni indirizzi di PROXY_ESCLUSI non corrispondono a nessun proxy di PROXY_LIST",
+    )
+
 if PROXY_LIST:
     log.info("Proxy attivi: %d indirizzi caricati da PROXY_LIST, in rotazione round-robin.", len(PROXY_LIST))
 else:
@@ -9442,8 +9472,11 @@ async def testa_pool_proxy(url_test=None, timeout=15, max_concorrenza=10):
         client_proxy = _CLIENT_VINTED_POOL[indice]
         chiave = _CLIENT_VINTED_POOL_KEYS[indice]
         etichetta = _ETICHETTA_PER_CHIAVE_PROXY.get(chiave) or _etichetta_proxy(chiave)
-        t0 = time.time()
         async with sem:
+            # t0 DENTRO il semaforo (fix 2026-09-27, primo test reale: 6.8s di
+            # media perche' contava anche l'attesa in coda del proprio turno
+            # tra i 10 slot paralleli, non la sola risposta del proxy).
+            t0 = time.time()
             try:
                 resp = await client_proxy.get(url, headers=VINTED_HEADERS, timeout=timeout)
                 durata = time.time() - t0
