@@ -2882,12 +2882,13 @@ def _tipo_richiesta_vinted(url):
     return "altro"
 
 
-def _registra_banda(url, resp):
+def _registra_banda(url, resp, tipo=None):
     """Registra i byte di UNA risposta gia' letta per intero. Mai bloccante:
     qualunque errore qui viene ignorato, la contabilita' non deve rompere lo
-    scraping."""
+    scraping. tipo="foto_diretta" separa le foto scaricate dall'IP Railway
+    (banda proxy NON consumata) da quelle via proxy ("foto")."""
     try:
-        tipo = _tipo_richiesta_vinted(url)
+        tipo = tipo or _tipo_richiesta_vinted(url)
         rete = int(getattr(resp, "num_bytes_downloaded", 0) or 0)
         decodificati = len(resp.content or b"")
         s = _BANDA_PER_TIPO.setdefault(tipo, {"n": 0, "rete": 0, "decod": 0})
@@ -3032,6 +3033,47 @@ def _sonda_stima_lettura_parziale(html_pagina, offset, byte_rete_reali):
     }
 
 
+# Parola chiave "larga" da cercare quando la regex precisa di un campo non
+# trova nulla (vedi _sonda_contesto_campi_mancanti).
+_SONDA_PAROLE_CHIAVE_CAMPI = {
+    "taglia": "size_title",
+    "condizione": "status",
+    "data_pubblicazione": "created_at",
+    "materiale": "material",
+    "colore": "color",
+    "venditore_n_articoli": "items_count",
+    "venditore_paese": "country",
+}
+
+
+def _sonda_contesto_campi_mancanti(html_pagina, offset, larghezza=160):
+    """Per ogni campo che la regex di estrazione NON ha trovato, il testo
+    attorno alla prima occorrenza della sua parola chiave (repr, cosi' le
+    virgolette escapate \\" restano visibili nei log). Pura, testabile."""
+    righe = []
+    for campo, parola in _SONDA_PAROLE_CHIAVE_CAMPI.items():
+        if offset.get(campo):
+            continue
+        i = html_pagina.find(parola)
+        if i == -1:
+            righe.append(f"{campo}: parola '{parola}' assente dalla pagina")
+        else:
+            righe.append(f"{campo} (a {i // 1024}KB): {html_pagina[max(0, i - 40):i + larghezza]!r}")
+    return righe
+
+
+def _formati_foto_nella_pagina(html_pagina):
+    """Conteggio dei segmenti di risoluzione negli URL images.vinted.net
+    (es. {'f800': 6, '310x430': 12}) -- per capire perche' la galleria esce
+    vuota su pagine vere: se non c'e' 'f800' ma ci sono altri formati, Vinted
+    sta servendo le foto in un formato che _estrai_foto_gallery scarta."""
+    conteggio = {}
+    # \\? tollera anche gli slash escapati (\/) tipici dei payload JSON/React.
+    for m in re.finditer(r'images\d?\.vinted\.net\\?/t\\?/[a-zA-Z0-9_]+\\?/([a-zA-Z0-9]+)\\?/', html_pagina):
+        conteggio[m.group(1)] = conteggio.get(m.group(1), 0) + 1
+    return conteggio
+
+
 def _sonda_avvia_se_serve(url, resp, html_pagina):
     """Chiamata da scrape_vinted_listing. Non attende nulla: se il campione
     serve, lancia la sonda in background e ritorna subito."""
@@ -3080,40 +3122,15 @@ async def _sonda_struttura_pagina(n, url, resp, html_pagina):
                 kb(stima["rete_stimata_prefisso"]), kb(byte_rete), kb(stima["risparmio_stimato"]),
             )
 
-        # 3. Brotli, stessa pagina, una sola richiesta extra.
-        if BROTLI_DISPONIBILE:
-            resp_br = await _vinted_get_con_retry(
-                url, timeout=15, max_retries=1,
-                headers_extra={"Accept-Encoding": "br, gzip, deflate"})
-            if resp_br is not None:
-                rete_br = int(getattr(resp_br, "num_bytes_downloaded", 0) or 0)
-                log.info(
-                    "SONDA BANDA %d brotli: server ha risposto con '%s', %s in rete (contro %s con '%s')%s",
-                    n, resp_br.headers.get("content-encoding", "nessuna"), kb(rete_br), kb(byte_rete), encoding,
-                    "" if _sonda_e_pagina_vera(resp_br.text) else " -- ATTENZIONE: risposta brotli non e' una pagina vera",
-                )
-            else:
-                log.info("SONDA BANDA %d brotli: richiesta di confronto fallita.", n)
-        else:
-            log.info("SONDA BANDA %d brotli: pacchetto 'brotli' non installato su Railway, test saltato "
-                     "(aggiungere 'brotli' a requirements.txt).", n)
+        # Brotli e foto senza proxy: test RIMOSSI il 2026-09-27 dopo il primo
+        # campione reale (Vinted risponde sempre gzip anche chiedendo br --
+        # nessun guadagno e una pagina extra per prova; il CDN foto risponde
+        # dall'IP Railway -- ora usato di default, vedi download_image_bytes).
 
-        # 4. Prima foto della galleria scaricata SENZA proxy.
-        foto = [m.group(0) for m in _REGEX_FOTO_F800.finditer(html_pagina)]
-        if foto and _client_generico is not None:
-            headers_foto = dict(IMAGE_DOWNLOAD_HEADERS)
-            headers_foto["Referer"] = url
-            t0 = time.time()
-            try:
-                r = await _client_generico.get(foto[0], headers=headers_foto, timeout=15)
-                log.info(
-                    "SONDA BANDA %d foto SENZA proxy: status %s, %s, %.1fs -- %s",
-                    n, r.status_code, kb(len(r.content)), time.time() - t0,
-                    "il CDN immagini risponde anche senza proxy" if r.is_success and len(r.content) > 5000
-                    else "il CDN NON serve la foto senza proxy",
-                )
-            except Exception as e:
-                log.info("SONDA BANDA %d foto SENZA proxy: fallita (%s)", n, e)
+        # Campi non trovati: il testo reale attorno alla parola chiave, per
+        # correggere le regex su dati veri invece di indovinare il formato.
+        for riga in _sonda_contesto_campi_mancanti(html_pagina, offset):
+            log.info("SONDA BANDA %d campo mancante %s", n, riga)
         if n == SONDA_BANDA_CAMPIONI:
             _logga_riepilogo_banda()
     except Exception:
@@ -3713,11 +3730,14 @@ async def scrape_vinted_listing(url):
             # qui, sono davvero quei pochi IP a essere compromessi; se compaiono
             # (quasi) tutti indistintamente, e' un blocco sistemico e non ha
             # senso rimuoverli uno per uno da PROXY_LIST.
+            formati = _formati_foto_nella_pagina(html_pagina)
+            esempio = re.search(r'https?:?[/\\]*images\d?\.vinted\.net[^"\s]{0,160}', html_pagina)
             log.warning(
                 "DIAGNOSTICA scrape foto vuoto per %s: proxy=%s status=%s len(html)=%d "
-                "'f800' presente nel testo grezzo=%s primi 200 char=%r",
+                "'f800' presente nel testo grezzo=%s formati foto trovati=%s esempio URL=%r primi 200 char=%r",
                 url, getattr(resp, "_proxy_etichetta", "?"), resp.status_code, len(html_pagina),
-                "f800" in html_pagina, html_pagina[:200],
+                "f800" in html_pagina, formati or "nessuno",
+                esempio.group(0) if esempio else None, html_pagina[:200],
             )
 
         # Il photo_id della cover (prima foto) e' potenzialmente lo stesso ID
@@ -3948,9 +3968,75 @@ async def scrape_vinted_listing(url):
     return result
 
 
+# ---------------------------------------------------------------------------
+# FOTO VIA IP RAILWAY (aggiunto 2026-09-27, utente: "fai tutte ip railway con
+# backup proxies"). La sonda banda ha verificato che il CDN immagini
+# (images1.vinted.net, dominio separato dal sito protetto da Datadome) serve
+# le foto anche senza proxy. Le foto erano fino a 10 per annuncio via proxy:
+# ora passano dal client generico (IP di Railway, nessun costo di banda
+# proxy), e i proxy restano solo come riserva.
+#
+# Interruttore automatico: dopo FOTO_DIRETTE_SOGLIA_FALLIMENTI fallimenti di
+# fila "da IP" (403/429/5xx/timeout, NON i 404 che sono foto rimosse) il
+# download diretto si spegne per FOTO_DIRETTE_PAUSA_SECONDI e tutte le foto
+# vanno via proxy -- senza, un ban dell'IP Railway farebbe provare il diretto
+# (e aspettarne il fallimento) su OGNI foto di OGNI annuncio, rallentando
+# tutta la pipeline. Dopo la pausa riprova da solo.
+# ---------------------------------------------------------------------------
+FOTO_DIRETTE_ABILITATE = os.environ.get("FOTO_DIRETTE", "1").strip() != "0"
+FOTO_DIRETTE_SOGLIA_FALLIMENTI = 3
+FOTO_DIRETTE_PAUSA_SECONDI = 3600
+_foto_dirette_stato = {"fallimenti_di_fila": 0, "spente_fino_a": 0.0}
+
+
+def _foto_dirette_attive():
+    return FOTO_DIRETTE_ABILITATE and time.time() >= _foto_dirette_stato["spente_fino_a"]
+
+
+def _foto_dirette_registra(ok, dettaglio=None):
+    if ok:
+        if _foto_dirette_stato["fallimenti_di_fila"] >= FOTO_DIRETTE_SOGLIA_FALLIMENTI:
+            log.info("Foto via IP Railway di nuovo funzionanti dopo la pausa.")
+        _foto_dirette_stato["fallimenti_di_fila"] = 0
+        return
+    _foto_dirette_stato["fallimenti_di_fila"] += 1
+    if _foto_dirette_stato["fallimenti_di_fila"] == FOTO_DIRETTE_SOGLIA_FALLIMENTI:
+        _foto_dirette_stato["spente_fino_a"] = time.time() + FOTO_DIRETTE_PAUSA_SECONDI
+        log.warning(
+            "FOTO DIRETTE SPENTE per %d min dopo %d fallimenti di fila dall'IP Railway "
+            "(ultimo: %s) -- possibile blocco del CDN immagini, tutte le foto passano dai proxy.",
+            FOTO_DIRETTE_PAUSA_SECONDI // 60, FOTO_DIRETTE_SOGLIA_FALLIMENTI, dettaglio,
+        )
+    elif _foto_dirette_stato["fallimenti_di_fila"] > FOTO_DIRETTE_SOGLIA_FALLIMENTI:
+        # Tentativo di prova dopo la pausa fallito: si rispegne subito.
+        _foto_dirette_stato["spente_fino_a"] = time.time() + FOTO_DIRETTE_PAUSA_SECONDI
+
+
+async def _download_foto_diretta(url, headers):
+    """Un solo tentativo dall'IP Railway. Ritorna i byte o None (e in quel
+    caso il chiamante passa ai proxy)."""
+    try:
+        resp = await _client_generico.get(url, headers=headers, timeout=12)
+        _registra_banda(url, resp, tipo="foto_diretta")
+        if resp.is_success and resp.content:
+            _foto_dirette_registra(True)
+            return resp.content
+        if resp.status_code != 404:  # 404 = foto rimossa, non un problema di IP
+            _foto_dirette_registra(False, f"HTTP {resp.status_code}")
+        log.info("Foto via IP Railway fallita (HTTP %s), passo ai proxy: %s", resp.status_code, url)
+    except Exception as e:
+        _foto_dirette_registra(False, f"{type(e).__name__}: {e}")
+        log.info("Foto via IP Railway fallita (%s), passo ai proxy: %s", type(e).__name__, url)
+    return None
+
+
 async def download_image_bytes(url, referer="https://www.vinted.it/", max_retries=3):
     headers = dict(IMAGE_DOWNLOAD_HEADERS)
     headers["Referer"] = referer
+    if _client_generico is not None and _foto_dirette_attive():
+        diretta = await _download_foto_diretta(url, headers)
+        if diretta:
+            return diretta
     # TEMP DIAGNOSTIC: this used to swallow every failure silently (bare
     # "except Exception: pass" and no logging even on a non-ok status), so
     # there was no way to tell a 403/429 rate-limit apart from a timeout or
