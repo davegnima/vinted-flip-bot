@@ -2454,14 +2454,43 @@ def _telegram_esito_ok(resp, metodo, contesto=""):
     return False
 
 
-async def telegram_send_message(chat_id, text, disable_notification=False):
+def _parametri_reply(reply_to):
+    """Campo reply_parameters della Bot API per rispondere a un messaggio
+    (usato per agganciare il verdetto alla galleria mandata in anticipo).
+    allow_sending_without_reply: se il messaggio originale non esiste piu'
+    (cancellato a mano) il verdetto arriva lo stesso, solo non agganciato."""
+    if not reply_to:
+        return {}
+    return {"reply_parameters": {"message_id": int(reply_to), "allow_sending_without_reply": True}}
+
+
+def _primo_message_id(resp):
+    """message_id del (primo) messaggio creato da sendPhoto/sendMediaGroup,
+    o None se la chiamata e' fallita. sendMediaGroup ritorna una lista di
+    messaggi (uno per foto): si risponde al primo, che porta la didascalia."""
+    if resp is None or not resp.is_success:
+        return None
+    try:
+        risultato = resp.json().get("result")
+        if isinstance(risultato, list):
+            risultato = risultato[0] if risultato else None
+        return (risultato or {}).get("message_id")
+    except Exception:
+        return None
+
+
+async def telegram_send_message(chat_id, text, disable_notification=False, reply_to=None):
     MAX_LEN = 3500
-    for chunk in _spezza_per_telegram(text, MAX_LEN):
+    for i, chunk in enumerate(_spezza_per_telegram(text, MAX_LEN)):
+        # Solo il primo pezzo risponde alla galleria: i successivi seguono
+        # comunque subito sotto, ripetere la citazione sarebbe solo rumore.
+        extra_reply = _parametri_reply(reply_to) if i == 0 else {}
         resp = await _telegram_post(
             "sendMessage",
             json={
                 "chat_id": chat_id, "text": chunk, "parse_mode": "Markdown",
                 "disable_web_page_preview": True, "disable_notification": disable_notification,
+                **extra_reply,
             },
         )
         if resp is not None and not resp.is_success:
@@ -2471,23 +2500,27 @@ async def telegram_send_message(chat_id, text, disable_notification=False):
                 json={
                     "chat_id": chat_id, "text": chunk,
                     "disable_web_page_preview": True, "disable_notification": disable_notification,
+                    **extra_reply,
                 },
             )
         _telegram_esito_ok(resp, "sendMessage", "senza parse_mode")
 
 
 async def telegram_send_photo(chat_id, photo_bytes, caption=None, disable_notification=False):
+    """Ritorna il message_id della foto inviata (None se fallita)."""
     files = {"photo": ("photo.jpg", photo_bytes)}
     data = {"chat_id": chat_id, "disable_notification": disable_notification}
     if caption:
         data["caption"] = caption[:1024]
     resp = await _telegram_post("sendPhoto", data=data, files=files, timeout=30)
     _telegram_esito_ok(resp, "sendPhoto")
+    return _primo_message_id(resp)
 
 
 async def telegram_send_media_group(chat_id, photos_bytes_list, caption=None, disable_notification=False):
+    """Ritorna il message_id della prima foto dell'album (None se fallito)."""
     if not photos_bytes_list:
-        return
+        return None
     files = {}
     media = []
     for i, photo_bytes in enumerate(photos_bytes_list[:10]):
@@ -2504,9 +2537,11 @@ async def telegram_send_media_group(chat_id, photos_bytes_list, caption=None, di
         timeout=60,
     )
     _telegram_esito_ok(resp, "sendMediaGroup", f"{len(media)} foto")
+    return _primo_message_id(resp)
 
 
-async def telegram_send_with_buttons(chat_id, text, url_annuncio, item_id=None, disable_notification=False):
+async def telegram_send_with_buttons(chat_id, text, url_annuncio, item_id=None, disable_notification=False,
+                                     reply_to=None):
     """Manda 'text' con i bottoni inline in fondo. Bug corretto il 2026-09-19:
     a differenza di telegram_send_message, questa funzione non spezzava mai
     il testo -- oltre 4096 caratteri (limite Telegram per sendMessage) la
@@ -2538,6 +2573,8 @@ async def telegram_send_with_buttons(chat_id, text, url_annuncio, item_id=None, 
         }
         if e_ultimo_chunk:
             payload_base["reply_markup"] = keyboard
+        if i == 0:
+            payload_base.update(_parametri_reply(reply_to))
         resp = await _telegram_post(
             "sendMessage",
             json={**payload_base, "parse_mode": "Markdown"},
@@ -8771,9 +8808,61 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
     return "\n".join(righe)
 
 
+# GALLERIA ANTICIPATA (richiesto dall'utente il 2026-09-28): la galleria
+# completa arriva nella chat principale APPENA le foto sono scaricate, prima
+# di Occhio e Cervello, invece di restare ferma in memoria per tutta
+# l'analisi Gemini. Quando il verdetto e' pronto arriva SOLO il testo, come
+# risposta al messaggio della galleria. A questo punto l'annuncio ha gia'
+# superato FILTRO PRE-SCRAPE e FILTRO PRE-GEMINI, quindi nessuna galleria
+# "inutile" per annunci scartati gratis. La galleria parte sempre SILENZIOSA:
+# la decisione non e' ancora nota, e il push resta legato al solo verdetto
+# COMPRA come prima. Il canale alert resta invariato (foto + testo insieme a
+# fine analisi): li' l'invio dipende proprio dal verdetto.
+# GALLERIA_ANTICIPATA=0 per tornare al comportamento precedente.
+GALLERIA_ANTICIPATA = os.environ.get("GALLERIA_ANTICIPATA", "1").strip() != "0"
+
+
+def _didascalia_galleria_anticipata(listing_info, url, n_foto):
+    righe = [f"📸 {listing_info.get('title') or 'Annuncio'} · {n_foto} foto"]
+    brand = (listing_info.get("brand") or "").strip()
+    prezzo = _a_float(listing_info.get("price"), None)
+    dettagli = []
+    if brand and brand != "?":
+        dettagli.append(f"🏷️ {brand}")
+    if prezzo is not None:
+        dettagli.append(f"💰 {prezzo:.2f} €".replace(".", ","))
+    if dettagli:
+        righe.append(" · ".join(dettagli))
+    if url:
+        righe.append(f"🔗 {url}")
+    righe.append("⏳ Analisi in corso...")
+    return "\n".join(righe)[:1024]
+
+
+async def _invia_galleria_anticipata(listing_info, url, photo_bytes_list):
+    """Manda la galleria nella chat principale e ritorna il message_id a cui
+    agganciare il verdetto. None se disattivata o fallita: in quel caso
+    _invia_risultato_telegram rimanda le foto a fine analisi come prima,
+    cosi' un problema qui non fa mai perdere le foto."""
+    if not GALLERIA_ANTICIPATA or not photo_bytes_list:
+        return None
+    didascalia = _didascalia_galleria_anticipata(listing_info, url, len(photo_bytes_list))
+    try:
+        if len(photo_bytes_list) > 1:
+            return await telegram_send_media_group(
+                TELEGRAM_OWNER_CHAT_ID, photo_bytes_list, caption=didascalia, disable_notification=True,
+            )
+        return await telegram_send_photo(
+            TELEGRAM_OWNER_CHAT_ID, photo_bytes_list[0], caption=didascalia, disable_notification=True,
+        )
+    except Exception:
+        log.warning("Galleria anticipata non inviata, le foto partiranno col verdetto:\n%s", traceback.format_exc())
+        return None
+
+
 async def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header, output_finale,
                                     decisione, e_compra, scenario_usato, urgenza="Bassa",
-                                    margine=None):
+                                    margine=None, msg_id_galleria=None):
     item_id = _estrai_item_id_da_url(url)
     # L'urgenza ora arriva calcolata da calcola_verdetto invece di essere
     # dedotta dal testo del verdetto (_e_urgenza_alta cercava parole come
@@ -8789,32 +8878,30 @@ async def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header,
     # applicato messaggio per messaggio invece che sull'intera chat.
     silenzioso = decisione != "COMPRA"
 
-    if len(photo_bytes_list) > 1:
-        await telegram_send_media_group(
-            TELEGRAM_OWNER_CHAT_ID,
-            photo_bytes_list,
-            caption=f"📸 {listing_info.get('title')} · {len(photo_bytes_list)} foto",
-            disable_notification=silenzioso,
-        )
-    elif len(photo_bytes_list) == 1:
-        await telegram_send_photo(
-            TELEGRAM_OWNER_CHAT_ID, photo_bytes_list[0], caption=listing_info.get("title"),
-            disable_notification=silenzioso,
-        )
+    # Galleria gia' arrivata in anticipo (vedi GALLERIA_ANTICIPATA): qui solo
+    # il testo, in risposta a quel messaggio. Altrimenti foto + testo come prima.
+    if msg_id_galleria is None:
+        if len(photo_bytes_list) > 1:
+            await telegram_send_media_group(
+                TELEGRAM_OWNER_CHAT_ID,
+                photo_bytes_list,
+                caption=f"📸 {listing_info.get('title')} · {len(photo_bytes_list)} foto",
+                disable_notification=silenzioso,
+            )
+        elif len(photo_bytes_list) == 1:
+            await telegram_send_photo(
+                TELEGRAM_OWNER_CHAT_ID, photo_bytes_list[0], caption=listing_info.get("title"),
+                disable_notification=silenzioso,
+            )
 
     if url:
-        if e_compra_urgente:
-            await telegram_send_with_buttons(
-                TELEGRAM_OWNER_CHAT_ID, header + output_finale, url, item_id,
-                disable_notification=silenzioso,
-            )
-        else:
-            await telegram_send_with_buttons(
-                TELEGRAM_OWNER_CHAT_ID, header + output_finale, url, None,
-                disable_notification=silenzioso,
-            )
+        await telegram_send_with_buttons(
+            TELEGRAM_OWNER_CHAT_ID, header + output_finale, url, item_id if e_compra_urgente else None,
+            disable_notification=silenzioso, reply_to=msg_id_galleria,
+        )
     else:
-        await telegram_send_message(TELEGRAM_OWNER_CHAT_ID, header + output_finale, disable_notification=silenzioso)
+        await telegram_send_message(TELEGRAM_OWNER_CHAT_ID, header + output_finale,
+                                    disable_notification=silenzioso, reply_to=msg_id_galleria)
 
     # Ristretto a decisione == "COMPRA" il 2026-09-20, secondo giro (questo
     # alert e' un sendMessage separato che NON passa per silenzioso/
@@ -8875,7 +8962,7 @@ async def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header,
 # PIPELINE PRINCIPALE
 # ---------------------------------------------------------------------------
 
-async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricevuto_bot=None):
+async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricevuto_bot=None, stato=None):
     listing_info = dict(parsed)
     listing_info["url"] = url
     costo_totale = 0.0
@@ -9001,6 +9088,16 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
             TELEGRAM_OWNER_CHAT_ID,
             f"⚠️ Niente foto per: {listing_info.get('title')}\nURL: {url or 'non trovato'}\nSalto valutazione.")
         return
+
+    # Galleria subito nella chat principale (vedi GALLERIA_ANTICIPATA), prima
+    # di Occhio/Cervello. Il verdetto la raggiungera' come risposta.
+    msg_id_galleria = await _invia_galleria_anticipata(listing_info, url, photo_bytes_list)
+    if msg_id_galleria is not None:
+        t_tappe.append(("galleria", time.time()))
+        if stato is not None:
+            # Letto dall'handler se la pipeline va in eccezione da qui in poi,
+            # per rispondere alla galleria invece di lasciarla appesa.
+            stato["msg_id_galleria"] = msg_id_galleria
 
     age_days = listing_info.get("age_days")
     age_text = f"{age_days:.1f} giorni fa" if age_days is not None else "non disponibile"
@@ -9269,7 +9366,8 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
                 TELEGRAM_OWNER_CHAT_ID,
                 f"⚠️ *Valutazione non completata* — {listing_info.get('title')}\n"
                 f"{errore_cervello}\n{url or ''}\n"
-                f"_Costo comunque sostenuto: ${costo_totale:.4f}_"
+                f"_Costo comunque sostenuto: ${costo_totale:.4f}_",
+                reply_to=msg_id_galleria,
             )
             return
 
@@ -9313,6 +9411,15 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
                 f" — Tempi: {' · '.join(pezzi_tempi_gate)}" if pezzi_tempi_gate else "",
                 " · ".join(_formatta_tappe_pipeline(t_tappe)),
             )
+            if msg_id_galleria is not None:
+                # La galleria e' gia' in chat: chiuderla invece di lasciarla
+                # appesa su "Analisi in corso...".
+                await telegram_send_message(
+                    TELEGRAM_OWNER_CHAT_ID,
+                    f"🔇 {decisione}: margine {margine_finale:.2f} € sotto la soglia di notifica "
+                    f"({SOGLIA_MARGINE_ASSOLUTO_NOTIFICA} €), verdetto completo non inviato.",
+                    disable_notification=True, reply_to=msg_id_galleria,
+                )
             return
 
     if scenario_usato == "SKIP":
@@ -9463,6 +9570,7 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
         header, output_finale, decisione, e_compra,
         scenario_usato, urgenza,
         margine=verdetto_calcolato["margine"] if verdetto_calcolato else None,
+        msg_id_galleria=msg_id_galleria,
     )
 
 
@@ -9653,6 +9761,7 @@ async def on_new_message(event):
     # non abbiamo controllo ma che vale la pena vedere separato dal nostro.
     t_ricevuto_bot = time.time()
     msg_date = event.message.date
+    stato_pipeline = {}
     try:
         msg_id = event.message.id
         if msg_id in _processed_message_ids:
@@ -9699,9 +9808,19 @@ async def on_new_message(event):
             log.info("Analisi in coda (%d gia' in corso, max %d): %s",
                      MAX_ANALISI_PARALLELE, MAX_ANALISI_PARALLELE, url)
         async with _semaforo_analisi:
-            await process_listing(parsed, url, cover, msg_date=msg_date, t_ricevuto_bot=t_ricevuto_bot)
+            await process_listing(parsed, url, cover, msg_date=msg_date, t_ricevuto_bot=t_ricevuto_bot,
+                                  stato=stato_pipeline)
     except Exception:
         log.error("Errore generico:\n%s", traceback.format_exc())
+        if stato_pipeline.get("msg_id_galleria") is not None:
+            try:
+                await telegram_send_message(
+                    TELEGRAM_OWNER_CHAT_ID,
+                    "⚠️ Analisi interrotta per un errore interno, vedi i log Railway.",
+                    reply_to=stato_pipeline["msg_id_galleria"],
+                )
+            except Exception:
+                pass
 
 
 async def main():
