@@ -251,7 +251,7 @@ MAX_GALLERY_PHOTOS = 10
 # inequivocabile quale codice sta girando su Railway dopo un deploy, senza
 # doverlo dedurre dai timestamp dei log. Aggiorna la data quando fai una
 # modifica significativa (facoltativo, ma utile per il debug futuro).
-BOT_VERSION = "2026-09-27-fix-log-token-telegram-retry-dedup-coda"
+BOT_VERSION = "2026-09-28-galleria-subito-formato-tracker"
 
 # ---------------------------------------------------------------------------
 # PARAMETRI ECONOMICI -- l'unica fonte di verita' per TUTTI i calcoli
@@ -3786,7 +3786,7 @@ def _estrai_foto_gallery(html_sorgente):
     return diz
 
 
-async def scrape_vinted_listing(url):
+async def scrape_vinted_listing(url, includi_guardaroba=True):
     result = {
         "photo_urls": [], "cover_photo_id": None, "size": None, "condition": None, "description": None,
         "created_at": None, "age_days": None, "catalog_id": None,
@@ -4022,6 +4022,25 @@ async def scrape_vinted_listing(url):
         if country_m:
             result["seller_country"] = country_m.group(1)
 
+        if includi_guardaroba:
+            await _scrapa_guardaroba_venditore(result, url)
+
+    except Exception as e:
+        log.warning("Scraping Vinted fallito per %s: %s", url, e)
+
+    return result
+
+
+async def _scrapa_guardaroba_venditore(result, url):
+    """Scarica il profilo venditore e riempie result["seller_top_items"] /
+    result["seller_wardrobe_debug"]. Separata da scrape_vinted_listing il
+    2026-09-28 (galleria il prima possibile): era una seconda richiesta
+    SEQUENZIALE dopo la pagina annuncio, e le foto aspettavano anche lei
+    (spesso con retry su 403) pur non servendole. Ora process_listing la
+    lancia in parallelo al download foto e la attende solo prima di Occhio,
+    l'unico che usa i primi articoli del venditore. Mai solleva: su errore
+    lascia i campi di default e annota seller_wardrobe_debug."""
+    try:
         seller_id = result.get("seller_id")
         seller_login = result.get("seller_login")
         if seller_id or seller_login:
@@ -4092,11 +4111,9 @@ async def scrape_vinted_listing(url):
         else:
             result["seller_wardrobe_debug"] = "nessun seller_id/seller_login trovato nella pagina annuncio -- profilo mai contattato"
             log.debug("Guardaroba venditore non tentato: ne' seller_id ne' seller_login trovati per %s", url)
-
     except Exception as e:
-        log.warning("Scraping Vinted fallito per %s: %s", url, e)
-
-    return result
+        result["seller_wardrobe_debug"] = f"eccezione: {e}"
+        log.warning("Scraping guardaroba venditore fallito (eccezione esterna): %s", e)
 
 
 # ---------------------------------------------------------------------------
@@ -8822,31 +8839,48 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
 GALLERIA_ANTICIPATA = os.environ.get("GALLERIA_ANTICIPATA", "1").strip() != "0"
 
 
-def _didascalia_galleria_anticipata(listing_info, url, n_foto):
-    righe = [f"📸 {listing_info.get('title') or 'Annuncio'} · {n_foto} foto"]
-    brand = (listing_info.get("brand") or "").strip()
-    prezzo = _a_float(listing_info.get("price"), None)
-    dettagli = []
-    if brand and brand != "?":
-        dettagli.append(f"🏷️ {brand}")
-    if prezzo is not None:
-        dettagli.append(f"💰 {prezzo:.2f} €".replace(".", ","))
-    if dettagli:
-        righe.append(" · ".join(dettagli))
-    if url:
-        righe.append(f"🔗 {url}")
-    righe.append("⏳ Analisi in corso...")
-    return "\n".join(righe)[:1024]
+def _didascalia_galleria_anticipata(listing_info, url, n_foto, testo_tracker=None):
+    """Didascalia della galleria anticipata. Richiesto dall'utente il
+    2026-09-28, secondo giro: stessa struttura del messaggio del tracker
+    (quello che arriva nel canale del tracker con la sola copertina), ma con
+    tutte le foto e lo stato "analisi in corso". Si riusa quindi il testo del
+    tracker cosi' com'e': se il tracker cambia formato, la galleria lo segue
+    da sola. Senza testo del tracker, ricostruzione da titolo/brand/prezzo."""
+    stato_analisi = f"⏳ Analisi in corso… · {n_foto} foto"
+    testo_tracker = (testo_tracker or "").strip()
+    if testo_tracker:
+        righe = [testo_tracker]
+        if url and url not in testo_tracker:
+            righe.append(f"🔗 {url}")
+    else:
+        righe = [f"📸 {listing_info.get('title') or 'Annuncio'}"]
+        brand = (listing_info.get("brand") or "").strip()
+        prezzo = _a_float(listing_info.get("price"), None)
+        dettagli = []
+        if brand and brand != "?":
+            dettagli.append(f"🏷️ {brand}")
+        if prezzo is not None:
+            dettagli.append(f"💰 {prezzo:.2f} €".replace(".", ","))
+        if dettagli:
+            righe.append(" · ".join(dettagli))
+        if url:
+            righe.append(f"🔗 {url}")
+    corpo = "\n".join(righe)
+    # Limite Telegram 1024 caratteri: si accorcia il testo, mai lo stato.
+    spazio = 1024 - len(stato_analisi) - 2
+    if len(corpo) > spazio:
+        corpo = corpo[:spazio - 1].rstrip() + "…"
+    return f"{corpo}\n\n{stato_analisi}"
 
 
-async def _invia_galleria_anticipata(listing_info, url, photo_bytes_list):
+async def _invia_galleria_anticipata(listing_info, url, photo_bytes_list, testo_tracker=None):
     """Manda la galleria nella chat principale e ritorna il message_id a cui
     agganciare il verdetto. None se disattivata o fallita: in quel caso
     _invia_risultato_telegram rimanda le foto a fine analisi come prima,
     cosi' un problema qui non fa mai perdere le foto."""
     if not GALLERIA_ANTICIPATA or not photo_bytes_list:
         return None
-    didascalia = _didascalia_galleria_anticipata(listing_info, url, len(photo_bytes_list))
+    didascalia = _didascalia_galleria_anticipata(listing_info, url, len(photo_bytes_list), testo_tracker)
     try:
         if len(photo_bytes_list) > 1:
             return await telegram_send_media_group(
@@ -8962,7 +8996,44 @@ async def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header,
 # PIPELINE PRINCIPALE
 # ---------------------------------------------------------------------------
 
-async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricevuto_bot=None, stato=None):
+class _PermessoAnalisi:
+    """Posto nel tetto di analisi Gemini parallele, preso a meta' pipeline
+    (dopo la galleria) e rilasciato sempre da process_listing, anche su
+    return anticipato o eccezione."""
+
+    def __init__(self, semaforo):
+        self._semaforo = semaforo
+        self._preso = False
+
+    async def acquisisci(self, url=None):
+        if self._preso:
+            return
+        if self._semaforo.locked():
+            log.info("Analisi Gemini in coda (%d gia' in corso, max %d), scrape e foto gia' fatti: %s",
+                     MAX_ANALISI_PARALLELE, MAX_ANALISI_PARALLELE, url)
+        await self._semaforo.acquire()
+        self._preso = True
+
+    def rilascia(self):
+        if self._preso:
+            self._preso = False
+            self._semaforo.release()
+
+
+async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricevuto_bot=None, stato=None,
+                          testo_tracker=None, semaforo=None):
+    permesso = _PermessoAnalisi(semaforo) if semaforo is not None else None
+    try:
+        await _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=msg_date,
+                                       t_ricevuto_bot=t_ricevuto_bot, stato=stato,
+                                       testo_tracker=testo_tracker, permesso=permesso)
+    finally:
+        if permesso is not None:
+            permesso.rilascia()
+
+
+async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None, t_ricevuto_bot=None, stato=None,
+                                   testo_tracker=None, permesso=None):
     listing_info = dict(parsed)
     listing_info["url"] = url
     costo_totale = 0.0
@@ -8978,6 +9049,7 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
     t_tappe = [("ricevuto", t_ricevuto_bot if t_ricevuto_bot is not None else time.time())]
 
     photo_bytes_list = []
+    task_guardaroba = None
     if url:
         # FILTRO PRE-SCRAPE (aggiunto 2026-09-27, utente: ridurre il consumo
         # di banda dei proxy in vista del passaggio a proxy residenziali a
@@ -9004,7 +9076,10 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
             )
             return
 
-        scraped = await scrape_vinted_listing(url)
+        # Guardaroba venditore escluso qui e lanciato in parallelo alle foto
+        # poco sotto (vedi _scrapa_guardaroba_venditore): le foto non lo
+        # aspettano piu'.
+        scraped = await scrape_vinted_listing(url, includi_guardaroba=False)
         t_tappe.append(("scrape", time.time()))
         listing_info.update({
             "size": scraped.get("size"), "condition": scraped.get("condition"),
@@ -9037,6 +9112,8 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
                      f" — Tempi: {' · '.join(pezzi_tempi_skip)}" if pezzi_tempi_skip else "",
                      " · ".join(_formatta_tappe_pipeline(t_tappe)))
             return
+
+        task_guardaroba = asyncio.create_task(_scrapa_guardaroba_venditore(scraped, url))
 
         photo_urls = scraped.get("photo_urls", [])
         if not photo_urls:
@@ -9087,17 +9164,31 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
         await telegram_send_message(
             TELEGRAM_OWNER_CHAT_ID,
             f"⚠️ Niente foto per: {listing_info.get('title')}\nURL: {url or 'non trovato'}\nSalto valutazione.")
+        if task_guardaroba is not None:
+            task_guardaroba.cancel()
         return
 
     # Galleria subito nella chat principale (vedi GALLERIA_ANTICIPATA), prima
     # di Occhio/Cervello. Il verdetto la raggiungera' come risposta.
-    msg_id_galleria = await _invia_galleria_anticipata(listing_info, url, photo_bytes_list)
+    msg_id_galleria = await _invia_galleria_anticipata(listing_info, url, photo_bytes_list, testo_tracker)
     if msg_id_galleria is not None:
         t_tappe.append(("galleria", time.time()))
         if stato is not None:
             # Letto dall'handler se la pipeline va in eccezione da qui in poi,
             # per rispondere alla galleria invece di lasciarla appesa.
             stato["msg_id_galleria"] = msg_id_galleria
+
+    # Da qui in poi Gemini: solo ora si prende il posto nel tetto di analisi
+    # parallele (MAX_ANALISI_PARALLELE). Prima il posto si prendeva
+    # all'arrivo del messaggio, quindi in un burst anche scrape e galleria
+    # restavano in coda dietro alle analisi Gemini degli altri annunci.
+    if permesso is not None:
+        await permesso.acquisisci(url)
+
+    if task_guardaroba is not None:
+        await task_guardaroba
+        listing_info["seller_top_items"] = scraped.get("seller_top_items") or []
+        listing_info["seller_wardrobe_debug"] = scraped.get("seller_wardrobe_debug") or "n/d"
 
     age_days = listing_info.get("age_days")
     age_text = f"{age_days:.1f} giorni fa" if age_days is not None else "non disponibile"
@@ -9801,15 +9892,12 @@ async def on_new_message(event):
         # Tetto alle analisi in parallelo (fix 2026-09-27): senza, un burst
         # di N annunci faceva partire N pipeline complete insieme (scrape,
         # Gemini, Serper), bruciando la quota Gemini e la RAM tutto in una
-        # volta. Gli annunci in eccesso aspettano il loro turno qui; l'attesa
-        # resta visibile nei tempi della pipeline perche' t_ricevuto_bot e'
-        # gia' stato preso sopra.
-        if _semaforo_analisi.locked():
-            log.info("Analisi in coda (%d gia' in corso, max %d): %s",
-                     MAX_ANALISI_PARALLELE, MAX_ANALISI_PARALLELE, url)
-        async with _semaforo_analisi:
-            await process_listing(parsed, url, cover, msg_date=msg_date, t_ricevuto_bot=t_ricevuto_bot,
-                                  stato=stato_pipeline)
+        # volta. Dal 2026-09-28 il posto si prende DENTRO process_listing,
+        # dopo scrape + foto + galleria (leggeri, niente Gemini): in un burst
+        # le foto arrivano subito e in coda aspetta solo l'analisi Gemini.
+        # L'attesa resta visibile nei tempi della pipeline.
+        await process_listing(parsed, url, cover, msg_date=msg_date, t_ricevuto_bot=t_ricevuto_bot,
+                              stato=stato_pipeline, testo_tracker=text, semaforo=_semaforo_analisi)
     except Exception:
         log.error("Errore generico:\n%s", traceback.format_exc())
         if stato_pipeline.get("msg_id_galleria") is not None:
