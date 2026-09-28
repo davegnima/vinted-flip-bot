@@ -251,7 +251,7 @@ MAX_GALLERY_PHOTOS = 10
 # inequivocabile quale codice sta girando su Railway dopo un deploy, senza
 # doverlo dedurre dai timestamp dei log. Aggiorna la data quando fai una
 # modifica significativa (facoltativo, ma utile per il debug futuro).
-BOT_VERSION = "2026-09-28-galleria-subito-formato-tracker"
+BOT_VERSION = "2026-09-28-pausa-analisi-gemini"
 
 # ---------------------------------------------------------------------------
 # PARAMETRI ECONOMICI -- l'unica fonte di verita' per TUTTI i calcoli
@@ -8838,6 +8838,16 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
 # GALLERIA_ANTICIPATA=0 per tornare al comportamento precedente.
 GALLERIA_ANTICIPATA = os.environ.get("GALLERIA_ANTICIPATA", "1").strip() != "0"
 
+# PAUSA ANALISI GEMINI (richiesto dall'utente il 2026-09-28, durante un
+# sovraccarico 503 prolungato di Gemini): ANALISI_GEMINI=0 su Railway ->
+# arriva SOLO la galleria (col testo del tracker), nessuna chiamata a
+# Gemini/Serper, nessun verdetto. Restano attivi scrape, foto e i filtri
+# gratuiti (pre-scrape, pre-Gemini), quindi le gallerie restano solo per
+# annunci pertinenti. Il canale alert in pausa non riceve nulla: dipende dal
+# verdetto. Cambiare la variabile su Railway riavvia il servizio, quindi il
+# valore letto all'avvio basta.
+ANALISI_GEMINI_ATTIVA = os.environ.get("ANALISI_GEMINI", "1").strip() != "0"
+
 
 def _didascalia_galleria_anticipata(listing_info, url, n_foto, testo_tracker=None):
     """Didascalia della galleria anticipata. Richiesto dall'utente il
@@ -8846,7 +8856,8 @@ def _didascalia_galleria_anticipata(listing_info, url, n_foto, testo_tracker=Non
     tutte le foto e lo stato "analisi in corso". Si riusa quindi il testo del
     tracker cosi' com'e': se il tracker cambia formato, la galleria lo segue
     da sola. Senza testo del tracker, ricostruzione da titolo/brand/prezzo."""
-    stato_analisi = f"⏳ Analisi in corso… · {n_foto} foto"
+    stato_analisi = (f"⏳ Analisi in corso… · {n_foto} foto" if ANALISI_GEMINI_ATTIVA
+                     else f"⏸️ Analisi AI in pausa · {n_foto} foto")
     testo_tracker = (testo_tracker or "").strip()
     if testo_tracker:
         righe = [testo_tracker]
@@ -8878,7 +8889,9 @@ async def _invia_galleria_anticipata(listing_info, url, photo_bytes_list, testo_
     agganciare il verdetto. None se disattivata o fallita: in quel caso
     _invia_risultato_telegram rimanda le foto a fine analisi come prima,
     cosi' un problema qui non fa mai perdere le foto."""
-    if not GALLERIA_ANTICIPATA or not photo_bytes_list:
+    # In pausa la galleria e' l'unico messaggio: parte anche con
+    # GALLERIA_ANTICIPATA=0.
+    if not photo_bytes_list or not (GALLERIA_ANTICIPATA or not ANALISI_GEMINI_ATTIVA):
         return None
     didascalia = _didascalia_galleria_anticipata(listing_info, url, len(photo_bytes_list), testo_tracker)
     try:
@@ -9177,6 +9190,17 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             # Letto dall'handler se la pipeline va in eccezione da qui in poi,
             # per rispondere alla galleria invece di lasciarla appesa.
             stato["msg_id_galleria"] = msg_id_galleria
+
+    if not ANALISI_GEMINI_ATTIVA:
+        if task_guardaroba is not None:
+            task_guardaroba.cancel()
+        pezzi_tempi_pausa, _ = _calcola_tempi_pipeline(listing_info, msg_date, t_ricevuto_bot)
+        log.info("ANALISI GEMINI IN PAUSA: solo galleria per '%s'%s%s (%s)",
+                 listing_info.get("title"),
+                 "" if msg_id_galleria is not None else " -- ATTENZIONE: invio galleria fallito",
+                 f" — Tempi: {' · '.join(pezzi_tempi_pausa)}" if pezzi_tempi_pausa else "",
+                 " · ".join(_formatta_tappe_pipeline(t_tappe)))
+        return
 
     # Da qui in poi Gemini: solo ora si prende il posto nel tetto di analisi
     # parallele (MAX_ANALISI_PARALLELE). Prima il posto si prendeva
@@ -9925,6 +9949,17 @@ async def main():
         "calcolato da campi tipizzati" if OCCHIO_OUTPUT_JSON else "da match testuale",
     )
     await inizializza_client_http()
+    if not ANALISI_GEMINI_ATTIVA:
+        log.warning("ANALISI GEMINI IN PAUSA (ANALISI_GEMINI=0): arrivera' solo la galleria, nessun verdetto.")
+        try:
+            await telegram_send_message(
+                TELEGRAM_OWNER_CHAT_ID,
+                "⏸️ Bot riavviato con l'analisi AI in pausa: riceverai solo le gallerie. "
+                "Per riattivarla: ANALISI_GEMINI=1 su Railway.",
+                disable_notification=True,
+            )
+        except Exception:
+            pass
     try:
         await client.start()
         await client.run_until_disconnected()
