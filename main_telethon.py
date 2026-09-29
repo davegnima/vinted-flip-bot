@@ -258,7 +258,7 @@ MAX_GALLERY_PHOTOS = 10
 # inequivocabile quale codice sta girando su Railway dopo un deploy, senza
 # doverlo dedurre dai timestamp dei log. Aggiorna la data quando fai una
 # modifica significativa (facoltativo, ma utile per il debug futuro).
-BOT_VERSION = "2026-09-29-test-visuale-controllo-sessione"
+BOT_VERSION = "2026-09-29-scheda-annuncio-prezzo-brand-in-anteprima"
 
 # ---------------------------------------------------------------------------
 # PARAMETRI ECONOMICI -- l'unica fonte di verita' per TUTTI i calcoli
@@ -2706,6 +2706,33 @@ if not _VINTED_COOKIES.get("access_token_web") and VINTED_ACCESS_TOKEN:
 if not _VINTED_COOKIES.get("refresh_token_web") and VINTED_REFRESH_TOKEN:
     _VINTED_COOKIES["refresh_token_web"] = VINTED_REFRESH_TOKEN
 
+# VINTED_COOKIES_EXTRA (2026-09-29): l'intero header "Cookie" copiato dal
+# browser loggato con l'account dedicato (DevTools > Network > una richiesta a
+# vinted.it > Request Headers > cookie). Il test /test_visuale ha mostrato che
+# con i soli due token il rinnovo riesce (HTTP 200) ma Vinted tratta comunque
+# la sessione come anonima (rimandata a /member/register anche su /inbox, con
+# e senza proxy, con httpx e curl_cffi): mancano probabilmente gli altri
+# cookie di sessione. I token access/refresh restano gestiti a parte (e
+# rinnovati da _rinnova_token_vinted): qui si aggiungono SOLO gli altri cookie,
+# e i due token vengono usati come seed solo se mancano del tutto.
+def _parse_cookie_header(testo):
+    cookie = {}
+    for pezzo in (testo or "").split(";"):
+        if "=" in pezzo:
+            nome, valore = pezzo.split("=", 1)
+            nome, valore = nome.strip(), valore.strip()
+            if nome and valore:
+                cookie[nome] = valore
+    return cookie
+
+
+VINTED_COOKIES_EXTRA = _parse_cookie_header(os.environ.get("VINTED_COOKIES_EXTRA", ""))
+for _nome, _valore in VINTED_COOKIES_EXTRA.items():
+    if _nome in ("access_token_web", "refresh_token_web"):
+        _VINTED_COOKIES.setdefault(_nome, _valore)
+    else:
+        _VINTED_COOKIES[_nome] = _valore
+
 
 def _jwt_scaduto(token, margine_secondi=120):
     """Decodifica (senza verificarne la firma -- non ci serve, ci fidiamo
@@ -3549,7 +3576,7 @@ async def _rinnova_token_vinted():
     # l'altro.
     try:
         with open(TOKEN_FILE, "w") as f:
-            json.dump(_VINTED_COOKIES, f)
+            json.dump({k: v for k, v in _VINTED_COOKIES.items() if k in ("access_token_web", "refresh_token_web")}, f)
     except Exception as e:
         log.warning("_rinnova_token_vinted: impossibile salvare %s: %s", TOKEN_FILE, e)
 
@@ -8850,7 +8877,7 @@ GALLERIA_ANTICIPATA = os.environ.get("GALLERIA_ANTICIPATA", "1").strip() != "0"
 
 # PAUSA ANALISI GEMINI (richiesto dall'utente il 2026-09-28, durante un
 # sovraccarico 503 prolungato di Gemini): ANALISI_GEMINI=0 su Railway ->
-# arriva SOLO la galleria (col testo del tracker), nessuna chiamata a
+# arriva SOLO la galleria (album + scheda), nessuna chiamata a
 # Gemini/Serper, nessun verdetto. Restano attivi scrape, foto e i filtri
 # gratuiti (pre-scrape, pre-Gemini), quindi le gallerie restano solo per
 # annunci pertinenti. Il canale alert in pausa non riceve nulla: dipende dal
@@ -8859,62 +8886,137 @@ GALLERIA_ANTICIPATA = os.environ.get("GALLERIA_ANTICIPATA", "1").strip() != "0"
 ANALISI_GEMINI_ATTIVA = os.environ.get("ANALISI_GEMINI", "1").strip() != "0"
 
 
-def _didascalia_galleria_anticipata(listing_info, url, n_foto, testo_tracker=None):
-    """Didascalia della galleria anticipata. Richiesto dall'utente il
-    2026-09-28, secondo giro: stessa struttura del messaggio del tracker
-    (quello che arriva nel canale del tracker con la sola copertina), ma con
-    tutte le foto e lo stato "analisi in corso". Si riusa quindi il testo del
-    tracker cosi' com'e': se il tracker cambia formato, la galleria lo segue
-    da sola. Senza testo del tracker, ricostruzione da titolo/brand/prezzo."""
-    stato_analisi = (f"⏳ Analisi in corso… · {n_foto} foto" if ANALISI_GEMINI_ATTIVA
-                     else f"⏸️ Analisi AI in pausa · {n_foto} foto")
-    testo_tracker = (testo_tracker or "").strip()
-    if testo_tracker:
-        righe = [testo_tracker]
-        if url and url not in testo_tracker:
-            righe.append(f"🔗 {url}")
-    else:
-        righe = [f"📸 {listing_info.get('title') or 'Annuncio'}"]
-        brand = (listing_info.get("brand") or "").strip()
-        prezzo = _a_float(listing_info.get("price"), None)
-        dettagli = []
-        if brand and brand != "?":
-            dettagli.append(f"🏷️ {brand}")
-        if prezzo is not None:
-            dettagli.append(f"💰 {prezzo:.2f} €".replace(".", ","))
-        if dettagli:
-            righe.append(" · ".join(dettagli))
-        if url:
-            righe.append(f"🔗 {url}")
-    corpo = "\n".join(righe)
-    # Limite Telegram 1024 caratteri: si accorcia il testo, mai lo stato.
-    spazio = 1024 - len(stato_analisi) - 2
-    if len(corpo) > spazio:
-        corpo = corpo[:spazio - 1].rstrip() + "…"
-    return f"{corpo}\n\n{stato_analisi}"
+def _stato_analisi_testo(n_foto):
+    return (f"⏳ Analisi in corso… · {n_foto} foto" if ANALISI_GEMINI_ATTIVA
+            else f"⏸️ Analisi AI in pausa · {n_foto} foto")
 
 
-async def _invia_galleria_anticipata(listing_info, url, photo_bytes_list, testo_tracker=None):
-    """Manda la galleria nella chat principale e ritorna il message_id a cui
-    agganciare il verdetto. None se disattivata o fallita: in quel caso
+def _didascalia_galleria_anticipata(listing_info, url, n_foto):
+    """Didascalia CORTA dell'album (solo testo semplice, niente Markdown).
+    Il contenuto vero sta nella scheda che segue (_scheda_annuncio_testo):
+    la notifica push di un album mostra solo "N foto", quindi prezzo e brand
+    devono stare nel messaggio di testo mandato per ultimo."""
+    return f"📸 {listing_info.get('title') or 'Annuncio'} · {n_foto} foto"[:1024]
+
+
+def _eta_annuncio_testo(age_days):
+    if age_days is None:
+        return None
+    minuti = max(0, int(age_days * 24 * 60))
+    if minuti < 60:
+        return f"online da {max(1, minuti)} min"
+    if minuti < 24 * 60:
+        return f"online da {minuti // 60} h"
+    return f"online da {minuti // (24 * 60)} g"
+
+
+LUNGHEZZA_MAX_DESCRIZIONE_SCHEDA = 600
+
+
+def _scheda_annuncio_testo(listing_info, url, n_foto):
+    """Scheda dell'annuncio per il messaggio di testo che segue la galleria
+    (richiesto dall'utente il 2026-09-29). PREZZO E BRAND SEMPRE IN PRIMA
+    RIGA: e' il messaggio piu' recente della chat, quindi quello che compare
+    nell'anteprima della notifica, e l'utente vuole vedere prima quelli e
+    non "N foto". Solo dati gia' letti dal tracker e dalla pagina annuncio
+    (nessuna richiesta in piu' a Vinted); testo libero sempre passato da
+    _escapa_markdown_legacy perche' il messaggio va con parse_mode=Markdown."""
+    esc = _escapa_markdown_legacy
+    prezzo = _a_float(listing_info.get("price"), None)
+    brand = (listing_info.get("brand") or "").strip()
+    testa = []
+    if prezzo is not None:
+        testa.append(f"💶 {prezzo:.2f} €".replace(".", ","))
+    if brand and brand != "?":
+        testa.append(f"🏷️ {esc(brand)}")
+    righe = []
+    if testa:
+        righe.append("*" + " · ".join(testa) + "*")
+    righe.append(esc(listing_info.get("title") or "Annuncio"))
+    righe.append("")
+
+    dettagli = []
+    for emoji, chiave in (("📏", "size"), ("✨", "condition"), ("🧵", "material_raw"), ("🎨", "color_raw")):
+        valore = (listing_info.get(chiave) or "").strip() if isinstance(listing_info.get(chiave), str) else None
+        if valore:
+            dettagli.append(f"{emoji} {esc(valore)}")
+    if dettagli:
+        righe.append(" · ".join(dettagli))
+
+    eta = _eta_annuncio_testo(listing_info.get("age_days"))
+    if eta:
+        righe.append(f"🕒 {eta}")
+
+    venditore = []
+    if listing_info.get("seller_login"):
+        venditore.append(esc(str(listing_info["seller_login"])))
+    rep = listing_info.get("seller_feedback_reputation")
+    n_rec = listing_info.get("seller_feedback_count")
+    if n_rec is not None:
+        venditore.append(f"⭐ {rep:.1f} ({n_rec})".replace(".", ",") if rep is not None else f"{n_rec} recensioni")
+    if listing_info.get("seller_items_count") is not None:
+        venditore.append(f"{listing_info['seller_items_count']} articoli")
+    if listing_info.get("seller_country"):
+        venditore.append(esc(str(listing_info["seller_country"])))
+    if venditore:
+        righe.append("👤 " + " · ".join(venditore))
+
+    descrizione = " ".join((listing_info.get("description") or "").split())
+    if descrizione:
+        if len(descrizione) > LUNGHEZZA_MAX_DESCRIZIONE_SCHEDA:
+            descrizione = descrizione[:LUNGHEZZA_MAX_DESCRIZIONE_SCHEDA].rstrip() + "…"
+        righe.append("")
+        righe.append(f"📝 {esc(descrizione)}")
+
+    righe.append("")
+    righe.append(_stato_analisi_testo(n_foto))
+    return "\n".join(righe)
+
+
+async def _invia_galleria_anticipata(listing_info, url, photo_bytes_list):
+    """Manda nella chat principale l'ALBUM con tutte le foto e SUBITO DOPO la
+    scheda di testo (prezzo, brand, dettagli, descrizione, bottone "Apri su
+    Vinted"). Ordine voluto: la scheda e' l'ultimo messaggio, quindi e' lei
+    l'anteprima della notifica. Tutto silenzioso: la decisione non e' ancora
+    nota e il push resta legato al solo verdetto COMPRA.
+
+    Ritorna il message_id dell'album, a cui agganciare il verdetto. None se
+    disattivata o se l'album non e' partito: in quel caso
     _invia_risultato_telegram rimanda le foto a fine analisi come prima,
     cosi' un problema qui non fa mai perdere le foto."""
     # In pausa la galleria e' l'unico messaggio: parte anche con
     # GALLERIA_ANTICIPATA=0.
     if not photo_bytes_list or not (GALLERIA_ANTICIPATA or not ANALISI_GEMINI_ATTIVA):
         return None
-    didascalia = _didascalia_galleria_anticipata(listing_info, url, len(photo_bytes_list), testo_tracker)
+    n_foto = len(photo_bytes_list)
+    id_album = None
     try:
-        if len(photo_bytes_list) > 1:
-            return await telegram_send_media_group(
+        didascalia = _didascalia_galleria_anticipata(listing_info, url, n_foto)
+        if n_foto > 1:
+            id_album = await telegram_send_media_group(
                 TELEGRAM_OWNER_CHAT_ID, photo_bytes_list, caption=didascalia, disable_notification=True,
             )
-        return await telegram_send_photo(
-            TELEGRAM_OWNER_CHAT_ID, photo_bytes_list[0], caption=didascalia, disable_notification=True,
-        )
+        else:
+            id_album = await telegram_send_photo(
+                TELEGRAM_OWNER_CHAT_ID, photo_bytes_list[0], caption=didascalia, disable_notification=True,
+            )
     except Exception:
         log.warning("Galleria anticipata non inviata, le foto partiranno col verdetto:\n%s", traceback.format_exc())
-        return None
+    # La scheda parte comunque, anche se l'album e' fallito: in pausa e'
+    # l'unica informazione che arriva.
+    try:
+        scheda = _scheda_annuncio_testo(listing_info, url, n_foto)
+        if url:
+            await telegram_send_with_buttons(
+                TELEGRAM_OWNER_CHAT_ID, scheda, url, None, disable_notification=True, reply_to=id_album,
+            )
+        else:
+            await telegram_send_message(
+                TELEGRAM_OWNER_CHAT_ID, scheda, disable_notification=True, reply_to=id_album,
+            )
+    except Exception:
+        log.warning("Scheda annuncio non inviata:\n%s", traceback.format_exc())
+    return id_album
 
 
 async def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header, output_finale,
@@ -9044,19 +9146,19 @@ class _PermessoAnalisi:
 
 
 async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricevuto_bot=None, stato=None,
-                          testo_tracker=None, semaforo=None):
+                          semaforo=None):
     permesso = _PermessoAnalisi(semaforo) if semaforo is not None else None
     try:
         await _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=msg_date,
                                        t_ricevuto_bot=t_ricevuto_bot, stato=stato,
-                                       testo_tracker=testo_tracker, permesso=permesso)
+                                       permesso=permesso)
     finally:
         if permesso is not None:
             permesso.rilascia()
 
 
 async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None, t_ricevuto_bot=None, stato=None,
-                                   testo_tracker=None, permesso=None):
+                                   permesso=None):
     listing_info = dict(parsed)
     listing_info["url"] = url
     costo_totale = 0.0
@@ -9193,7 +9295,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
 
     # Galleria subito nella chat principale (vedi GALLERIA_ANTICIPATA), prima
     # di Occhio/Cervello. Il verdetto la raggiungera' come risposta.
-    msg_id_galleria = await _invia_galleria_anticipata(listing_info, url, photo_bytes_list, testo_tracker)
+    msg_id_galleria = await _invia_galleria_anticipata(listing_info, url, photo_bytes_list)
     if msg_id_galleria is not None:
         t_tappe.append(("galleria", time.time()))
         if stato is not None:
@@ -9896,6 +9998,10 @@ async def testa_ricerca_visuale(url_annuncio):
     righe.append(_descrivi_token("Access token", _VINTED_COOKIES.get("access_token_web")))
     righe.append(_descrivi_token("Refresh token", _VINTED_COOKIES.get("refresh_token_web")))
     righe.append(f"VISUAL_SEARCH_ATTIVA in pipeline: {'si' if VISUAL_SEARCH_ATTIVA else 'no'}")
+    righe.append(
+        f"Cookie di sessione extra (VINTED_COOKIES_EXTRA): "
+        f"{', '.join(sorted(n for n in VINTED_COOKIES_EXTRA if n not in ('access_token_web', 'refresh_token_web'))) or 'nessuno'}"
+    )
 
     if _jwt_scaduto(_VINTED_COOKIES.get("access_token_web")):
         if _jwt_scaduto(_VINTED_COOKIES.get("refresh_token_web")):
@@ -10137,7 +10243,7 @@ async def on_new_message(event):
         # le foto arrivano subito e in coda aspetta solo l'analisi Gemini.
         # L'attesa resta visibile nei tempi della pipeline.
         await process_listing(parsed, url, cover, msg_date=msg_date, t_ricevuto_bot=t_ricevuto_bot,
-                              stato=stato_pipeline, testo_tracker=text, semaforo=_semaforo_analisi)
+                              stato=stato_pipeline, semaforo=_semaforo_analisi)
     except Exception:
         log.error("Errore generico:\n%s", traceback.format_exc())
         if stato_pipeline.get("msg_id_galleria") is not None:
