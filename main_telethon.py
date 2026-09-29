@@ -258,7 +258,7 @@ MAX_GALLERY_PHOTOS = 10
 # inequivocabile quale codice sta girando su Railway dopo un deploy, senza
 # doverlo dedurre dai timestamp dei log. Aggiorna la data quando fai una
 # modifica significativa (facoltativo, ma utile per il debug futuro).
-BOT_VERSION = "2026-09-29-test-visuale-curl-cffi"
+BOT_VERSION = "2026-09-29-test-visuale-controllo-sessione"
 
 # ---------------------------------------------------------------------------
 # PARAMETRI ECONOMICI -- l'unica fonte di verita' per TUTTI i calcoli
@@ -9870,6 +9870,26 @@ async def _prova_visuale_curl(impersonate, url_intermedio, headers, cookies, pro
         return {"esito": f"errore {type(e).__name__}: {e}", "id": None, "durata": time.time() - t0, "articoli": None}
 
 
+async def _prova_pagina_riservata(nome, url, cookies, impersonate=None, proxy=None):
+    """Controllo di riferimento (2026-09-29): una pagina che richiede il login
+    (la posta in arrivo) con gli STESSI cookie della ricerca visuale. Serve a
+    separare "la sessione dell'account non viene accettata affatto" da "solo
+    /search_by_image la rifiuta". impersonate=None -> httpx (client auth)."""
+    t0 = time.time()
+    try:
+        if impersonate is None:
+            resp = await _CLIENT_VINTED_AUTH.get(url, cookies=cookies, timeout=20)
+        else:
+            async with CurlAsyncSession(impersonate=impersonate, proxy=proxy, timeout=20) as sess:
+                resp = await sess.get(url, cookies=cookies, allow_redirects=True)
+        finale = str(resp.url)
+        rimandato = any(x in finale for x in ("/member/register", "/member/login", "/session-refresh"))
+        esito = f"rimandato al login ({finale[:90]})" if rimandato else f"HTTP {resp.status_code}, pagina caricata (sessione accettata)"
+        return f"{'❌' if rimandato else '✅'} {nome}: {esito} ({time.time() - t0:.1f}s)"
+    except Exception as e:
+        return f"❌ {nome}: errore {type(e).__name__}: {e} ({time.time() - t0:.1f}s)"
+
+
 async def testa_ricerca_visuale(url_annuncio):
     """Ritorna le righe del resoconto per Telegram."""
     righe = ["🔎 Test ricerca visuale", url_annuncio, ""]
@@ -9909,6 +9929,18 @@ async def testa_ricerca_visuale(url_annuncio):
     proxy = PROXY_LIST[0] if PROXY_LIST else None
     righe.append(f"Proxy usato da tutti i client: {_etichetta_proxy(proxy) if proxy else 'nessuno (IP Railway)'}")
     righe.append("")
+
+    # Controllo di riferimento: la sessione e' accettata da una pagina
+    # riservata qualunque? (vedi _prova_pagina_riservata)
+    righe.append("Controllo sessione su pagina riservata (posta in arrivo):")
+    righe.append(await _prova_pagina_riservata("httpx + proxy", "https://www.vinted.it/inbox", cookies))
+    if CurlAsyncSession is not None:
+        righe.append(await _prova_pagina_riservata(
+            "curl_cffi Safari + proxy", "https://www.vinted.it/inbox", cookies, "safari184_ios", proxy))
+        righe.append(await _prova_pagina_riservata(
+            "curl_cffi Safari SENZA proxy (IP Railway)", "https://www.vinted.it/inbox", cookies, "safari184_ios", None))
+    righe.append("")
+    righe.append("Ricerca visuale:")
 
     prove = [("httpx (attuale)", _prova_visuale_httpx(url_intermedio, headers, cookies))]
     if CurlAsyncSession is None:
