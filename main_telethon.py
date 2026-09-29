@@ -258,7 +258,7 @@ MAX_GALLERY_PHOTOS = 10
 # inequivocabile quale codice sta girando su Railway dopo un deploy, senza
 # doverlo dedurre dai timestamp dei log. Aggiorna la data quando fai una
 # modifica significativa (facoltativo, ma utile per il debug futuro).
-BOT_VERSION = "2026-09-29-scheda-annuncio-prezzo-brand-in-anteprima"
+BOT_VERSION = "2026-09-29-fix-accenti-descrizione-attributi-annuncio"
 
 # ---------------------------------------------------------------------------
 # PARAMETRI ECONOMICI -- l'unica fonte di verita' per TUTTI i calcoli
@@ -3820,6 +3820,87 @@ def _estrai_foto_gallery(html_sorgente):
     return diz
 
 
+def _decodifica_stringa_json(contenuto):
+    """Decodifica il contenuto (senza virgolette esterne) di una stringa
+    JSON gia' estratta con regex. Sostituisce
+    contenuto.encode().decode("unicode_escape"), che rompeva OGNI carattere
+    non ASCII: encode() produce byte UTF-8 e unicode_escape li rilegge come
+    latin-1, quindi "e'" con accento diventava "Ã¨" (visto in produzione il
+    2026-09-29 nella descrizione mostrata in Telegram, e finiva cosi' anche
+    nel testo dato all'Occhio). json.loads gestisce sia gli escape \\uXXXX sia
+    i caratteri UTF-8 diretti. Se non e' JSON valido, testo cosi' com'e'."""
+    try:
+        return json.loads('"' + contenuto + '"')
+    except Exception:
+        return contenuto
+
+
+_RE_ATTRIBUTO_ANNUNCIO = re.compile(r'data-testid="item-attributes-([A-Za-z0-9_\-]+)"')
+_ETICHETTE_ATTRIBUTI = {
+    "condizioni": "condition", "condizione": "condition", "stato": "condition",
+    "taglia": "size", "colore": "color", "colori": "color", "materiale": "material",
+    "caricato": "uploaded", "caricamento": "uploaded",
+}
+_CHIAVI_ATTRIBUTI = {
+    "status": "condition", "size": "size", "color": "color", "material": "material",
+    "upload_date": "uploaded", "uploaded": "uploaded",
+}
+
+
+def _testi_visibili(frammento_html):
+    testi = []
+    for t in re.findall(r">([^<>]+)<", frammento_html):
+        t = html.unescape(t).replace("\u200c", "").strip()
+        if t:
+            testi.append(t)
+    return testi
+
+
+def _estrai_attributi_annuncio(html_pagina):
+    """Legge i blocchi data-testid="item-attributes-*" della pagina annuncio
+    (struttura confermata dal log della sonda: un contenitore con il testo
+    dell'etichetta, es. "Condizioni", seguito dal contenitore col valore).
+    Indipendente dai nomi delle classi CSS: si prendono i testi visibili del
+    blocco, il primo e' l'etichetta, i successivi (brevi) il valore. Ritorna
+    {"condition", "size", "color", "material", "uploaded"} solo per i campi
+    trovati. Volutamente tollerante: e' scritto senza aver visto una pagina
+    intera, quindi in caso di dubbio non ritorna nulla (vedi
+    _diagnostica_attributi_mancanti)."""
+    posizioni = [(m.start(), m.group(1)) for m in _RE_ATTRIBUTO_ANNUNCIO.finditer(html_pagina or "")]
+    trovati = {}
+    for i, (pos, chiave_html) in enumerate(posizioni):
+        fine = min(posizioni[i + 1][0] if i + 1 < len(posizioni) else pos + 3000, pos + 3000)
+        testi = _testi_visibili(html_pagina[pos:fine])
+        if len(testi) < 2:
+            continue
+        campo = _ETICHETTE_ATTRIBUTI.get(testi[0].lower().rstrip(":")) or _CHIAVI_ATTRIBUTI.get(chiave_html.lower())
+        if not campo or campo in trovati:
+            continue
+        valori = [t for t in testi[1:] if len(t) <= 40][:3]
+        if valori:
+            trovati[campo] = ", ".join(valori)
+    return trovati
+
+
+_DIAGNOSTICA_ATTRIBUTI_RESTANTI = [3]
+
+
+def _diagnostica_attributi_mancanti(html_pagina, result, attributi, url):
+    """Se dopo tutti i tentativi taglia/condizione restano vuote, logga (max 3
+    volte per processo) il testo grezzo dei blocchi item-attributes: cosi' il
+    prossimo log mostra il markup vero invece di doverlo indovinare."""
+    if _DIAGNOSTICA_ATTRIBUTI_RESTANTI[0] <= 0 or (result.get("size") and result.get("condition")):
+        return
+    _DIAGNOSTICA_ATTRIBUTI_RESTANTI[0] -= 1
+    blocchi = []
+    for m in list(_RE_ATTRIBUTO_ANNUNCIO.finditer(html_pagina or ""))[:8]:
+        blocchi.append(f"{m.group(1)}={_testi_visibili(html_pagina[m.start():m.start() + 1200])[:6]}")
+    log.warning(
+        "DIAGNOSTICA attributi annuncio incompleti per %s: size=%r condition=%r trovati=%s blocchi item-attributes=%s",
+        url, result.get("size"), result.get("condition"), attributi or "nessuno", blocchi or "nessuno",
+    )
+
+
 async def scrape_vinted_listing(url, includi_guardaroba=True):
     result = {
         "photo_urls": [], "cover_photo_id": None, "size": None, "condition": None, "description": None,
@@ -3829,7 +3910,7 @@ async def scrape_vinted_listing(url, includi_guardaroba=True):
         "seller_feedback_count": None, "seller_feedback_reputation": None,
         "seller_items_count": None, "seller_country": None,
         "seller_top_items": [],
-        "seller_wardrobe_debug": "non tentato",
+        "seller_wardrobe_debug": "non tentato", "uploaded_text": None,
     }
     try:
         resp = await _vinted_get_con_retry(url, timeout=15, max_retries=3)
@@ -3926,10 +4007,7 @@ async def scrape_vinted_listing(url, includi_guardaroba=True):
 
         desc_match = re.search(r'"description"\s*:\s*"((?:[^"\\]|\\.)*)"', html_pagina)
         if desc_match:
-            try:
-                result["description"] = desc_match.group(1).encode().decode("unicode_escape")
-            except Exception:
-                result["description"] = desc_match.group(1)
+            result["description"] = _decodifica_stringa_json(desc_match.group(1))
 
         # Tentativi multipli per la data di pubblicazione. Vinted ha cambiato
         # formato: i pattern "classici" non matchano piu' in modo affidabile.
@@ -3998,6 +4076,24 @@ async def scrape_vinted_listing(url, includi_guardaroba=True):
         color_match = re.search(r'itemprop="color"[^>]*>.*?<span[^>]*>([^<]+)', html_pagina, re.DOTALL)
         if color_match:
             result["color_raw"] = color_match.group(1).strip()
+
+        # Fallback sul markup attuale (2026-09-29): i vecchi pattern
+        # (size_title, itemprop=...) non trovano piu' nulla -- la sonda del
+        # 2026-09-28 riportava taglia/condizione/materiale/colore "non
+        # trovato" -- perche' Vinted ora mette le caratteristiche in blocchi
+        # data-testid="item-attributes-...". Vale solo per i campi rimasti
+        # vuoti, quindi se il vecchio markup torna funziona come prima.
+        attributi = _estrai_attributi_annuncio(html_pagina)
+        if attributi:
+            for campo, chiave_attr in (("size", "size"), ("condition", "condition"), ("color_raw", "color"),
+                                       ("material_raw", "material"), ("uploaded_text", "uploaded")):
+                if not result.get(campo) and attributi.get(chiave_attr):
+                    result[campo] = attributi[chiave_attr]
+            if result.get("material_raw") and not result["material_per_ricerca"]:
+                result["material_per_ricerca"] = scegli_materiale_per_ricerca(result["material_raw"])
+            if not result["material_per_ricerca"] and result.get("description"):
+                result["material_per_ricerca"] = scegli_materiale_per_ricerca(result["description"])
+        _diagnostica_attributi_mancanti(html_pagina, result, attributi, url)
 
         # ---- DATI VENDITORE E SELLER_LOGIN (con blocklist compatibility) ----
         seller_login_m = re.search(r'data-testid="profile-username"[^>]*>([^<]{2,40})<', html_pagina)
@@ -8946,6 +9042,11 @@ def _scheda_annuncio_testo(listing_info, url, n_foto):
     eta = _eta_annuncio_testo(listing_info.get("age_days"))
     if eta:
         righe.append(f"🕒 {eta}")
+    elif listing_info.get("uploaded_text"):
+        # data di pubblicazione esatta non trovata: si mostra l'etichetta
+        # relativa della pagina ("2 ore fa"), solo per display (non entra
+        # nei calcoli dei tempi di pipeline).
+        righe.append(f"🕒 Caricato: {esc(str(listing_info['uploaded_text']))}")
 
     venditore = []
     if listing_info.get("seller_login"):
@@ -9210,6 +9311,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             "size": scraped.get("size"), "condition": scraped.get("condition"),
             "description": scraped.get("description"), "age_days": scraped.get("age_days"),
             "catalog_id": scraped.get("catalog_id"), "cover_photo_id": scraped.get("cover_photo_id"),
+            "uploaded_text": scraped.get("uploaded_text"),
             "material_raw": scraped.get("material_raw"),
             "material_per_ricerca": scraped.get("material_per_ricerca"),
             "color_raw": scraped.get("color_raw"),
