@@ -25,6 +25,13 @@ from datetime import datetime, timezone
 from urllib.parse import quote, urlparse
 
 import httpx
+try:
+    # Opzionale (2026-09-29): client con impronta TLS di un browser vero,
+    # per ora usato solo dal comando /test_visuale. Se manca, il bot gira
+    # uguale e il test lo segnala.
+    from curl_cffi.requests import AsyncSession as CurlAsyncSession
+except Exception:
+    CurlAsyncSession = None
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 from PIL import Image
@@ -251,7 +258,7 @@ MAX_GALLERY_PHOTOS = 10
 # inequivocabile quale codice sta girando su Railway dopo un deploy, senza
 # doverlo dedurre dai timestamp dei log. Aggiorna la data quando fai una
 # modifica significativa (facoltativo, ma utile per il debug futuro).
-BOT_VERSION = "2026-09-28-pausa-analisi-gemini"
+BOT_VERSION = "2026-09-29-test-visuale-curl-cffi"
 
 # ---------------------------------------------------------------------------
 # PARAMETRI ECONOMICI -- l'unica fonte di verita' per TUTTI i calcoli
@@ -5790,7 +5797,10 @@ async def _risolvi_search_by_image_id(item_id, photo_id):
         "per item_id=%s -- fonte visuale saltata per questo item.",
         item_id,
     )
-    return m.group(1)
+    # Era "return m.group(1)": con richiesta fallita o redirect al login 'm'
+    # non esiste (NameError) o e' None (AttributeError) -- corretto il
+    # 2026-09-28, nessuna via ha funzionato quindi None.
+    return None
 
 
 async def build_vinted_visual_search_url(item_id, photo_id, brand):
@@ -9765,6 +9775,180 @@ def e_variante_recente(parsed, url=None):
 # proprio la distinzione (200 ma pagina di blocco) che ha reso il problema
 # del 27/9 difficile da diagnosticare da un singolo status HTTP.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# TEST RICERCA VISUALE A COMANDO (2026-09-29)
+# ---------------------------------------------------------------------------
+# /test_visuale <link annuncio>: prova la ricerca visuale Vinted ("Cerca
+# articoli simili") con il client attuale (httpx) e con curl_cffi (impronta
+# TLS di Safari iOS e di Chrome), con gli stessi cookie dell'account
+# dedicato e lo stesso proxy. Serve a capire se il 403 Datadome su
+# /search_by_image (diagnosi del 2026-09-20, vedi
+# _risolvi_search_by_image_id_via_serper) dipende dall'impronta di httpx,
+# prima di cambiare qualunque cosa nella pipeline. Nessuna chiamata Gemini.
+
+VARIANTI_CURL_TEST_VISUALE = (("curl_cffi Safari iOS", "safari184_ios"), ("curl_cffi Chrome", "chrome146"))
+
+
+def _jwt_scadenza(token):
+    """datetime UTC di scadenza di un JWT Vinted, o None se illeggibile."""
+    try:
+        payload_b64 = token.split(".")[1]
+        payload_b64 += "=" * (-len(payload_b64) % 4)
+        exp = json.loads(base64.urlsafe_b64decode(payload_b64)).get("exp")
+        return datetime.fromtimestamp(exp, tz=timezone.utc) if exp else None
+    except Exception:
+        return None
+
+
+def _descrivi_token(nome, token):
+    if not token:
+        return f"{nome}: assente"
+    scad = _jwt_scadenza(token)
+    if scad is None:
+        return f"{nome}: presente ma illeggibile"
+    ore = (scad - datetime.now(timezone.utc)).total_seconds() / 3600
+    quando = scad.strftime("%d/%m %H:%M UTC")
+    if ore <= 0:
+        return f"{nome}: SCADUTO il {quando}"
+    return f"{nome}: valido fino al {quando} (tra {ore:.0f}h)" if ore < 72 else \
+        f"{nome}: valido fino al {quando} (tra {ore / 24:.0f} giorni)"
+
+
+def _classifica_esito_visuale(status, url_finale, testo=""):
+    """Da status + URL finale dopo i redirect a un esito leggibile e
+    all'eventuale search_by_image_id."""
+    url_finale = url_finale or ""
+    m = re.search(r"search_by_image_id=([A-Za-z0-9_]+)", url_finale)
+    if m:
+        return "OK", m.group(1)
+    if "/member/register" in url_finale or "/member/login" in url_finale or "/session-refresh" in url_finale:
+        return "rimandato al login (sessione non accettata)", None
+    if status == 403:
+        return "403 bloccato (Datadome)", None
+    if status and status >= 400:
+        return f"HTTP {status}", None
+    return f"HTTP {status}, nessun search_by_image_id nell'URL finale ({url_finale[:120]})", None
+
+
+def _conta_articoli_catalogo(html_catalogo):
+    """Articoli reali nella pagina catalogo, con la stessa regex della
+    ricerca comp testuale."""
+    return len(_RE_ALT_PRODOTTO_VINTED.findall(html_catalogo or ""))
+
+
+async def _prova_visuale_httpx(url_intermedio, headers, cookies):
+    t0 = time.time()
+    try:
+        resp = await _CLIENT_VINTED_AUTH.get(url_intermedio, headers=headers, cookies=cookies, timeout=20)
+        esito, sbi = _classifica_esito_visuale(resp.status_code, str(resp.url))
+        return {"esito": esito, "id": sbi, "durata": time.time() - t0, "articoli": None}
+    except Exception as e:
+        return {"esito": f"errore {type(e).__name__}: {e}", "id": None, "durata": time.time() - t0, "articoli": None}
+
+
+async def _prova_visuale_curl(impersonate, url_intermedio, headers, cookies, proxy):
+    t0 = time.time()
+    # Niente User-Agent/Accept nostri: li imposta curl_cffi coerenti con
+    # l'impronta scelta (un UA iPhone sopra un'impronta Chrome sarebbe di
+    # nuovo un'incoerenza).
+    headers_curl = {k: v for k, v in headers.items() if k.lower() not in ("user-agent", "accept")}
+    try:
+        async with CurlAsyncSession(impersonate=impersonate, proxy=proxy, timeout=20) as sess:
+            resp = await sess.get(url_intermedio, headers=headers_curl, cookies=cookies, allow_redirects=True)
+            esito, sbi = _classifica_esito_visuale(resp.status_code, str(resp.url))
+            articoli = None
+            if sbi:
+                # Controprova: la pagina risultati deve contenere articoli veri.
+                resp_cat = await sess.get(
+                    f"https://www.vinted.it/catalog?search_by_image_id={sbi}",
+                    headers={k: v for k, v in headers_curl.items() if not k.lower().startswith("sec-fetch-user")},
+                    cookies=cookies, allow_redirects=True,
+                )
+                articoli = _conta_articoli_catalogo(resp_cat.text) if resp_cat.status_code == 200 else f"HTTP {resp_cat.status_code}"
+            return {"esito": esito, "id": sbi, "durata": time.time() - t0, "articoli": articoli}
+    except Exception as e:
+        return {"esito": f"errore {type(e).__name__}: {e}", "id": None, "durata": time.time() - t0, "articoli": None}
+
+
+async def testa_ricerca_visuale(url_annuncio):
+    """Ritorna le righe del resoconto per Telegram."""
+    righe = ["🔎 Test ricerca visuale", url_annuncio, ""]
+    righe.append(_descrivi_token("Access token", _VINTED_COOKIES.get("access_token_web")))
+    righe.append(_descrivi_token("Refresh token", _VINTED_COOKIES.get("refresh_token_web")))
+    righe.append(f"VISUAL_SEARCH_ATTIVA in pipeline: {'si' if VISUAL_SEARCH_ATTIVA else 'no'}")
+
+    if _jwt_scaduto(_VINTED_COOKIES.get("access_token_web")):
+        if _jwt_scaduto(_VINTED_COOKIES.get("refresh_token_web")):
+            righe += ["", "❌ Entrambi i token scaduti o assenti: serve un nuovo login dal browser "
+                          "con l'account dedicato (cookie access_token_web e refresh_token_web)."]
+            return righe
+        async with _vinted_refresh_lock:
+            ok_refresh = await _rinnova_token_vinted()
+        righe.append(f"Rinnovo automatico dell'access token: {'riuscito' if ok_refresh else 'FALLITO'}")
+        if ok_refresh:
+            righe.append(_descrivi_token("Nuovo access token", _VINTED_COOKIES.get("access_token_web")))
+        else:
+            righe.append("(proseguo lo stesso: l'esito sotto dira' se la sessione viene accettata)")
+
+    item_id = _estrai_item_id_da_url(url_annuncio)
+    scraped = await scrape_vinted_listing(url_annuncio, includi_guardaroba=False)
+    photo_id = scraped.get("cover_photo_id")
+    if not item_id or not photo_id:
+        righe += ["", f"❌ Non riesco a leggere item id / foto dall'annuncio (item_id={item_id}, "
+                      f"photo_id={photo_id}): pagina annuncio non raggiunta?"]
+        return righe
+
+    url_intermedio = f"https://www.vinted.it/items/{item_id}/search_by_image?photo_id={quote(photo_id)}"
+    headers = {
+        "Referer": f"https://www.vinted.it/items/{item_id}",
+        "Sec-Fetch-Site": "same-origin", "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Dest": "document", "Sec-Fetch-User": "?1",
+        "Accept-Language": VINTED_HEADERS.get("Accept-Language", "it-IT,it;q=0.9"),
+    }
+    cookies = {k: v for k, v in _VINTED_COOKIES.items() if v}
+    proxy = PROXY_LIST[0] if PROXY_LIST else None
+    righe.append(f"Proxy usato da tutti i client: {_etichetta_proxy(proxy) if proxy else 'nessuno (IP Railway)'}")
+    righe.append("")
+
+    prove = [("httpx (attuale)", _prova_visuale_httpx(url_intermedio, headers, cookies))]
+    if CurlAsyncSession is None:
+        righe.append("⚠️ curl_cffi non installato: manca in requirements.txt?")
+    else:
+        prove += [(nome, _prova_visuale_curl(imp, url_intermedio, headers, cookies, proxy))
+                  for nome, imp in VARIANTI_CURL_TEST_VISUALE]
+    # In sequenza, non in parallelo: tre richieste simultanee dallo stesso
+    # proxy con lo stesso account sarebbero gia' di per se' sospette.
+    for nome, coro in prove:
+        r = await coro
+        icona = "✅" if r["id"] else "❌"
+        riga = f"{icona} {nome}: {r['esito']} ({r['durata']:.1f}s)"
+        if r["articoli"] is not None:
+            riga += f" · risultati: {r['articoli']} articoli"
+        righe.append(riga)
+        await asyncio.sleep(2)
+    log.info("TEST VISUALE %s:\n%s", url_annuncio, "\n".join(righe))
+    return righe
+
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'(?i)^/test_?visuale\b'))
+async def on_comando_test_visuale(event):
+    try:
+        url = extract_url_from_text(event.raw_text or "")
+        if not url:
+            await event.respond("Uso: /test_visuale <link annuncio Vinted>")
+            return
+        await event.respond("🔎 Provo la ricerca visuale con httpx e curl_cffi, un attimo...")
+        righe = await testa_ricerca_visuale(url)
+        for pezzo in _spezza_per_telegram("\n".join(righe)):
+            await event.respond(pezzo)
+    except Exception:
+        log.error("Errore nel comando /test_visuale:\n%s", traceback.format_exc())
+        try:
+            await event.respond("⚠️ Test visuale fallito per un errore interno, vedi i log Railway.")
+        except Exception:
+            pass
+
+
 URL_TEST_PROXY_DEFAULT = "https://www.vinted.it/catalog?order=newest_first"
 
 
