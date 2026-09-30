@@ -258,7 +258,7 @@ MAX_GALLERY_PHOTOS = 10
 # inequivocabile quale codice sta girando su Railway dopo un deploy, senza
 # doverlo dedurre dai timestamp dei log. Aggiorna la data quando fai una
 # modifica significativa (facoltativo, ma utile per il debug futuro).
-BOT_VERSION = "2026-09-29-fix-accenti-descrizione-attributi-annuncio"
+BOT_VERSION = "2026-09-30-filtro-miumiu-top-economici"
 
 # ---------------------------------------------------------------------------
 # PARAMETRI ECONOMICI -- l'unica fonte di verita' per TUTTI i calcoli
@@ -888,6 +888,37 @@ def _cerca_categoria_in_testo(testo):
 # FILTRO PRE-GEMINI
 # ---------------------------------------------------------------------------
 
+# Miu Miu top/haut/debardeur economici (richiesto dall'utente il 2026-09-30):
+# nei log sono tutti capi a prezzo basso con rischio fake altissimo e nessun
+# margine reale, quindi si scartano a monte, prima di Occhio e Cervello,
+# come gli occhiali. Il tetto di prezzo e' configurabile da Railway con
+# MIUMIU_TOP_PREZZO_MAX (default 20 euro; 0 = scarta a qualunque prezzo).
+# Solo titolo (non descrizione) per non catturare "top condition" ecc.
+try:
+    MIUMIU_TOP_PREZZO_MAX = float(os.environ.get("MIUMIU_TOP_PREZZO_MAX", "20").replace(",", "."))
+except ValueError:
+    MIUMIU_TOP_PREZZO_MAX = 20.0
+_RE_MIUMIU = re.compile(r"\bmiu\s*-?\s*miu\b")
+_RE_TOP_LEGGERO = re.compile(
+    r"\b(tops?|hauts?|d[eé]bardeurs?|tank|tanks|canotta|canottiera|camisole|"
+    r"tirantes|al[cç]as|tr[aä]gertop|stricktop|crop|bustier|cami)\b"
+)
+
+
+def _miumiu_top_economico(listing_info):
+    titolo = (listing_info.get("title") or "").lower()
+    brand = (listing_info.get("brand") or "").lower()
+    if not (_RE_MIUMIU.search(titolo) or _RE_MIUMIU.search(brand)):
+        return False
+    if not _RE_TOP_LEGGERO.search(titolo):
+        return False
+    if MIUMIU_TOP_PREZZO_MAX <= 0:
+        return True
+    prezzo = _a_float(listing_info.get("price"), None)
+    # prezzo ignoto: si scarta comunque (nei log erano tutti capi da pochi euro)
+    return prezzo is None or prezzo <= MIUMIU_TOP_PREZZO_MAX
+
+
 def check_skip_pre_gemini(listing_info):
     """Filtro veloce basato sul testo, eseguito dopo lo scraping ma PRIMA di API/foto."""
     titolo = (listing_info.get("title") or "").lower()
@@ -896,6 +927,9 @@ def check_skip_pre_gemini(listing_info):
     seller = (listing_info.get("seller_login") or "").lower()
 
     testo_completo = f"{titolo} {descrizione}"
+
+    if _miumiu_top_economico(listing_info):
+        return True, "[CATEGORIA GENERICA NON FLIPPABILE] Miu Miu top/haut/debardeur a prezzo basso (rischio fake, nessun margine)"
 
     # 1. Blocklist venditori
     if seller and seller in VENDITORI_BLOCKLIST:
