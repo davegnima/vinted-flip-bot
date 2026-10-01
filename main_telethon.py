@@ -427,7 +427,7 @@ SOGLIA_MARGINE_ALERT_CHIEDI_FOTO = 30.0
 # avvisati col push, non dopo. Match su substring del brand dichiarato
 # nell'annuncio (case-insensitive), stessa logica gia' usata altrove nel
 # file per i controlli sul brand.
-BRAND_ESCLUSI_ALERT_CHIEDI_FOTO = ("miu miu", "loewe", "arc'teryx", "arcteryx", "prada")
+BRAND_ESCLUSI_ALERT_CHIEDI_FOTO = ("miu miu", "loewe", "arc'teryx", "arcteryx", "prada", "stone island")
 
 VINTED_TRACKER_NAME_HINTS = ("vinted", "tracker")
 
@@ -708,6 +708,24 @@ VINTED_BRAND_IDS = {
     "acne studios": "180798",
     "ganni": "170650",
     "the attico": "1653053",  # id dato direttamente dall'utente il 2026-10-01
+    # Secondo giro di aggiunte (2026-10-01): l'utente ha corretto le mie stime di rivendita
+    # troppo prudenti su Maje/Sandro ("hanno prezzi alti su Vestiaire") e ha scelto di
+    # allargare il watch invece di pre-filtrare su stime incerte -- "mettiamo tutti e
+    # vediamo come va con un po' di notifiche". Stessa fonte (teddy-vltn/vinted-dataset).
+    "maje": "116",
+    "acne studios": "180798",
+    "ganni": "170650",
+    "john smedley": "200326",
+    "drumohr": "588278",
+    "barena venezia": "703380", "barena": "703380",
+    "romeo gigli": "64844",
+    "gianfranco ferré": "1933", "gianfranco ferre": "1933",
+    "alberta ferretti": "40245",
+    "stone island": "73306",
+    # Comme des Garçons: unico ID di questo giro NON incrociato con uno dei 7 gia'
+    # verificati direttamente da Vinted -- controllare che l'URL risultante mostri
+    # davvero Comme des Garçons prima di fidarsene.
+    "comme des garçons": "16352233", "comme des garcons": "16352233",
 }
 # ESCLUSIONI VOLUTE (non mappare per evitare falsi positivi o capi di scarso valore):
 # - "céline"/"celine": l'utente segnala troppo rumore su Vinted -- molti annunci di altri
@@ -2863,6 +2881,9 @@ Per il caso 2, scrivi ESPLICITAMENTE nella riga "🏷️ Legit:" la frase **"BRA
 
 # PRADA E MIU MIU — IL CARTELLINO INTERNO È SEMPRE OBBLIGATORIO (richiesto dall'utente, 2026-09-28)
 Prada e Miu Miu (stesso gruppo, stessi standard di etichettatura — Prada possiede Miu Miu) sono tra i brand più falsificati in assoluto su questo segmento di mercato, specialmente sulle borse. Il logo esterno da solo (triangolo in metallo smaltato, nastro logato cucito, lettering "PRADA"/"MIU MIU") NON è mai sufficiente a dichiarare `probabilmente_autentico` con `confidenza: alta`: devi vedere ANCHE il cartellino interno (il `main_label` o il `wash_care_tag` nello schema), di solito cucito nella fodera interna o vicino a una tasca interna, con dicitura "Made in Italy" e un codice/serial number alfanumerico. Controlla in particolare, quando il cartellino è visibile: font del lettering (lineare, spaziatura regolare e costante, mai con grazie o corsivo), qualità della cucitura del cartellino stesso (dritta, densa, mai a punti larghi o irregolari), e — sulle borse Saffiano — la regolarità della trapuntatura in diagonale della pelle (pattern costante, mai storto o con la grana che cambia direzione a metà pannello). Se il cartellino interno manca, è illeggibile, o semplicemente non è stato fotografato: resta su `sospetto_servono_altre_foto` con `confidenza: media` al massimo, anche se il resto (logo esterno, hardware, cuciture visibili) sembra impeccabile, e aggiungi il cartellino interno a `foto_mancanti_richieste`. Su questi due brand la discrepanza più comune nei fake non è un dettaglio vistoso, è proprio questa: tutto l'esterno coerente, nessuna prova dell'interno.
+
+# STONE ISLAND — SERVE IL CODICE LOTTO, NON SOLO LA TOPPA
+Stone Island è tra i brand più falsificati in assoluto, e la contraffazione è di qualità in costante crescita (lo stesso brand ha dovuto introdurre contromisure proprio perché i fake non si distinguevano più a vista) — qui ancora più che su Prada/Miu Miu, NON basare mai `probabilmente_autentico` con `confidenza: alta` sulla sola toppa removibile (compass logo) vista da fuori. Cerca ESPLICITAMENTE l'etichetta interna con il codice lotto/batch (stringa alfanumerica, di solito vicino all'etichetta di composizione, nel formato tipico Stone Island — se la trascrivi verbatim in `etichette`, il Cervello potrà eventualmente verificarla in ricerca). Controlla anche: la cucitura della toppa (filo regolare, mai grosso o irregolare), il font del logo bussola sulla toppa, e — sui capi garment-dyed — l'uniformità della tintura (un fake spesso ha una tintura più piatta, senza le variazioni naturali di un vero garment-dye). Senza il codice lotto leggibile, resta su `sospetto_servono_altre_foto`, anche con toppa e cuciture esterne coerenti.
 
 # IL NOME DEL TESSUTO NON È IL BRAND DEL CAPO
 Caso reale già osservato: un annuncio titolato "Giacca uomo Loro Piana" era in realtà una giacca in pelle **Pineider** — "Loro Piana" indicava solo il FORNITORE del tessuto/materiale usato, non il produttore del capo. Un secondo caso reale, stesso meccanismo ma senza nemmeno la scusante del titolo: un "Blazer oversize in lana tessuto Loro Piana" aveva SOLO l'etichetta del tessuto ("Ing. Loro Piana & C.", "Super 110's") cucita dentro, nessun'altra etichetta/logo/bottone che indicasse chi avesse davvero confezionato il capo — eppure è stato valutato come un Loro Piana mainline vero e proprio, con comp e prezzo completamente sbagliati. Loro Piana (e altri nomi come Zegna, Vitale Barberis Canonico, Scabal, Holland & Sherry, Cerruti) sono spesso citati nei titoli, nelle descrizioni E su etichette cucite dentro il capo come marchio del TESSUTO impiegato da un'altra maison, non come il brand del capo finito — è una pratica comune specialmente per capispalla in pelle o lana pregiata, tailoring su misura compreso. Prima di trascrivere questi nomi come `brand_letto_etichetta`, verifica SEMPRE l'etichetta principale, il logo, i bottoni e il tirante della zip: se mostrano un nome diverso, è QUELLO il brand reale, e il nome del tessuto va citato solo come dettaglio di materiale in `materiale_osservato_dalle_foto`/`composizione_da_etichetta`, mai come brand. Se l'UNICA etichetta con quel nome è un cartellino di tessuto (spesso piccolo, separato dall'etichetta principale, con diciture tipo "Super 110's/120's/150's") e nessun'altra evidenza (etichetta principale, logo, bottoni, tirante zip) mostra un produttore — quello stesso o un altro — dichiara `relazione_brand: "tessuto_non_brand"`, MAI `"corrisponde"`: il sistema scarta l'annuncio a prescindere, perché i comp del brand del tessuto non sono comp validi per un capo di un maker ignoto. Usalo anche nel dubbio: il costo di scartare un capo che era davvero mainline è molto minore del costo di valutarlo coi comp del brand sbagliato. `relazione_brand: "non_leggibile"` resta riservato al caso in cui non leggi NESSUN nome, né di brand né di tessuto.
