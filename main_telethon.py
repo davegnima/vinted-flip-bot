@@ -258,7 +258,7 @@ MAX_GALLERY_PHOTOS = 10
 # inequivocabile quale codice sta girando su Railway dopo un deploy, senza
 # doverlo dedurre dai timestamp dei log. Aggiorna la data quando fai una
 # modifica significativa (facoltativo, ma utile per il debug futuro).
-BOT_VERSION = "2026-10-01-fair-value-apprendimento"
+BOT_VERSION = "2026-10-01-fair-value-sottolinee"
 
 # ---------------------------------------------------------------------------
 # PARAMETRI ECONOMICI -- l'unica fonte di verita' per TUTTI i calcoli
@@ -1104,6 +1104,26 @@ def _brand_fair_value(listing_info):
     return None
 
 
+# Sottolinee/linee secondarie riconoscibili dal TESTO dell'annuncio: valgono
+# meno (o diversamente) del brand madre, quindi non devono usare la sua riga.
+FAIR_VALUE_SOTTOLINEE = {
+    "max mara": {
+        "weekend max mara": r"\bweekend\b", "marella": r"\bmarella\b", "sportmax": r"\bsportmax\b",
+        "max mara studio": r"\bmax\s*mara\s+studio\b", "'s max mara": r"(?:^|\s)'?s\s+max\s*mara\b",
+    },
+    "missoni": {"m missoni": r"\bm\s+missoni\b", "missoni sport": r"\bmissoni\s+sport\b"},
+    "jean paul gaultier": {"jean's paul gaultier": r"jean'?s\s+paul\s+gaultier"},
+}
+
+
+def _sottolinea_da_testo(listing_info, brand):
+    testo = f"{listing_info.get('title') or ''} {listing_info.get('brand') or ''}".lower()
+    for nome, pattern in FAIR_VALUE_SOTTOLINEE.get(brand, {}).items():
+        if re.search(pattern, testo):
+            return nome
+    return None
+
+
 def _moltiplicatore_fair_value(listing_info):
     """Correzione condizione x materiale rispetto alla base 'buone condizioni'."""
     molt = 1.0
@@ -1138,11 +1158,19 @@ def stima_fair_value(listing_info):
     if not voce:
         return None
     minimo, fv, massimo, conf, n_comp, n_reali = voce
+    sottolinea = _sottolinea_da_testo(listing_info, brand)
+    if sottolinea:
+        appreso_sott = FAIR_VALUE_APPRESO.get(f"{sottolinea}|{categoria}")
+        if appreso_sott:
+            minimo, fv, massimo, conf, n_comp = appreso_sott["lo"], appreso_sott["fv"], appreso_sott["hi"], appreso_sott["conf"], appreso_sott["n"]
+        else:
+            conf = "bassa"   # stima del brand madre: solo indicativa finche' non impara la sottolinea
     molt = _moltiplicatore_fair_value(listing_info)
     out = {
         "brand": brand, "categoria": categoria, "conf": conf, "n_comp": n_comp, "n_reali": n_reali,
         "minimo": round(minimo * molt), "fv": round(fv * molt), "massimo": round(massimo * molt),
         "moltiplicatore": round(molt, 2), "roi": None, "margine": None, "semaforo": None,
+        "sottolinea": sottolinea,
     }
     prezzo = _a_float(listing_info.get("price"), None)
     if prezzo is not None and prezzo > 0:
@@ -1176,7 +1204,9 @@ def _riga_fair_value_testo(stima):
         parti.append(f"ROI {stima['roi']:+d}%")
     if stima["semaforo"]:
         parti.append(stima["semaforo"])
-    if stima["conf"] == "bassa":
+    if stima.get("sottolinea") and stima["conf"] == "bassa":
+        parti.append(f"{stima['sottolinea']}: stima del brand madre, indicativa")
+    elif stima["conf"] == "bassa":
         parti.append("indicativo")
     elif stima["conf"] == "stima":
         parti.append("stima di mercato")
@@ -1271,15 +1301,47 @@ def fv_registra_rapida(listing_info, url, scartato=False):
     })
 
 
-def fv_registra_gemini(listing_info, url, decisione, verdetto):
+def fv_classifica_campione(listing_info, decisione, occhio_json=None, legit=None):
+    """Decide se l'esito di Gemini e' un campione valido per imparare il
+    valore del brand dichiarato, e con quale chiave. Caso tipico da NON
+    imparare: titolo "cappotto Max Mara" ma nelle foto l'etichetta e' Weekend
+    (sottolinea): Gemini lo valuta molto meno, e quel prezzo non e' quello di
+    un Max Mara. Regole:
+     - relazione_brand deve essere esplicitamente "corrisponde" (letto
+       dall'etichetta) -> campione del brand dichiarato;
+     - "sottolinea_stessa_maison" con nome noto -> campione della SOTTOLINEA
+       (riga separata, es. "weekend max mara"), mai del brand madre;
+     - brand_estraneo, tessuto_non_brand, non_leggibile, Occhio assente,
+       legit "probabilmente_falso" o SKIP -> scartato (motivo registrato).
+    Ritorna (valido, chiave_brand, motivo_scarto)."""
+    o = occhio_json or {}
+    rel = o.get("relazione_brand")
+    sott = str(o.get("nome_sottolinea") or "").strip().lower()
+    brand = _brand_fair_value(listing_info)
+    if decisione == "SKIP":
+        return False, None, "skip"
+    if legit == "probabilmente_falso":
+        return False, None, "probabilmente falso"
+    if rel == "corrisponde" and not sott:
+        return (True, brand, None) if brand else (False, None, "brand fuori tabella")
+    if rel == "sottolinea_stessa_maison" and sott:
+        chiave = sott if (not brand or brand in sott) else f"{sott} {brand}"
+        return True, chiave, None
+    return False, None, f"relazione brand: {rel or 'Occhio assente'}"
+
+
+def fv_registra_gemini(listing_info, url, decisione, verdetto, occhio_json=None, legit=None):
     item_id = _estrai_item_id_da_url(url) if url else None
     if not item_id:
         return
     v = verdetto or {}
+    valido, chiave_brand, motivo = fv_classifica_campione(listing_info, decisione, occhio_json, legit)
     _fv_scrivi({
         "tipo": "gemini", "item_id": str(item_id), "decisione": decisione,
         "vendita": v.get("vendita_attesa"), "margine": v.get("margine"), "roi": v.get("roi"),
-        "n_comp_reali": v.get("n_comp_reali"),
+        "n_comp_reali": v.get("n_comp_reali"), "valido": valido, "chiave_brand": chiave_brand,
+        "motivo_scarto": motivo, "relazione": (occhio_json or {}).get("relazione_brand"),
+        "sottolinea": (occhio_json or {}).get("nome_sottolinea"), "legit": legit,
     })
     _fv_dopo_scrittura()
 
@@ -1330,13 +1392,17 @@ def fv_ricalibra(righe=None):
     campioni = {}
     for d in per_item.values():
         rap = d.get("rapida") or {}
-        brand, cat = rap.get("brand"), rap.get("categoria")
+        g = d.get("gemini") or {}
+        cat = rap.get("categoria")
+        # la chiave del brand viene dall'etichetta letta da Gemini (puo' essere
+        # una sottolinea), altrimenti da quella del titolo
+        brand = g.get("chiave_brand") if g.get("valido") else rap.get("brand")
         if not brand or not cat:
             continue
         molt = rap.get("molt") or 1.0
         chiave = f"{brand}|{cat}"
-        g = d.get("gemini") or {}
-        if g.get("vendita") and (g.get("n_comp_reali") or 0) >= 2 and g.get("decisione") != "SKIP":
+        if (g.get("valido") and g.get("vendita") and (g.get("n_comp_reali") or 0) >= 2
+                and g.get("decisione") != "SKIP"):
             campioni.setdefault(chiave, []).append((g["vendita"] / molt, _FV_PESO_GEMINI))
         u = d.get("umana")
         if u and u.get("stima"):
@@ -1409,6 +1475,13 @@ def fv_rapporto(righe=None):
     out = ["📊 Fair value: rapporto", f"Annunci in archivio: {tot} · con verdetto Gemini: {len(con_g)}"]
     if len(con_g) < 10:
         out.append("Pochi dati per trarre conclusioni: servono almeno 10-20 confronti.")
+    scartati = {}
+    for d in per_item.values():
+        g = d.get("gemini") or {}
+        if g and not g.get("valido") and g.get("motivo_scarto"):
+            scartati[g["motivo_scarto"]] = scartati.get(g["motivo_scarto"], 0) + 1
+    if scartati:
+        out.append("Esiti Gemini NON usati per imparare: " + ", ".join(f"{n} ({m})" for m, n in sorted(scartati.items(), key=lambda x: -x[1])))
     colori = {}
     for d in con_g:
         sem = d["rapida"].get("semaforo") or "senza stima"
@@ -10198,6 +10271,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
     fonte_visuale_riuscita = False
     forza_ricerca = None
     verdetto_calcolato = None
+    legit_cervello = None
 
     e_skip, motivo_skip = check_skip_pre_cervello(output_occhi, listing_info, occhio_json=occhio_json)
     if e_skip:
@@ -10383,6 +10457,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
 
         v, problemi = valida_payload_cervello(verdetto_json)
         stats_comp = classifica_provenienza_comp(v, pool_ricerca_grezzo)
+        legit_cervello = v.get("legit_verdetto")
         verdetto_calcolato = calcola_verdetto(v, prezzo_prodotto)
         decisione = verdetto_calcolato["decisione"]
         urgenza = verdetto_calcolato["urgenza"]
@@ -10577,7 +10652,8 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
         )
 
     try:
-        fv_registra_gemini(listing_info, url, decisione, verdetto_calcolato)
+        fv_registra_gemini(listing_info, url, decisione, verdetto_calcolato,
+                           occhio_json=occhio_json, legit=legit_cervello)
     except Exception:
         log.warning("Esito Gemini non archiviato:\n%s", traceback.format_exc())
     await _invia_risultato_telegram(
