@@ -1736,6 +1736,14 @@ def check_skip_pre_gemini(listing_info):
     if "stella mccartney" in brand and "adidas" in testo_completo:
         return True, "[LINEA/VARIANTE ESCLUSA PER BRAND] Stella McCartney collab Adidas (basso valore)."
 
+    # Richiesto dall'utente il 2026-10-01: le t-shirt Jacquemus vanno scartate sempre
+    # (basso margine/ROI per questa categoria su questo brand) -- il resto di Jacquemus
+    # (vestiti, maglieria, capispalla) continua a essere valutato normalmente.
+    if "jacquemus" in brand or "jacquemus" in titolo:
+        TSHIRT_KW = ("maglietta", "magliette", "t-shirt", "tshirt", "t shirt", "tee")
+        if any(kw in testo_completo for kw in TSHIRT_KW):
+            return True, "[LINEA/VARIANTE ESCLUSA PER BRAND] Jacquemus t-shirt esclusa su richiesta esplicita (basso margine)."
+
     if "yves saint laurent" in brand or "ysl" in brand or "saint laurent" in brand:
         camicie_kw = ["camicia", "camicie", "camicetta", "shirt", "chemise", "blusa", "camisa"]
         if any(kw in testo_completo for kw in camicie_kw):
