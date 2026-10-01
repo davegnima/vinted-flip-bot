@@ -3781,7 +3781,59 @@ _PROXY_STATS_RICHIESTE_TOTALI = [0]
 INTERVALLO_RIEPILOGO_PROXY = 40
 
 
-def _registra_esito_proxy(chiave, ok):
+# QUARANTENA AUTOMATICA PROXY (2026-10-01, utente: 21 proxy su 46 bloccati da
+# Vinted con 403, escluderli a mano via PROXY_ESCLUSI a ogni blocco e' un lavoro
+# continuo). Un proxy che prende PROXY_QUARANTENA_SOGLIA 403/429 di fila esce
+# dalla rotazione per PROXY_QUARANTENA_ORE ore, poi viene riprovato: se al primo
+# tentativo fallisce di nuovo rientra subito in quarantena, se funziona torna
+# normale. Solo 403/429 contano (segnale di blocco): timeout, 404 (annuncio
+# rimosso) e altri errori no. Se TUTTI i proxy sono in quarantena la rotazione
+# ignora il filtro: meglio provare un proxy sospetto che restare senza.
+PROXY_QUARANTENA_SOGLIA = max(1, int(os.environ.get("PROXY_QUARANTENA_SOGLIA", "3")))
+PROXY_QUARANTENA_SECONDI = float(os.environ.get("PROXY_QUARANTENA_ORE", "3")) * 3600
+_PROXY_BLOCCHI_DI_FILA = {}
+_PROXY_QUARANTENA_FINO = {}
+
+
+def _proxy_in_quarantena(chiave):
+    scadenza = _PROXY_QUARANTENA_FINO.get(chiave)
+    if scadenza is None:
+        return False
+    if time.time() >= scadenza:
+        del _PROXY_QUARANTENA_FINO[chiave]
+        # Primo tentativo dopo la pausa: un solo altro blocco lo rimette fuori.
+        _PROXY_BLOCCHI_DI_FILA[chiave] = PROXY_QUARANTENA_SOGLIA - 1
+        log.info("Proxy [%s] rientra dalla quarantena, riprovo.",
+                 _ETICHETTA_PER_CHIAVE_PROXY.get(chiave) or _etichetta_proxy(chiave))
+        return False
+    return True
+
+
+def _registra_blocco_proxy(chiave, bloccato):
+    """Aggiorna il contatore di blocchi consecutivi. bloccato=True per un
+    403/429, False per un successo (azzera il contatore)."""
+    if not bloccato:
+        _PROXY_BLOCCHI_DI_FILA[chiave] = 0
+        return
+    n = _PROXY_BLOCCHI_DI_FILA.get(chiave, 0) + 1
+    _PROXY_BLOCCHI_DI_FILA[chiave] = n
+    if n >= PROXY_QUARANTENA_SOGLIA and chiave not in _PROXY_QUARANTENA_FINO:
+        _PROXY_QUARANTENA_FINO[chiave] = time.time() + PROXY_QUARANTENA_SECONDI
+        log.warning(
+            "Proxy [%s] in QUARANTENA per %.0fh dopo %d blocchi (403/429) di fila -- "
+            "%d proxy in quarantena su %d.",
+            _ETICHETTA_PER_CHIAVE_PROXY.get(chiave) or _etichetta_proxy(chiave),
+            PROXY_QUARANTENA_SECONDI / 3600, n, len(_PROXY_QUARANTENA_FINO), len(_CLIENT_VINTED_POOL),
+        )
+
+
+def _registra_esito_proxy(chiave, ok, bloccato=False):
+    # Un successo azzera i blocchi di fila; i fallimenti NON da blocco
+    # (timeout, 404...) non toccano il contatore.
+    if ok:
+        _registra_blocco_proxy(chiave, False)
+    elif bloccato:
+        _registra_blocco_proxy(chiave, True)
     stats = _PROXY_STATS.setdefault(chiave, {"ok": 0, "falliti": 0})
     stats["ok" if ok else "falliti"] += 1
     _PROXY_STATS_RICHIESTE_TOTALI[0] += 1
@@ -4222,7 +4274,14 @@ def _prossimo_indice_vinted():
     proxy) -- estratto da _prossimo_client_vinted il 2026-09-21 per poter
     ottenere ANCHE la chiave di rate-limit (_CLIENT_VINTED_POOL_KEYS[i])
     corrispondente al client scelto, vedi _vinted_get_con_retry."""
-    i = _proxy_indice_rotazione[0] % len(_CLIENT_VINTED_POOL)
+    n = len(_CLIENT_VINTED_POOL)
+    for _ in range(n):
+        i = _proxy_indice_rotazione[0] % n
+        _proxy_indice_rotazione[0] += 1
+        if not _proxy_in_quarantena(_CLIENT_VINTED_POOL_KEYS[i]):
+            return i
+    # Tutti in quarantena: si ignora il filtro invece di restare senza proxy.
+    i = _proxy_indice_rotazione[0] % n
     _proxy_indice_rotazione[0] += 1
     return i
 
@@ -4486,7 +4545,10 @@ async def _vinted_get_con_retry(url, timeout=15, max_retries=3, headers_extra=No
             return resp
         except Exception as e:
             ultimo_errore = e
-            _registra_esito_proxy(chiave_rate_limit, ok=False)
+            _registra_esito_proxy(
+                chiave_rate_limit, ok=False,
+                bloccato=isinstance(e, httpx.HTTPStatusError) and e.response.status_code in (403, 429),
+            )
             log.info("Vinted [%s] fallito (tentativo %d/%d): %s -- %s", etichetta, tentativo, max_retries, e, url)
             if tentativo < max_retries:
                 # Su 403 (probabile rate-limit) attende piu' a lungo del
