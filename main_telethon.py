@@ -703,7 +703,6 @@ VINTED_BRAND_IDS = {
     # combaciavano tutti e 7, da qui la fiducia nel resto del file.
     "prada": "3573",
     "fendi": "1189",
-    "maje": "116",
     "jacquemus": "168278",
     "acne studios": "180798",
     "ganni": "170650",
@@ -712,21 +711,19 @@ VINTED_BRAND_IDS = {
     # troppo prudenti su Maje/Sandro ("hanno prezzi alti su Vestiaire") e ha scelto di
     # allargare il watch invece di pre-filtrare su stime incerte -- "mettiamo tutti e
     # vediamo come va con un po' di notifiche". Stessa fonte (teddy-vltn/vinted-dataset).
-    "maje": "116",
     "acne studios": "180798",
     "ganni": "170650",
-    "john smedley": "200326",
     "drumohr": "588278",
     "barena venezia": "703380", "barena": "703380",
-    "romeo gigli": "64844",
-    "gianfranco ferré": "1933", "gianfranco ferre": "1933",
-    "alberta ferretti": "40245",
     # Comme des Garçons: unico ID di questo giro NON incrociato con uno dei 7 gia'
     # verificati direttamente da Vinted -- controllare che l'URL risultante mostri
     # davvero Comme des Garçons prima di fidarsene.
     "comme des garçons": "16352233", "comme des garcons": "16352233",
 }
 # ESCLUSIONI VOLUTE (non mappare per evitare falsi positivi o capi di scarso valore):
+# - Maje, John Smedley, Alberta Ferretti, Romeo Gigli, Gianfranco Ferre: rimossi il 2026-10-01
+#   dopo aver analizzato i verdetti reali (~7h di log): zero annunci sopra i 50 EUR di margine
+#   (Maje 0/22, margine medio ~ -1 EUR). Non sono un errore: dati alla mano non rendono.
 # - "céline"/"celine": l'utente segnala troppo rumore su Vinted -- molti annunci di altri
 #   brand vengono taggati per errore come Céline dai venditori, quindi la ricerca comp per
 #   brand_id risulterebbe inquinata. Scelta esplicita di non mapparlo, non una dimenticanza.
