@@ -10126,6 +10126,17 @@ async def _aggiorna_stato_scheda(stato, nuovo_stato):
         log.warning("Aggiornamento riga di stato della scheda non riuscito:\n%s", traceback.format_exc())
 
 
+def _log_esito(listing_info, esito, **campi):
+    """Una riga greppable per annuncio con il brand del tracker (richiesto
+    dall'utente il 2026-10-01) per l'analisi giornaliera per brand dai log."""
+    try:
+        extra = "".join(f" | {k}={v}" for k, v in campi.items() if v not in (None, ""))
+        log.info("ESITO | brand='%s' | titolo='%s' | esito=%s%s",
+                 (listing_info.get("brand") or "n/d"), listing_info.get("title"), esito, extra)
+    except Exception:
+        pass
+
+
 async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricevuto_bot=None, stato=None,
                           semaforo=None):
     permesso = _PermessoAnalisi(semaforo) if semaforo is not None else None
@@ -10185,6 +10196,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
                 "FILTRO PRE-SCRAPE ATTIVATO (silenzioso, no notifica, NESSUNA richiesta a Vinted): '%s'. Motivo: %s",
                 listing_info.get("title"), motivo_skip_ante,
             )
+            _log_esito(listing_info, "SKIP_PRE_SCRAPE", motivo=(motivo_skip_ante or "")[:80])
             return
 
         # Guardaroba venditore escluso qui e lanciato in parallelo alle foto
@@ -10223,6 +10235,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
                      listing_info.get("title"), motivo_skip_pre,
                      f" — Tempi: {' · '.join(pezzi_tempi_skip)}" if pezzi_tempi_skip else "",
                      " · ".join(_formatta_tappe_pipeline(t_tappe)))
+            _log_esito(listing_info, "SKIP_PRE_GEMINI", motivo=(motivo_skip_pre or "")[:80])
             return
 
         # FAIR VALUE A PRIORI (vedi FAIR_VALUE_TABELLA): istantaneo, nessuna
@@ -10241,6 +10254,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             if FAIR_VALUE_FILTRA:
                 log.info("FILTRO FAIR VALUE ATTIVATO (silenzioso, no notifica): '%s'. Motivo: %s",
                          listing_info.get("title"), motivo_skip_fv)
+                _log_esito(listing_info, "SKIP_FAIR_VALUE", motivo=(motivo_skip_fv or "")[:80])
                 return
             log.info("FAIR VALUE PROVA (nessuno scarto, FAIR_VALUE_FILTRA=0): avrebbe scartato '%s'. Motivo: %s",
                      listing_info.get("title"), motivo_skip_fv)
@@ -10431,6 +10445,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             log.info("FALSO CONCLAMATO -- output occhi grezzo per '%s':\n%s", listing_info.get("title"), output_occhi)
         output_finale = build_skip_report(listing_info, motivo_skip, output_occhi_testo=output_occhi)
         scenario_usato = "SKIP"
+        _log_esito(listing_info, "SKIP_PRE_CERVELLO", motivo=motivo_skip[:80])
     else:
         titolo_annuncio = listing_info.get("title") or ""
         brand_annuncio = listing_info.get("brand") or ""
@@ -10597,6 +10612,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             # calcolare. Si avvisa invece di restare in silenzio, perche' un
             # annuncio valutato a meta' e' peggio di uno non valutato.
             log.warning("Cervello fallito per '%s': %s", listing_info.get("title"), errore_cervello)
+            _log_esito(listing_info, "ERRORE_CERVELLO")
             await telegram_send_message(
                 TELEGRAM_OWNER_CHAT_ID,
                 f"⚠️ *Valutazione non completata* — {listing_info.get('title')}\n"
@@ -10625,6 +10641,12 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             f"{verdetto_calcolato['roi']:.0f}%" if verdetto_calcolato["roi"] is not None else "n/d",
             len(verdetto_calcolato["comp_usati"]), stats_comp["n_memoria"],
             verdetto_calcolato["limiti_applicati"] or "nessuno",
+        )
+        _log_esito(
+            listing_info, decisione,
+            margine=f"{verdetto_calcolato['margine']:.0f}" if verdetto_calcolato["margine"] is not None else None,
+            roi=f"{verdetto_calcolato['roi']:.0f}%" if verdetto_calcolato["roi"] is not None else None,
+            legit=legit_cervello,
         )
 
     e_compra = decisione in ("COMPRA", "TRATTA", "CHIEDI ALTRE FOTO")
