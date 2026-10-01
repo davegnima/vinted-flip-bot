@@ -695,7 +695,7 @@ VINTED_BRAND_IDS = {
     "sacai": "369700",
     "kiko kostadinov": "5821136",
     "sandro": "115",  # verificato il 2026-09-28 dalla pagina pubblica "brand popolari" di Vinted
-    # I sei brand sotto sono stati aggiunti il 2026-10-01, richiesti dall'utente come nuovi
+    # I brand sotto sono stati aggiunti il 2026-10-01, richiesti dall'utente come nuovi
     # watch (capispalla contemporaneo + lusso "che fa rumore" con rischio fake gestibile).
     # ID presi da teddy-vltn/vinted-dataset (brand.json, dataset statico su GitHub, non una
     # richiesta a Vinted) e incrociati con 7 ID verificati in precedenza direttamente da
@@ -704,12 +704,15 @@ VINTED_BRAND_IDS = {
     "prada": "3573",
     "fendi": "1189",
     "maje": "116",
-    "céline": "1443", "celine": "1443",
     "jacquemus": "168278",
     "acne studios": "180798",
     "ganni": "170650",
+    "the attico": "1653053",  # id dato direttamente dall'utente il 2026-10-01
 }
 # ESCLUSIONI VOLUTE (non mappare per evitare falsi positivi o capi di scarso valore):
+# - "céline"/"celine": l'utente segnala troppo rumore su Vinted -- molti annunci di altri
+#   brand vengono taggati per errore come Céline dai venditori, quindi la ricerca comp per
+#   brand_id risulterebbe inquinata. Scelta esplicita di non mapparlo, non una dimenticanza.
 # - "saint laurent" (post-2012, id 83122): altissimo rischio fake, preferiamo concentrarci su YSL vintage.
 # - "McQ" (id 849677): diffusion line di Alexander McQueen, valore di mercato molto inferiore.
 # - "See by Chloé" (id 1472883): diffusion line di Chloé, satura e con basso ROI.
