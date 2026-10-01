@@ -695,6 +695,19 @@ VINTED_BRAND_IDS = {
     "sacai": "369700",
     "kiko kostadinov": "5821136",
     "sandro": "115",  # verificato il 2026-09-28 dalla pagina pubblica "brand popolari" di Vinted
+    # I sei brand sotto sono stati aggiunti il 2026-10-01, richiesti dall'utente come nuovi
+    # watch (capispalla contemporaneo + lusso "che fa rumore" con rischio fake gestibile).
+    # ID presi da teddy-vltn/vinted-dataset (brand.json, dataset statico su GitHub, non una
+    # richiesta a Vinted) e incrociati con 7 ID verificati in precedenza direttamente da
+    # Vinted (Gucci, Burberry, Louis Vuitton, Dior, Ralph Lauren, Michael Kors, Sandro):
+    # combaciavano tutti e 7, da qui la fiducia nel resto del file.
+    "prada": "3573",
+    "fendi": "1189",
+    "maje": "116",
+    "céline": "1443", "celine": "1443",
+    "jacquemus": "168278",
+    "acne studios": "180798",
+    "ganni": "170650",
 }
 # ESCLUSIONI VOLUTE (non mappare per evitare falsi positivi o capi di scarso valore):
 # - "saint laurent" (post-2012, id 83122): altissimo rischio fake, preferiamo concentrarci su YSL vintage.
