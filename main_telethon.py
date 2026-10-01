@@ -258,7 +258,7 @@ MAX_GALLERY_PHOTOS = 10
 # inequivocabile quale codice sta girando su Railway dopo un deploy, senza
 # doverlo dedurre dai timestamp dei log. Aggiorna la data quando fai una
 # modifica significativa (facoltativo, ma utile per il debug futuro).
-BOT_VERSION = "2026-09-30-fair-value-tutti-i-brand"
+BOT_VERSION = "2026-10-01-fair-value-apprendimento"
 
 # ---------------------------------------------------------------------------
 # PARAMETRI ECONOMICI -- l'unica fonte di verita' per TUTTI i calcoli
@@ -1104,6 +1104,18 @@ def _brand_fair_value(listing_info):
     return None
 
 
+def _moltiplicatore_fair_value(listing_info):
+    """Correzione condizione x materiale rispetto alla base 'buone condizioni'."""
+    molt = 1.0
+    condizione = (listing_info.get("condition") or "").lower()
+    for chiave, m in FAIR_VALUE_MOLT_CONDIZIONE:
+        if chiave in condizione:
+            molt *= m
+            break
+    materiale = scegli_materiale_per_ricerca(listing_info.get("material_raw"))
+    return molt * FAIR_VALUE_MOLT_MATERIALE.get(materiale, 1.0)
+
+
 def stima_fair_value(listing_info):
     """Ritorna None se brand o tipo di capo non sono in tabella, altrimenti
     dict con minimo/fair value/massimo gia' corretti per condizione e
@@ -1113,6 +1125,10 @@ def stima_fair_value(listing_info):
         return None
     categoria = estrai_categoria_da_titolo(listing_info.get("title") or "", listing_info.get("description"))
     voce = FAIR_VALUE_TABELLA.get(f"{brand}|{categoria}") if categoria else None
+    appreso = FAIR_VALUE_APPRESO.get(f"{brand}|{categoria}") if categoria else None
+    if appreso:
+        # la tabella appresa (da Gemini e dalle tue stime) ha la precedenza
+        voce = (appreso["lo"], appreso["fv"], appreso["hi"], appreso["conf"], appreso["n"], voce[5] if voce else 0)
     if not voce and categoria == "borsa" and brand in FAIR_VALUE_BORSE:
         minimo, fv, massimo = FAIR_VALUE_BORSE[brand]
         voce = (minimo, fv, massimo, "stima", 0, 0)
@@ -1122,14 +1138,7 @@ def stima_fair_value(listing_info):
     if not voce:
         return None
     minimo, fv, massimo, conf, n_comp, n_reali = voce
-    molt = 1.0
-    condizione = (listing_info.get("condition") or "").lower()
-    for chiave, m in FAIR_VALUE_MOLT_CONDIZIONE:
-        if chiave in condizione:
-            molt *= m
-            break
-    materiale = scegli_materiale_per_ricerca(listing_info.get("material_raw"))
-    molt *= FAIR_VALUE_MOLT_MATERIALE.get(materiale, 1.0)
+    molt = _moltiplicatore_fair_value(listing_info)
     out = {
         "brand": brand, "categoria": categoria, "conf": conf, "n_comp": n_comp, "n_reali": n_reali,
         "minimo": round(minimo * molt), "fv": round(fv * molt), "massimo": round(massimo * molt),
@@ -1148,6 +1157,15 @@ def stima_fair_value(listing_info):
         else:
             out["semaforo"] = "🔴"
     return out
+
+
+def _riga_confronto_fair_value(stima, verdetto):
+    """Riga nel verdetto: giudizio rapido accanto alla vendita stimata da
+    Gemini (con la newline finale, oppure stringa vuota)."""
+    if not stima or not verdetto or not verdetto.get("vendita_attesa"):
+        return ""
+    sem = stima.get("semaforo") or ""
+    return f"📊 Rapido ~{stima['fv']} € {sem} · Gemini ~{verdetto['vendita_attesa']:.0f} €\n"
 
 
 def _riga_fair_value_testo(stima):
@@ -1176,6 +1194,253 @@ def check_skip_fair_value(listing_info):
                       f"contro prezzo {listing_info.get('price')} € (ROI {stima['roi']:+d}%, confidenza {stima['conf']})")
     return False, None
 
+
+
+# ---------------------------------------------------------------------------
+# APPRENDIMENTO DEL FAIR VALUE (richiesto dall'utente il 2026-10-01)
+# ---------------------------------------------------------------------------
+# Il bot confronta il giudizio rapido (tabella) con quello di Gemini con le
+# foto e con le tue stime umane, e corregge la tabella da solo.
+#  - Archivio: righe JSON in FAIR_VALUE_LOG_FILE (volume Railway /data). Tre
+#    tipi: "rapida" (stima al momento dell'annuncio), "gemini" (esito del
+#    verdetto), "umana" (tua stima, rispondendo con un numero alla scheda).
+#  - Ricalibrazione: per ogni "brand|categoria" la nuova stima e' la media
+#    pesata tra il valore di partenza (peso 4 se alta, 3 media, 2 bassa, 1.5
+#    stima) e la MEDIANA PESATA dei campioni (Gemini peso 1, tu peso 3),
+#    riportati alla base "buone condizioni" dividendo per il moltiplicatore.
+#    Limitata a 0.3x-3x del valore di partenza. Gemini conta solo se ha
+#    usato almeno 2 comp reali; la tua stima conta sempre.
+#  - Confidenza: peso campioni >= 12 alta, >= 5 media, sotto resta quella di
+#    partenza. Il filtro (FAIR_VALUE_FILTRA) agisce solo su alta/media.
+FAIR_VALUE_LOG_FILE = os.environ.get("FAIR_VALUE_LOG_FILE", "/data/fair_value_log.jsonl")
+FAIR_VALUE_APPRESO_FILE = os.environ.get("FAIR_VALUE_APPRESO_FILE", "/data/fair_value_appreso.json")
+FAIR_VALUE_APPRESO = {}
+_FV_PESO_PARTENZA = {"alta": 4.0, "media": 3.0, "bassa": 2.0, "stima": 1.5}
+_FV_PESO_GEMINI = 1.0
+_FV_PESO_UMANO = 3.0
+_FV_NUOVE_RIGHE_PER_RICALCOLO = 10
+_fv_righe_da_ricalcolo = [0]
+
+
+def _fv_scrivi(record):
+    """Aggiunge una riga all'archivio. Mai bloccante."""
+    try:
+        cartella = os.path.dirname(FAIR_VALUE_LOG_FILE)
+        if cartella:
+            os.makedirs(cartella, exist_ok=True)
+        with open(FAIR_VALUE_LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": int(time.time()), **record}, ensure_ascii=False) + "\n")
+        return True
+    except Exception:
+        log.warning("Archivio fair value non scritto:\n%s", traceback.format_exc())
+        return False
+
+
+def _fv_leggi():
+    righe = []
+    try:
+        with open(FAIR_VALUE_LOG_FILE, encoding="utf-8") as f:
+            for riga in f:
+                riga = riga.strip()
+                if riga:
+                    try:
+                        righe.append(json.loads(riga))
+                    except ValueError:
+                        pass
+    except FileNotFoundError:
+        pass
+    except Exception:
+        log.warning("Archivio fair value non letto:\n%s", traceback.format_exc())
+    return righe
+
+
+def fv_registra_rapida(listing_info, url, scartato=False):
+    """Giudizio rapido al momento dell'annuncio (anche senza riga in tabella:
+    servono per imparare le combinazioni nuove)."""
+    item_id = _estrai_item_id_da_url(url) if url else None
+    if not item_id:
+        return
+    stima = listing_info.get("fair_value")
+    _fv_scrivi({
+        "tipo": "rapida", "item_id": str(item_id), "brand": _brand_fair_value(listing_info),
+        "categoria": estrai_categoria_da_titolo(listing_info.get("title") or "", listing_info.get("description")),
+        "titolo": listing_info.get("title"), "prezzo": _a_float(listing_info.get("price"), None),
+        "condizione": listing_info.get("condition"), "molt": round(_moltiplicatore_fair_value(listing_info), 3),
+        "fv": stima["fv"] if stima else None, "conf": stima["conf"] if stima else None,
+        "semaforo": stima["semaforo"] if stima else None, "scartato": bool(scartato),
+    })
+
+
+def fv_registra_gemini(listing_info, url, decisione, verdetto):
+    item_id = _estrai_item_id_da_url(url) if url else None
+    if not item_id:
+        return
+    v = verdetto or {}
+    _fv_scrivi({
+        "tipo": "gemini", "item_id": str(item_id), "decisione": decisione,
+        "vendita": v.get("vendita_attesa"), "margine": v.get("margine"), "roi": v.get("roi"),
+        "n_comp_reali": v.get("n_comp_reali"),
+    })
+    _fv_dopo_scrittura()
+
+
+def fv_registra_umana(item_id, valore):
+    _fv_scrivi({"tipo": "umana", "item_id": str(item_id), "stima": float(valore)})
+    _fv_dopo_scrittura()
+
+
+def _fv_dopo_scrittura():
+    _fv_righe_da_ricalcolo[0] += 1
+    if _fv_righe_da_ricalcolo[0] >= _FV_NUOVE_RIGHE_PER_RICALCOLO:
+        _fv_righe_da_ricalcolo[0] = 0
+        try:
+            fv_ricalibra()
+        except Exception:
+            log.warning("Ricalibrazione fair value fallita:\n%s", traceback.format_exc())
+
+
+def fv_unisci(righe):
+    """Una riga per annuncio con rapida + gemini + umana."""
+    per_item = {}
+    for r in righe:
+        d = per_item.setdefault(r.get("item_id"), {})
+        if r.get("tipo") == "rapida":
+            d["rapida"] = r
+        elif r.get("tipo") == "gemini":
+            d["gemini"] = r
+        elif r.get("tipo") == "umana":
+            d["umana"] = r
+    return per_item
+
+
+def _mediana_pesata(coppie):
+    coppie = sorted(coppie)
+    totale = sum(w for _, w in coppie)
+    cumulo = 0.0
+    for x, w in coppie:
+        cumulo += w
+        if cumulo >= totale / 2:
+            return x
+    return coppie[-1][0]
+
+
+def fv_ricalibra(righe=None):
+    """Ricalcola FAIR_VALUE_APPRESO dall'archivio e lo salva su disco."""
+    per_item = fv_unisci(righe if righe is not None else _fv_leggi())
+    campioni = {}
+    for d in per_item.values():
+        rap = d.get("rapida") or {}
+        brand, cat = rap.get("brand"), rap.get("categoria")
+        if not brand or not cat:
+            continue
+        molt = rap.get("molt") or 1.0
+        chiave = f"{brand}|{cat}"
+        g = d.get("gemini") or {}
+        if g.get("vendita") and (g.get("n_comp_reali") or 0) >= 2 and g.get("decisione") != "SKIP":
+            campioni.setdefault(chiave, []).append((g["vendita"] / molt, _FV_PESO_GEMINI))
+        u = d.get("umana")
+        if u and u.get("stima"):
+            campioni.setdefault(chiave, []).append((u["stima"] / molt, _FV_PESO_UMANO))
+    nuovo = {}
+    for chiave, lista in campioni.items():
+        peso = sum(w for _, w in lista)
+        mediana = _mediana_pesata(lista)
+        voce = FAIR_VALUE_TABELLA.get(chiave)
+        if voce:
+            lo0, fv0, hi0, conf0 = voce[0], voce[1], voce[2], voce[3]
+        else:
+            brand, cat = chiave.split("|")
+            livello = FAIR_VALUE_LIVELLO_BRAND.get(brand)
+            fattore = FAIR_VALUE_FATTORE_CATEGORIA.get(cat)
+            if livello and fattore:
+                fv0 = livello * fattore
+                lo0, hi0, conf0 = fv0 * 0.6, fv0 * 1.7, "stima"
+            else:
+                fv0 = lo0 = hi0 = conf0 = None
+        if fv0:
+            w0 = _FV_PESO_PARTENZA.get(conf0, 2.0)
+            fv = (w0 * fv0 + peso * mediana) / (w0 + peso)
+            fv = max(0.3 * fv0, min(3.0 * fv0, fv))
+            scala = fv / fv0
+            lo, hi = lo0 * scala, hi0 * scala
+        else:
+            if peso < 3:
+                continue
+            fv, lo, hi, conf0 = mediana, mediana * 0.6, mediana * 1.7, "stima"
+        da_peso = "alta" if peso >= 12 else "media" if peso >= 5 else None
+        ordine = {"stima": 0, "bassa": 1, "media": 2, "alta": 3}
+        conf = max((c for c in (conf0, da_peso) if c), key=lambda c: ordine.get(c, 0))
+        nuovo[chiave] = {"lo": round(lo), "fv": round(fv), "hi": round(hi), "conf": conf, "n": len(lista)}
+    FAIR_VALUE_APPRESO.clear()
+    FAIR_VALUE_APPRESO.update(nuovo)
+    try:
+        cartella = os.path.dirname(FAIR_VALUE_APPRESO_FILE)
+        if cartella:
+            os.makedirs(cartella, exist_ok=True)
+        with open(FAIR_VALUE_APPRESO_FILE, "w", encoding="utf-8") as f:
+            json.dump(nuovo, f, ensure_ascii=False, indent=1)
+    except Exception:
+        log.warning("Tabella appresa non salvata:\n%s", traceback.format_exc())
+    log.info("Fair value ricalibrato: %d righe apprese (%d annunci in archivio)", len(nuovo), len(per_item))
+    return nuovo
+
+
+def fv_carica_appreso():
+    try:
+        with open(FAIR_VALUE_APPRESO_FILE, encoding="utf-8") as f:
+            dati = json.load(f)
+        FAIR_VALUE_APPRESO.clear()
+        FAIR_VALUE_APPRESO.update(dati)
+    except FileNotFoundError:
+        pass
+    except Exception:
+        log.warning("Tabella appresa non letta:\n%s", traceback.format_exc())
+
+
+_DECISIONI_POSITIVE = ("COMPRA", "TRATTA")
+
+
+def fv_rapporto(righe=None):
+    """Testo del rapporto di confronto giudizio rapido / Gemini / tua stima."""
+    per_item = fv_unisci(righe if righe is not None else _fv_leggi())
+    tot = len(per_item)
+    con_g = [d for d in per_item.values() if d.get("rapida") and d.get("gemini")
+             and d["gemini"].get("decisione") not in (None, "SKIP")]
+    out = ["📊 Fair value: rapporto", f"Annunci in archivio: {tot} · con verdetto Gemini: {len(con_g)}"]
+    if len(con_g) < 10:
+        out.append("Pochi dati per trarre conclusioni: servono almeno 10-20 confronti.")
+    colori = {}
+    for d in con_g:
+        sem = d["rapida"].get("semaforo") or "senza stima"
+        colori.setdefault(sem, []).append(d["gemini"].get("decisione") in _DECISIONI_POSITIVE)
+    if colori:
+        out.append("")
+        out.append("Semaforo rapido -> Gemini dice COMPRA o TRATTA:")
+        for sem in ("🟢", "🟡", "🔴", "⚪", "senza stima"):
+            if sem in colori:
+                lista = colori[sem]
+                out.append(f"{sem} {len(lista)} annunci, {sum(lista)} positivi ({sum(lista) * 100 // len(lista)}%)")
+    rossi = colori.get("🔴", [])
+    if rossi:
+        falsi = sum(rossi)
+        out.append("")
+        out.append(f"Falsi scarti se il filtro fosse acceso: {falsi} su {len(rossi)} rossi "
+                   f"({falsi * 100 // len(rossi)}%). Risparmio: {len(rossi)} chiamate su {len(con_g)} "
+                   f"({len(rossi) * 100 // len(con_g)}%).")
+        out.append("Filtro consigliato solo con falsi scarti sotto il 5% su almeno 30 rossi.")
+    rapporti = [d["rapida"]["fv"] / d["gemini"]["vendita"] for d in con_g
+                if d["rapida"].get("fv") and d["gemini"].get("vendita") and (d["gemini"].get("n_comp_reali") or 0) >= 2]
+    if rapporti:
+        out.append("")
+        out.append(f"Fair value rapido / vendita stimata da Gemini: mediana {statistics.median(rapporti):.2f} su {len(rapporti)} annunci (1.00 = identici).")
+    umane = [d for d in per_item.values() if d.get("umana")]
+    if umane:
+        rr = [d["rapida"]["fv"] / d["umana"]["stima"] for d in umane if d.get("rapida", {}).get("fv")]
+        out.append(f"Tue stime: {len(umane)}" + (f" · fair value / tua stima: mediana {statistics.median(rr):.2f}" if rr else ""))
+    out.append("")
+    out.append(f"Righe apprese dalla tabella: {len(FAIR_VALUE_APPRESO)}")
+    out.append("Per darmi una stima: rispondi alla scheda (o al verdetto) con un numero, es. 55.")
+    return "\n".join(out)
 
 # ---------------------------------------------------------------------------
 # FILTRO PRE-GEMINI
@@ -9747,6 +10012,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             log.warning("Fair value a priori non calcolato:\n%s", traceback.format_exc())
             listing_info["fair_value"] = None
             e_skip_fv, motivo_skip_fv = False, None
+        fv_registra_rapida(listing_info, url, scartato=bool(e_skip_fv and FAIR_VALUE_FILTRA))
         if e_skip_fv:
             if FAIR_VALUE_FILTRA:
                 log.info("FILTRO FAIR VALUE ATTIVATO (silenzioso, no notifica): '%s'. Motivo: %s",
@@ -10304,11 +10570,16 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
         header = (
             riga_verdetto_con_brand + "\n"
             + (riga_margine + "\n" if riga_margine else "")
+            + (_riga_confronto_fair_value(listing_info.get("fair_value"), verdetto_calcolato) or "")
             + f"🆕 *{_escapa_markdown_legacy(listing_info.get('title'))}*"
             + info_foto
             + f"\n{url or ''}\n{'—' * 20}\n"
         )
 
+    try:
+        fv_registra_gemini(listing_info, url, decisione, verdetto_calcolato)
+    except Exception:
+        log.warning("Esito Gemini non archiviato:\n%s", traceback.format_exc())
     await _invia_risultato_telegram(
         listing_info, url, photo_bytes_list,
         header, output_finale, decisione, e_compra,
@@ -10604,6 +10875,78 @@ async def on_comando_test_visuale(event):
             pass
 
 
+# ---------------------------------------------------------------------------
+# STIMA UMANA E RAPPORTO FAIR VALUE
+# ---------------------------------------------------------------------------
+_RE_STIMA_UMANA = re.compile(r"^\s*(?:stima\s*)?(\d{1,5}(?:[.,]\d{1,2})?)\s*(?:€|eur|euro)?\s*$", re.IGNORECASE)
+
+
+def _id_utente_del_bot():
+    try:
+        return int(str(TELEGRAM_BOT_TOKEN).split(":")[0])
+    except (ValueError, TypeError):
+        return None
+
+
+def _url_annuncio_da_messaggio(msg):
+    """URL Vinted di un messaggio del bot: dal testo (verdetto) o dal
+    bottone 'Apri su Vinted' (scheda)."""
+    url = extract_url_from_text(getattr(msg, "raw_text", "") or "")
+    if url:
+        return url
+    for riga in (getattr(msg, "buttons", None) or []):
+        for bottone in riga:
+            candidato = getattr(bottone, "url", None)
+            if candidato and "/items/" in candidato:
+                return candidato
+    return None
+
+
+@client.on(events.NewMessage(outgoing=True))
+async def on_stima_umana(event):
+    """Rispondi alla scheda (o al verdetto) del bot con un numero: e' la tua
+    stima di vendita reale, registrata come campione ad alto peso."""
+    try:
+        if not event.is_reply:
+            return
+        m = _RE_STIMA_UMANA.match(event.raw_text or "")
+        if not m:
+            return
+        originale = await event.get_reply_message()
+        bot_id = _id_utente_del_bot()
+        if not originale or bot_id is None or originale.sender_id != bot_id:
+            return
+        url = _url_annuncio_da_messaggio(originale)
+        item_id = _estrai_item_id_da_url(url) if url else None
+        if not item_id:
+            await telegram_send_message(
+                TELEGRAM_OWNER_CHAT_ID,
+                "⚠️ Non trovo il link dell'annuncio in quel messaggio: rispondi alla scheda o al verdetto.",
+                disable_notification=True)
+            return
+        valore = float(m.group(1).replace(",", "."))
+        fv_registra_umana(item_id, valore)
+        d = fv_unisci(_fv_leggi()).get(str(item_id), {})
+        pezzi = [f"✅ Stima registrata: {valore:.0f} €"]
+        rap, gem = d.get("rapida") or {}, d.get("gemini") or {}
+        if rap.get("fv"):
+            pezzi.append(f"giudizio rapido {rap['fv']} €")
+        if gem.get("vendita"):
+            pezzi.append(f"Gemini {gem['vendita']:.0f} €")
+        await telegram_send_message(TELEGRAM_OWNER_CHAT_ID, " · ".join(pezzi), disable_notification=True)
+    except Exception:
+        log.error("Errore nella stima umana:\n%s", traceback.format_exc())
+
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'(?i)^/report_?fv\b'))
+async def on_comando_report_fv(event):
+    try:
+        for pezzo in _spezza_per_telegram(fv_rapporto()):
+            await event.respond(pezzo)
+    except Exception:
+        log.error("Errore nel comando /report_fv:\n%s", traceback.format_exc())
+
+
 URL_TEST_PROXY_DEFAULT = "https://www.vinted.it/catalog?order=newest_first"
 
 
@@ -10788,6 +11131,11 @@ async def main():
         "calcolato da campi tipizzati" if OCCHIO_OUTPUT_JSON else "da match testuale",
     )
     await inizializza_client_http()
+    try:
+        fv_carica_appreso()
+        fv_ricalibra()
+    except Exception:
+        log.warning("Fair value appreso non caricato:\n%s", traceback.format_exc())
     if not ANALISI_GEMINI_ATTIVA:
         log.warning("ANALISI GEMINI IN PAUSA (ANALISI_GEMINI=0): arrivera' solo la galleria, nessun verdetto.")
         try:
