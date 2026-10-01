@@ -694,7 +694,6 @@ VINTED_BRAND_IDS = {
     "boris bidjan saberi": "484649", "bbs": "484649",
     "sacai": "369700",
     "kiko kostadinov": "5821136",
-    "sandro": "115",  # verificato il 2026-09-28 dalla pagina pubblica "brand popolari" di Vinted
     # I brand sotto sono stati aggiunti il 2026-10-01, richiesti dall'utente come nuovi
     # watch (capispalla contemporaneo + lusso "che fa rumore" con rischio fake gestibile).
     # ID presi da teddy-vltn/vinted-dataset (brand.json, dataset statico su GitHub, non una
@@ -724,6 +723,8 @@ VINTED_BRAND_IDS = {
 # - Maje, John Smedley, Alberta Ferretti, Romeo Gigli, Gianfranco Ferre: rimossi il 2026-10-01
 #   dopo aver analizzato i verdetti reali (~7h di log): zero annunci sopra i 50 EUR di margine
 #   (Maje 0/22, margine medio ~ -1 EUR). Non sono un errore: dati alla mano non rendono.
+# - Sandro: rimosso il 2026-10-01 su indicazione dell'utente (il bot ne sovrastimava il prezzo di
+#   rivendita). Tolto anche dalla query 2 di Vinted-Notifications.
 # - "céline"/"celine": l'utente segnala troppo rumore su Vinted -- molti annunci di altri
 #   brand vengono taggati per errore come Céline dai venditori, quindi la ricerca comp per
 #   brand_id risulterebbe inquinata. Scelta esplicita di non mapparlo, non una dimenticanza.
