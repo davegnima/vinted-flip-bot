@@ -10647,6 +10647,9 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             margine=f"{verdetto_calcolato['margine']:.0f}" if verdetto_calcolato["margine"] is not None else None,
             roi=f"{verdetto_calcolato['roi']:.0f}%" if verdetto_calcolato["roi"] is not None else None,
             legit=legit_cervello,
+            acquisto=f"{prezzo_prodotto:.0f}" if isinstance(prezzo_prodotto, (int, float)) else None,
+            target=f"{v['prezzo_target_vendita_eur']:.0f}" if isinstance(v.get("prezzo_target_vendita_eur"), (int, float)) else None,
+            n_comp=len(verdetto_calcolato["comp_usati"]),
         )
 
     e_compra = decisione in ("COMPRA", "TRATTA", "CHIEDI ALTRE FOTO")
