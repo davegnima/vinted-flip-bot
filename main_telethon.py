@@ -1740,8 +1740,11 @@ def check_skip_pre_gemini(listing_info):
     # (basso margine/ROI per questa categoria su questo brand) -- il resto di Jacquemus
     # (vestiti, maglieria, capispalla) continua a essere valutato normalmente.
     if "jacquemus" in brand or "jacquemus" in titolo:
-        TSHIRT_KW = ("maglietta", "magliette", "t-shirt", "tshirt", "t shirt", "tee")
-        if any(kw in testo_completo for kw in TSHIRT_KW):
+        # Solo sul titolo e a parola intera: in descrizione "da abbinare a una
+        # t-shirt" o il francese "jamais portee" (senza accento, contiene "tee")
+        # scartavano per errore vestiti e altri capi.
+        TSHIRT_KW = ("maglietta", "magliette", "t-shirt", "tshirt", "t shirt", "tee", "tees")
+        if any(re.search(r"\b" + re.escape(kw) + r"\b", titolo) for kw in TSHIRT_KW):
             return True, "[LINEA/VARIANTE ESCLUSA PER BRAND] Jacquemus t-shirt esclusa su richiesta esplicita (basso margine)."
 
     if "yves saint laurent" in brand or "ysl" in brand or "saint laurent" in brand:
@@ -2571,15 +2574,18 @@ def calcola_scarto_occhio(o, solo_cover_photo=False, listing_info=None):
         "prada" in brand_dichiarato or "prada" in titolo_e_desc
         or e_miu_miu
     )
-    BORSA_KEYWORDS = ("borsa", "borsetta", "tracolla", "pochette", "clutch", "bag")
-    e_borsa = any(kw in titolo_e_desc for kw in BORSA_KEYWORDS)
+    # Solo sul TITOLO e a parola intera: la descrizione cita spesso "dust bag"
+    # o "borsa di tela" come accessorio incluso (scarpe, portafogli...), e un
+    # match a sottostringa trattava quei capi come borse da scartare.
+    BORSA_KEYWORDS = ("borsa", "borsetta", "tracolla", "pochette", "clutch", "bag", "handbag")
+    titolo_ctx = re.sub(r"\b(dust\s*bag|dustbag|shopping\s*bag)\b", " ", _norm(li.get("title")) or "")
+    e_borsa = any(re.search(r"\b" + re.escape(kw) + r"\b", titolo_ctx) for kw in BORSA_KEYWORDS)
     if e_prada_o_miumiu and e_borsa and not solo_cover_photo:
-        cartellino_interno = next(
-            (e for e in etichette if _norm(e.get("tipo")) in ("main_label", "wash_care_tag")),
-            None,
-        )
-        cartellino_leggibile = bool(
-            cartellino_interno and _norm(cartellino_interno.get("leggibilita")) in ("nitida", "parziale")
+        # any() su TUTTE le etichette interne: basta che una sola sia leggibile.
+        cartellino_leggibile = any(
+            _norm(e.get("tipo")) in ("main_label", "wash_care_tag")
+            and _norm(e.get("leggibilita")) in ("nitida", "parziale")
+            for e in etichette
         )
         if not cartellino_leggibile:
             return True, (
