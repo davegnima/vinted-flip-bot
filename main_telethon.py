@@ -427,7 +427,7 @@ SOGLIA_MARGINE_ALERT_CHIEDI_FOTO = 30.0
 # avvisati col push, non dopo. Match su substring del brand dichiarato
 # nell'annuncio (case-insensitive), stessa logica gia' usata altrove nel
 # file per i controlli sul brand.
-BRAND_ESCLUSI_ALERT_CHIEDI_FOTO = ("miu miu", "loewe", "arc'teryx", "arcteryx")
+BRAND_ESCLUSI_ALERT_CHIEDI_FOTO = ("miu miu", "loewe", "arc'teryx", "arcteryx", "prada")
 
 VINTED_TRACKER_NAME_HINTS = ("vinted", "tracker")
 
@@ -694,8 +694,42 @@ VINTED_BRAND_IDS = {
     "boris bidjan saberi": "484649", "bbs": "484649",
     "sacai": "369700",
     "kiko kostadinov": "5821136",
+    "sandro": "115",  # verificato il 2026-09-28 dalla pagina pubblica "brand popolari" di Vinted
+    # I brand sotto sono stati aggiunti il 2026-10-01, richiesti dall'utente come nuovi
+    # watch (capispalla contemporaneo + lusso "che fa rumore" con rischio fake gestibile).
+    # ID presi da teddy-vltn/vinted-dataset (brand.json, dataset statico su GitHub, non una
+    # richiesta a Vinted) e incrociati con 7 ID verificati in precedenza direttamente da
+    # Vinted (Gucci, Burberry, Louis Vuitton, Dior, Ralph Lauren, Michael Kors, Sandro):
+    # combaciavano tutti e 7, da qui la fiducia nel resto del file.
+    "prada": "3573",
+    "fendi": "1189",
+    "maje": "116",
+    "jacquemus": "168278",
+    "acne studios": "180798",
+    "ganni": "170650",
+    "the attico": "1653053",  # id dato direttamente dall'utente il 2026-10-01
+    # Secondo giro di aggiunte (2026-10-01): l'utente ha corretto le mie stime di rivendita
+    # troppo prudenti su Maje/Sandro ("hanno prezzi alti su Vestiaire") e ha scelto di
+    # allargare il watch invece di pre-filtrare su stime incerte -- "mettiamo tutti e
+    # vediamo come va con un po' di notifiche". Stessa fonte (teddy-vltn/vinted-dataset).
+    "maje": "116",
+    "acne studios": "180798",
+    "ganni": "170650",
+    "john smedley": "200326",
+    "drumohr": "588278",
+    "barena venezia": "703380", "barena": "703380",
+    "romeo gigli": "64844",
+    "gianfranco ferré": "1933", "gianfranco ferre": "1933",
+    "alberta ferretti": "40245",
+    # Comme des Garçons: unico ID di questo giro NON incrociato con uno dei 7 gia'
+    # verificati direttamente da Vinted -- controllare che l'URL risultante mostri
+    # davvero Comme des Garçons prima di fidarsene.
+    "comme des garçons": "16352233", "comme des garcons": "16352233",
 }
 # ESCLUSIONI VOLUTE (non mappare per evitare falsi positivi o capi di scarso valore):
+# - "céline"/"celine": l'utente segnala troppo rumore su Vinted -- molti annunci di altri
+#   brand vengono taggati per errore come Céline dai venditori, quindi la ricerca comp per
+#   brand_id risulterebbe inquinata. Scelta esplicita di non mapparlo, non una dimenticanza.
 # - "saint laurent" (post-2012, id 83122): altissimo rischio fake, preferiamo concentrarci su YSL vintage.
 # - "McQ" (id 849677): diffusion line di Alexander McQueen, valore di mercato molto inferiore.
 # - "See by Chloé" (id 1472883): diffusion line di Chloé, satura e con basso ROI.
@@ -1702,6 +1736,14 @@ def check_skip_pre_gemini(listing_info):
     if "stella mccartney" in brand and "adidas" in testo_completo:
         return True, "[LINEA/VARIANTE ESCLUSA PER BRAND] Stella McCartney collab Adidas (basso valore)."
 
+    # Richiesto dall'utente il 2026-10-01: le t-shirt Jacquemus vanno scartate sempre
+    # (basso margine/ROI per questa categoria su questo brand) -- il resto di Jacquemus
+    # (vestiti, maglieria, capispalla) continua a essere valutato normalmente.
+    if "jacquemus" in brand or "jacquemus" in titolo:
+        TSHIRT_KW = ("maglietta", "magliette", "t-shirt", "tshirt", "t shirt", "tee")
+        if any(kw in testo_completo for kw in TSHIRT_KW):
+            return True, "[LINEA/VARIANTE ESCLUSA PER BRAND] Jacquemus t-shirt esclusa su richiesta esplicita (basso margine)."
+
     if "yves saint laurent" in brand or "ysl" in brand or "saint laurent" in brand:
         camicie_kw = ["camicia", "camicie", "camicetta", "shirt", "chemise", "blusa", "camisa"]
         if any(kw in testo_completo for kw in camicie_kw):
@@ -2511,6 +2553,43 @@ def calcola_scarto_occhio(o, solo_cover_photo=False, listing_info=None):
                 "cervello non consultato anche se altre etichette sono visibili."
             )
 
+    # Regola severa Prada/Miu Miu sulle BORSE (richiesta dall'utente il
+    # 2026-09-28: "hanno sempre bisogno del wash tag giusto"). Stesso
+    # principio della regola Miu Miu t-shirt qui sopra, estesa ai due brand
+    # dello stesso gruppo (Prada possiede Miu Miu, stessi standard di
+    # etichettatura) sulla categoria a rischio fake piu' alto e piu' valore
+    # medio: una borsa. Il logo esterno (triangolo in metallo, nastro
+    # logato) da solo NON basta -- serve il cartellino interno (main_label
+    # o wash_care_tag, di solito cucito nella fodera o vicino a una tasca
+    # interna, con dicitura "Made in Italy" e codice di controllo) leggibile
+    # almeno parzialmente. Senza, si scarta anche se le altre etichette
+    # sembrano coerenti -- e' proprio la discrepanza "logo esterno ok,
+    # cartellino interno mai fotografato/illeggibile" il pattern piu' comune
+    # delle borse contraffatte di questi due brand. Stessa eccezione
+    # "solo cover photo" delle altre regole di skip.
+    e_prada_o_miumiu = (
+        "prada" in brand_dichiarato or "prada" in titolo_e_desc
+        or e_miu_miu
+    )
+    BORSA_KEYWORDS = ("borsa", "borsetta", "tracolla", "pochette", "clutch", "bag")
+    e_borsa = any(kw in titolo_e_desc for kw in BORSA_KEYWORDS)
+    if e_prada_o_miumiu and e_borsa and not solo_cover_photo:
+        cartellino_interno = next(
+            (e for e in etichette if _norm(e.get("tipo")) in ("main_label", "wash_care_tag")),
+            None,
+        )
+        cartellino_leggibile = bool(
+            cartellino_interno and _norm(cartellino_interno.get("leggibilita")) in ("nitida", "parziale")
+        )
+        if not cartellino_leggibile:
+            return True, (
+                "[NESSUNA ETICHETTA INTERNA - PRADA/MIU MIU BORSA] Regola severa di categoria: "
+                "su una borsa Prada o Miu Miu il logo esterno non basta, serve il cartellino "
+                "interno (main label o wash tag, di solito in fodera) leggibile per procedere "
+                "-- rischio fake troppo alto in questa categoria senza, cervello non consultato "
+                "anche se il logo esterno sembra coerente."
+            )
+
     nessuna_etichetta = not etichette or all(
         _norm(e.get("leggibilita")) == "illeggibile" for e in etichette
     )
@@ -2806,6 +2885,13 @@ Distingui SEMPRE due casi molto diversi quando l'etichetta reale non corrisponde
 2. **Marchio completamente diverso e non correlato** (es. l'annuncio dichiara "Kapital" ma l'etichetta reale mostra "Kapitales", un brand francese di souvenir personalizzati senza alcun legame col Kapital giapponese; oppure l'annuncio dichiara un brand di lusso ma l'etichetta mostra un marchio fast-fashion generico) — qui il capo non ha alcun valore nel segmento che stai valutando, indipendentemente da condizione o prezzo.
 
 Per il caso 2, scrivi ESPLICITAMENTE nella riga "🏷️ Legit:" la frase **"BRAND NON CORRISPONDENTE"** seguita dal nome del brand reale letto sull'etichetta, così il sistema può risparmiare la chiamata al Cervello (verdetto già scontato: NON COMPRARE, senza bisogno di comp di mercato). Usa questa frase SOLO quando sei sicuro che sia un marchio diverso e non correlato, non per semplici dubbi o quando il brand reale è comunque leggibile con Confidenza Bassa — in caso di dubbio, lascia decidere al Cervello.
+
+# PRADA E MIU MIU — IL CARTELLINO INTERNO È SEMPRE OBBLIGATORIO (richiesto dall'utente, 2026-09-28/10-01)
+Prada e Miu Miu (stesso gruppo, stessi standard di etichettatura — Prada possiede Miu Miu) sono tra i brand più falsificati in assoluto su questo segmento di mercato, specialmente sulle borse. Il logo esterno da solo (triangolo in metallo smaltato, nastro logato cucito, lettering "PRADA"/"MIU MIU") NON è mai sufficiente a dichiarare `probabilmente_autentico` con `confidenza: alta`: devi vedere ANCHE il cartellino interno (il `main_label` o il `wash_care_tag` nello schema), di solito cucito nella fodera interna o vicino a una tasca interna.
+
+**Il test non è "c'è un codice/numero di serie leggibile"** — un codice da solo non prova nulla, tu non hai modo di verificarlo contro il database reale del brand, quindi non trattarlo come prova di autenticità. Il test è: **il cartellino ha il layout, il font e la fattura TIPICI e riconoscibili di quel brand**, lo stesso che vedresti su qualunque altro esemplare autentico — non una generica etichetta bianca rettangolare con del testo sopra. Confronta mentalmente con lo standard noto del brand: lettering sans-serif lineare, spaziatura regolare e costante (mai con grazie, corsivo, o lettere di dimensione irregolare tra loro), tessuto/materiale del cartellino coerente con la fascia del capo, dicitura "Made in Italy" nel punto e nel formato atteso. Un cartellino che "sembra giusto nel contenuto" (ha Made in Italy, ha un codice, ha la taglia) ma il cui aspetto complessivo — proporzioni, qualità di stampa o tessitura, nitidezza del font — non richiama lo standard che conosci per quel brand è un segnale di incoerenza, a prescindere dal fatto che il codice stesso sia "leggibile". Controlla anche, quando visibile: qualità della cucitura del cartellino (dritta, densa, mai a punti larghi o irregolari), e — sulle borse Saffiano — la regolarità della trapuntatura in diagonale della pelle (pattern costante, mai storto o con la grana che cambia direzione a metà pannello).
+
+Se il cartellino interno manca, è illeggibile, non è stato fotografato, o è presente ma il suo aspetto complessivo non ti convince come stile tipico del brand: resta su `sospetto_servono_altre_foto` con `confidenza: media` al massimo, anche se il resto (logo esterno, hardware, cuciture visibili) sembra impeccabile, e aggiungi il cartellino interno a `foto_mancanti_richieste`. Su questi due brand la discrepanza più comune nei fake non è un dettaglio vistoso, è proprio questa: tutto l'esterno coerente, nessuna prova convincente dell'interno.
 
 # IL NOME DEL TESSUTO NON È IL BRAND DEL CAPO
 Caso reale già osservato: un annuncio titolato "Giacca uomo Loro Piana" era in realtà una giacca in pelle **Pineider** — "Loro Piana" indicava solo il FORNITORE del tessuto/materiale usato, non il produttore del capo. Un secondo caso reale, stesso meccanismo ma senza nemmeno la scusante del titolo: un "Blazer oversize in lana tessuto Loro Piana" aveva SOLO l'etichetta del tessuto ("Ing. Loro Piana & C.", "Super 110's") cucita dentro, nessun'altra etichetta/logo/bottone che indicasse chi avesse davvero confezionato il capo — eppure è stato valutato come un Loro Piana mainline vero e proprio, con comp e prezzo completamente sbagliati. Loro Piana (e altri nomi come Zegna, Vitale Barberis Canonico, Scabal, Holland & Sherry, Cerruti) sono spesso citati nei titoli, nelle descrizioni E su etichette cucite dentro il capo come marchio del TESSUTO impiegato da un'altra maison, non come il brand del capo finito — è una pratica comune specialmente per capispalla in pelle o lana pregiata, tailoring su misura compreso. Prima di trascrivere questi nomi come `brand_letto_etichetta`, verifica SEMPRE l'etichetta principale, il logo, i bottoni e il tirante della zip: se mostrano un nome diverso, è QUELLO il brand reale, e il nome del tessuto va citato solo come dettaglio di materiale in `materiale_osservato_dalle_foto`/`composizione_da_etichetta`, mai come brand. Se l'UNICA etichetta con quel nome è un cartellino di tessuto (spesso piccolo, separato dall'etichetta principale, con diciture tipo "Super 110's/120's/150's") e nessun'altra evidenza (etichetta principale, logo, bottoni, tirante zip) mostra un produttore — quello stesso o un altro — dichiara `relazione_brand: "tessuto_non_brand"`, MAI `"corrisponde"`: il sistema scarta l'annuncio a prescindere, perché i comp del brand del tessuto non sono comp validi per un capo di un maker ignoto. Usalo anche nel dubbio: il costo di scartare un capo che era davvero mainline è molto minore del costo di valutarlo coi comp del brand sbagliato. `relazione_brand: "non_leggibile"` resta riservato al caso in cui non leggi NESSUN nome, né di brand né di tessuto.
