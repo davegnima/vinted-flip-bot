@@ -10150,6 +10150,168 @@ async def _aggiorna_stato_scheda(stato, nuovo_stato):
         log.warning("Aggiornamento riga di stato della scheda non riuscito:\n%s", traceback.format_exc())
 
 
+# ---------------------------------------------------------------------------
+# TRACCIAMENTO ESITI -- sell-through passivo (richiesto dall'utente il 2026-10-02)
+# ---------------------------------------------------------------------------
+# Serve a capire se le stime di rivendita sono realistiche SENZA che l'utente
+# compri o rivenda nulla: ogni annuncio che arriva a un verdetto viene
+# riregistrato dopo 3, 7 e 14 giorni (stessa pagina Vinted che il bot gia'
+# legge) per vedere se e' sparito/venduto, se il prezzo e' sceso e a quanto.
+# Un capo che a X EUR sparisce in pochi giorni conferma che X e' un prezzo che
+# il mercato paga; uno che resta a lungo o scende di prezzo lo smentisce.
+# FASE 1 = SOLO RACCOLTA: nessuna decisione cambia. Dato che non si sa a
+# priori come la pagina segnali "venduto", si registrano i segnali grezzi
+# (is_closed, is_reserved, ... , esito HTTP) e si leggono nei log
+# ("RICONTROLLO | ...") per capire quali sono affidabili prima di usarli.
+TRACCIAMENTO_ATTIVO = os.environ.get("TRACCIAMENTO_ATTIVO", "1").strip() == "1"
+TRACCIAMENTO_FILE = os.environ.get("TRACCIAMENTO_FILE", "/data/tracciamento_esiti.jsonl")
+TRACCIAMENTO_STADI_GIORNI = (3, 7, 14)
+TRACCIAMENTO_MAX_PER_CICLO = 20
+TRACCIAMENTO_INTERVALLO_SECONDI = 6 * 3600
+_tracc_item_visti = set()
+_tracc_visti_caricati = [False]
+
+_TRACC_SEGNALI_RE = {
+    chiave: re.compile(r'"' + chiave + r'"\s*:\s*("?[A-Za-z0-9_.-]{1,30}"?)')
+    for chiave in ("is_closed", "is_reserved", "is_hidden", "is_draft", "can_buy", "item_closing_action")
+}
+_TRACC_PREZZO_RES = (
+    re.compile(r'property="product:price:amount"\s+content="([\d.,]+)"'),
+    re.compile(r'"price"\s*:\s*\{[^{}]{0,80}?"amount"\s*:\s*"?([\d.]+)'),
+    re.compile(r'itemprop="price"[^>]*content="([\d.,]+)"'),
+)
+
+
+def _tracc_scrivi(record):
+    try:
+        cartella = os.path.dirname(TRACCIAMENTO_FILE)
+        if cartella:
+            os.makedirs(cartella, exist_ok=True)
+        with open(TRACCIAMENTO_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": int(time.time()), **record}, ensure_ascii=False) + "\n")
+        return True
+    except Exception:
+        log.warning("Tracciamento non scritto:\n%s", traceback.format_exc())
+        return False
+
+
+def _tracc_leggi():
+    righe = []
+    try:
+        with open(TRACCIAMENTO_FILE, encoding="utf-8") as f:
+            for riga in f:
+                riga = riga.strip()
+                if riga:
+                    try:
+                        righe.append(json.loads(riga))
+                    except ValueError:
+                        pass
+    except FileNotFoundError:
+        pass
+    except Exception:
+        log.warning("Tracciamento non letto:\n%s", traceback.format_exc())
+    return righe
+
+
+def tracc_registra_valutato(listing_info, url, esito, target=None, n_comp=None):
+    """Registra un annuncio arrivato a un verdetto, una sola volta per item id."""
+    if not TRACCIAMENTO_ATTIVO:
+        return
+    try:
+        item_id = _estrai_item_id_da_url(url) if url else None
+        if not item_id:
+            return
+        item_id = str(item_id)
+        if not _tracc_visti_caricati[0]:
+            _tracc_item_visti.update(str(r.get("item_id")) for r in _tracc_leggi() if r.get("tipo") == "valutato")
+            _tracc_visti_caricati[0] = True
+        if item_id in _tracc_item_visti:
+            return
+        _tracc_item_visti.add(item_id)
+        _tracc_scrivi({
+            "tipo": "valutato", "item_id": item_id, "url": url,
+            "brand": listing_info.get("brand"), "titolo": listing_info.get("title"),
+            "categoria": estrai_categoria_da_titolo(listing_info.get("title") or "", listing_info.get("description")),
+            "prezzo": _a_float(listing_info.get("price"), None), "esito": esito,
+            "target": target, "n_comp": n_comp,
+        })
+    except Exception:
+        log.warning("Tracciamento: registrazione fallita:\n%s", traceback.format_exc())
+
+
+def _tracc_estrai_segnali(html_pagina):
+    """Segnali grezzi di stato/prezzo dalla pagina annuncio. Pura, testabile."""
+    segnali = {}
+    for chiave, rx in _TRACC_SEGNALI_RE.items():
+        m = rx.search(html_pagina)
+        if m:
+            segnali[chiave] = m.group(1).strip('"')
+    m = re.search(r"schema\.org/(InStock|OutOfStock|SoldOut|Discontinued)", html_pagina)
+    if m:
+        segnali["availability"] = m.group(1)
+    if re.search(r"\bvenduto\b", html_pagina[:200000], re.IGNORECASE):
+        segnali["testo_venduto"] = True
+    prezzo = None
+    for rx in _TRACC_PREZZO_RES:
+        m = rx.search(html_pagina)
+        if m:
+            prezzo = _a_float(m.group(1).replace(",", "."), None)
+            if prezzo is not None:
+                break
+    return segnali, prezzo
+
+
+async def tracc_ricontrolla():
+    """Un ciclo di ricontrolli: i valutati che hanno superato uno stadio senza
+    ancora un ricontrollo per quello stadio. Poche richieste per ciclo."""
+    righe = _tracc_leggi()
+    gia = {(str(r.get("item_id")), r.get("stadio")) for r in righe if r.get("tipo") == "ricontrollo"}
+    ora = time.time()
+    da_fare = []
+    for r in righe:
+        if r.get("tipo") != "valutato":
+            continue
+        eta_giorni = (ora - (r.get("ts") or ora)) / 86400
+        for stadio in TRACCIAMENTO_STADI_GIORNI:
+            if eta_giorni >= stadio and (str(r.get("item_id")), stadio) not in gia:
+                da_fare.append((r, stadio, eta_giorni))
+                break
+    fatti = 0
+    for r, stadio, eta_giorni in da_fare[:TRACCIAMENTO_MAX_PER_CICLO]:
+        http_status, segnali, prezzo_ora = None, {}, None
+        try:
+            resp = await _vinted_get_con_retry(r["url"], timeout=15, max_retries=1)
+            if resp is not None:
+                http_status = resp.status_code
+                segnali, prezzo_ora = _tracc_estrai_segnali(resp.text)
+        except httpx.HTTPStatusError as e:
+            http_status = e.response.status_code
+        except Exception as e:
+            http_status = f"errore:{type(e).__name__}"
+        _tracc_scrivi({
+            "tipo": "ricontrollo", "item_id": str(r.get("item_id")), "stadio": stadio,
+            "eta_giorni": round(eta_giorni, 1), "http": http_status, "segnali": segnali,
+            "prezzo_ora": prezzo_ora,
+        })
+        log.info(
+            "RICONTROLLO | item=%s | brand='%s' | stadio=%sg | http=%s | segnali=%s | prezzo_valutato=%s | prezzo_ora=%s | esito=%s | target=%s",
+            r.get("item_id"), r.get("brand") or "n/d", stadio, http_status, segnali or "nessuno",
+            r.get("prezzo"), prezzo_ora, r.get("esito"), r.get("target"),
+        )
+        fatti += 1
+    return fatti
+
+
+async def tracc_ciclo_infinito():
+    await asyncio.sleep(600)
+    while True:
+        try:
+            await tracc_ricontrolla()
+        except Exception:
+            log.warning("Ciclo ricontrolli fallito:\n%s", traceback.format_exc())
+        await asyncio.sleep(TRACCIAMENTO_INTERVALLO_SECONDI)
+
+
 def _log_esito(listing_info, esito, **campi):
     """Una riga greppable per annuncio con il brand del tracker (richiesto
     dall'utente il 2026-10-01) per l'analisi giornaliera per brand dai log."""
@@ -10674,6 +10836,10 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             acquisto=f"{prezzo_prodotto:.0f}" if isinstance(prezzo_prodotto, (int, float)) else None,
             target=f"{v['prezzo_target_vendita_eur']:.0f}" if isinstance(v.get("prezzo_target_vendita_eur"), (int, float)) else None,
             n_comp=len(verdetto_calcolato["comp_usati"]),
+        )
+        tracc_registra_valutato(
+            listing_info, url, decisione,
+            target=v.get("prezzo_target_vendita_eur"), n_comp=len(verdetto_calcolato["comp_usati"]),
         )
 
     e_compra = decisione in ("COMPRA", "TRATTA", "CHIEDI ALTRE FOTO")
@@ -11407,6 +11573,8 @@ async def main():
         "calcolato da campi tipizzati" if OCCHIO_OUTPUT_JSON else "da match testuale",
     )
     await inizializza_client_http()
+    if TRACCIAMENTO_ATTIVO:
+        asyncio.create_task(tracc_ciclo_infinito())
     try:
         fv_carica_appreso()
         fv_ricalibra()
