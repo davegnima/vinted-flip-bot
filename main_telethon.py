@@ -641,7 +641,7 @@ BRAND_BLOCKLIST = {"intrend"}
 
 VINTED_BRAND_IDS = {
     "brunello cucinelli": "103740", "rick owens": "145654",
-    "arc'teryx": "319730", "arcteryx": "319730", "patagonia": "90804",
+    "patagonia": "90804",
     "marni": "12251", "missoni": "4463", "jean paul gaultier": "4129",
     "jpg": "4129", "emilio pucci": "10831", "pucci": "10831",
     "issey miyake": "75090", "pleats please": "395642",
@@ -704,14 +704,12 @@ VINTED_BRAND_IDS = {
     "fendi": "1189",
     "jacquemus": "168278",
     "acne studios": "180798",
-    "ganni": "170650",
     "the attico": "1653053",  # id dato direttamente dall'utente il 2026-10-01
     # Secondo giro di aggiunte (2026-10-01): l'utente ha corretto le mie stime di rivendita
     # troppo prudenti su Maje/Sandro ("hanno prezzi alti su Vestiaire") e ha scelto di
     # allargare il watch invece di pre-filtrare su stime incerte -- "mettiamo tutti e
     # vediamo come va con un po' di notifiche". Stessa fonte (teddy-vltn/vinted-dataset).
     "acne studios": "180798",
-    "ganni": "170650",
     "drumohr": "588278",
     "barena venezia": "703380", "barena": "703380",
     # Comme des Garçons: unico ID di questo giro NON incrociato con uno dei 7 gia'
@@ -725,6 +723,9 @@ VINTED_BRAND_IDS = {
 #   (Maje 0/22, margine medio ~ -1 EUR). Non sono un errore: dati alla mano non rendono.
 # - Sandro: rimosso il 2026-10-01 su indicazione dell'utente (il bot ne sovrastimava il prezzo di
 #   rivendita). Tolto anche dalla query 2 di Vinted-Notifications.
+# - Ganni, Arc'teryx: rimossi il 2026-10-02 su approvazione dell'utente dopo il primo giorno di log
+#   ESITO (Ganni 7 NON COMPRARE su 8, venditori a 85-120 EUR per capi da 55-90; Arc'teryx
+#   margini intorno a zero, 1 TRATTA su 5). Tolti anche dalle query 2 e 4 di Vinted-Notifications.
 # - "céline"/"celine": l'utente segnala troppo rumore su Vinted -- molti annunci di altri
 #   brand vengono taggati per errore come Céline dai venditori, quindi la ricerca comp per
 #   brand_id risulterebbe inquinata. Scelta esplicita di non mapparlo, non una dimenticanza.
@@ -3403,6 +3404,23 @@ BRAND_REGEX = re.compile(
 TITOLO_NON_RILEVATO = "Titolo non rilevato"
 
 
+# Il tracker scrive a volte "Brand: None" (letteralmente) quando Vinted non ha
+# il brand: il 2026-10-02 due annunci su 94 ("Loro Piana", "Fendi") sono finiti
+# con brand "None" e senza il ramo brand dei controlli. Se il brand manca lo si
+# ricava dal titolo, solo con un nome della mappa brand a parola intera.
+BRAND_VALORI_VUOTI = {"none", "null", "n/d", "nd", "-", "--", "n/a", "sconosciuto", "unknown"}
+
+
+def _brand_da_titolo(titolo):
+    t = (titolo or "").lower()
+    if not t or titolo == TITOLO_NON_RILEVATO:
+        return None
+    for nome in sorted(VINTED_BRAND_IDS, key=len, reverse=True):
+        if re.search(r"(?<!\w)" + re.escape(nome) + r"(?!\w)", t):
+            return nome.title()
+    return None
+
+
 def parse_vinted_tracker_message(text):
     lines = [l.strip() for l in text.splitlines() if l.strip()]
     title = None
@@ -3425,10 +3443,15 @@ def parse_vinted_tracker_message(text):
             break
     price_match = PRICE_REGEX.search(text)
     brand_match = BRAND_REGEX.search(text)
+    brand = brand_match.group(1).strip() if brand_match else None
+    if brand and brand.lower() in BRAND_VALORI_VUOTI:
+        brand = None
+    if not brand:
+        brand = _brand_da_titolo(title)
     return {
         "title": title or TITOLO_NON_RILEVATO,
         "price": price_match.group(1) if price_match else None,
-        "brand": brand_match.group(1).strip() if brand_match else None,
+        "brand": brand,
     }
 
 
