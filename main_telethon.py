@@ -4801,7 +4801,7 @@ async def scrape_vinted_listing(url, includi_guardaroba=True):
         "seller_feedback_count": None, "seller_feedback_reputation": None,
         "seller_items_count": None, "seller_country": None,
         "seller_top_items": [],
-        "seller_wardrobe_debug": "non tentato", "uploaded_text": None,
+        "seller_wardrobe_debug": "non tentato", "uploaded_text": None, "stato_vendita": None,
     }
     try:
         resp = await _vinted_get_con_retry(url, timeout=15, max_retries=3)
@@ -4809,6 +4809,10 @@ async def scrape_vinted_listing(url, includi_guardaroba=True):
             return result
         html_pagina = resp.text
         _sonda_avvia_se_serve(url, resp, html_pagina)  # in background, non rallenta
+        try:
+            result["stato_vendita"] = _tracc_stato(resp.status_code, _tracc_estrai_segnali(html_pagina)[0])
+        except Exception:
+            pass
 
         marker_venditore = re.search(r'data-testid="profile-username"', html_pagina)
 
@@ -10273,6 +10277,78 @@ def _tracc_leggi():
     return righe
 
 
+SKIP_GIA_VENDUTI = os.environ.get("SKIP_GIA_VENDUTI", "0").strip() == "1"
+TRACCIAMENTO_MICRO_SECONDI = (30, 90, 180, 300)  # dopo la valutazione, solo COMPRA/TRATTA/CHIEDI FOTO
+TRACCIAMENTO_MICRO_ESITI = ("COMPRA", "TRATTA", "CHIEDI ALTRE FOTO")
+_tracc_micro_sem = []
+
+
+def _pub_ts(listing_info):
+    dt = _parse_created_at_dt(listing_info.get("created_at"))
+    return dt.timestamp() if dt else None
+
+
+def tracc_registra_gia_venduto(listing_info, url):
+    """Annuncio gia' venduto quando il bot lo scrapa (secondi dopo la pubblicazione): il segnale piu'
+    forte di un affare. Si logga con i secondi trascorsi dalla pubblicazione e si archivia."""
+    try:
+        pub = _pub_ts(listing_info)
+        dopo = round(time.time() - pub) if pub else None
+        _log_esito(listing_info, "GIA_VENDUTO", dopo_pubblicazione_s=dopo, prezzo=listing_info.get("price"))
+        item_id = _estrai_item_id_da_url(url) if url else None
+        if TRACCIAMENTO_ATTIVO and item_id:
+            _tracc_scrivi({
+                "tipo": "gia_venduto", "item_id": str(item_id), "url": url, "brand": listing_info.get("brand"),
+                "titolo": listing_info.get("title"), "prezzo": _a_float(listing_info.get("price"), None),
+                "categoria": estrai_categoria_da_titolo(listing_info.get("title") or "", listing_info.get("description")),
+                "dopo_pubblicazione_s": dopo, "fair_value": (listing_info.get("fair_value") or {}).get("fv")
+                if isinstance(listing_info.get("fair_value"), dict) else None,
+            })
+    except Exception:
+        log.warning("Tracciamento: gia' venduto non registrato:\n%s", traceback.format_exc())
+
+
+async def _tracc_micro(item_id, url, brand, esito, prezzo, target, pub_ts, t0):
+    """Ricontrolli lampo di un affare (30s, 90s, 3min, 5min dopo la valutazione): i veri affari si
+    vendono in secondi/minuti. Per ogni controllo si registra anche il tempo dalla PUBBLICAZIONE."""
+    if not _tracc_micro_sem:
+        _tracc_micro_sem.append(asyncio.Semaphore(5))
+    for s_dopo in TRACCIAMENTO_MICRO_SECONDI:
+        try:
+            attesa = t0 + s_dopo - time.time()
+            if attesa > 0:
+                await asyncio.sleep(attesa)
+            http_status, segnali, prezzo_ora, tempi = None, {}, None, {}
+            async with _tracc_micro_sem[0]:
+                try:
+                    resp = await _vinted_get_con_retry(url, timeout=15, max_retries=1)
+                    if resp is not None:
+                        http_status = resp.status_code
+                        segnali, prezzo_ora = _tracc_estrai_segnali(resp.text)
+                        tempi = _tracc_estrai_tempi(resp.text)
+                except httpx.HTTPStatusError as e:
+                    http_status = e.response.status_code
+                except Exception as e:
+                    http_status = f"errore:{type(e).__name__}"
+            sparito = _tracc_e_sparito(http_status, segnali)
+            stato = _tracc_stato(http_status, segnali)
+            dalla_pub = round(time.time() - pub_ts) if pub_ts else None
+            _tracc_scrivi({
+                "tipo": "ricontrollo", "item_id": str(item_id), "stadio_s": s_dopo, "dalla_pubblicazione_s": dalla_pub,
+                "http": http_status, "segnali": segnali, "prezzo_ora": prezzo_ora, "finale": sparito,
+                "stato": stato, "tempi": tempi,
+            })
+            log.info(
+                "RICONTROLLO LAMPO | item=%s | brand='%s' | dopo_valutazione=%ss | dalla_pubblicazione=%ss | http=%s | stato=%s | prezzo_valutato=%s | prezzo_ora=%s | esito=%s | target=%s",
+                item_id, brand or "n/d", s_dopo, dalla_pub, http_status, stato, prezzo, prezzo_ora, esito, target,
+            )
+            if sparito:
+                break
+        except Exception:
+            log.warning("Ricontrollo lampo fallito:\n%s", traceback.format_exc())
+            break
+
+
 def tracc_registra_valutato(listing_info, url, esito, target=None, n_comp=None):
     """Registra un annuncio arrivato a un verdetto, una sola volta per item id."""
     if not TRACCIAMENTO_ATTIVO:
@@ -10293,8 +10369,13 @@ def tracc_registra_valutato(listing_info, url, esito, target=None, n_comp=None):
             "brand": listing_info.get("brand"), "titolo": listing_info.get("title"),
             "categoria": estrai_categoria_da_titolo(listing_info.get("title") or "", listing_info.get("description")),
             "prezzo": _a_float(listing_info.get("price"), None), "esito": esito,
-            "target": target, "n_comp": n_comp,
+            "target": target, "n_comp": n_comp, "pub_ts": _pub_ts(listing_info),
+            "stato_scrape": listing_info.get("stato_vendita"),
         })
+        if esito in TRACCIAMENTO_MICRO_ESITI:
+            asyncio.get_running_loop().create_task(_tracc_micro(
+                item_id, url, listing_info.get("brand"), esito, _a_float(listing_info.get("price"), None),
+                target, _pub_ts(listing_info), time.time()))
     except Exception:
         log.warning("Tracciamento: registrazione fallita:\n%s", traceback.format_exc())
 
@@ -10607,7 +10688,8 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             "size": scraped.get("size"), "condition": scraped.get("condition"),
             "description": scraped.get("description"), "age_days": scraped.get("age_days"),
             "catalog_id": scraped.get("catalog_id"), "cover_photo_id": scraped.get("cover_photo_id"),
-            "uploaded_text": scraped.get("uploaded_text"),
+            "uploaded_text": scraped.get("uploaded_text"), "stato_vendita": scraped.get("stato_vendita"),
+            "created_at": scraped.get("created_at"),
             "material_raw": scraped.get("material_raw"),
             "material_per_ricerca": scraped.get("material_per_ricerca"),
             "color_raw": scraped.get("color_raw"),
@@ -10620,6 +10702,15 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             "seller_top_items": scraped.get("seller_top_items") or [],
             "seller_wardrobe_debug": scraped.get("seller_wardrobe_debug") or "n/d",
         })
+
+        # GIA' VENDUTO ALLO SCRAPE: i veri affari si chiudono in secondi (bot compratori, richiesto
+        # dall'utente il 2026-10-03): se la pagina e' gia' venduta quando arriviamo, il capo era un buon
+        # flip. Per ora si registra soltanto (verifica del segnale su dati reali); SKIP_GIA_VENDUTI=1
+        # interrompe l'analisi (inutile notificare un capo non piu' acquistabile).
+        if listing_info.get("stato_vendita") == "venduto":
+            tracc_registra_gia_venduto(listing_info, url)
+            if SKIP_GIA_VENDUTI:
+                return
 
         # FILTRO PRE-GEMINI
         e_skip_pre, motivo_skip_pre = check_skip_pre_gemini(listing_info)
