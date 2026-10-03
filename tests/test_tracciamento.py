@@ -4,6 +4,7 @@ import httpx
 import pytest
 
 import main_telethon as m
+from bot import tracciamento as tr
 
 
 ATTIVO = {"is_reserved": "false", "can_buy": "true"}
@@ -53,14 +54,14 @@ def test_timestamp_candidati_ignora_vecchi_e_id():
 
 
 def test_serie_si_ferma_alla_vendita_e_salta_gli_scartati(monkeypatch):
-    monkeypatch.setattr(m, "TRACCIAMENTO_SERIE_SECONDI", (0.01, 0.02, 0.03))
+    monkeypatch.setattr(tr, "TRACCIAMENTO_SERIE_SECONDI", (0.01, 0.02, 0.03))
     chiamate = []
 
     async def pagina(url, max_retries=1):
         chiamate.append(url)
         return 200, ('<div>Venduto</div> \\"can_buy\\":false' if "/10-" in url else '\\"can_buy\\":true')
 
-    monkeypatch.setattr(m, "_tracc_leggi_pagina", pagina)
+    monkeypatch.setattr(tr, "_tracc_leggi_pagina", pagina)
     m._tracc_stop.clear()
 
     async def prova():
