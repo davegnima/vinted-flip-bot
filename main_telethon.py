@@ -543,6 +543,11 @@ GEMINI_MODELLI_RISERVA = [
     if m.strip()
 ]
 GEMINI_MODEL_FALLBACK = GEMINI_MODELLI_RISERVA[0] if GEMINI_MODELLI_RISERVA else ""
+# CASCATA DI QUOTE (richiesta dall'utente il 2026-10-03): ogni modello Gemini ha la sua quota giornaliera per key.
+# Con GEMINI_CASCATA="gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite" (dal migliore al piu' leggero)
+# Occhio e Cervello partono dal primo modello e, quando la quota giornaliera finisce su TUTTE le key, scalano al
+# successivo senza attese. Vuota = comportamento di prima (modello principale + GEMINI_MODEL_FALLBACK).
+GEMINI_CASCATA = [m.strip() for m in os.environ.get("GEMINI_CASCATA", "").split(",") if m.strip()]
 RAFFREDDAMENTO_MODELLO_SOVRACCARICO_SECONDI = 15 * 60
 RAFFREDDAMENTO_MODELLO_INESISTENTE_SECONDI = 24 * 3600
 _gemini_modello_escluso_fino = {}
@@ -592,6 +597,11 @@ def _gemini_url_effettivo(api_url):
     GEMINI_MODELLI_RISERVA. Se sono tutti esclusi si torna al principale
     (e da li' valgono rotazione key e backoff come prima). Sostituisce solo il
     nome del modello nel path, quindi vale per Occhio e Cervello."""
+    if GEMINI_CASCATA:
+        for modello in GEMINI_CASCATA:
+            if not _gemini_modello_escluso(modello) and not _gemini_modello_senza_quota(modello):
+                return re.sub(r"/models/[^:/]+:", f"/models/{modello}:", api_url)
+        return re.sub(r"/models/[^:/]+:", f"/models/{GEMINI_CASCATA[-1]}:", api_url)
     principale = _gemini_modello_da_url(api_url)
     if not principale or not GEMINI_MODELLI_RISERVA:
         return api_url
@@ -3665,7 +3675,7 @@ else:
     log.info("Gemini: 1 sola API key (GEMINI_API_KEYS non impostata) -- nessuna rotazione disponibile.")
 
 
-def _gemini_key_attuale():
+def _gemini_key_attuale(modello=None):
     """Key Gemini da usare nella prossima chiamata. Se la key su cui la
     rotazione sticky si trova al momento e' in cooldown per quota
     giornaliera esaurita (vedi _gemini_key_in_quota_esaurita) e ce n'e'
@@ -3676,7 +3686,7 @@ def _gemini_key_attuale():
     if len(GEMINI_API_KEYS) > 1:
         indice_iniziale = _gemini_key_index[0]
         for _ in range(len(GEMINI_API_KEYS)):
-            if not _gemini_key_in_quota_esaurita(GEMINI_API_KEYS[_gemini_key_index[0] % len(GEMINI_API_KEYS)]):
+            if not _gemini_key_in_quota_esaurita(GEMINI_API_KEYS[_gemini_key_index[0] % len(GEMINI_API_KEYS)], modello):
                 break
             _gemini_key_index[0] = (_gemini_key_index[0] + 1) % len(GEMINI_API_KEYS)
             if _gemini_key_index[0] == indice_iniziale:
@@ -3686,7 +3696,7 @@ def _gemini_key_attuale():
     return GEMINI_API_KEYS[_gemini_key_index[0] % len(GEMINI_API_KEYS)]
 
 
-def _gemini_prossima_key():
+def _gemini_prossima_key(modello=None):
     """Passa alla key successiva -- chiamata dopo un 429 (quota esaurita) o,
     da FIX 2026-09-21, anche dopo un 500/502/503/504 (vedi commento esteso
     in chiama_gemini). Ritorna True se si e' davvero cambiata key (ce
@@ -3707,7 +3717,7 @@ def _gemini_prossima_key():
             # Giro completo: tutte le altre key sono in cooldown di quota,
             # non c'e' scelta migliore -- si resta su questa.
             break
-        if not _gemini_key_in_quota_esaurita(GEMINI_API_KEYS[_gemini_key_index[0]]):
+        if not _gemini_key_in_quota_esaurita(GEMINI_API_KEYS[_gemini_key_index[0]], modello):
             break
     log.warning(
         "Gemini: key #%d in errore (429/5xx), passo alla key #%d.",
@@ -3748,29 +3758,35 @@ def _gemini_e_errore_quota_giornaliera(status_code, corpo_testo):
     return "resource_exhausted" in testo_lower or "free_tier" in testo_lower or "exceeded your current quota" in testo_lower
 
 
-def _gemini_segna_key_quota_esaurita(key):
+def _gemini_segna_key_quota_esaurita(key, modello=None):
     """Marca `key` come a quota giornaliera esaurita per
     RAFFREDDAMENTO_QUOTA_ESAURITA_GEMINI_SECONDI: la rotazione la salta
     finche' il cooldown non scade (vedi _gemini_prossima_key /
     _gemini_key_in_quota_esaurita)."""
-    gia_segnalata = _gemini_key_in_quota_esaurita(key)
-    _gemini_key_quota_esaurita_fino[key] = time.time() + RAFFREDDAMENTO_QUOTA_ESAURITA_GEMINI_SECONDI
+    gia_segnalata = _gemini_key_in_quota_esaurita(key, modello)
+    _gemini_key_quota_esaurita_fino[(key, modello or "")] = time.time() + RAFFREDDAMENTO_QUOTA_ESAURITA_GEMINI_SECONDI
     if not gia_segnalata:
         log.warning(
             "Gemini: key in errore 429 di quota GIORNALIERA esaurita (non un rate-limit transitorio) "
-            "-- esclusa dalla rotazione per %d minuti.",
-            RAFFREDDAMENTO_QUOTA_ESAURITA_GEMINI_SECONDI // 60,
+            "per il modello %s -- esclusa dalla rotazione per %d minuti.",
+            modello or "(qualsiasi)", RAFFREDDAMENTO_QUOTA_ESAURITA_GEMINI_SECONDI // 60,
         )
 
 
-def _gemini_key_in_quota_esaurita(key):
+def _gemini_modello_senza_quota(modello):
+    """True se la quota giornaliera di `modello` e' esaurita su TUTTE le key: la cascata passa al successivo."""
+    return bool(GEMINI_API_KEYS) and all(_gemini_key_in_quota_esaurita(k, modello) for k in GEMINI_API_KEYS)
+
+
+def _gemini_key_in_quota_esaurita(key, modello=None):
     """True se `key` e' attualmente in cooldown per quota giornaliera
     esaurita (vedi _gemini_segna_key_quota_esaurita)."""
-    scadenza = _gemini_key_quota_esaurita_fino.get(key)
+    chiave = (key, modello or "")
+    scadenza = _gemini_key_quota_esaurita_fino.get(chiave)
     if scadenza is None:
         return False
     if time.time() >= scadenza:
-        del _gemini_key_quota_esaurita_fino[key]
+        del _gemini_key_quota_esaurita_fino[chiave]
         return False
     return True
 
@@ -5364,6 +5380,8 @@ async def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, groundi
     # fallback (prosa/skip), invece di aspettare minuti su una chiamata che
     # quasi certamente fallira' comunque.
     max_retries_effettivi = MAX_RETRIES_GEMINI_IN_BLACKOUT if _gemini_in_blackout() else max_retries
+    if GEMINI_CASCATA:
+        max_retries_effettivi += len(GEMINI_API_KEYS)   # i 429 di quota esaurita sono rapidi: non bruciano il budget
 
     backoff_seconds = 2
     for attempt in range(1, max_retries_effettivi + 1):
@@ -5374,8 +5392,9 @@ async def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, groundi
             # ma se Gemini smette proprio di rispondere invece di restituire
             # un errore, 90s per tentativo x piu' tentativi x piu' round del
             # Cervello e' comunque troppo. 30s resta ampio per foto+prompt.
-            key_usata = _gemini_key_attuale()
             url_usato = _gemini_url_effettivo(api_url)
+            modello_usato = _gemini_modello_da_url(url_usato)
+            key_usata = _gemini_key_attuale(modello_usato)
             # Key nell'header e non nella query string (FIX 2026-09-24): come
             # parametro "?key=" finiva in chiaro nei log httpx su Railway.
             resp = await _client_generico.post(
@@ -5403,6 +5422,7 @@ async def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, groundi
                     continue
             if resp.is_success:
                 _gemini_registra_esito(True)
+                log.info("GEMINI_USO | generico | %s", modello_usato)
                 data = resp.json()
                 candidates = data.get("candidates", [])
                 if candidates:
@@ -5438,8 +5458,10 @@ async def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, groundi
                 # solo se le key sono finite (o ce n'e' una sola) si torna al
                 # backoff come per gli altri errori transitori.
                 if _gemini_e_errore_quota_giornaliera(resp.status_code, resp.text):
-                    _gemini_segna_key_quota_esaurita(key_usata)
-                if _gemini_prossima_key():
+                    _gemini_segna_key_quota_esaurita(key_usata, modello_usato)
+                    if GEMINI_CASCATA and _gemini_url_effettivo(api_url) != url_usato:
+                        continue   # quota finita su tutte le key di questo modello: si scala subito al successivo
+                if _gemini_prossima_key(modello_usato):
                     continue
                 await asyncio.sleep(backoff_seconds)
                 backoff_seconds *= 2
@@ -6182,14 +6204,17 @@ async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca
         # direttamente al verdetto (vedi "si passa comunque al verdetto" nel
         # chiamante) invece di aspettare minuti in piu' per round.
         tentativi_effettivi = MAX_RETRIES_GEMINI_IN_BLACKOUT if _gemini_in_blackout() else tentativi_rimasti
+        if GEMINI_CASCATA:
+            tentativi_effettivi += len(GEMINI_API_KEYS)
 
         backoff_seconds = 2
         for attempt in range(1, tentativi_effettivi + 1):
             try:
                 # Timeout abbassato da 90 a 30s (richiesto dall'utente il
                 # 2026-09-22, stesso motivo di chiama_gemini).
-                key_usata = _gemini_key_attuale()
                 url_usato = _gemini_url_effettivo(api_url)
+                modello_usato = _gemini_modello_da_url(url_usato)
+                key_usata = _gemini_key_attuale(modello_usato)
                 resp = await _client_generico.post(
                     url_usato, headers={"x-goog-api-key": key_usata}, json=payload, timeout=30)
                 if not resp.is_success:
@@ -6202,7 +6227,10 @@ async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca
                     if modello_cambiato and attempt < tentativi_effettivi:
                         continue
                     if _gemini_e_errore_quota_giornaliera(resp.status_code, resp.text):
-                        _gemini_segna_key_quota_esaurita(key_usata)
+                        _gemini_segna_key_quota_esaurita(key_usata, modello_usato)
+                        if (GEMINI_CASCATA and attempt < tentativi_effettivi
+                                and _gemini_url_effettivo(api_url) != url_usato):
+                            continue   # si scala subito al modello successivo della cascata
                     codici_con_rotazione = {429, 500, 502, 503, 504}
                     if resp.status_code in codici_con_rotazione and attempt < tentativi_effettivi:
                         # Stessa logica di rotazione di chiama_gemini (vedi il
@@ -6215,13 +6243,14 @@ async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca
                         # spesso per progetto/key -- se c'e' un'altra key si
                         # passa a quella e si ritenta subito, altrimenti
                         # backoff come prima.
-                        if _gemini_prossima_key():
+                        if _gemini_prossima_key(modello_usato):
                             continue
                         await asyncio.sleep(backoff_seconds)
                         backoff_seconds *= 2
                         continue
                     resp.raise_for_status()
                 _gemini_registra_esito(True)
+                log.info("GEMINI_USO | cervello | %s", modello_usato)
                 return resp.json()
             except Exception:
                 if attempt < tentativi_effettivi:
@@ -10643,7 +10672,8 @@ _panel_giro = {"occhio": 0, "cervello": 0}
 def _panel_e_modello_principale(modello):
     """True se il modello e' lo stesso del flusso principale (stessa quota giornaliera): mai nel pannello."""
     nome = modello.split("@")[0]
-    return nome in {f"gemini/{GEMINI_MODEL_OCCHIO}", f"gemini/{GEMINI_MODEL_CERVELLO}"}
+    principali = {GEMINI_MODEL_OCCHIO, GEMINI_MODEL_CERVELLO, *GEMINI_MODELLI_RISERVA, *GEMINI_CASCATA}
+    return nome in {f"gemini/{m}" for m in principali}
 
 
 def panel_scegli_modelli(tipo, modelli, adesso=None):

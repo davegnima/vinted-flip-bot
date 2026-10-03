@@ -96,3 +96,30 @@ def test_panel_scelta_modelli_rotazione_pausa_ed_esclusione_principale(monkeypat
     monkeypatch.setattr(m, "PANEL_MODELLI_PER_ANNUNCIO", 0)
     assert "a/1" not in m.panel_scegli_modelli("cervello", lista, adesso=100 + 60)
     assert "a/1" in m.panel_scegli_modelli("cervello", lista, adesso=100 + 31 * 60)                    # pausa scaduta
+
+
+def test_cascata_gemini_scala_per_modello_quando_la_quota_finisce(monkeypatch):
+    import main_telethon as m
+    monkeypatch.setattr(m, "GEMINI_CASCATA", ["m-top", "m-mid", "m-lite"])
+    monkeypatch.setattr(m, "GEMINI_API_KEYS", ["k1", "k2"])
+    monkeypatch.setattr(m, "_gemini_key_quota_esaurita_fino", {})
+    monkeypatch.setattr(m, "_gemini_modello_escluso_fino", {})
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-x:generateContent"
+    assert "/models/m-top:" in m._gemini_url_effettivo(url)
+    m._gemini_segna_key_quota_esaurita("k1", "m-top")
+    assert "/models/m-top:" in m._gemini_url_effettivo(url)          # k2 ha ancora quota su m-top
+    assert m._gemini_key_attuale("m-top") == "k2"
+    m._gemini_segna_key_quota_esaurita("k2", "m-top")
+    assert "/models/m-mid:" in m._gemini_url_effettivo(url)          # m-top esaurito su tutte le key
+    assert not m._gemini_key_in_quota_esaurita("k1", "m-mid")        # la quota e' per modello, non per key
+    m._gemini_segna_key_quota_esaurita("k1", "m-mid"); m._gemini_segna_key_quota_esaurita("k2", "m-mid")
+    m._gemini_segna_key_quota_esaurita("k1", "m-lite"); m._gemini_segna_key_quota_esaurita("k2", "m-lite")
+    assert "/models/m-lite:" in m._gemini_url_effettivo(url)         # tutto esaurito: si resta sull'ultimo
+
+
+def test_senza_cascata_url_invariato(monkeypatch):
+    import main_telethon as m
+    monkeypatch.setattr(m, "GEMINI_CASCATA", [])
+    monkeypatch.setattr(m, "_gemini_modello_escluso_fino", {})
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-x:generateContent"
+    assert m._gemini_url_effettivo(url) == url
