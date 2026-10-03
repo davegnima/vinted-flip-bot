@@ -38,14 +38,17 @@ from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 from PIL import Image
 
+from bot import http_clients as hc
 from bot.costanti import (
     BRAND_BLOCKLIST,
     CATEGORIA_KEYWORDS,
     CATEGORIA_TERMINE_EN,
+    IMAGE_DOWNLOAD_HEADERS,
     MATERIALI_PREGIATI_PRIORITA,
     MATERIALI_TRADUZIONI,
     VENDITORI_BLOCKLIST,
     VINTED_BRAND_IDS,
+    VINTED_HEADERS,
 )  # noqa: F401  (re-export)
 
 from bot.schemas import (
@@ -246,6 +249,93 @@ from bot.filtri import (
     check_skip_pre_gemini,
 )  # noqa: F401  (re-export)
 
+from bot.gemini_stato import (
+    GEMINI_API_KEYS,
+    GEMINI_CASCATA,
+    GEMINI_MODELLI_RISERVA,
+    GEMINI_MODEL_FALLBACK,
+    MAX_RETRIES_GEMINI_IN_BLACKOUT,
+    RAFFREDDAMENTO_GEMINI_SECONDI,
+    RAFFREDDAMENTO_MODELLO_INESISTENTE_SECONDI,
+    RAFFREDDAMENTO_MODELLO_SOVRACCARICO_SECONDI,
+    RAFFREDDAMENTO_QUOTA_ESAURITA_GEMINI_SECONDI,
+    SOGLIA_5XX_GEMINI_PER_BLACKOUT,
+    _GEMINI_API_KEYS_RAW,
+    _gemini_5xx_consecutivi,
+    _gemini_e_errore_quota_giornaliera,
+    _gemini_e_modello_inesistente,
+    _gemini_e_sovraccarico_modello,
+    _gemini_gestisci_modello_non_disponibile,
+    _gemini_in_blackout,
+    _gemini_key_attuale,
+    _gemini_key_in_quota_esaurita,
+    _gemini_key_index,
+    _gemini_key_quota_esaurita_fino,
+    _gemini_modello_da_url,
+    _gemini_modello_escluso,
+    _gemini_modello_escluso_fino,
+    _gemini_modello_senza_quota,
+    _gemini_prossima_key,
+    _gemini_registra_esito,
+    _gemini_secondi_retry,
+    _gemini_segna_key_quota_esaurita,
+    _gemini_segna_modello_non_disponibile,
+    _gemini_timestamp_ultimo_5xx,
+    _gemini_url_effettivo,
+)  # noqa: F401  (re-export)
+
+from bot.proxy import (
+    INTERVALLO_RIEPILOGO_BANDA,
+    INTERVALLO_RIEPILOGO_PROXY,
+    PROXY_LIST,
+    PROXY_QUARANTENA_SECONDI,
+    PROXY_QUARANTENA_SOGLIA,
+    _BANDA_PER_TIPO,
+    _BANDA_REGISTRAZIONI,
+    _CLIENT_VINTED_POOL,
+    _CLIENT_VINTED_POOL_KEYS,
+    _ETICHETTA_PER_CHIAVE_PROXY,
+    _PROXY_BLOCCHI_DI_FILA,
+    _PROXY_ESCLUSI,
+    _PROXY_LIST_RAW,
+    _PROXY_QUARANTENA_FINO,
+    _PROXY_STATS,
+    _PROXY_STATS_RICHIESTE_TOTALI,
+    _etichetta_proxy,
+    _host_porta_proxy,
+    _logga_riepilogo_banda,
+    _logga_riepilogo_proxy,
+    _proxy_in_quarantena,
+    _proxy_indice_rotazione,
+    _registra_banda,
+    _registra_blocco_proxy,
+    _registra_esito_proxy,
+    _tipo_richiesta_vinted,
+)  # noqa: F401  (re-export)
+
+from bot.http_clients import (
+    _crea_client_vinted,
+    _prossimo_client_vinted,
+    _prossimo_indice_vinted,
+    chiudi_client_http,
+    inizializza_client_http,
+)  # noqa: F401  (re-export)
+
+from bot.telegram_api import (
+    TELEGRAM_MAX_ATTESA_429_SECONDI,
+    TELEGRAM_MAX_TENTATIVI,
+    _parametri_reply,
+    _primo_message_id,
+    _spezza_per_telegram,
+    _telegram_esito_ok,
+    _telegram_post,
+    telegram_edit_message,
+    telegram_send_media_group,
+    telegram_send_message,
+    telegram_send_photo,
+    telegram_send_with_buttons,
+)  # noqa: F401  (re-export)
+
 # MIGRAZIONE AD ASYNCIO (2026-09-19)
 # ----------------------------------
 # Telethon e' un framework interamente asincrono: ogni chiamata di rete
@@ -332,196 +422,11 @@ from bot.filtri import (
 # sulla taglia. Sotto questa soglia resta il declassamento automatico di prima.
 
 
-# RILEVAMENTO BLACKOUT GEMINI (richiesto dall'utente il 2026-09-22, log reale:
-# ~12 minuti di 503 "high demand" hanno fatto costare a Occhio/Cervello 1-6
-# minuti a chiamata invece dei pochi secondi normali). La rotazione di key sui
-# 5xx introdotta il 2026-09-21 aiuta quando il 503 e' specifico di UNA key,
-# ma se il blackout e' del MODELLO per chiunque, ogni chiamata continua a
-# bruciare fino a max_retries (4) tentativi x fino a 4 key prima di arrendersi
-# -- decine di secondi reali per tentativo (e' la latenza di Gemini prima di
-# restituire il 503, non un timeout nostro), moltiplicati per ogni round del
-# Cervello. Stessa idea del raffreddamento gia' usato per Serper qui sopra,
-# ma parametri diversi: un blackout Gemini osservato e' uno spike di minuti,
-# non ore, quindi il raffreddamento e' molto piu' corto e si riprova a piena
-# potenza molto prima.
-_gemini_5xx_consecutivi = [0]
-_gemini_timestamp_ultimo_5xx = [0.0]
-SOGLIA_5XX_GEMINI_PER_BLACKOUT = 3      # chiamate Gemini (Occhio o Cervello) di fila
-                                         # finite in errore dopo aver esaurito tutti i
-                                         # tentativi/key, prima di considerarlo un blackout
-RAFFREDDAMENTO_GEMINI_SECONDI = 300     # 5 minuti: passato questo tempo dall'ultimo
-                                         # fallimento si torna a provare a piena potenza
-MAX_RETRIES_GEMINI_IN_BLACKOUT = 2      # tentativi per chiamata durante un blackout rilevato,
                                          # invece del default 4 -- si fallisce prima e si passa
                                          # al fallback (prosa/verdetto senza extra) invece di
                                          # aspettare minuti su una chiamata che quasi certamente
                                          # fallira' comunque
 
-
-def _gemini_in_blackout():
-    """True se le ultime chiamate Gemini sono finite in errore abbastanza di
-    fila e abbastanza di recente da trattarlo come un blackout in corso
-    (stessa logica di in_raffreddamento gia' usata per Serper piu' sotto)."""
-    if _gemini_5xx_consecutivi[0] < SOGLIA_5XX_GEMINI_PER_BLACKOUT:
-        return False
-    return (time.time() - _gemini_timestamp_ultimo_5xx[0]) < RAFFREDDAMENTO_GEMINI_SECONDI
-
-
-def _gemini_registra_esito(successo):
-    """Aggiorna il contatore di blackout dopo ogni chiamata Gemini completata
-    (con successo o con tutti i tentativi/key esauriti). Chiamata da
-    chiama_gemini e da _chiama_gemini_raw dentro chiama_gemini_cervello_forzato
-    -- stesso stato condiviso, perche' un blackout del modello colpisce
-    Occhio e Cervello allo stesso modo."""
-    if successo:
-        if _gemini_5xx_consecutivi[0] >= SOGLIA_5XX_GEMINI_PER_BLACKOUT:
-            log.info("Gemini: uscito dal blackout 5xx (una chiamata e' andata a buon fine).")
-        _gemini_5xx_consecutivi[0] = 0
-    else:
-        _gemini_5xx_consecutivi[0] += 1
-        _gemini_timestamp_ultimo_5xx[0] = time.time()
-        if _gemini_5xx_consecutivi[0] == SOGLIA_5XX_GEMINI_PER_BLACKOUT:
-            log.warning(
-                "Gemini: rilevato blackout (%d chiamate di fila con tutti i tentativi "
-                "esauriti) -- retry ridotti a %d per le prossime chiamate, per %ds.",
-                _gemini_5xx_consecutivi[0], MAX_RETRIES_GEMINI_IN_BLACKOUT, RAFFREDDAMENTO_GEMINI_SECONDI,
-            )
-
-
-# FALLBACK DI MODELLO SU SOVRACCARICO (aggiunto il 2026-09-24, log reale:
-# dalle ~16:00 ora italiana quasi il 100% delle chiamate a
-# gemini-3.5-flash-lite torna 503 "This model is currently experiencing high
-# demand", su TUTTE le key -- 0 successi su ~150 chiamate tra le 16 e le 18).
-# E' un sovraccarico del MODELLO lato Google, non delle nostre key: ruotare
-# key non serve (ogni tentativo brucia comunque 10-45s di latenza prima del
-# 503) e il rilevamento blackout qui sopra riduce solo i tentativi, non
-# recupera l'annuncio. Un modello diverso ha capacita' (e quota free
-# giornaliera) separata, quindi e' l'unica leva che fa davvero passare le
-# chiamate durante uno spike. Quando il modello principale risponde
-# "high demand", si passa SUBITO al modello di riserva per
-# RAFFREDDAMENTO_MODELLO_SOVRACCARICO_SECONDI, poi si riprova il principale.
-#
-# GEMINI_MODEL_FALLBACK: env var, lista di modelli di riserva separati da
-# virgola, provati IN ORDINE dopo il principale. Default
-# "gemini-3.1-flash-lite,gemini-2.5-flash-lite". Stringa vuota = fallback
-# disattivato, comportamento di prima.
-#
-# AGGIORNATO il 2026-09-24 sera (log dopo il primo deploy del fallback): il
-# 503 "high demand" colpiva ANCHE gemini-3.1-flash-lite, quindi una sola
-# riserva non basta -- ora e' una catena. Ogni modello che risponde
-# "high demand" viene escluso per RAFFREDDAMENTO_MODELLO_SOVRACCARICO_SECONDI
-# e si passa subito al successivo; un modello che risponde 404 (nome non piu'
-# servito da Google) viene escluso per RAFFREDDAMENTO_MODELLO_INESISTENTE_SECONDI
-# invece di sprecarci un tentativo a ogni chiamata. Solo quando TUTTI i
-# modelli della catena sono esclusi si torna alla rotazione key + backoff di
-# prima sul principale.
-#
-# AGGIORNATO il 2026-09-26 (log 24-25/09, ~24 item persi): gemini-2.5-flash-lite
-# tolto dal default. Non e' un 503 transitorio ne' un problema di quota: e'
-# un 404 "not found" costante (confermato anche dalla pagina modelli di
-# Google -- l'accesso ai modelli 2.5 e' limitato ai soli progetti che li
-# hanno gia' usati attivamente in passato, e il nostro non l'ha mai fatto,
-# quindi per noi resta bloccato in modo permanente). Aggravato da un bug
-# separato (vedi _gemini_gestisci_modello_non_disponibile piu' sotto): la
-# marcatura di esclusione non scattava mai quando il 404 capitava
-# sull'ultimo tentativo disponibile -- il caso comune durante un blackout,
-# quando i tentativi scendono a MAX_RETRIES_GEMINI_IN_BLACKOUT. Risultato:
-# 67 errori 404 su questo modello nei log, 0 marcature di esclusione
-# registrate, e diversi item persi invece che semplicemente instradati sul
-# prossimo modello della catena.
-GEMINI_MODELLI_RISERVA = [
-    m.strip() for m in os.environ.get(
-        "GEMINI_MODEL_FALLBACK", "gemini-3.1-flash-lite").split(",")
-    if m.strip()
-]
-GEMINI_MODEL_FALLBACK = GEMINI_MODELLI_RISERVA[0] if GEMINI_MODELLI_RISERVA else ""
-# CASCATA DI QUOTE (richiesta dall'utente il 2026-10-03): ogni modello Gemini ha la sua quota giornaliera per key.
-# Con GEMINI_CASCATA="gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite" (dal migliore al piu' leggero)
-# Occhio e Cervello partono dal primo modello e, quando la quota giornaliera finisce su TUTTE le key, scalano al
-# successivo senza attese. Vuota = comportamento di prima (modello principale + GEMINI_MODEL_FALLBACK).
-GEMINI_CASCATA = [m.strip() for m in os.environ.get("GEMINI_CASCATA", "").split(",") if m.strip()]
-RAFFREDDAMENTO_MODELLO_SOVRACCARICO_SECONDI = 15 * 60
-RAFFREDDAMENTO_MODELLO_INESISTENTE_SECONDI = 24 * 3600
-_gemini_modello_escluso_fino = {}
-
-
-def _gemini_e_sovraccarico_modello(status_code, corpo_testo):
-    """True se la risposta e' il 503 di sovraccarico del modello ("high
-    demand" / UNAVAILABLE), non un errore generico o di una singola key."""
-    if status_code != 503 or not corpo_testo:
-        return False
-    t = corpo_testo.lower()
-    return "high demand" in t or "overloaded" in t or "unavailable" in t
-
-
-def _gemini_e_modello_inesistente(status_code, corpo_testo):
-    """True se il modello richiesto non esiste (piu') per questa API."""
-    if status_code != 404:
-        return False
-    t = (corpo_testo or "").lower()
-    return "not found" in t or "not supported" in t or "is not found" in t or not t
-
-
-def _gemini_modello_da_url(api_url):
-    m = re.search(r"/models/([^:/]+):", api_url)
-    return m.group(1) if m else None
-
-
-def _gemini_modello_escluso(modello):
-    scadenza = _gemini_modello_escluso_fino.get(modello)
-    if scadenza is None:
-        return False
-    if time.time() >= scadenza:
-        del _gemini_modello_escluso_fino[modello]
-        return False
-    return True
-
-
-def _gemini_segna_modello_non_disponibile(modello, secondi, motivo):
-    if not _gemini_modello_escluso(modello):
-        log.warning("Gemini: modello %s %s -- escluso per %d minuti, passo al successivo della catena.",
-                    modello, motivo, secondi // 60)
-    _gemini_modello_escluso_fino[modello] = time.time() + secondi
-
-
-def _gemini_url_effettivo(api_url):
-    """URL del primo modello disponibile della catena principale ->
-    GEMINI_MODELLI_RISERVA. Se sono tutti esclusi si torna al principale
-    (e da li' valgono rotazione key e backoff come prima). Sostituisce solo il
-    nome del modello nel path, quindi vale per Occhio e Cervello."""
-    if GEMINI_CASCATA:
-        for modello in GEMINI_CASCATA:
-            if not _gemini_modello_escluso(modello) and not _gemini_modello_senza_quota(modello):
-                return re.sub(r"/models/[^:/]+:", f"/models/{modello}:", api_url)
-        return re.sub(r"/models/[^:/]+:", f"/models/{GEMINI_CASCATA[-1]}:", api_url)
-    principale = _gemini_modello_da_url(api_url)
-    if not principale or not GEMINI_MODELLI_RISERVA:
-        return api_url
-    catena = [principale] + [m for m in GEMINI_MODELLI_RISERVA if m != principale]
-    for modello in catena:
-        if not _gemini_modello_escluso(modello):
-            if modello == principale:
-                return api_url
-            return re.sub(r"/models/[^:/]+:", f"/models/{modello}:", api_url)
-    return api_url
-
-
-def _gemini_gestisci_modello_non_disponibile(api_url, url_usato, status_code, corpo_testo):
-    """Chiamata dopo una risposta non-2xx. Se l'errore dice che il MODELLO
-    (non la key) non e' disponibile, lo esclude e ritorna True quando esiste
-    un altro modello della catena su cui ritentare subito."""
-    if not GEMINI_MODELLI_RISERVA:
-        return False
-    modello = _gemini_modello_da_url(url_usato)
-    if _gemini_e_sovraccarico_modello(status_code, corpo_testo):
-        _gemini_segna_modello_non_disponibile(
-            modello, RAFFREDDAMENTO_MODELLO_SOVRACCARICO_SECONDI, "in sovraccarico (503 high demand)")
-    elif _gemini_e_modello_inesistente(status_code, corpo_testo):
-        _gemini_segna_modello_non_disponibile(
-            modello, RAFFREDDAMENTO_MODELLO_INESISTENTE_SECONDI, "non disponibile (404)")
-    else:
-        return False
-    return _gemini_url_effettivo(api_url) != url_usato
 
 # Rate-limiter tra richieste Vinted consecutive: dopo ~13h di attivita'
 # continua Vinted ha iniziato a rispondere 403 Forbidden (probabile blocco
@@ -613,252 +518,6 @@ PAUSA_MINIMA_TRA_RICHIESTE_VINTED_SECONDI = 3.0
 # TELEGRAM BOT API HELPERS
 # ---------------------------------------------------------------------------
 
-def _spezza_per_telegram(text, max_len=3500):
-    """Chunking condiviso da telegram_send_message e telegram_send_with_buttons
-    (prima duplicato identico in entrambe). Taglia preferibilmente su riga
-    vuota, poi su a capo, e solo come ultima risorsa a lunghezza fissa.
-
-    FIX 2026-09-26 (bot congelato in produzione dalle 07:41 UTC, memoria da
-    0,3 a 7,3 GB in un'ora): il resto dopo un taglio iniziava con lo stesso
-    separatore "\\n\\n" su cui si era tagliato. Se nei successivi max_len
-    caratteri non c'era un'altra riga vuota, rfind restituiva 0 (non -1),
-    quindi split_at=0: si aggiungeva un chunk vuoto e il resto restava
-    identico -> loop infinito sincrono che bloccava l'intero event loop
-    (nessun log, nessun messaggio, nessun nuovo annuncio) e riempiva la RAM
-    di stringhe vuote. Ora la ricerca parte da 1, il resto viene ripulito
-    dagli a capo iniziali e un taglio a 0 non e' piu' possibile."""
-    chunks = []
-    remaining = text
-    while remaining:
-        if len(remaining) <= max_len:
-            chunks.append(remaining)
-            break
-        split_at = remaining.rfind("\n\n", 1, max_len)
-        if split_at <= 0:
-            split_at = remaining.rfind("\n", 1, max_len)
-        if split_at <= 0:
-            split_at = max_len
-        pezzo = remaining[:split_at]
-        if pezzo.strip():
-            chunks.append(pezzo)
-        remaining = remaining[split_at:].lstrip("\n")
-    return chunks or [text]
-
-
-TELEGRAM_MAX_TENTATIVI = 3
-TELEGRAM_MAX_ATTESA_429_SECONDI = 60
-
-
-async def _telegram_post(metodo, max_tentativi=TELEGRAM_MAX_TENTATIVI, **kwargs):
-    """POST alla Bot API con retry su 429 (flood control, rispettando il
-    retry_after indicato da Telegram) e su errori di rete. Prima ogni
-    chiamata era un singolo post senza controllo dell'esito: un 429 durante
-    un burst di annunci, o un timeout, faceva sparire la notifica senza
-    nessuna traccia nei log. Ritorna la response (anche se non is_success:
-    gli errori 400, es. Markdown non valido, li gestisce il chiamante) oppure
-    None se tutti i tentativi sono falliti per errore di rete.
-
-    Nei log NON compare mai l'URL (contiene il token del bot): solo il nome
-    del metodo, lo status e il corpo della risposta di Telegram."""
-    resp = None
-    for tentativo in range(1, max_tentativi + 1):
-        try:
-            resp = await _client_telegram.post(f"{TELEGRAM_API}/{metodo}", **kwargs)
-        except Exception as e:
-            log.warning("Telegram %s: errore di rete (tentativo %d/%d): %s",
-                        metodo, tentativo, max_tentativi, type(e).__name__)
-            resp = None
-            if tentativo < max_tentativi:
-                await asyncio.sleep(2 * tentativo)
-            continue
-        if resp.status_code == 429 and tentativo < max_tentativi:
-            try:
-                retry_after = float(resp.json().get("parameters", {}).get("retry_after", 5))
-            except Exception:
-                retry_after = 5.0
-            attesa = min(retry_after, TELEGRAM_MAX_ATTESA_429_SECONDI) + 0.5
-            log.warning("Telegram %s: 429 flood control, attendo %.1fs (tentativo %d/%d)",
-                        metodo, attesa, tentativo, max_tentativi)
-            await asyncio.sleep(attesa)
-            continue
-        return resp
-    return resp
-
-
-def _telegram_esito_ok(resp, metodo, contesto=""):
-    """True se la chiamata e' andata a buon fine, altrimenti logga a ERROR
-    (non piu' fallimenti silenziosi) e ritorna False."""
-    if resp is not None and resp.is_success:
-        return True
-    dettaglio = f"HTTP {resp.status_code}: {resp.text[:300]}" if resp is not None else "nessuna risposta (errore di rete)"
-    log.error("Telegram %s FALLITA%s -- %s", metodo, f" ({contesto})" if contesto else "", dettaglio)
-    return False
-
-
-def _parametri_reply(reply_to):
-    """Campo reply_parameters della Bot API per rispondere a un messaggio
-    (usato per agganciare il verdetto alla galleria mandata in anticipo).
-    allow_sending_without_reply: se il messaggio originale non esiste piu'
-    (cancellato a mano) il verdetto arriva lo stesso, solo non agganciato."""
-    if not reply_to:
-        return {}
-    return {"reply_parameters": {"message_id": int(reply_to), "allow_sending_without_reply": True}}
-
-
-def _primo_message_id(resp):
-    """message_id del (primo) messaggio creato da sendPhoto/sendMediaGroup,
-    o None se la chiamata e' fallita. sendMediaGroup ritorna una lista di
-    messaggi (uno per foto): si risponde al primo, che porta la didascalia."""
-    if resp is None or not resp.is_success:
-        return None
-    try:
-        risultato = resp.json().get("result")
-        if isinstance(risultato, list):
-            risultato = risultato[0] if risultato else None
-        return (risultato or {}).get("message_id")
-    except Exception:
-        return None
-
-
-async def telegram_send_message(chat_id, text, disable_notification=False, reply_to=None):
-    MAX_LEN = 3500
-    for i, chunk in enumerate(_spezza_per_telegram(text, MAX_LEN)):
-        # Solo il primo pezzo risponde alla galleria: i successivi seguono
-        # comunque subito sotto, ripetere la citazione sarebbe solo rumore.
-        extra_reply = _parametri_reply(reply_to) if i == 0 else {}
-        resp = await _telegram_post(
-            "sendMessage",
-            json={
-                "chat_id": chat_id, "text": chunk, "parse_mode": "Markdown",
-                "disable_web_page_preview": True, "disable_notification": disable_notification,
-                **extra_reply,
-            },
-        )
-        if resp is not None and not resp.is_success:
-            log.warning("sendMessage Markdown fallita -- HTTP %d: %s -- ritento senza parse_mode", resp.status_code, resp.text[:300])
-            resp = await _telegram_post(
-                "sendMessage",
-                json={
-                    "chat_id": chat_id, "text": chunk,
-                    "disable_web_page_preview": True, "disable_notification": disable_notification,
-                    **extra_reply,
-                },
-            )
-        _telegram_esito_ok(resp, "sendMessage", "senza parse_mode")
-
-
-async def telegram_send_photo(chat_id, photo_bytes, caption=None, disable_notification=False):
-    """Ritorna il message_id della foto inviata (None se fallita)."""
-    files = {"photo": ("photo.jpg", photo_bytes)}
-    data = {"chat_id": chat_id, "disable_notification": disable_notification}
-    if caption:
-        data["caption"] = caption[:1024]
-    resp = await _telegram_post("sendPhoto", data=data, files=files, timeout=30)
-    _telegram_esito_ok(resp, "sendPhoto")
-    return _primo_message_id(resp)
-
-
-async def telegram_send_media_group(chat_id, photos_bytes_list, caption=None, disable_notification=False):
-    """Ritorna il message_id della prima foto dell'album (None se fallito)."""
-    if not photos_bytes_list:
-        return None
-    files = {}
-    media = []
-    for i, photo_bytes in enumerate(photos_bytes_list[:10]):
-        key = f"photo{i}"
-        files[key] = (f"photo{i}.jpg", photo_bytes, "image/jpeg")
-        item = {"type": "photo", "media": f"attach://{key}"}
-        if i == 0 and caption:
-            item["caption"] = caption[:1024]
-        media.append(item)
-    resp = await _telegram_post(
-        "sendMediaGroup",
-        data={"chat_id": chat_id, "media": json.dumps(media), "disable_notification": disable_notification},
-        files=files,
-        timeout=60,
-    )
-    _telegram_esito_ok(resp, "sendMediaGroup", f"{len(media)} foto")
-    return _primo_message_id(resp)
-
-
-async def telegram_send_with_buttons(chat_id, text, url_annuncio, item_id=None, disable_notification=False,
-                                     reply_to=None):
-    """Manda 'text' con i bottoni inline in fondo. Bug corretto il 2026-09-19:
-    a differenza di telegram_send_message, questa funzione non spezzava mai
-    il testo -- oltre 4096 caratteri (limite Telegram per sendMessage) la
-    richiesta falliva con lo STESSO errore sia col tentativo Markdown sia col
-    retry senza parse_mode (il limite di lunghezza non c'entra col parse_mode),
-    quindi l'intero messaggio testuale spariva silenziosamente: le foto
-    (mandate prima, in una chiamata separata) arrivavano, il verdetto/analisi
-    no. Osservato in produzione con DEBUG_CONFRONTO_COMP_TELEGRAM=true (il
-    pool di ricerca grezzo in coda al messaggio spingeva facilmente oltre
-    4096), ma il bug esisteva a prescindere per qualunque messaggio
-    abbastanza lungo. Ora usa lo stesso chunking di telegram_send_message,
-    con i bottoni spostati sull'ULTIMO chunk (dove servono davvero: aprire
-    l'annuncio/scrivere al venditore dopo aver letto tutto)."""
-    chunks = _spezza_per_telegram(text, 3500)
-
-    keyboard = {"inline_keyboard": [[
-        {"text": "🔗 Apri su Vinted", "url": url_annuncio},
-    ]]}
-    if item_id:
-        keyboard["inline_keyboard"].append([
-            {"text": "💬 Scrivi venditore", "url": f"https://www.vinted.it/items/{item_id}"},
-        ])
-
-    primo_id = None
-    for i, chunk in enumerate(chunks):
-        e_ultimo_chunk = (i == len(chunks) - 1)
-        payload_base = {
-            "chat_id": chat_id, "text": chunk, "disable_web_page_preview": True,
-            "disable_notification": disable_notification,
-        }
-        if e_ultimo_chunk:
-            payload_base["reply_markup"] = keyboard
-        if i == 0:
-            payload_base.update(_parametri_reply(reply_to))
-        resp = await _telegram_post(
-            "sendMessage",
-            json={**payload_base, "parse_mode": "Markdown"},
-        )
-        if resp is not None and not resp.is_success:
-            log.warning(
-                "telegram_send_with_buttons: Markdown fallita -- HTTP %d: %s -- ritento senza parse_mode",
-                resp.status_code, resp.text[:300],
-            )
-            resp = await _telegram_post("sendMessage", json=payload_base)
-        _telegram_esito_ok(resp, "sendMessage", f"con bottoni, chunk {i + 1}/{len(chunks)}")
-        if i == 0:
-            primo_id = _primo_message_id(resp)
-    return primo_id
-
-
-async def telegram_edit_message(chat_id, message_id, text, url_annuncio=None):
-    """Modifica un messaggio GIA' inviato dal bot (Bot API editMessageText)
-    invece di mandarne un altro: nessuna nuova notifica, la chat non si
-    riempie. Punti da conoscere:
-     - editMessageText senza reply_markup TOGLIE i bottoni inline, quindi il
-       bottone "Apri su Vinted" va rimandato a ogni modifica;
-     - Telegram risponde 400 "message is not modified" se il testo e' uguale:
-       non e' un errore, si ignora;
-     - si possono modificare solo messaggi di testo del bot stesso; la
-       notifica push gia' consegnata non cambia (resta il testo originale).
-    Ritorna True se la modifica e' andata a buon fine."""
-    if not message_id:
-        return False
-    payload = {"chat_id": chat_id, "message_id": int(message_id), "text": text[:4000],
-               "disable_web_page_preview": True}
-    if url_annuncio:
-        payload["reply_markup"] = {"inline_keyboard": [[{"text": "🔗 Apri su Vinted", "url": url_annuncio}]]}
-    resp = await _telegram_post("editMessageText", json={**payload, "parse_mode": "Markdown"})
-    if resp is not None and not resp.is_success:
-        if "not modified" in (resp.text or ""):
-            return True
-        resp = await _telegram_post("editMessageText", json=payload)
-        if resp is not None and not resp.is_success and "not modified" in (resp.text or ""):
-            return True
-    return bool(resp is not None and resp.is_success)
-
 
 # ---------------------------------------------------------------------------
 # PARSING MESSAGGI E SCRAPING VINTED
@@ -937,30 +596,6 @@ def extract_url_from_text(text):
     match = URL_REGEX.search(text or "")
     return match.group(0) if match else None
 
-
-VINTED_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) "
-        "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1"
-    ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-    "Accept-Language": "it-IT,it;q=0.9",
-    "Accept-Encoding": "gzip, deflate",
-    "Connection": "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
-    "Sec-Fetch-Dest": "document",
-    "Sec-Fetch-Mode": "navigate",
-    "Sec-Fetch-Site": "none",
-    "Sec-Fetch-User": "?1",
-}
-IMAGE_DOWNLOAD_HEADERS = {
-    "User-Agent": VINTED_HEADERS["User-Agent"],
-    "Accept-Language": VINTED_HEADERS["Accept-Language"],
-    "Referer": "https://www.vinted.it/",
-    "Accept": "image/webp,image/avif,image/jpeg,image/png,image/*,*/*;q=0.8",
-    "Sec-Fetch-Dest": "image", "Sec-Fetch-Mode": "no-cors", "Sec-Fetch-Site": "same-site",
-    "Connection": "keep-alive",
-}
 
 # TOKEN_FILE: dentro /data, il path del Volume Railway ("vinted-tokens")
 # creato e agganciato al servizio "worker" il 2026-09-20 apposta per questo.
@@ -1047,401 +682,6 @@ def _jwt_scaduto(token, margine_secondi=120):
         return time.time() >= (exp - margine_secondi)
     except Exception:
         return True
-
-# ---------------------------------------------------------------------------
-# GEMINI API KEYS (opzionale) -- rotazione su quota esaurita, stesso
-# principio della rotazione proxy qui sotto. Aggiunta il 2026-09-20 su
-# richiesta esplicita dell'utente dopo un caso reale in produzione: il piano
-# gratuito ("generate_content_free_tier_requests, limit: 500") si e' esaurito
-# nel giro di poche ore di traffico normale, con Occhio e Cervello entrambi
-# falliti su piu' annunci nonostante il backoff (i 429 di quota esaurita non
-# sono un rate-limit al minuto che si risolve da solo in pochi secondi: nei
-# log Google chiedeva "retry in 30-60s", molto piu' del backoff massimo di
-# ~14s su 4 tentativi, e nel frattempo il bot continuava a generarne altri).
-#
-# Formato variabile d'ambiente GEMINI_API_KEYS: chiavi separate da virgola
-# (una per account Google/progetto AI Studio, cosi' ognuna ha la sua quota
-# free indipendente), es. "AIzaSy...primo,AIzaSy...secondo". Se non
-# impostata, si usa solo GEMINI_API_KEY (comportamento originale, nessun
-# rischio di rottura). La rotazione e' "sticky": si resta sulla key corrente
-# finche' funziona (niente round-robin ad ogni chiamata, sprecherebbe quota
-# su piu' key per nulla), e si avanza alla prossima SOLO quando una chiamata
-# incassa un 429 di quota esaurita -- vedi chiama_gemini e
-# chiama_gemini_cervello_forzato.
-_GEMINI_API_KEYS_RAW = os.environ.get("GEMINI_API_KEYS", "").strip()
-GEMINI_API_KEYS = (
-    [k.strip() for k in _GEMINI_API_KEYS_RAW.split(",") if k.strip()]
-    if _GEMINI_API_KEYS_RAW else [GEMINI_API_KEY]
-)
-_gemini_key_index = [0]
-
-if len(GEMINI_API_KEYS) > 1:
-    log.info("Gemini: %d API key attive, rotazione automatica su quota esaurita (429).", len(GEMINI_API_KEYS))
-else:
-    log.info("Gemini: 1 sola API key (GEMINI_API_KEYS non impostata) -- nessuna rotazione disponibile.")
-
-
-def _gemini_key_attuale(modello=None):
-    """Key Gemini da usare nella prossima chiamata. Se la key su cui la
-    rotazione sticky si trova al momento e' in cooldown per quota
-    giornaliera esaurita (vedi _gemini_key_in_quota_esaurita) e ce n'e'
-    un'altra disponibile, avanza subito senza aspettare un fallimento --
-    evita di sprecare il primo tentativo di ogni chiamata su una key gia'
-    nota per fallire sempre (caso reale del 2026-09-22, vedi commento
-    esteso su _gemini_key_quota_esaurita_fino)."""
-    if len(GEMINI_API_KEYS) > 1:
-        indice_iniziale = _gemini_key_index[0]
-        for _ in range(len(GEMINI_API_KEYS)):
-            if not _gemini_key_in_quota_esaurita(GEMINI_API_KEYS[_gemini_key_index[0] % len(GEMINI_API_KEYS)], modello):
-                break
-            _gemini_key_index[0] = (_gemini_key_index[0] + 1) % len(GEMINI_API_KEYS)
-            if _gemini_key_index[0] == indice_iniziale:
-                # Giro completo, tutte in cooldown -- si usa comunque questa,
-                # meglio tentare che restituire un errore senza nemmeno provare.
-                break
-    return GEMINI_API_KEYS[_gemini_key_index[0] % len(GEMINI_API_KEYS)]
-
-
-def _gemini_prossima_key(modello=None):
-    """Passa alla key successiva -- chiamata dopo un 429 (quota esaurita) o,
-    da FIX 2026-09-21, anche dopo un 500/502/503/504 (vedi commento esteso
-    in chiama_gemini). Ritorna True se si e' davvero cambiata key (ce
-    n'erano altre disponibili oltre a quella corrente), False se c'e' una
-    sola key o si e' gia' fatto il giro completo -- in quel caso ha senso
-    solo il backoff, non un altro switch immediato.
-
-    Salta le key gia' segnalate come a quota giornaliera esaurita (vedi
-    _gemini_segna_key_quota_esaurita) quando ce ne sono altre disponibili,
-    cosi' la rotazione "sticky" non ci si pianta sopra di nuovo al giro
-    successivo -- vedi caso reale del 2026-09-22 sotto."""
-    if len(GEMINI_API_KEYS) <= 1:
-        return False
-    indice_prima = _gemini_key_index[0]
-    for _ in range(len(GEMINI_API_KEYS)):
-        _gemini_key_index[0] = (_gemini_key_index[0] + 1) % len(GEMINI_API_KEYS)
-        if _gemini_key_index[0] == indice_prima:
-            # Giro completo: tutte le altre key sono in cooldown di quota,
-            # non c'e' scelta migliore -- si resta su questa.
-            break
-        if not _gemini_key_in_quota_esaurita(GEMINI_API_KEYS[_gemini_key_index[0]], modello):
-            break
-    log.warning(
-        "Gemini: key #%d in errore (429/5xx), passo alla key #%d.",
-        indice_prima + 1, _gemini_key_index[0] + 1,
-    )
-    return _gemini_key_index[0] != indice_prima
-
-
-# Cooldown per key con quota giornaliera esaurita (429 RESOURCE_EXHAUSTED sul
-# piano free, es. "generate_content_free_tier_requests, limit: 500") --
-# aggiunto il 2026-09-22, caso reale: durante un blackout 503 di ~45 minuti
-# (vedi _gemini_in_blackout piu' sopra) la key #3 tra le 4 configurate
-# risultava SEMPRE in errore 429 di quota esaurita, letteralmente su ogni
-# singola chiamata dell'intera finestra osservata nei log -- non un
-# rate-limit che si risolve da solo (il messaggio di Google suggeriva
-# "retry in" pochi secondi, ma e' una quota GIORNALIERA: il vero reset e'
-# su scala di ore, non secondi). La rotazione "sticky" esistente passava
-# comunque, prima o poi, di nuovo su quella key ad ogni giro, sprecando un
-# tentativo garantito-fallimentare -- particolarmente costoso durante un
-# blackout 503 concorrente, dove i tentativi disponibili sono gia' ridotti
-# a MAX_RETRIES_GEMINI_IN_BLACKOUT (2): un tentativo su una key morta
-# dimezza le vere chance di successo su una key diversa. Con questo
-# cooldown, una volta rilevata una key a quota esaurita, la si esclude
-# dalla rotazione per alcune ore invece di ritentarla ad ogni giro.
-_gemini_key_quota_esaurita_fino = {}
-RAFFREDDAMENTO_QUOTA_ESAURITA_GEMINI_SECONDI = 6 * 3600  # 6 ore, stima prudente verso il basso rispetto al reset giornaliero reale
-
-
-def _gemini_e_errore_quota_giornaliera(status_code, corpo_testo):
-    """True se la risposta 429 e' una vera quota GIORNALIERA esaurita
-    (RESOURCE_EXHAUSTED sul piano free), non un generico rate-limit al
-    minuto -- distinzione fatta sul corpo della risposta Google, non solo
-    sullo status code, perche' un 429 puo' in teoria capitare anche per
-    altri motivi transitori."""
-    if status_code != 429 or not corpo_testo:
-        return False
-    testo_lower = corpo_testo.lower()
-    return "resource_exhausted" in testo_lower or "free_tier" in testo_lower or "exceeded your current quota" in testo_lower
-
-
-def _gemini_secondi_retry(corpo_testo):
-    """Secondi di attesa suggeriti da Google in un 429 (campo retryDelay "37046s" o testo "retry in 46.8s" /
-    "retry in 10h17m26s"). None se assenti. Distingue il limite al minuto (decine di secondi) da quello
-    giornaliero (ore): il 2026-10-03 gemini-3.5-flash (5 richieste/minuto) veniva escluso per 6 ore."""
-    if not corpo_testo:
-        return None
-    m = re.search(r'"retryDelay"\s*:\s*"([\d.]+)s"', corpo_testo)
-    if m:
-        return float(m.group(1))
-    m = re.search(r"retry in (?:(\d+)h)?(?:(\d+)m)?(?:([\d.]+)s)?", corpo_testo)
-    if m and any(m.groups()):
-        return int(m.group(1) or 0) * 3600 + int(m.group(2) or 0) * 60 + float(m.group(3) or 0)
-    return None
-
-
-def _gemini_segna_key_quota_esaurita(key, modello=None, secondi=None):
-    """Marca `key` come a quota giornaliera esaurita per
-    RAFFREDDAMENTO_QUOTA_ESAURITA_GEMINI_SECONDI: la rotazione la salta
-    finche' il cooldown non scade (vedi _gemini_prossima_key /
-    _gemini_key_in_quota_esaurita)."""
-    gia_segnalata = _gemini_key_in_quota_esaurita(key, modello)
-    durata = RAFFREDDAMENTO_QUOTA_ESAURITA_GEMINI_SECONDI
-    if secondi is not None:
-        durata = min(max(secondi + 2, 5), 24 * 3600)   # attesa indicata da Google (minuto o giorno), non 6h fisse
-    _gemini_key_quota_esaurita_fino[(key, modello or "")] = time.time() + durata
-    if not gia_segnalata:
-        log.warning(
-            "Gemini: key in errore 429 di quota esaurita per il modello %s -- esclusa dalla rotazione per %s.",
-            modello or "(qualsiasi)", f"{durata / 60:.0f} minuti" if durata >= 120 else f"{durata:.0f} secondi",
-        )
-
-
-def _gemini_modello_senza_quota(modello):
-    """True se la quota giornaliera di `modello` e' esaurita su TUTTE le key: la cascata passa al successivo."""
-    return bool(GEMINI_API_KEYS) and all(_gemini_key_in_quota_esaurita(k, modello) for k in GEMINI_API_KEYS)
-
-
-def _gemini_key_in_quota_esaurita(key, modello=None):
-    """True se `key` e' attualmente in cooldown per quota giornaliera
-    esaurita (vedi _gemini_segna_key_quota_esaurita)."""
-    chiave = (key, modello or "")
-    scadenza = _gemini_key_quota_esaurita_fino.get(chiave)
-    if scadenza is None:
-        return False
-    if time.time() >= scadenza:
-        del _gemini_key_quota_esaurita_fino[chiave]
-        return False
-    return True
-
-
-# ---------------------------------------------------------------------------
-# PROXY (opzionale) -- rotazione sulle richieste dirette a Vinted, stesso
-# tipo di protezione gia' attiva sul tracker gratuito (Vinted-Notifications).
-# Formato variabile d'ambiente PROXY_LIST: URL completi separati da virgola,
-# es. "http://utente:password@p.webshare.io:80,http://utente:password@p2..."
-# -- lo trovi copiandoli dalla dashboard Webshare (o qualunque provider).
-# Se la variabile non e' impostata, il bot funziona esattamente come prima
-# (nessuna proxy, richieste dirette) -- nessun rischio di rottura.
-_PROXY_LIST_RAW = os.environ.get("PROXY_LIST", "").strip()
-PROXY_LIST = [p.strip() for p in _PROXY_LIST_RAW.split(",") if p.strip()] if _PROXY_LIST_RAW else []
-_proxy_indice_rotazione = [0]
-
-# PROXY_ESCLUSI (aggiunto 2026-09-27, utente: "elimina quelli in 403"):
-# elenco "host:porta" separati da virgola da scartare da PROXY_LIST
-# all'avvio, senza dover riscrivere PROXY_LIST (che contiene le credenziali
-# e su Railway non e' rileggibile in chiaro dagli strumenti). Stesso formato
-# che il comando /test_proxy stampa per ogni proxy, quindi basta copiare gli
-# indirizzi dei falliti. Togliere un indirizzo da qui lo rimette in rotazione.
-_PROXY_ESCLUSI = {
-    p.strip().lower() for p in os.environ.get("PROXY_ESCLUSI", "").split(",") if p.strip()
-}
-
-
-def _host_porta_proxy(proxy_url):
-    try:
-        p = urlparse(proxy_url)
-        return f"{p.hostname}:{p.port}".lower()
-    except Exception:
-        return ""
-
-
-if _PROXY_ESCLUSI and PROXY_LIST:
-    _prima = len(PROXY_LIST)
-    PROXY_LIST = [p for p in PROXY_LIST if _host_porta_proxy(p) not in _PROXY_ESCLUSI]
-    _trovati = _prima - len(PROXY_LIST)
-    log.info(
-        "PROXY_ESCLUSI: scartati %d proxy su %d indicati (%d restano in rotazione)%s.",
-        _trovati, len(_PROXY_ESCLUSI), len(PROXY_LIST),
-        "" if _trovati == len(_PROXY_ESCLUSI)
-        else " -- ATTENZIONE: alcuni indirizzi di PROXY_ESCLUSI non corrispondono a nessun proxy di PROXY_LIST",
-    )
-
-if PROXY_LIST:
-    log.info("Proxy attivi: %d indirizzi caricati da PROXY_LIST, in rotazione round-robin.", len(PROXY_LIST))
-else:
-    log.info("Nessun PROXY_LIST impostato -- richieste dirette senza proxy (comportamento originale).")
-
-
-# ---------------------------------------------------------------------------
-# LOGGING PER-PROXY (aggiunto 2026-09-27, utente: "non e' che alcuni miei ip
-# sono bruciati?"): prima di questo non esisteva ALCUN modo di sapere, dai
-# log, quale proxy/IP avesse gestito una data richiesta -- ogni fallimento
-# di scraping era anonimo rispetto al pool di 53 proxy in rotazione. Senza
-# questo dato non si puo' distinguere "alcuni IP bruciati" (atteso: un mix
-# di successi e fallimenti nella rotazione) da un blocco sistemico che
-# colpisce l'intero pool allo stesso modo (osservato oggi: 0 successi su
-# centinaia di richieste su TUTTI i proxy per 5+ ore) -- vedi anche il
-# commento sul blocco totale del 27/9 in _vinted_get_con_retry piu' sotto.
-#
-# _etichetta_proxy: identificativo leggibile SENZA credenziali (host:porta),
-# cosi' i log restano correlabili proxy-per-proxy senza scrivere utente/
-# password in chiaro (i proxy_url in PROXY_LIST li contengono, es.
-# "http://utente:password@host:porta").
-def _etichetta_proxy(chiave):
-    if chiave == "diretto":
-        return "diretto"
-    try:
-        p = urlparse(chiave)
-        return f"{p.hostname or '?'}:{p.port or '?'}"
-    except Exception:
-        return "proxy-sconosciuto"
-
-
-# Popolato in inizializza_client_http() una volta creato il pool: mappa
-# chiave (proxy_url o "diretto", vedi _CLIENT_VINTED_POOL_KEYS) -> etichetta
-# leggibile "#indice host:porta", stabile per tutta la vita del processo.
-_ETICHETTA_PER_CHIAVE_PROXY = {}
-
-# Contatori cumulativi per proxy (chiave -> {"ok": int, "falliti": int}),
-# per poter loggare periodicamente un riepilogo "quali IP stanno fallendo
-# sistematicamente" senza dover rileggere migliaia di righe di log grezzi.
-_PROXY_STATS = {}
-_PROXY_STATS_RICHIESTE_TOTALI = [0]
-# Ogni quante richieste totali (su tutti i proxy) stampare il riepilogo --
-# abbastanza spesso da essere utile su un pool di 53 proxy senza inondare i
-# log a ogni singola chiamata.
-INTERVALLO_RIEPILOGO_PROXY = 40
-
-
-# QUARANTENA AUTOMATICA PROXY (2026-10-01, utente: 21 proxy su 46 bloccati da
-# Vinted con 403, escluderli a mano via PROXY_ESCLUSI a ogni blocco e' un lavoro
-# continuo). Un proxy che prende PROXY_QUARANTENA_SOGLIA 403/429 di fila esce
-# dalla rotazione per PROXY_QUARANTENA_ORE ore, poi viene riprovato: se al primo
-# tentativo fallisce di nuovo rientra subito in quarantena, se funziona torna
-# normale. Solo 403/429 contano (segnale di blocco): timeout, 404 (annuncio
-# rimosso) e altri errori no. Se TUTTI i proxy sono in quarantena la rotazione
-# ignora il filtro: meglio provare un proxy sospetto che restare senza.
-PROXY_QUARANTENA_SOGLIA = max(1, int(os.environ.get("PROXY_QUARANTENA_SOGLIA", "3")))
-PROXY_QUARANTENA_SECONDI = float(os.environ.get("PROXY_QUARANTENA_ORE", "3")) * 3600
-_PROXY_BLOCCHI_DI_FILA = {}
-_PROXY_QUARANTENA_FINO = {}
-
-
-def _proxy_in_quarantena(chiave):
-    scadenza = _PROXY_QUARANTENA_FINO.get(chiave)
-    if scadenza is None:
-        return False
-    if time.time() >= scadenza:
-        del _PROXY_QUARANTENA_FINO[chiave]
-        # Primo tentativo dopo la pausa: un solo altro blocco lo rimette fuori.
-        _PROXY_BLOCCHI_DI_FILA[chiave] = PROXY_QUARANTENA_SOGLIA - 1
-        log.info("Proxy [%s] rientra dalla quarantena, riprovo.",
-                 _ETICHETTA_PER_CHIAVE_PROXY.get(chiave) or _etichetta_proxy(chiave))
-        return False
-    return True
-
-
-def _registra_blocco_proxy(chiave, bloccato):
-    """Aggiorna il contatore di blocchi consecutivi. bloccato=True per un
-    403/429, False per un successo (azzera il contatore)."""
-    if not bloccato:
-        _PROXY_BLOCCHI_DI_FILA[chiave] = 0
-        return
-    n = _PROXY_BLOCCHI_DI_FILA.get(chiave, 0) + 1
-    _PROXY_BLOCCHI_DI_FILA[chiave] = n
-    if n >= PROXY_QUARANTENA_SOGLIA and chiave not in _PROXY_QUARANTENA_FINO:
-        _PROXY_QUARANTENA_FINO[chiave] = time.time() + PROXY_QUARANTENA_SECONDI
-        log.warning(
-            "Proxy [%s] in QUARANTENA per %.0fh dopo %d blocchi (403/429) di fila -- "
-            "%d proxy in quarantena su %d.",
-            _ETICHETTA_PER_CHIAVE_PROXY.get(chiave) or _etichetta_proxy(chiave),
-            PROXY_QUARANTENA_SECONDI / 3600, n, len(_PROXY_QUARANTENA_FINO), len(_CLIENT_VINTED_POOL),
-        )
-
-
-def _registra_esito_proxy(chiave, ok, bloccato=False):
-    # Un successo azzera i blocchi di fila; i fallimenti NON da blocco
-    # (timeout, 404...) non toccano il contatore.
-    if ok:
-        _registra_blocco_proxy(chiave, False)
-    elif bloccato:
-        _registra_blocco_proxy(chiave, True)
-    stats = _PROXY_STATS.setdefault(chiave, {"ok": 0, "falliti": 0})
-    stats["ok" if ok else "falliti"] += 1
-    _PROXY_STATS_RICHIESTE_TOTALI[0] += 1
-    if _PROXY_STATS_RICHIESTE_TOTALI[0] % INTERVALLO_RIEPILOGO_PROXY == 0:
-        _logga_riepilogo_proxy()
-
-
-def _logga_riepilogo_proxy():
-    """Una riga per proxy, ordinate dalla piu' problematica: 'X/Y falliti'.
-    Uno sguardo a questa riga (grep 'RIEPILOGO PROXY' nei log Railway) basta
-    per vedere se il pool e' colpito in modo uniforme (tutti con un tasso di
-    fallimento simile, blocco sistemico) o se pochi IP concentrano quasi
-    tutti i fallimenti (IP davvero bruciati, da rimuovere da PROXY_LIST)."""
-    righe = []
-    for chiave, s in _PROXY_STATS.items():
-        tot = s["ok"] + s["falliti"]
-        tasso = (s["falliti"] / tot * 100) if tot else 0.0
-        etichetta = _ETICHETTA_PER_CHIAVE_PROXY.get(chiave, _etichetta_proxy(chiave))
-        righe.append((tasso, etichetta, s["falliti"], tot))
-    righe.sort(reverse=True)
-    log.info(
-        "RIEPILOGO PROXY (dopo %d richieste totali): %s",
-        _PROXY_STATS_RICHIESTE_TOTALI[0],
-        " | ".join(f"{et} {f}/{t} falliti ({tasso:.0f}%)" for tasso, et, f, t in righe),
-    )
-
-
-# ---------------------------------------------------------------------------
-# CONTABILITA' BANDA PROXY (aggiunta 2026-09-27, utente: "come faccio a
-# consumare meno banda?", in vista del passaggio a proxy residenziali a
-# consumo). Misura i byte REALI passati in rete (compressi, quelli che il
-# provider fattura: resp.num_bytes_downloaded di httpx) separati per tipo di
-# richiesta, cosi' si vede cosa pesa davvero invece di stimarlo. Riga da
-# cercare nei log Railway: "RIEPILOGO BANDA".
-# ---------------------------------------------------------------------------
-_BANDA_PER_TIPO = {}
-_BANDA_REGISTRAZIONI = [0]
-INTERVALLO_RIEPILOGO_BANDA = 50
-
-
-def _tipo_richiesta_vinted(url):
-    u = url or ""
-    if "vinted.net" in u:
-        return "foto"
-    if "/items/" in u:
-        return "pagina_annuncio"
-    if "/member/" in u:
-        return "profilo_venditore"
-    if "/catalog" in u:
-        return "catalogo_comp"
-    return "altro"
-
-
-def _registra_banda(url, resp, tipo=None):
-    """Registra i byte di UNA risposta gia' letta per intero. Mai bloccante:
-    qualunque errore qui viene ignorato, la contabilita' non deve rompere lo
-    scraping. tipo="foto_diretta" separa le foto scaricate dall'IP Railway
-    (banda proxy NON consumata) da quelle via proxy ("foto")."""
-    try:
-        tipo = tipo or _tipo_richiesta_vinted(url)
-        rete = int(getattr(resp, "num_bytes_downloaded", 0) or 0)
-        decodificati = len(resp.content or b"")
-        s = _BANDA_PER_TIPO.setdefault(tipo, {"n": 0, "rete": 0, "decod": 0})
-        s["n"] += 1
-        s["rete"] += rete
-        s["decod"] += decodificati
-        _BANDA_REGISTRAZIONI[0] += 1
-        if _BANDA_REGISTRAZIONI[0] % INTERVALLO_RIEPILOGO_BANDA == 0:
-            _logga_riepilogo_banda()
-    except Exception:
-        pass
-
-
-def _logga_riepilogo_banda():
-    tot_rete = sum(s["rete"] for s in _BANDA_PER_TIPO.values()) or 1
-    pezzi = []
-    for tipo, s in sorted(_BANDA_PER_TIPO.items(), key=lambda kv: -kv[1]["rete"]):
-        media_rete = s["rete"] / s["n"] / 1024 if s["n"] else 0
-        media_decod = s["decod"] / s["n"] / 1024 if s["n"] else 0
-        pezzi.append(
-            f"{tipo}: {s['n']} richieste, {s['rete'] / 1048576:.1f}MB in rete "
-            f"({s['rete'] / tot_rete * 100:.0f}% del totale), media {media_rete:.0f}KB/richiesta "
-            f"(decompressi {media_decod:.0f}KB)"
-        )
-    log.info("RIEPILOGO BANDA (dall'avvio, %.1fMB totali in rete): %s",
-             tot_rete / 1048576, " | ".join(pezzi))
 
 
 # ---------------------------------------------------------------------------
@@ -1664,157 +904,6 @@ async def _sonda_struttura_pagina(n, url, resp, html_pagina):
         log.warning("SONDA BANDA %d: errore interno (ignorato):\n%s", n, traceback.format_exc())
 
 
-# ---------------------------------------------------------------------------
-# CLIENT HTTP ASINCRONI
-# ---------------------------------------------------------------------------
-# Un client per ogni destinazione, costruiti una volta sola e riusati per
-# tutta la vita del processo: httpx tiene aperte le connessioni (keep-alive),
-# quindi si risparmiano handshake TLS su ogni chiamata, cosa che con
-# requests.Session avveniva solo per Vinted.
-#
-# Rotazione proxy: da httpx 0.28 il parametro "proxies" (dict per schema) non
-# esiste piu', si passa un solo "proxy" per client. La rotazione round-robin
-# diventa quindi una rotazione TRA CLIENT, uno per proxy, costruiti all'avvio.
-# Se PROXY_LIST e' vuota il pool contiene un solo client diretto, cioe'
-# esattamente il comportamento originale senza proxy.
-_CLIENT_VINTED_POOL = []
-# Chiave di rate-limit per ogni client del pool, stessa lunghezza/ordine di
-# _CLIENT_VINTED_POOL (vedi _attendi_turno_vinted piu' sotto, FIX 2026-09-21
-# rate-limit globale -> per-IP): e' il proxy_url usato per costruire quel
-# client (o "diretto" se PROXY_LIST e' vuota), NON l'identita' dell'oggetto
-# client -- serve perche' _CLIENT_VINTED_AUTH sotto condivide DELIBERATAMENTE
-# lo stesso proxy dello slot 0 del pool, quindi deve condividere anche la
-# stessa pacatura, altrimenti i due client potrebbero fare burst sullo
-# stesso IP fisico senza che l'uno sappia dell'altro.
-_CLIENT_VINTED_POOL_KEYS = []
-_client_generico = None   # Gemini/OpenAI/Serper/Resellbot: nessun proxy
-_client_telegram = None   # Bot API: timeout piu' corti, chiamate frequenti
-
-# Client HTTP DEDICATO all'account Vinted autenticato (ricerca visuale),
-# separato dal pool anonimo _CLIENT_VINTED_POOL -- aggiunto il 2026-09-20
-# per chiudere il bug "refresh riuscito ma redirect a /member/register
-# comunque": _prossimo_client_vinted() fa round-robin tra client condivisi
-# da TUTTO lo scraping anonimo (annunci, venditori), quindi ognuno di quei
-# client accumula nel proprio cookie jar cookie Datadome/anti-bot legati a
-# traffico anonimo ad alto volume, scorrelati dall'account dedicato. Il
-# refresh e la successiva chiamata search_by_image_id finivano cosi' su
-# client diversi (round-robin avanza a ogni chiamata) o comunque su un
-# client il cui cookie Datadome non corrisponde alla sessione autenticata
-# appena rinnovata -- mandare un JWT valido insieme a un cookie Datadome di
-# un'altra "sessione anonima" e' esattamente il tipo di incoerenza che fa
-# scattare un blocco anti-bot, a prescindere dalla validita' del token.
-# Con un client dedicato, riusato SEMPRE per refresh + search_by_image_id,
-# httpx accumula da solo (jar persistente normale, nessun parsing manuale)
-# i cookie Datadome/sessione ricevuti sulla home page e sul refresh, e la
-# chiamata search_by_image_id li porta con se' in modo coerente -- proprio
-# come farebbe un browser reale sempre loggato con lo stesso account.
-# NON aggiunto a _CLIENT_VINTED_POOL: lo scraping anonimo di annunci/
-# venditori non lo vede mai e resta interamente separato, come richiesto
-# esplicitamente dall'utente.
-_CLIENT_VINTED_AUTH = None
-_CLIENT_VINTED_AUTH_KEY = None  # stessa chiave rate-limit dello slot 0 del pool, vedi sopra
-
-
-def _crea_client_vinted(proxy_url=None):
-    # NIENTE cookies=_VINTED_COOKIES qui (tolto il 2026-09-20, era li' dal
-    # giorno prima): i client di questo pool sono condivisi da TUTTO lo
-    # scraping Vinted (annunci, venditori, ricerca visuale), quindi
-    # allegare qui i cookie dell'account dedicato li rendeva permanenti su
-    # OGNI richiesta -- quando il token scadeva, anche lo scraping normale
-    # (che prima funzionava benissimo in modo anonimo) veniva rediretto a
-    # /session-refresh e si rompeva silenziosamente. Scelta esplicita
-    # dell'utente: l'account dedicato va usato SOLO per la ricerca visuale,
-    # passando i cookie caso per caso su quella singola chiamata (vedi
-    # _risolvi_search_by_image_id) invece che sul client condiviso.
-    return httpx.AsyncClient(
-        headers=VINTED_HEADERS,
-        follow_redirects=True,   # _risolvi_search_by_image_id dipende dal redirect
-        proxy=proxy_url,
-        timeout=httpx.Timeout(20.0, connect=10.0),
-        limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
-    )
-
-
-async def inizializza_client_http():
-    """Crea i client httpx. Va chiamata DENTRO il loop asyncio (da main()),
-    mai a import-time: un AsyncClient costruito fuori dal loop che poi lo
-    usera' e' una sorgente classica di 'Event loop is closed' e di
-    connessioni che non vengono mai riutilizzate."""
-    global _client_generico, _client_telegram, _CLIENT_VINTED_AUTH, _CLIENT_VINTED_AUTH_KEY
-    if PROXY_LIST:
-        for proxy_url in PROXY_LIST:
-            _CLIENT_VINTED_POOL.append(_crea_client_vinted(proxy_url))
-            _CLIENT_VINTED_POOL_KEYS.append(proxy_url)
-    else:
-        _CLIENT_VINTED_POOL.append(_crea_client_vinted(None))
-        _CLIENT_VINTED_POOL_KEYS.append("diretto")
-
-    # Etichette leggibili per il logging per-proxy (vedi _registra_esito_proxy
-    # piu' sopra): "#indice host:porta", costruite una sola volta qui perche'
-    # l'ordine di _CLIENT_VINTED_POOL_KEYS e' stabile per tutta la vita del
-    # processo.
-    for _i, _chiave in enumerate(_CLIENT_VINTED_POOL_KEYS):
-        _ETICHETTA_PER_CHIAVE_PROXY[_chiave] = f"#{_i} {_etichetta_proxy(_chiave)}"
-
-    # Client dedicato all'account Vinted autenticato (vedi commento sopra
-    # _CLIENT_VINTED_AUTH): pinnato a UN SOLO proxy (il primo della lista, se
-    # presente) invece che in rotazione, cosi' anche l'IP resta coerente tra
-    # il refresh del token e la chiamata search_by_image_id -- un cambio di
-    # IP a meta' sessione autenticata sarebbe un altro segnale anomalo per
-    # l'anti-bot, oltre al cookie jar.
-    _CLIENT_VINTED_AUTH = _crea_client_vinted(PROXY_LIST[0] if PROXY_LIST else None)
-    _CLIENT_VINTED_AUTH_KEY = _CLIENT_VINTED_POOL_KEYS[0]
-
-    _client_generico = httpx.AsyncClient(
-        follow_redirects=True,
-        timeout=httpx.Timeout(90.0, connect=15.0),
-        limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
-    )
-    _client_telegram = httpx.AsyncClient(
-        timeout=httpx.Timeout(30.0, connect=10.0),
-        limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
-    )
-    log.info(
-        "Client HTTP asincroni pronti: %d client Vinted (%s), 1 generico, 1 Telegram.",
-        len(_CLIENT_VINTED_POOL),
-        f"{len(PROXY_LIST)} proxy in rotazione" if PROXY_LIST else "nessun proxy, richieste dirette",
-    )
-
-
-async def chiudi_client_http():
-    """Chiusura ordinata: senza questa httpx logga warning di socket non
-    chiusi allo spegnimento del processo."""
-    for client in _CLIENT_VINTED_POOL:
-        await client.aclose()
-    for client in (_client_generico, _client_telegram, _CLIENT_VINTED_AUTH):
-        if client is not None:
-            await client.aclose()
-
-
-def _prossimo_indice_vinted():
-    """Indice del prossimo client Vinted in rotazione round-robin (uno per
-    proxy) -- estratto da _prossimo_client_vinted il 2026-09-21 per poter
-    ottenere ANCHE la chiave di rate-limit (_CLIENT_VINTED_POOL_KEYS[i])
-    corrispondente al client scelto, vedi _vinted_get_con_retry."""
-    n = len(_CLIENT_VINTED_POOL)
-    for _ in range(n):
-        i = _proxy_indice_rotazione[0] % n
-        _proxy_indice_rotazione[0] += 1
-        if not _proxy_in_quarantena(_CLIENT_VINTED_POOL_KEYS[i]):
-            return i
-    # Tutti in quarantena: si ignora il filtro invece di restare senza proxy.
-    i = _proxy_indice_rotazione[0] % n
-    _proxy_indice_rotazione[0] += 1
-    return i
-
-
-def _prossimo_client_vinted():
-    """Prossimo client Vinted in rotazione round-robin (uno per proxy).
-    Sostituisce _prossimo_proxy: la rotazione ora e' tra client, non tra
-    dict di proxy passati alla singola richiesta."""
-    return _CLIENT_VINTED_POOL[_prossimo_indice_vinted()]
-
-
 _vinted_refresh_lock = asyncio.Lock()
 
 
@@ -1851,7 +940,7 @@ async def _rinnova_token_vinted():
     # httpx accumula da solo nel suo jar i cookie Datadome/sessione coerenti
     # con questo account -- vedi il lungo commento sopra la definizione di
     # _CLIENT_VINTED_AUTH per il perche'.
-    client = _CLIENT_VINTED_AUTH
+    client = hc._CLIENT_VINTED_AUTH
     # Cookie JWT passati ESPLICITAMENTE (non allegati a costruzione, vedi
     # _crea_client_vinted): httpx li aggiunge solo alla richiesta corrente
     # (in merge col jar persistente del client, che qui e' voluto: e' proprio
@@ -2040,7 +1129,7 @@ async def _vinted_get_con_retry(url, timeout=15, max_retries=3, headers_extra=No
         # turno, non dopo (FIX 2026-09-21): serve a sapere su QUALE proxy
         # pacare l'attesa -- vedi il commento su _vinted_rate_limit_locks.
         if client_override is not None:
-            client, chiave_rate_limit = client_override, _CLIENT_VINTED_AUTH_KEY
+            client, chiave_rate_limit = client_override, hc._CLIENT_VINTED_AUTH_KEY
         else:
             indice = _prossimo_indice_vinted()
             client, chiave_rate_limit = _CLIENT_VINTED_POOL[indice], _CLIENT_VINTED_POOL_KEYS[indice]
@@ -2670,7 +1759,7 @@ async def _download_foto_diretta(url, headers):
     """Un solo tentativo dall'IP Railway. Ritorna i byte o None (e in quel
     caso il chiamante passa ai proxy)."""
     try:
-        resp = await _client_generico.get(url, headers=headers, timeout=12)
+        resp = await hc._client_generico.get(url, headers=headers, timeout=12)
         _registra_banda(url, resp, tipo="foto_diretta")
         if resp.is_success and resp.content:
             _foto_dirette_registra(True)
@@ -2687,7 +1776,7 @@ async def _download_foto_diretta(url, headers):
 async def download_image_bytes(url, referer="https://www.vinted.it/", max_retries=3):
     headers = dict(IMAGE_DOWNLOAD_HEADERS)
     headers["Referer"] = referer
-    if _client_generico is not None and _foto_dirette_attive():
+    if hc._client_generico is not None and _foto_dirette_attive():
         diretta = await _download_foto_diretta(url, headers)
         if diretta:
             return diretta
@@ -2820,7 +1909,7 @@ async def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, groundi
             key_usata = _gemini_key_attuale(modello_usato)
             # Key nell'header e non nella query string (FIX 2026-09-24): come
             # parametro "?key=" finiva in chiaro nei log httpx su Railway.
-            resp = await _client_generico.post(
+            resp = await hc._client_generico.post(
                 url_usato, headers={"x-goog-api-key": key_usata}, json=payload, timeout=30)
             if not resp.is_success:
                 log.warning("Gemini HTTP %d: %s", resp.status_code, resp.text[:500])
@@ -2992,7 +2081,7 @@ async def cerca_serper_mirata(query):
         return "Ricerca non eseguita (SERPER_API_KEY non impostata).", {}
     payload = [{"q": query, "gl": "it", "hl": "it", "num": 10}]
     try:
-        resp = await _client_generico.post(
+        resp = await hc._client_generico.post(
             "https://google.serper.dev/search",
             headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
             json=payload, timeout=15,
@@ -3213,7 +2302,7 @@ async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca
                 url_usato = _gemini_url_effettivo(api_url)
                 modello_usato = _gemini_modello_da_url(url_usato)
                 key_usata = _gemini_key_attuale(modello_usato)
-                resp = await _client_generico.post(
+                resp = await hc._client_generico.post(
                     url_usato, headers={"x-goog-api-key": key_usata}, json=payload, timeout=30)
                 if not resp.is_success:
                     log.warning("Gemini (cervello) HTTP %d: %s", resp.status_code, resp.text[:500])
@@ -3420,7 +2509,7 @@ async def _chiama_openai_raw(messages, tentativi_rimasti, tools=None, tool_choic
     backoff_seconds = 2
     for attempt in range(1, tentativi_rimasti + 1):
         try:
-            resp = await _client_generico.post(
+            resp = await hc._client_generico.post(
                 OPENAI_API_URL_CERVELLO, headers=headers, json=payload, timeout=90)
             if not resp.is_success:
                 log.warning("OpenAI (cervello) HTTP %d: %s", resp.status_code, resp.text[:500])
@@ -3640,7 +2729,7 @@ async def _risolvi_search_by_image_id_via_serper(url_intermedio):
         "headers": {"Cookie": cookie_header} if cookie_header else {},
     }
     try:
-        resp = await _client_generico.post(
+        resp = await hc._client_generico.post(
             "https://scrape.serper.dev",
             headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
             json=payload, timeout=15,
@@ -3826,7 +2915,7 @@ async def _risolvi_search_by_image_id(item_id, photo_id):
     resp = await _vinted_get_con_retry(
         url_intermedio, timeout=12, max_retries=2, headers_extra=headers_referer_annuncio,
         cookies_extra={k: v for k, v in _VINTED_COOKIES.items() if v},
-        client_override=_CLIENT_VINTED_AUTH,
+        client_override=hc._CLIENT_VINTED_AUTH,
     )
     esito_diretto = None
     if resp is not None:
@@ -4012,7 +3101,7 @@ async def _serper_scrape_page_diretto(label, url):
 
     payload = {"url": url, "includeMarkdown": True, "includeRawHtml": True, "includeHtml": True}
     try:
-        resp = await _client_generico.post(
+        resp = await hc._client_generico.post(
             "https://scrape.serper.dev",
             headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
             json=payload, timeout=15,
@@ -4053,7 +3142,7 @@ async def _serper_batch_query_vestiaire(brand, categoria):
 
     payload = [{"q": query_serper, "gl": "it", "hl": "it", "num": 10}]
     try:
-        resp = await _client_generico.post(
+        resp = await hc._client_generico.post(
             "https://google.serper.dev/search",
             headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
             json=payload, timeout=15,
@@ -4132,7 +3221,7 @@ async def _query_resellbot_raw(varianti_query, timeout):
     }
     log.info("Resellbot: richiesta in corso -- varianti=%r", varianti_query)
     try:
-        resp = await _client_generico.post(
+        resp = await hc._client_generico.post(
             "https://scan-api.resellbot.com/api/search",
             headers=headers, json=payload, timeout=timeout,
         )
@@ -4364,7 +3453,7 @@ async def _serper_batch_query_ebay_sold(brand, categoria, material_per_ricerca=N
 
     payload = [{"q": query_serper, "gl": "it", "hl": "it", "num": 10}]
     try:
-        resp = await _client_generico.post(
+        resp = await hc._client_generico.post(
             "https://google.serper.dev/search",
             headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
             # timeout 8s: questa funzione e' anche il FALLBACK di
@@ -4932,7 +4021,7 @@ async def _reddit_ottieni_token():
     di una richiesta in corso."""
     if _reddit_token_cache["token"] and time.time() < _reddit_token_cache["scadenza"] - 60:
         return _reddit_token_cache["token"]
-    resp = await _client_generico.post(
+    resp = await hc._client_generico.post(
         "https://www.reddit.com/api/v1/access_token",
         data={"grant_type": "client_credentials"},
         auth=(REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET),
@@ -5046,7 +4135,7 @@ async def _reddit_verifica_codice(codice, brand, categoria_en=None):
     risultato = None
     try:
         token = await _reddit_ottieni_token()
-        resp = await _client_generico.get(
+        resp = await hc._client_generico.get(
             "https://oauth.reddit.com/search",
             params={"q": f"\"{codice}\" {brand}", "sort": "relevance", "limit": 10},
             headers={"Authorization": f"Bearer {token}", "User-Agent": REDDIT_USER_AGENT},
@@ -6438,7 +5527,7 @@ async def _panel_chiama(modello, system, user_content, max_tokens):
                        "messages": [{"role": "system", "content": system},
                                     {"role": "user", "content": user_content}]}
             resp = await asyncio.wait_for(
-                _client_generico.post(EXTRA_LLM_URL, headers=headers, json=payload, timeout=PANEL_TIMEOUT),
+                hc._client_generico.post(EXTRA_LLM_URL, headers=headers, json=payload, timeout=PANEL_TIMEOUT),
                 timeout=PANEL_TIMEOUT + 3)
             ms = int((time.time() - t0) * 1000)
             if not resp.is_success:
@@ -7505,7 +6594,7 @@ def _conta_articoli_catalogo(html_catalogo):
 async def _prova_visuale_httpx(url_intermedio, headers, cookies):
     t0 = time.time()
     try:
-        resp = await _CLIENT_VINTED_AUTH.get(url_intermedio, headers=headers, cookies=cookies, timeout=20)
+        resp = await hc._CLIENT_VINTED_AUTH.get(url_intermedio, headers=headers, cookies=cookies, timeout=20)
         esito, sbi = _classifica_esito_visuale(resp.status_code, str(resp.url))
         return {"esito": esito, "id": sbi, "durata": time.time() - t0, "articoli": None}
     except Exception as e:
@@ -7544,7 +6633,7 @@ async def _prova_pagina_riservata(nome, url, cookies, impersonate=None, proxy=No
     t0 = time.time()
     try:
         if impersonate is None:
-            resp = await _CLIENT_VINTED_AUTH.get(url, cookies=cookies, timeout=20)
+            resp = await hc._CLIENT_VINTED_AUTH.get(url, cookies=cookies, timeout=20)
         else:
             async with CurlAsyncSession(impersonate=impersonate, proxy=proxy, timeout=20) as sess:
                 resp = await sess.get(url, cookies=cookies, allow_redirects=True)
