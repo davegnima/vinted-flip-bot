@@ -10494,6 +10494,47 @@ _DIAG_CHIAVI_RE = re.compile(
 )
 
 
+_CAND_TS_RE = re.compile(
+    r'(?P<ctx>.{0,70}?)(?P<val>(?<![0-9])(?:1[5-9][0-9]{8}(?:[0-9]{3})?)(?![0-9])|'
+    r'20[0-9]{2}-[01][0-9]-[0-3][0-9][T ][0-2][0-9]:[0-5][0-9](?::[0-5][0-9])?(?:\.[0-9]+)?(?:Z|[+-][0-9]{2}:?[0-9]{2})?)',
+    re.DOTALL,
+)
+
+
+def trova_timestamp_candidati(html_pagina, giorni=45, max_voci=40):
+    """Cerca nella pagina QUALSIASI valore che sembri un istante recente (epoch in secondi/millisecondi o
+    data ISO), con il contesto che lo precede e l'orario UTC leggibile. Indipendente dai nomi delle chiavi:
+    serve a scoprire se la pagina espone quando l'articolo e' stato creato/modificato/venduto. Pura."""
+    ora = time.time()
+    trovati, visti = [], set()
+    for m in _CAND_TS_RE.finditer(html_pagina):
+        val = m.group("val")
+        try:
+            if val.isdigit():
+                v = int(val)
+                ts = v / 1000 if len(val) == 13 else float(v)
+            else:
+                txt = val.replace(" ", "T")
+                if txt.endswith("Z"):
+                    txt = txt[:-1] + "+00:00"
+                dt = datetime.fromisoformat(txt)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                ts = dt.timestamp()
+        except Exception:
+            continue
+        if not (ora - giorni * 86400 <= ts <= ora + 86400):
+            continue
+        if val in visti:
+            continue
+        visti.add(val)
+        ctx = re.sub(r"\s+", " ", m.group("ctx"))[-60:]
+        trovati.append(f"{ctx} -> {val} = {datetime.fromtimestamp(ts, timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC")
+        if len(trovati) >= max_voci:
+            break
+    return trovati
+
+
 def diagnostica_pagina_venduto(html_pagina, url=None, raggio=260, max_snippet=4):
     """Per capire come la pagina segnala lo stato venduto, ignorando il dizionario delle traduzioni
     (chiavi con il punto): segnali estratti, frammenti attorno all'id dell'articolo, coppie
@@ -11813,9 +11854,14 @@ async def on_comando_venduto(event):
         segnali, prezzo, snippet_id, coppie, intorno_barra = diagnostica_pagina_venduto(html_pagina, url)
         testo = (f"HTTP {http_status} | sparito={'si' if _tracc_e_sparito(http_status, segnali) else 'no'} | "
                  f"prezzo letto={prezzo}\nSegnali: {segnali or 'nessuno'}\n\n"
+                 f"Date/istanti trovati (adesso {datetime.now(timezone.utc).strftime('%H:%M:%S')} UTC):\n"
+                 + "\n".join(trova_timestamp_candidati(html_pagina)[:25]) + "\n\n"
                  f"Intorno a 'Venduto': {intorno_barra}\n\n"
                  f"Chiavi stato/prezzo: {' ; '.join(coppie[:80])}\n\n"
                  f"Intorno all'id articolo:\n" + "\n---\n".join(snippet_id))
+        candidati = trova_timestamp_candidati(html_pagina)
+        log.info("DIAG TIMESTAMP | url=%s | adesso=%s UTC | candidati=%s", url,
+                 datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"), " ## ".join(candidati))
         log.info("DIAG VENDUTO | url=%s | http=%s | prezzo=%s | segnali=%s | barra=%s | chiavi=%s | id=%s",
                  url, http_status, prezzo, segnali, intorno_barra, " ; ".join(coppie[:120]),
                  " ### ".join(snippet_id)[:5000])
