@@ -803,6 +803,13 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
                            occhio_json=occhio_json, legit=legit_cervello)
     except Exception:
         log.warning("Esito Gemini non archiviato:\n%s", traceback.format_exc())
+    if scenario_usato == "SKIP":
+        # Richiesto dall'utente il 2026-10-03: lo SKIP non manda messaggi, resta solo nei log (SKIP_PRE_CERVELLO
+        # nell'ESITO). Se la scheda e' gia' in chat, la sua riga di stato dice solo che e' stato scartato.
+        log.info("SKIP non inviato su Telegram per '%s': %s", listing_info.get("title"), motivo_skip)
+        if stato is not None and stato.get("msg_id_scheda"):
+            stato["stato_finale_override"] = f"🚫 Scartato: {(motivo_skip or '')[:120]}"
+        return
     await _invia_risultato_telegram(
         listing_info, url, photo_bytes_list,
         header, output_finale, decisione, e_compra,

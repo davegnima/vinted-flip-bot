@@ -276,13 +276,18 @@ async def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header,
         except Exception:
             log.warning("Analisi non unificata alla scheda, invio separato:\n%s", traceback.format_exc())
 
+    # Il messaggio separato (COMPRA, che deve restare nuovo per il push) usa lo STESSO testo completo degli altri
+    # esiti (titolo, dettagli, caricato, margine, venditore, descrizione), richiesto dall'utente il 2026-10-03:
+    # prima era la versione ridotta header + output. Se non entra in un messaggio si ricade su quella.
+    testo_messaggio = testo_unificato if (testo_unificato and len(testo_unificato) <= 3900) else header + output_finale
+
     if not unificato and url:
         await telegram_send_with_buttons(
-            TELEGRAM_OWNER_CHAT_ID, header + output_finale, url, item_id if e_compra_urgente else None,
+            TELEGRAM_OWNER_CHAT_ID, testo_messaggio, url, item_id if e_compra_urgente else None,
             disable_notification=silenzioso, reply_to=msg_id_galleria,
         )
     elif not unificato:
-        await telegram_send_message(TELEGRAM_OWNER_CHAT_ID, header + output_finale,
+        await telegram_send_message(TELEGRAM_OWNER_CHAT_ID, testo_messaggio,
                                     disable_notification=silenzioso, reply_to=msg_id_galleria)
 
     # Ristretto a decisione == "COMPRA" il 2026-09-20, secondo giro (questo
@@ -333,11 +338,11 @@ async def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header,
 
         if url:
             await telegram_send_with_buttons(
-                TELEGRAM_ALERT_CHAT_ID, header + output_finale, url,
+                TELEGRAM_ALERT_CHAT_ID, testo_messaggio, url,
                 item_id if (e_compra_urgente and item_id) else None,
             )
         else:
-            await telegram_send_message(TELEGRAM_ALERT_CHAT_ID, header + output_finale)
+            await telegram_send_message(TELEGRAM_ALERT_CHAT_ID, testo_messaggio)
 
 
 class _PermessoAnalisi:
