@@ -10596,50 +10596,171 @@ def consolida_target_cervello(targets, spread_max=None):
     return valore, spread, instabile
 
 
-# Secondo parere "in ombra" via gateway OpenAI-compatibile (OmniRoute): spento se manca l'URL. Una sola chiamata
-# senza ricerche, in background con timeout: non entra nella mediana e non ritarda mai il verdetto, il target
-# viene solo loggato accanto a quello primario per confrontare i modelli.
+# PANNELLO DI MODELLI IN OMBRA (richiesto dall'utente il 2026-10-03). Un gateway OpenAI-compatibile (OmniRoute)
+# fa girare in parallelo, per ogni annuncio, N modelli "occhio" (con le foto) e M modelli "cervello" (stesso
+# prompt del Cervello): ognuno scrive UNA riga `PANEL | ...` nel log, accanto alla riga PRIMARIO. Nessun
+# modello del pannello entra nel verdetto, nessuna attesa: sono task in background con timeout, tetto orario
+# e concorrenza limitata (quota gratuita). Il recap mattutino li confronta con vendita rapida e mediana.
+# Spento se mancano EXTRA_LLM_URL e le liste di modelli (separati da virgola).
 EXTRA_LLM_URL = (os.environ.get("EXTRA_LLM_URL") or "").strip()   # es. http://omniroute.railway.internal:20128/v1/chat/completions
 EXTRA_LLM_KEY = (os.environ.get("EXTRA_LLM_KEY") or "").strip()
-EXTRA_LLM_MODEL = (os.environ.get("EXTRA_LLM_MODEL") or "").strip()
-EXTRA_LLM_TIMEOUT = _env_float("EXTRA_LLM_TIMEOUT", 20)
+EXTRA_LLM_MODEL = (os.environ.get("EXTRA_LLM_MODEL") or "").strip()   # retrocompatibile: un solo modello cervello
+PANEL_OCCHIO_MODELLI = [m.strip() for m in (os.environ.get("PANEL_OCCHIO_MODELLI") or "").split(",") if m.strip()]
+PANEL_CERVELLO_MODELLI = [m.strip() for m in (os.environ.get("PANEL_CERVELLO_MODELLI") or EXTRA_LLM_MODEL).split(",") if m.strip()]
+PANEL_TIMEOUT = _env_float("PANEL_TIMEOUT", 60)
+PANEL_MAX_ANNUNCI_ORA = int(_env_float("PANEL_MAX_ANNUNCI_ORA", 60))
+PANEL_MAX_FOTO = int(_env_float("PANEL_MAX_FOTO", 6))
+_panel_sem = asyncio.Semaphore(int(_env_float("PANEL_CONCORRENZA", 8)))
+_task_bg = set()   # riferimenti forti: asyncio tiene solo weakref ai task
 
 
-def estrai_target_da_testo_llm(testo):
-    """Prezzo target da una risposta testuale del modello extra (JSON, anche dentro ```), None se non valido."""
+def _bg_task(coro):
+    t = asyncio.create_task(coro)
+    _task_bg.add(t)
+    t.add_done_callback(_task_bg.discard)
+
+
+_panel_ingressi = []   # timestamp degli annunci ammessi nell'ultima ora
+
+
+def _panel_ammesso(adesso=None):
+    """Tetto orario per annunci: protegge la quota gratuita condivisa con la pipeline primaria."""
+    adesso = adesso if adesso is not None else time.time()
+    while _panel_ingressi and adesso - _panel_ingressi[0] > 3600:
+        _panel_ingressi.pop(0)
+    if len(_panel_ingressi) >= PANEL_MAX_ANNUNCI_ORA:
+        return False
+    _panel_ingressi.append(adesso)
+    return True
+
+
+def estrai_json_da_testo_llm(testo):
+    """Primo oggetto JSON in una risposta testuale (anche dentro ```), None se non valido."""
     if not isinstance(testo, str):
         return None
     m = re.search(r"\{.*\}", testo, re.S)
     if not m:
         return None
     try:
-        t = json.loads(m.group(0)).get("prezzo_target_vendita_eur")
-    except (json.JSONDecodeError, AttributeError):
+        d = json.loads(m.group(0))
+    except json.JSONDecodeError:
         return None
+    return d if isinstance(d, dict) else None
+
+
+def estrai_target_da_testo_llm(testo):
+    d = estrai_json_da_testo_llm(testo)
+    t = d.get("prezzo_target_vendita_eur") if d else None
     return float(t) if isinstance(t, (int, float)) and not isinstance(t, bool) and t > 0 else None
 
 
-async def _ombra_target_extra(item_id, user_text, target_primario):
-    if not (EXTRA_LLM_URL and EXTRA_LLM_MODEL):
+async def _panel_chiama(modello, system, user_content, max_tokens):
+    """Una chiamata al gateway. Ritorna (testo|None, ms, errore|None). Non solleva mai."""
+    t0 = time.time()
+    async with _panel_sem:
+        try:
+            headers = {"Content-Type": "application/json"}
+            if EXTRA_LLM_KEY:
+                headers["Authorization"] = f"Bearer {EXTRA_LLM_KEY}"
+            payload = {"model": modello, "temperature": 0.2, "max_tokens": max_tokens,
+                       "messages": [{"role": "system", "content": system},
+                                    {"role": "user", "content": user_content}]}
+            resp = await asyncio.wait_for(
+                _client_generico.post(EXTRA_LLM_URL, headers=headers, json=payload, timeout=PANEL_TIMEOUT),
+                timeout=PANEL_TIMEOUT + 3)
+            ms = int((time.time() - t0) * 1000)
+            if not resp.is_success:
+                return None, ms, f"http{resp.status_code}"
+            testo = (resp.json().get("choices") or [{}])[0].get("message", {}).get("content")
+            return testo, ms, None
+        except Exception as e:
+            return None, int((time.time() - t0) * 1000), type(e).__name__
+
+
+def _riga_panel(tipo, item_id, brand, modello, ok, ms, **campi):
+    extra = " | ".join(f"{k}={v}" for k, v in campi.items() if v is not None)
+    log.info("PANEL | %s | %s | %s | %s | %s | %dms%s", tipo, item_id, brand or "-", modello,
+             "ok" if ok else "ERR", ms, f" | {extra}" if extra else "")
+
+
+def _campi_occhio_panel(o, problemi):
+    return {"problemi": len(problemi), "legit": o.get("verdetto_legit"), "conf": o.get("confidenza_legit"),
+            "evid": o.get("qualita_evidenza"), "cond": o.get("condizione_osservata"),
+            "brand_letto": str(o.get("brand_letto_etichetta") or "")[:30] or None,
+            "modello": str(o.get("modello_riconosciuto") or "")[:40] or None}
+
+
+async def _panel_occhio_modello(item_id, brand, modello, system, user_text, immagini):
+    contenuto = [{"type": "text", "text": user_text}] + immagini
+    testo, ms, err = await _panel_chiama(modello, system, contenuto, 4000)
+    if err:
+        return _riga_panel("occhio", item_id, brand, modello, False, ms, errore=err)
+    d = estrai_json_da_testo_llm(testo)
+    if d is None:
+        return _riga_panel("occhio", item_id, brand, modello, False, ms, errore="json_non_valido")
+    try:
+        o, problemi = valida_payload_occhio(d)
+        _riga_panel("occhio", item_id, brand, modello, True, ms, **_campi_occhio_panel(o, problemi))
+    except Exception as e:
+        _riga_panel("occhio", item_id, brand, modello, False, ms, errore=type(e).__name__)
+
+
+async def panel_occhio(item_id, brand, user_text, photo_bytes_list, occhio_json, problemi):
+    """Pannello occhio: stessa richiesta del primario, N modelli con visione. Mai bloccante."""
+    if not (EXTRA_LLM_URL and PANEL_OCCHIO_MODELLI and photo_bytes_list and _panel_ammesso()):
         return
     try:
-        headers = {"Content-Type": "application/json"}
-        if EXTRA_LLM_KEY:
-            headers["Authorization"] = f"Bearer {EXTRA_LLM_KEY}"
-        payload = {"model": EXTRA_LLM_MODEL, "temperature": 0.2, "max_tokens": 2500,
-                   "messages": [{"role": "system", "content": GEMINI_CERVELLO_SYSTEM_PROMPT},
-                                {"role": "user", "content": user_text}]}
-        resp = await asyncio.wait_for(
-            _client_generico.post(EXTRA_LLM_URL, headers=headers, json=payload, timeout=EXTRA_LLM_TIMEOUT),
-            timeout=EXTRA_LLM_TIMEOUT + 2)
-        if not resp.is_success:
-            log.info("OMBRA | %s | http %s", item_id, resp.status_code)
-            return
-        testo = (resp.json().get("choices") or [{}])[0].get("message", {}).get("content")
-        log.info("OMBRA | %s | modello=%s | target_extra=%s | target_primario=%s", item_id, EXTRA_LLM_MODEL,
-                 estrai_target_da_testo_llm(testo), target_primario)
+        if occhio_json:
+            _riga_panel("occhio", item_id, brand, "PRIMARIO", True, 0, **_campi_occhio_panel(occhio_json, problemi or []))
+        parts = await costruisci_parts_foto(photo_bytes_list[:PANEL_MAX_FOTO])
+        immagini = [{"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + p["inline_data"]["data"]}}
+                    for p in parts]
+        schema = json.dumps(_schema_gemini_to_openai(OCCHIO_RESPONSE_SCHEMA_GEMINI), ensure_ascii=False)
+        system = (GEMINI_OCCHI_SYSTEM_PROMPT_JSON +
+                  "\n\nRispondi SOLO con un oggetto JSON valido conforme a questo schema, senza altro testo:\n" + schema)
+        await asyncio.gather(*(_panel_occhio_modello(item_id, brand, m, system, user_text, immagini)
+                               for m in PANEL_OCCHIO_MODELLI))
+    except Exception:
+        log.warning("Pannello occhio fallito:\n%s", traceback.format_exc())
+
+
+async def _panel_cervello_modello(item_id, brand, modello, system, user_text, prezzo):
+    testo, ms, err = await _panel_chiama(modello, system, user_text, 6000)
+    if err:
+        return _riga_panel("cervello", item_id, brand, modello, False, ms, errore=err)
+    d = estrai_json_da_testo_llm(testo)
+    if d is None:
+        return _riga_panel("cervello", item_id, brand, modello, False, ms, errore="json_non_valido")
+    try:
+        v, problemi = valida_payload_cervello(d)
+        vc = calcola_verdetto(v, prezzo)
+        _riga_panel("cervello", item_id, brand, modello, True, ms, target=_fmt0(v.get("prezzo_target_vendita_eur")),
+                    esito=vc["decisione"], margine=_fmt0(vc.get("margine")), roi=_fmt0(vc.get("roi")),
+                    legit=v.get("legit_verdetto"), problemi=len(problemi))
     except Exception as e:
-        log.info("OMBRA | %s | fallita: %s", item_id, type(e).__name__)
+        _riga_panel("cervello", item_id, brand, modello, False, ms, errore=type(e).__name__)
+
+
+def _fmt0(x):
+    return f"{x:.0f}" if isinstance(x, (int, float)) and not isinstance(x, bool) else None
+
+
+async def panel_cervello(item_id, brand, user_text, prezzo, v_primario, verdetto_primario):
+    """Pannello cervello: stesso prompt del Cervello a M modelli (senza ricerche: usano il pool gia' nel prompt)."""
+    if not (EXTRA_LLM_URL and PANEL_CERVELLO_MODELLI and _panel_ammesso()):
+        return
+    try:
+        _riga_panel("cervello", item_id, brand, "PRIMARIO", True, 0,
+                    target=_fmt0(v_primario.get("prezzo_target_vendita_eur")), esito=verdetto_primario["decisione"],
+                    margine=_fmt0(verdetto_primario.get("margine")), roi=_fmt0(verdetto_primario.get("roi")),
+                    legit=v_primario.get("legit_verdetto"))
+        schema = json.dumps(CERVELLO_RESPONSE_SCHEMA_OPENAI, ensure_ascii=False)
+        system = (GEMINI_CERVELLO_SYSTEM_PROMPT +
+                  "\n\nRispondi SOLO con un oggetto JSON valido conforme a questo schema, senza altro testo:\n" + schema)
+        await asyncio.gather(*(_panel_cervello_modello(item_id, brand, m, system, user_text, prezzo)
+                               for m in PANEL_CERVELLO_MODELLI))
+    except Exception:
+        log.warning("Pannello cervello fallito:\n%s", traceback.format_exc())
 
 
 async def _campione_target_cervello(chiama, user_text, forza_ricerca):
@@ -11027,6 +11148,9 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             GEMINI_OCCHI_SYSTEM_PROMPT, user_text_occhi, photo_bytes_list, grounding=False)
     costo_totale += costo_occhi
     t_tappe.append(("occhio", time.time()))
+    if EXTRA_LLM_URL and PANEL_OCCHIO_MODELLI:
+        _bg_task(panel_occhio(_estrai_item_id_da_url(url), listing_info.get("brand"), user_text_occhi,
+                              photo_bytes_list, occhio_json, problemi_occhio))
 
     # Prezzo del prodotto: base di OGNI calcolo economico a valle.
     prezzo_prodotto = _a_float(listing_info.get("price"), None)
@@ -11255,9 +11379,9 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
                 legit_cervello = v.get("legit_verdetto")
                 verdetto_calcolato = calcola_verdetto(v, prezzo_prodotto)
             t_tappe.append(("campioni_target", time.time()))
-        if EXTRA_LLM_URL and verdetto_calcolato["decisione"] in ("COMPRA", "TRATTA"):
-            asyncio.create_task(_ombra_target_extra(
-                item_id_annuncio, user_text_cervello, v.get("prezzo_target_vendita_eur")))
+        if EXTRA_LLM_URL and PANEL_CERVELLO_MODELLI:
+            _bg_task(panel_cervello(item_id_annuncio, brand_per_ricerca, user_text_cervello, prezzo_prodotto,
+                                    v, verdetto_calcolato))
         decisione = verdetto_calcolato["decisione"]
         urgenza = verdetto_calcolato["urgenza"]
         output_finale = render_messaggio_verdetto(
