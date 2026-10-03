@@ -65,11 +65,20 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
         await _aggiorna_stato_scheda(stato, esito_finale)
 
 
-def ruoli_gemini_per_prezzo(prezzo, soglia=None):
-    """(tier_alto, ruolo_occhio, ruolo_cervello) dal prezzo richiesto: dalla soglia in su le cascate '_alto'."""
+def ruoli_gemini(prezzo, stima_rapida, soglia=None):
+    """(tier_alto, ruolo_occhio, ruolo_cervello, da_cosa) per scegliere la cascata Gemini PRIMA dell'Occhio.
+    Decide la stima rapida di fair value (tabella + appreso, istantanea): semaforo 🟢/🟡 = margine/ROI promettenti ->
+    cascate '_alto' (modelli migliori); 🔴 = poco margine -> base. Se la stima manca o ha confidenza bassa (⚪) si
+    ripiega sul prezzo richiesto: dalla soglia (GEMINI_SOGLIA_PREZZO_ALTO) in su = alto."""
     soglia = GEMINI_SOGLIA_PREZZO_ALTO if soglia is None else soglia
-    alto = prezzo is not None and prezzo >= soglia
-    return alto, ("occhio_alto" if alto else "occhio"), ("cervello_alto" if alto else "cervello")
+    semaforo = (stima_rapida or {}).get("semaforo")
+    if semaforo in ("🟢", "🟡"):
+        alto, da = True, "stima"
+    elif semaforo == "🔴":
+        alto, da = False, "stima"
+    else:
+        alto, da = (prezzo is not None and prezzo >= soglia), "prezzo"
+    return alto, ("occhio_alto" if alto else "occhio"), ("cervello_alto" if alto else "cervello"), da
 
 
 async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None, t_ricevuto_bot=None, stato=None,
@@ -326,7 +335,8 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
     # Fascia di modello Gemini scelta SUBITO dal prezzo richiesto (dato del tracker, disponibile prima dell'Occhio):
     # dalla soglia in su Occhio e Cervello partono dalle cascate "_alto" (modelli migliori), sotto da quelle base.
     # Nessuna chiamata in piu' ne' in coda: cambia solo quale modello si interroga per primo.
-    tier_alto, ruolo_occhio, ruolo_cervello = ruoli_gemini_per_prezzo(_a_float(listing_info.get("price"), None))
+    tier_alto, ruolo_occhio, ruolo_cervello, tier_da = ruoli_gemini(
+        _a_float(listing_info.get("price"), None), listing_info.get("fair_value"))
 
     # --- OCCHIO: due rami, scelti da OCCHIO_OUTPUT_JSON.
     # In entrambi i casi il resto della pipeline riceve `output_occhi` come
@@ -617,7 +627,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             target=f"{v['prezzo_target_vendita_eur']:.0f}" if isinstance(v.get("prezzo_target_vendita_eur"), (int, float)) else None,
             n_comp=len(verdetto_calcolato["comp_usati"]),
             campioni=campioni_target, instabile="si" if stima_instabile else None,
-            tier="alto" if tier_alto else "base",
+            tier="alto" if tier_alto else "base", tier_da=tier_da,
         )
         tracc_registra_valutato(
             listing_info, url, decisione,
