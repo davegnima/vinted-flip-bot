@@ -10410,7 +10410,7 @@ def _tracc_estrai_segnali(html_pagina):
 # QUANDO l'annuncio e' passato a venduto (richiesto dall'utente il 2026-10-03). Si registrano per ogni
 # ricontrollo: il confronto tra annunci venduti e attivi dira' se qualche campo cambia alla vendita.
 _TRACC_TEMPI_RE = re.compile(
-    r'\\?"([a-z_]*(?:_at|_ts|timestamp|_date|_time)[a-z_]*)\\?"\s*:\s*\\?"?([0-9][0-9T:\-+.Z ]{5,31})'
+    r'\\?"([A-Za-z_]*(?:_at|_ts|[Tt]imestamp|[Dd]ate|[Tt]ime|[a-z]At|_on))\\?"\s*:\s*\\?"?([0-9][0-9T:\-+.Z ]{5,31})'
 )
 
 
