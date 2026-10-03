@@ -652,7 +652,7 @@ VINTED_BRAND_IDS = {
     "missoni mare": "2720679", "vivienne westwood": "14217",
     "yohji yamamoto": "200474", "dries van noten": "72138",
     "ann demeulemeester": "51445", "raf simons": "184436", "loewe": "24209",
-    "helmut lang": "47829", "jil sander": "17991",
+    "helmut lang": "47829",
     "bottega veneta": "86972", "maison margiela": "639289",
     "margiela": "639289", "max mara": "5483",
     "veilance": "3388210", "nanga": "434286",
@@ -672,7 +672,6 @@ VINTED_BRAND_IDS = {
     "toteme": "546105",
     "ermenegildo zegna": "174480",
     "zegna": "174480",
-    "our legacy": "218132",
     "loro piana": "219848",
     "lemaire": "295938",
     "the frankie shop": "378382",
@@ -710,7 +709,6 @@ VINTED_BRAND_IDS = {
     # allargare il watch invece di pre-filtrare su stime incerte -- "mettiamo tutti e
     # vediamo come va con un po' di notifiche". Stessa fonte (teddy-vltn/vinted-dataset).
     "acne studios": "180798",
-    "drumohr": "588278",
     "barena venezia": "703380", "barena": "703380",
     # Comme des Garçons: unico ID di questo giro NON incrociato con uno dei 7 gia'
     # verificati direttamente da Vinted -- controllare che l'URL risultante mostri
@@ -726,6 +724,9 @@ VINTED_BRAND_IDS = {
 # - Ganni, Arc'teryx: rimossi il 2026-10-02 su approvazione dell'utente dopo il primo giorno di log
 #   ESITO (Ganni 7 NON COMPRARE su 8, venditori a 85-120 EUR per capi da 55-90; Arc'teryx
 #   margini intorno a zero, 1 TRATTA su 5). Tolti anche dalle query 2 e 4 di Vinted-Notifications.
+# - Jil Sander, Our Legacy, Drumohr: rimossi il 2026-10-03 su approvazione dell'utente (primo giorno
+#   completo di log ESITO: 0 annunci su 29 con margine >=50 EUR e ROI >=100%). Tolti anche dalle query
+#   di Vinted-Notifications.
 # - "céline"/"celine": l'utente segnala troppo rumore su Vinted -- molti annunci di altri
 #   brand vengono taggati per errore come Céline dai venditori, quindi la ricerca comp per
 #   brand_id risulterebbe inquinata. Scelta esplicita di non mapparlo, non una dimenticanza.
@@ -1745,6 +1746,21 @@ def check_skip_pre_gemini(listing_info):
         TSHIRT_KW = ("maglietta", "magliette", "t-shirt", "tshirt", "t shirt", "tee", "tees")
         if any(re.search(r"\b" + re.escape(kw) + r"\b", titolo) for kw in TSHIRT_KW):
             return True, "[LINEA/VARIANTE ESCLUSA PER BRAND] Jacquemus t-shirt esclusa su richiesta esplicita (basso margine)."
+
+    # Loro Piana giacche/blazer sartoriali (richiesto dall'utente il 2026-10-03, dati 2026-10-02:
+    # 31 annunci Loro Piana su 53 scartati dopo aver gia' chiamato l'Occhio, quasi tutti giacche
+    # su misura il cui cartellino e' del fornitore del tessuto, non di Loro Piana). Si applica solo
+    # dopo lo scraping (serve la descrizione per non perdere "cashmere"/"storm system") e solo se
+    # nulla nel testo segnala un capo Loro Piana vero (linee iconiche, cashmere, camoscio, ecc.).
+    if ("loro piana" in brand or "loro piana" in titolo) and "description" in listing_info:
+        GIACCA_KW = ("blazer", "blazers", "giacca", "giacche", "veste", "jas", "jacke", "sakko", "jacket", "veston")
+        LP_VERO_KW = ("storm", "roadster", "windmate", "rain system", "cashmere", "cachemire", "kaschmir",
+                      "vicuna", "vigogna", "baby cashmere", "traveller", "suede", "camoscio", "pelle", "leather",
+                      "gilet", "piumino", "bomber", "etichetta loro piana", "label loro piana")
+        if (any(re.search(r"\b" + re.escape(kw) + r"\b", titolo) for kw in GIACCA_KW)
+                and not any(kw in testo_completo for kw in LP_VERO_KW)):
+            return True, ("[TESSUTO NON E' IL BRAND] Loro Piana giacca/blazer senza segnali di capo Loro Piana vero "
+                          "(spesso tessuto Loro Piana su giacca sartoriale di altro marchio): scartata prima dell'Occhio.")
 
     if "yves saint laurent" in brand or "ysl" in brand or "saint laurent" in brand:
         camicie_kw = ["camicia", "camicie", "camicetta", "shirt", "chemise", "blusa", "camisa"]
@@ -3060,6 +3076,10 @@ Archivio eclettico (Missoni, JPG, Pucci, Westwood, Mugler, Montana, Marni, Courr
 **M MISSONI — CALIBRAZIONE SPECIFICA (sovrastima ricorrente in produzione), segnalata dall'utente il 2026-09-21.** M Missoni è la sottolinea diffusion di Missoni, non l'archivio zigzag mainline — condivide il nome nei titoli ma è una fascia di prezzo strutturalmente diversa, esattamente come MM6/Margiela o See by Chloé/Chloé. La ricerca comp confonde spesso le due etichette (annunci "Missoni" generici che sono in realtà M Missoni, o viceversa), gonfiando la stima se non correggi esplicitamente: MAI usare un comp Missoni mainline (pattern zigzag pieno, archivio) per stimare un capo M Missoni, in nessun caso. Tetto di rivendita realistico per M Missoni: **maglieria/basics (t-shirt, maglioni semplici, accessori piccoli) €25-45**; **abiti/capispalla strutturati con pattern zigzag riconoscibile €50-90** — resta comunque una FRAZIONE del corrispondente Missoni mainline, mai ancorare alla fascia alta senza un comp M Missoni concordante reale (non un comp Missoni mainline scambiato per tale). Se il tuo prezzo finale per un capo M Missoni supera €90, giustifica esplicitamente in Analisi perché è un'eccezione (pezzo iconico documentato, collezione rara), non limitarti a citare un comp che potrebbe essere mainline mal classificato.
 
 **LORO PIANA MAGLIERIA (maglioni, cardigan, pullover, girocolli, dolcevita) — CALIBRAZIONE SPECIFICA, segnalata dall'utente il 2026-09-21 con dati reali di vendita.** Questo segmento ha un bias di sovrastima ricorrente in produzione: comp ASK trattati come prezzo di vendita realistico su una categoria dove il mercato reale è molto più debole di quanto gli ASK suggeriscano. Dato reale dell'utente: un proprio maglione Loro Piana 100% cashmere, condizioni ottime, resta invenduto a €200 da tempo. Se il capo cashmere top di gamma dell'utente non si vende a €200, un capo generico non iconico (mainline base, non archivio/collezione documentata) vale strutturalmente meno. Target realistico per maglieria Loro Piana USATA, non iconica: **cashmere 100% €90-160**, **lana/misti (non cashmere) €60-110** — mai ancorare la stima alla fascia alta di questi range senza un motivo esplicito (collezione rara, condizioni come-nuovo documentate, più comp concordanti). Un difetto anche lieve (scucitura, pilling, alone) spinge verso il fondo del range o sotto, non basta lo sconto standard 20-30% dell'ANCORAGGIO PREZZI applicato meccanicamente — sii ESPLICITAMENTE più conservativo qui che sugli altri brand quiet-luxury. Se il tuo prezzo finale per un capo di maglieria Loro Piana supera €160, giustifica in Analisi perché questo pezzo è un'eccezione al range, non limitarti a citare il comp scontato.
+
+**BRUNELLO CUCINELLI MAGLIERIA (maglioni, cardigan, pullover, polo, maglioncini) — CALIBRAZIONE SPECIFICA, 2026-10-03.** Stesso bias di sovrastima del Loro Piana: il 2026-10-02 il bot ha stimato €160-180 per maglioni usati comprati a €20 con soli 1-2 comp, mentre la tabella interna del bot per questa categoria dà €44-59 (mediana) e €99 (fascia alta). Target realistico per maglieria Brunello Cucinelli USATA, non iconica: **cashmere/seta €70-120**, **cotone/lana/misti €40-75**, **maniche corte/maglioncini leggeri €35-70**. Non ancorare la stima alla fascia alta senza un motivo esplicito (collezione rara, come-nuovo documentato, più comp concordanti). Se il tuo prezzo finale per un capo di maglieria Brunello Cucinelli supera €120, giustifica in Analisi perché è un'eccezione al range.
+
+**Eccezioni vere, non stime gonfiate.** L'utente cerca proprio i venditori che prezzano male, quindi un target molto sopra il prezzo d'acquisto e' legittimo. Ma se il tuo prezzo target supera 3 volte il prezzo d'acquisto con meno di 3 comp validi, spiega in `note_analista` quali comp o quale caratteristica concreta del capo lo giustificano (modello iconico, linea rara, comp concordanti): senza motivo specifico resta nella fascia mediana dei comp.
 
 **Taglia**: standard/centrale (donna IT 40-44, uomo IT 48-52) = bacino ampio, alza liquidità. Estrema (donna <38 o >46, uomo <46 o >54) = bacino ridotto, abbassa Deal score, allunga giorni stimati, dichiaralo in Analisi. Taglia ignota = dichiara il limite, non ignorarlo.
 
@@ -7782,6 +7802,34 @@ async def _recupera_comp_visuali_vinted(item_id, photo_id, brand):
     return testo, ok, mappa_url
 
 
+# Cache dei venduti Resellbot (richiesto dall'utente il 2026-10-03): l'analisi del 2026-10-02 ha mostrato
+# Resellbot in errore 429 decine di volte da sera, con il bot costretto al fallback Google (meno preciso,
+# nessun URL). I prezzi venduti per brand+categoria cambiano lentamente: si riusano per 24h (meno chiamate,
+# meno 429) e, se Resellbot e' bloccato, fino a 72h prima di ripiegare su Google.
+SOLD_CACHE_FRESCA_SECONDI = 24 * 3600
+SOLD_CACHE_STALE_SECONDI = 72 * 3600
+SOLD_CACHE_MAX_VOCI = 400
+_sold_cache = {}
+
+
+def _sold_cache_chiave(brand, categoria, material_per_ricerca, dettaglio_distintivo):
+    return tuple((str(x or "")).strip().lower() for x in (brand, categoria, material_per_ricerca, dettaglio_distintivo))
+
+
+def _sold_cache_leggi(chiave, max_eta_secondi):
+    voce = _sold_cache.get(chiave)
+    if voce and time.time() - voce[0] <= max_eta_secondi:
+        return voce[1], voce[2]
+    return None
+
+
+def _sold_cache_scrivi(chiave, testo, mappa_url):
+    if len(_sold_cache) >= SOLD_CACHE_MAX_VOCI:
+        for k in sorted(_sold_cache, key=lambda k: _sold_cache[k][0])[:SOLD_CACHE_MAX_VOCI // 4]:
+            _sold_cache.pop(k, None)
+    _sold_cache[chiave] = (time.time(), testo, mappa_url)
+
+
 async def _cerca_ebay_sold_con_fallback(brand, categoria, material_per_ricerca=None, dettaglio_distintivo=None):
     """Wrapper per l'executor: prova prima Resellbot (dati di vendita
     confermati, veri, vedi _cerca_ebay_sold_via_resellbot), e solo se fallisce
@@ -7799,10 +7847,20 @@ async def _cerca_ebay_sold_con_fallback(brand, categoria, material_per_ricerca=N
 
     Ritorna (testo, ok, mappa_url) dal 2026-09-25: mappa_url e' popolata solo
     sul ramo Resellbot (fonte primaria), vuota sul ramo fallback Google."""
+    chiave_cache = _sold_cache_chiave(brand, categoria, material_per_ricerca, dettaglio_distintivo)
+    in_cache = _sold_cache_leggi(chiave_cache, SOLD_CACHE_FRESCA_SECONDI)
+    if in_cache:
+        return in_cache[0], True, in_cache[1]
     testo, ok, mappa_url = await _cerca_ebay_sold_via_resellbot(brand, categoria, material_per_ricerca, dettaglio_distintivo)
     if ok:
+        _sold_cache_scrivi(chiave_cache, testo, mappa_url)
         return testo, ok, mappa_url
     log.info("_cerca_ebay_sold_con_fallback: Resellbot fallito (%s), tento fallback Google.", testo)
+    vecchio = _sold_cache_leggi(chiave_cache, SOLD_CACHE_STALE_SECONDI)
+    if vecchio:
+        log.info("_cerca_ebay_sold_con_fallback: uso i venduti in cache (piu' vecchi di %dh) al posto del fallback Google.",
+                 SOLD_CACHE_FRESCA_SECONDI // 3600)
+        return vecchio[0] + "\n(Nota: Resellbot non raggiungibile, questi venduti arrivano dalla cache di ore fa.)", True, vecchio[1]
     testo_fallback, ok_fallback = await _serper_batch_query_ebay_sold(brand, categoria, material_per_ricerca, dettaglio_distintivo)
     if ok_fallback:
         # Nessuna mappa_url dal fallback Google (stesso limite del fallback
@@ -10312,6 +10370,49 @@ async def tracc_ciclo_infinito():
         await asyncio.sleep(TRACCIAMENTO_INTERVALLO_SECONDI)
 
 
+# Stima del prezzo target piu' stabile (richiesto dall'utente il 2026-10-03). Il 2026-10-02 lo stesso
+# annuncio (titolo e prezzo identici) e' uscito con target 52 e 160 EUR (abito Dries van Noten), 30 e 75
+# (marinière), 45/55/90 (pantalone Gaultier): il Cervello da' numeri diversi alla stessa domanda. Per gli
+# annunci che arrivano a COMPRA/TRATTA si chiede il target una o due volte in piu' e si usa la mediana. Non
+# e' un tetto al ROI: un'eccezione vera da' sempre numeri alti e coerenti, e resta alta. Se le valutazioni
+# divergono molto il messaggio lo dice ("stima instabile").
+CERVELLO_CAMPIONI_EXTRA = int(_env_float("CERVELLO_CAMPIONI_EXTRA", 1))
+CERVELLO_SPREAD_MAX = _env_float("CERVELLO_SPREAD_MAX", 1.35)
+
+
+def consolida_target_cervello(targets, spread_max=None):
+    """Da piu' valutazioni del target al valore da usare. Ritorna (valore, spread, instabile).
+    Con 3+ campioni la mediana; con 2 la media se concordano, il piu' basso se divergono."""
+    spread_max = CERVELLO_SPREAD_MAX if spread_max is None else spread_max
+    validi = sorted(float(t) for t in targets if isinstance(t, (int, float)) and t > 0)
+    if not validi:
+        return None, None, False
+    spread = validi[-1] / validi[0]
+    instabile = spread > spread_max
+    if len(validi) >= 3:
+        valore = statistics.median(validi)
+    elif len(validi) == 2:
+        valore = validi[0] if instabile else sum(validi) / 2
+    else:
+        valore = validi[0]
+    return valore, spread, instabile
+
+
+async def _campione_target_cervello(chiama, user_text, forza_ricerca):
+    """Una valutazione in piu' del Cervello, solo per leggerne il prezzo target. Ritorna (target|None, costo)."""
+    try:
+        vj, err, costo, _n, _raw = await chiama(
+            GEMINI_CERVELLO_SYSTEM_PROMPT, user_text, forza_ricerca=forza_ricerca, mappa_url_ricerche_extra={})
+        if err:
+            return None, costo or 0.0
+        v2, _ = valida_payload_cervello(vj)
+        t = v2.get("prezzo_target_vendita_eur")
+        return (t if isinstance(t, (int, float)) and t > 0 else None), costo or 0.0
+    except Exception:
+        log.warning("Campione extra del Cervello fallito:\n%s", traceback.format_exc())
+        return None, 0.0
+
+
 def _log_esito(listing_info, esito, **campi):
     """Una riga greppable per annuncio con il brand del tracker (richiesto
     dall'utente il 2026-10-01) per l'analisi giornaliera per brand dai log."""
@@ -10812,6 +10913,26 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
         stats_comp = classifica_provenienza_comp(v, pool_ricerca_grezzo)
         legit_cervello = v.get("legit_verdetto")
         verdetto_calcolato = calcola_verdetto(v, prezzo_prodotto)
+        campioni_target = None
+        stima_instabile = False
+        if CERVELLO_CAMPIONI_EXTRA > 0 and verdetto_calcolato["decisione"] in ("COMPRA", "TRATTA"):
+            targets_campioni = [v.get("prezzo_target_vendita_eur")]
+            for _ in range(CERVELLO_CAMPIONI_EXTRA):
+                t_extra, costo_extra = await _campione_target_cervello(chiama_cervello, user_text_cervello, forza_ricerca)
+                costo_totale += costo_extra
+                targets_campioni.append(t_extra)
+            _, spread_c, instabile_c = consolida_target_cervello(targets_campioni)
+            if instabile_c and len([t for t in targets_campioni if t]) < 3:
+                t_extra, costo_extra = await _campione_target_cervello(chiama_cervello, user_text_cervello, forza_ricerca)
+                costo_totale += costo_extra
+                targets_campioni.append(t_extra)
+            valore_c, spread_c, stima_instabile = consolida_target_cervello(targets_campioni)
+            validi_c = sorted(t for t in targets_campioni if isinstance(t, (int, float)) and t > 0)
+            campioni_target = "/".join(f"{t:.0f}" for t in validi_c)
+            if valore_c is not None and len(validi_c) > 1:
+                v["prezzo_target_vendita_eur"] = valore_c
+                verdetto_calcolato = calcola_verdetto(v, prezzo_prodotto)
+            t_tappe.append(("campioni_target", time.time()))
         decisione = verdetto_calcolato["decisione"]
         urgenza = verdetto_calcolato["urgenza"]
         output_finale = render_messaggio_verdetto(
@@ -10819,6 +10940,9 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             item_id=item_id_annuncio, cover_photo_id=cover_photo_id, brand=brand_per_ricerca,
             catalog_id=catalog_id, mappa_url_comp=mappa_url_comp,
         )
+        if stima_instabile and campioni_target:
+            output_finale += (f"\n\n⚠️ Stima instabile: {campioni_target} € nelle valutazioni indipendenti del prezzo "
+                              f"di rivendita, uso il valore centrale. Verifica i comparabili prima di fidarti.")
 
         log.info(
             "Verdetto '%s': %s (%s urgenza) — margine=%s ROI=%s — comp usati=%d (%d da memoria) — limiti=%s",
@@ -10836,6 +10960,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             acquisto=f"{prezzo_prodotto:.0f}" if isinstance(prezzo_prodotto, (int, float)) else None,
             target=f"{v['prezzo_target_vendita_eur']:.0f}" if isinstance(v.get("prezzo_target_vendita_eur"), (int, float)) else None,
             n_comp=len(verdetto_calcolato["comp_usati"]),
+            campioni=campioni_target, instabile="si" if stima_instabile else None,
         )
         tracc_registra_valutato(
             listing_info, url, decisione,
