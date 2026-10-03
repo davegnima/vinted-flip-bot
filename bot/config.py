@@ -334,3 +334,6 @@ def _env_float(nome, default):
         return float(os.environ.get(nome, str(default)).replace(",", "."))
     except ValueError:
         return float(default)
+
+
+MAX_ANALISI_PARALLELE = max(1, int(os.environ.get("MAX_ANALISI_PARALLELE", "4")))

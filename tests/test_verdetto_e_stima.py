@@ -1,5 +1,6 @@
 import main_telethon as m
 from bot import gemini_stato as gs
+from bot import panel as pn
 
 
 def test_consolida_target():
@@ -58,8 +59,8 @@ def test_estrai_json_da_testo_llm():
 
 def test_panel_tetto_orario(monkeypatch):
     import main_telethon as m
-    monkeypatch.setattr(m, "PANEL_MAX_ANNUNCI_ORA", 2)
-    monkeypatch.setattr(m, "_panel_ingressi", [])
+    monkeypatch.setattr(pn, "PANEL_MAX_ANNUNCI_ORA", 2)
+    monkeypatch.setattr(pn, "_panel_ingressi", [])
     assert m._panel_ammesso(1000) and m._panel_ammesso(1001)
     assert not m._panel_ammesso(1002)
     assert m._panel_ammesso(1000 + 3601)   # la finestra scorre
@@ -84,17 +85,17 @@ def test_prompt_cervello_compatto_contiene_tutte_le_chiavi():
 
 def test_panel_scelta_modelli_rotazione_pausa_ed_esclusione_principale(monkeypatch):
     import main_telethon as m
-    monkeypatch.setattr(m, "_panel_pausa", {})
-    monkeypatch.setattr(m, "_panel_giro", {"occhio": 0, "cervello": 0})
+    monkeypatch.setattr(pn, "_panel_pausa", {})
+    monkeypatch.setattr(pn, "_panel_giro", {"occhio": 0, "cervello": 0})
     lista = [f"gemini/{m.GEMINI_MODEL_CERVELLO}", "a/1", "b/2@c", "c/3", "d/4"]
-    monkeypatch.setattr(m, "PANEL_MODELLI_PER_ANNUNCIO", 0)
+    monkeypatch.setattr(pn, "PANEL_MODELLI_PER_ANNUNCIO", 0)
     assert m.panel_scegli_modelli("cervello", lista, adesso=100) == ["a/1", "b/2@c", "c/3", "d/4"]   # niente modello principale
-    monkeypatch.setattr(m, "PANEL_MODELLI_PER_ANNUNCIO", 2)
+    monkeypatch.setattr(pn, "PANEL_MODELLI_PER_ANNUNCIO", 2)
     assert m.panel_scegli_modelli("cervello", lista, adesso=100) == ["a/1", "b/2@c"]
     assert m.panel_scegli_modelli("cervello", lista, adesso=100) == ["c/3", "d/4"]
     assert m.panel_scegli_modelli("cervello", lista, adesso=100) == ["a/1", "b/2@c"]                 # giro completo
     m._panel_segna_errore("a/1", "http429", adesso=100)                                                # quota finita
-    monkeypatch.setattr(m, "PANEL_MODELLI_PER_ANNUNCIO", 0)
+    monkeypatch.setattr(pn, "PANEL_MODELLI_PER_ANNUNCIO", 0)
     assert "a/1" not in m.panel_scegli_modelli("cervello", lista, adesso=100 + 60)
     assert "a/1" in m.panel_scegli_modelli("cervello", lista, adesso=100 + 31 * 60)                    # pausa scaduta
 
