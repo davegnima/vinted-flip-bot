@@ -212,7 +212,7 @@ async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca
                                          api_url=GEMINI_API_URL_CERVELLO,
                                          prezzo_input=PREZZO_CERVELLO_INPUT,
                                          prezzo_output=PREZZO_CERVELLO_OUTPUT,
-                                         mappa_url_ricerche_extra=None):
+                                         mappa_url_ricerche_extra=None, ruolo="cervello"):
     """Cervello Gemini in DUE FASI, imposte da un vincolo dell'API.
 
     FASE 1 -- RICERCA (fino a MAX_ROUNDS_FUNZIONE giri): function calling
@@ -300,7 +300,7 @@ async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca
         # direttamente al verdetto (vedi "si passa comunque al verdetto" nel
         # chiamante) invece di aspettare minuti in piu' per round.
         tentativi_effettivi = MAX_RETRIES_GEMINI_IN_BLACKOUT if _gemini_in_blackout() else tentativi_rimasti
-        if cascata_per("cervello"):
+        if cascata_per(ruolo):
             tentativi_effettivi += len(GEMINI_API_KEYS)
 
         backoff_seconds = 2
@@ -308,7 +308,7 @@ async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca
             try:
                 # Timeout abbassato da 90 a 30s (richiesto dall'utente il
                 # 2026-09-22, stesso motivo di chiama_gemini).
-                url_usato = _gemini_url_effettivo(api_url, "cervello")
+                url_usato = _gemini_url_effettivo(api_url, ruolo)
                 modello_usato = _gemini_modello_da_url(url_usato)
                 key_usata = _gemini_key_attuale(modello_usato)
                 resp = await hc._client_generico.post(
@@ -319,13 +319,13 @@ async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca
                     # 2026-09-26: la marcatura di esclusione va sempre eseguita,
                     # anche sull'ultimo tentativo (vedi commento esteso li').
                     modello_cambiato = _gemini_gestisci_modello_non_disponibile(
-                        api_url, url_usato, resp.status_code, resp.text, "cervello")
+                        api_url, url_usato, resp.status_code, resp.text, ruolo)
                     if modello_cambiato and attempt < tentativi_effettivi:
                         continue
                     if _gemini_e_errore_quota_giornaliera(resp.status_code, resp.text):
                         _gemini_segna_key_quota_esaurita(key_usata, modello_usato, _gemini_secondi_retry(resp.text))
-                        if (cascata_per("cervello") and attempt < tentativi_effettivi
-                                and _gemini_url_effettivo(api_url, "cervello") != url_usato):
+                        if (cascata_per(ruolo) and attempt < tentativi_effettivi
+                                and _gemini_url_effettivo(api_url, ruolo) != url_usato):
                             continue   # si scala subito al modello successivo della cascata
                     codici_con_rotazione = {429, 500, 502, 503, 504}
                     if resp.status_code in codici_con_rotazione and attempt < tentativi_effettivi:
@@ -346,7 +346,7 @@ async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca
                         continue
                     resp.raise_for_status()
                 _gemini_registra_esito(True)
-                log.info("GEMINI_USO | cervello | %s", modello_usato)
+                log.info("GEMINI_USO | %s | %s", ruolo, modello_usato)
                 return resp.json()
             except Exception:
                 if attempt < tentativi_effettivi:

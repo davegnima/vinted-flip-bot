@@ -177,3 +177,22 @@ def test_resellbot_disattivato_va_diretto_su_google(monkeypatch):
     monkeypatch.setattr(comps, "_serper_batch_query_ebay_sold", google)
     testo, ok, mappa = asyncio.run(comps._cerca_ebay_sold_con_fallback("Prada", "giacca", None, None))
     assert ok and "risultati google" in testo and "ASK" in testo and mappa == {}
+
+
+def test_ruoli_gemini_dal_prezzo_iniziale():
+    from bot import pipeline
+    assert pipeline.ruoli_gemini_per_prezzo(49.99, 50) == (False, "occhio", "cervello")
+    assert pipeline.ruoli_gemini_per_prezzo(50, 50) == (True, "occhio_alto", "cervello_alto")
+    assert pipeline.ruoli_gemini_per_prezzo(None, 50) == (False, "occhio", "cervello")   # prezzo ignoto: fascia base
+
+
+def test_cascata_fascia_alta_con_fallback_alla_base(monkeypatch):
+    monkeypatch.setattr(gs, "GEMINI_CASCATA", [])
+    monkeypatch.setattr(gs, "GEMINI_CASCATA_OCCHIO", ["occ-lite"])
+    monkeypatch.setattr(gs, "GEMINI_CASCATA_CERVELLO", ["cer-lite"])
+    monkeypatch.setattr(gs, "GEMINI_CASCATA_OCCHIO_ALTO", ["occ-top", "occ-lite"])
+    monkeypatch.setattr(gs, "GEMINI_CASCATA_CERVELLO_ALTO", [])
+    assert gs.cascata_per("occhio_alto") == ["occ-top", "occ-lite"]
+    assert gs.cascata_per("occhio") == ["occ-lite"]
+    assert gs.cascata_per("cervello_alto") == ["cer-lite"]      # alta non configurata: vale la base della fase
+    assert "occ-top" in gs.tutti_i_modelli_cascata()

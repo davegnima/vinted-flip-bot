@@ -117,16 +117,26 @@ GEMINI_CASCATA = [m.strip() for m in os.environ.get("GEMINI_CASCATA", "").split(
 # GEMINI_CASCATA_OCCHIO / GEMINI_CASCATA_CERVELLO; se una manca vale la GEMINI_CASCATA generica.
 GEMINI_CASCATA_OCCHIO = [m.strip() for m in os.environ.get("GEMINI_CASCATA_OCCHIO", "").split(",") if m.strip()]
 GEMINI_CASCATA_CERVELLO = [m.strip() for m in os.environ.get("GEMINI_CASCATA_CERVELLO", "").split(",") if m.strip()]
+# Fascia "alta" (prezzo richiesto >= GEMINI_SOGLIA_PREZZO_ALTO): GEMINI_CASCATA_OCCHIO_ALTO / _CERVELLO_ALTO; se
+# mancano valgono quelle base della fase.
+GEMINI_CASCATA_OCCHIO_ALTO = [m.strip() for m in os.environ.get("GEMINI_CASCATA_OCCHIO_ALTO", "").split(",") if m.strip()]
+GEMINI_CASCATA_CERVELLO_ALTO = [m.strip() for m in os.environ.get("GEMINI_CASCATA_CERVELLO_ALTO", "").split(",") if m.strip()]
 
 
 def cascata_per(ruolo=None):
     """Catena di modelli (dal migliore al piu' leggero) per la fase `ruolo` ("occhio" | "cervello"), [] = nessuna."""
+    if ruolo in ("occhio_alto", "cervello_alto"):
+        alta = GEMINI_CASCATA_OCCHIO_ALTO if ruolo == "occhio_alto" else GEMINI_CASCATA_CERVELLO_ALTO
+        if alta:
+            return alta
+        ruolo = ruolo.replace("_alto", "")
     specifica = {"occhio": GEMINI_CASCATA_OCCHIO, "cervello": GEMINI_CASCATA_CERVELLO}.get(ruolo) or []
     return specifica or GEMINI_CASCATA
 
 
 def tutti_i_modelli_cascata():
-    return {*GEMINI_CASCATA, *GEMINI_CASCATA_OCCHIO, *GEMINI_CASCATA_CERVELLO}
+    return {*GEMINI_CASCATA, *GEMINI_CASCATA_OCCHIO, *GEMINI_CASCATA_CERVELLO,
+            *GEMINI_CASCATA_OCCHIO_ALTO, *GEMINI_CASCATA_CERVELLO_ALTO}
 RAFFREDDAMENTO_MODELLO_SOVRACCARICO_SECONDI = 15 * 60
 RAFFREDDAMENTO_MODELLO_INESISTENTE_SECONDI = 24 * 3600
 _gemini_modello_escluso_fino = {}
