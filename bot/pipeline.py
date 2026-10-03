@@ -796,7 +796,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
     testo_unificato = None
     if scenario_usato != "SKIP" and "\n" in output_finale:
         header, output_finale, testo_unificato = componi_testi_verdetto(
-            listing_info, verdetto_calcolato, output_finale, info_foto, campioni_target, stima_instabile)
+            listing_info, verdetto_calcolato, output_finale, info_foto, campioni_target, stima_instabile, url=url)
 
     try:
         fv_registra_gemini(listing_info, url, decisione, verdetto_calcolato,

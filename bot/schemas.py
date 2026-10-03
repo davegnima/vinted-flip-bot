@@ -587,6 +587,9 @@ CERVELLO_RESPONSE_SCHEMA = {
         "segnali_domanda",
         "deal_score",
         "note_analista",
+        "descrizione_capo",
+        "canale_vendita",
+        "lavori_necessari",
         "domande_al_venditore",
         "messaggio_venditore_template",
     ],
@@ -889,8 +892,27 @@ CERVELLO_RESPONSE_SCHEMA = {
         "note_analista": {
             "type": "STRING",
             "description": (
-                "3-5 righe: ragionamento sui comp e commento esplicito sul profilo/guardaroba "
-                "del venditore. Non scrivere margine, ROI o decisione: li inserisce il sistema."
+                "Max 3 frasi brevi: su quali comp si basa la stima di rivendita e perche' il target e' quello, "
+                "piu' un commento sul profilo/guardaroba del venditore. Non scrivere margine, ROI o decisione: "
+                "li inserisce il sistema."
+            ),
+        },
+        "descrizione_capo": {
+            "type": "STRING",
+            "description": "UNA riga: cos'e' il capo (tipo, materiale, taglia, stato, linea) come lo descriveresti a un compratore.",
+        },
+        "canale_vendita": {
+            "type": "STRING",
+            "description": (
+                "Dove conviene rivenderlo per realizzare il target (es. Vinted, Vestiaire Collective, eBay, Depop, "
+                "Grailed) con 3-6 parole di motivo."
+            ),
+        },
+        "lavori_necessari": {
+            "type": "STRING",
+            "description": (
+                "Riparazioni, lavaggio o stiro da fare prima di rivendere, con costo/tempo indicativo. "
+                "Scrivi 'nessuno' se il capo e' pronto."
             ),
         },
         "domande_al_venditore": {
@@ -921,6 +943,7 @@ CERVELLO_RESPONSE_SCHEMA = {
         "giorni_stimati_vendita", "legit_verdetto", "legit_motivo_specifico",
         "rischio_fake", "confidenza", "profilo_venditore", "motivo_profilo_venditore",
         "domanda_mercato", "segnali_domanda", "deal_score", "note_analista",
+        "descrizione_capo", "canale_vendita", "lavori_necessari",
         "domande_al_venditore",
     ],
 }

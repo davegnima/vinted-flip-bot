@@ -36,25 +36,39 @@ def _componi():
     v = _v()
     verdetto = m.calcola_verdetto(v, 35.0)
     out = m.render_messaggio_verdetto(v, verdetto, [], {"n_memoria": 0, "n_prezzi_pool": 6, "n_comp": 2})
-    return m.componi_testi_verdetto(LISTING, verdetto, out, "", "60/60/95", True)
+    return m.componi_testi_verdetto(LISTING, verdetto, out, "", "60/60/95", True, url="https://www.vinted.it/items/1-x")
 
 
 def test_unificato_ogni_dato_una_volta_sola():
     _, _, uni = _componi()
     assert uni.count("Shirt dries van noten") == 1       # titolo
     assert uni.count("Dries van Noten") == 1             # brand
-    assert "vinted.it/items" not in uni                   # il link e' nel bottone
+    assert uni.count("vinted.it/items") == 1              # solo il link "vedi su Vinted" dopo la decisione
     assert uni.count("Fair value") == 1 and uni.count("Gemini ~") == 1
     assert "stima instabile 60/60/95" in uni
-    assert "gg" not in uni.split("---")[0]                # niente piu' "~35gg"
+    assert "~35gg" not in uni
     assert uni.count("augusta") == 1                      # venditore
     assert "like new cotton" not in uni                   # descrizione = titolo con refuso: omessa
 
 
 def test_unificato_prima_riga_ha_verdetto_prezzo_brand():
     _, _, uni = _componi()
-    prima = uni.splitlines()[0]
-    assert "💶 35,00 €" in prima and "Dries van Noten" in prima and any(d in prima for d in ("COMPRA", "TRATTA"))
+    righe = uni.splitlines()
+    assert any(d in righe[0] for d in ("COMPRA", "TRATTA")) and "[vedi su Vinted](https://www.vinted.it/items/1-x)" in righe[0]
+    assert "💶 35,00 €" in righe[1] and "Dries van Noten" in righe[1]
+
+
+def test_analisi_analista_con_capo_scelta_vendita_lavori():
+    v = _v()
+    v.update(descrizione_capo="Camicia cotone taglia 38", canale_vendita="Vinted, domanda alta",
+             lavori_necessari="stiro, 5 minuti")
+    verdetto = m.calcola_verdetto(v, 35.0)
+    out = m.render_messaggio_verdetto(v, verdetto, [], {"n_memoria": 0, "n_prezzi_pool": 6, "n_comp": 2})
+    assert "👗 **Capo:** Camicia cotone taglia 38" in out
+    assert "🎯 **Scelta:** Camicia mainline in cotone." in out
+    assert "⏱ **Vendita:** ~35 giorni · 🛒 Vinted, domanda alta" in out
+    assert "🛠 **Lavori:** stiro, 5 minuti" in out
+    assert out.index("Analisi dell'analista") < out.index("Azioni") if "Azioni" in out else True
 
 
 def test_caricato_senza_descrizione():
@@ -68,7 +82,7 @@ def test_comp_con_prezzo_una_volta():
 
 def test_standalone_non_ripete_url_e_titolo_una_volta():
     header, resto, _ = _componi()
-    assert "vinted.it" not in header and header.count("Shirt dries van noten") == 1
+    assert header.count("vinted.it") == 1 and header.count("Shirt dries van noten") == 1
     assert "Fair value" in header
 
 

@@ -393,7 +393,7 @@ async def _aggiorna_stato_scheda(stato, nuovo_stato):
 
 
 def componi_testi_verdetto(listing_info, verdetto_calcolato, output_finale, info_foto="", campioni_target=None,
-                           stima_instabile=False):
+                           stima_instabile=False, url=None):
     """Dal testo di render_messaggio_verdetto (prima riga = decisione, seconda = margine, poi il resto) costruisce:
     - header: intestazione del messaggio STANDALONE (COMPRA, che deve restare un messaggio nuovo per il push);
     - resto: il corpo senza le prime due righe;
@@ -406,6 +406,9 @@ def componi_testi_verdetto(listing_info, verdetto_calcolato, output_finale, info
     resto_output = righe_output[2] if len(righe_output) > 2 else ""
 
     brand_escapato = _escapa_markdown_legacy(listing_info.get("brand"))
+    # Link "vedi su Vinted" subito dopo la decisione (richiesto dall'utente il 2026-10-03).
+    link = f" · [vedi su Vinted]({url})" if url else ""
+    riga_verdetto = riga_verdetto + link
     riga_verdetto_con_brand = riga_verdetto + (f" · {brand_escapato}" if brand_escapato else "")
     riga_fv = _riga_fair_value_unica(listing_info.get("fair_value"), verdetto_calcolato, campioni_target, stima_instabile)
 
@@ -420,16 +423,19 @@ def componi_testi_verdetto(listing_info, verdetto_calcolato, output_finale, info
 
     testa = _testa_prezzo_brand(listing_info)
     deal, _, resto = resto_output.partition("\n\n")
+    sep = "—" * 20
     blocchi = [
-        riga_verdetto + (f" · {testa}" if testa else ""),
-        _escapa_markdown_legacy(listing_info.get("title") or "Annuncio"),
-        _righe_dettagli_annuncio(listing_info),
-        _riga_caricato_annuncio(listing_info),
-        info_foto.strip() or None,
-        "",
+        riga_verdetto,
+        testa,
+        sep,
         riga_margine or None,
         deal or None,
         riga_fv or None,
+        sep,
+        f"🆕 *{_escapa_markdown_legacy(listing_info.get('title') or 'Annuncio')}*",
+        _righe_dettagli_annuncio(listing_info),
+        _riga_caricato_annuncio(listing_info),
+        info_foto.strip() or None,
         _riga_venditore_annuncio(listing_info),
     ]
     descrizione = _descrizione_utile(listing_info)
