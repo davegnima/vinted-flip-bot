@@ -179,11 +179,16 @@ def test_resellbot_disattivato_va_diretto_su_google(monkeypatch):
     assert ok and "risultati google" in testo and "ASK" in testo and mappa == {}
 
 
-def test_ruoli_gemini_dal_prezzo_iniziale():
+def test_ruoli_gemini_dalla_stima_rapida_con_fallback_sul_prezzo():
     from bot import pipeline
-    assert pipeline.ruoli_gemini_per_prezzo(49.99, 50) == (False, "occhio", "cervello")
-    assert pipeline.ruoli_gemini_per_prezzo(50, 50) == (True, "occhio_alto", "cervello_alto")
-    assert pipeline.ruoli_gemini_per_prezzo(None, 50) == (False, "occhio", "cervello")   # prezzo ignoto: fascia base
+    r = pipeline.ruoli_gemini
+    assert r(20, {"semaforo": "🟢"}, 50) == (True, "occhio_alto", "cervello_alto", "stima")    # promettente anche se costa poco
+    assert r(120, {"semaforo": "🟡"}, 50) == (True, "occhio_alto", "cervello_alto", "stima")
+    assert r(120, {"semaforo": "🔴"}, 50) == (False, "occhio", "cervello", "stima")             # caro ma senza margine: base
+    assert r(80, {"semaforo": "⚪"}, 50) == (True, "occhio_alto", "cervello_alto", "prezzo")    # confidenza bassa: prezzo
+    assert r(30, {"semaforo": "⚪"}, 50) == (False, "occhio", "cervello", "prezzo")
+    assert r(80, None, 50) == (True, "occhio_alto", "cervello_alto", "prezzo")                  # nessuna stima: prezzo
+    assert r(None, None, 50) == (False, "occhio", "cervello", "prezzo")
 
 
 def test_cascata_fascia_alta_con_fallback_alla_base(monkeypatch):
