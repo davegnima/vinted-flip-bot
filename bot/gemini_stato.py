@@ -377,6 +377,13 @@ def _gemini_modello_senza_quota(modello):
     return bool(GEMINI_API_KEYS) and all(_gemini_key_in_quota_esaurita(k, modello) for k in GEMINI_API_KEYS)
 
 
+def gemini_cascata_esaurita(ruolo=None):
+    """True se TUTTI i modelli della cascata di `ruolo` hanno la quota finita su tutte le key: Gemini non puo'
+    rispondere e si passa ai modelli di riserva (vedi riserva_llm)."""
+    modelli = cascata_per(ruolo)
+    return bool(modelli) and all(_gemini_modello_senza_quota(m) for m in modelli)
+
+
 def _gemini_key_in_quota_esaurita(key, modello=None):
     """True se `key` e' attualmente in cooldown per quota giornaliera
     esaurita (vedi _gemini_segna_key_quota_esaurita)."""

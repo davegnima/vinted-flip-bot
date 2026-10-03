@@ -29,6 +29,11 @@ EXTRA_LLM_KEY = (os.environ.get("EXTRA_LLM_KEY") or "").strip()
 EXTRA_LLM_MODEL = (os.environ.get("EXTRA_LLM_MODEL") or "").strip()   # retrocompatibile: un solo modello cervello
 PANEL_OCCHIO_MODELLI = [m.strip() for m in (os.environ.get("PANEL_OCCHIO_MODELLI") or "").split(",") if m.strip()]
 PANEL_CERVELLO_MODELLI = [m.strip() for m in (os.environ.get("PANEL_CERVELLO_MODELLI") or EXTRA_LLM_MODEL).split(",") if m.strip()]
+# Modelli di RISERVA del flusso principale (via lo stesso gateway): quando le cascate Gemini sono esaurite, o una
+# chiamata Gemini fallisce, la fase passa a questi modelli in ordine (dal migliore). Il suffisso @c usa il prompt
+# compatto del Cervello. Vedi riserva_llm. Esclusi dal pannello: stessa quota.
+RISERVA_OCCHIO_MODELLI = [m.strip() for m in (os.environ.get("RISERVA_OCCHIO_MODELLI") or "").split(",") if m.strip()]
+RISERVA_CERVELLO_MODELLI = [m.strip() for m in (os.environ.get("RISERVA_CERVELLO_MODELLI") or "").split(",") if m.strip()]
 PANEL_TIMEOUT = _env_float("PANEL_TIMEOUT", 60)
 PANEL_MAX_ANNUNCI_ORA = int(_env_float("PANEL_MAX_ANNUNCI_ORA", 60))
 PANEL_MAX_FOTO = int(_env_float("PANEL_MAX_FOTO", 6))
@@ -66,7 +71,8 @@ def _panel_e_modello_principale(modello):
     """True se il modello e' lo stesso del flusso principale (stessa quota giornaliera): mai nel pannello."""
     nome = modello.split("@")[0]
     principali = {GEMINI_MODEL_OCCHIO, GEMINI_MODEL_CERVELLO, *GEMINI_MODELLI_RISERVA, *tutti_i_modelli_cascata()}
-    return nome in {f"gemini/{m}" for m in principali}
+    riserva = {m.split("@")[0] for m in RISERVA_OCCHIO_MODELLI + RISERVA_CERVELLO_MODELLI}
+    return nome in {f"gemini/{m}" for m in principali} or nome in riserva
 
 
 def panel_scegli_modelli(tipo, modelli, adesso=None):
@@ -104,7 +110,8 @@ def _panel_segna_errore(modello, err, adesso=None):
     segue il tempo dichiarato dal provider (3 s di Mistral, 5 min di Groq, mezzanotte di OpenRouter), non un
     valore fisso: prima un 429 da 3 secondi fermava il modello per 30 minuti."""
     adesso = adesso if adesso is not None else time.time()
-    attesa = _panel_reset_s.pop(modello, None) if err == "http429" else None
+    nudo = modello.split("@")[0]      # _panel_chiama registra il reset col nome senza suffisso @c
+    attesa = (_panel_reset_s.pop(modello, None) or _panel_reset_s.pop(nudo, None)) if err == "http429" else None
     if attesa is not None:
         _panel_pausa[modello] = adesso + min(max(attesa + 5, 10), 6 * 3600)
     elif err in ("http429", "http402", "http403"):
