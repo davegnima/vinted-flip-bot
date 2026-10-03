@@ -442,4 +442,6 @@ def componi_testi_verdetto(listing_info, verdetto_calcolato, output_finale, info
     if descrizione:
         blocchi.append(f"📝 {_escapa_markdown_legacy(descrizione)}")
     unificato = "\n".join(b for b in blocchi if b is not None) + "\n\n" + resto
+    if url:
+        unificato += f"\n\n🔗 [Apri su Vinted]({url})"
     return header, resto_output, unificato

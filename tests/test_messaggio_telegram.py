@@ -43,7 +43,8 @@ def test_unificato_ogni_dato_una_volta_sola():
     _, _, uni = _componi()
     assert uni.count("Shirt dries van noten") == 1       # titolo
     assert uni.count("Dries van Noten") == 1             # brand
-    assert uni.count("vinted.it/items") == 1              # solo il link "vedi su Vinted" dopo la decisione
+    assert uni.count("vinted.it/items") == 2              # link dopo la decisione e in fondo
+    assert uni.rstrip().endswith("[Apri su Vinted](https://www.vinted.it/items/1-x)")
     assert uni.count("Fair value") == 1 and uni.count("Gemini ~") == 1
     assert "stima instabile 60/60/95" in uni
     assert "~35gg" not in uni
