@@ -10230,12 +10230,14 @@ _tracc_item_visti = set()
 _tracc_visti_caricati = [False]
 
 _TRACC_SEGNALI_RE = {
-    chiave: re.compile(r'"' + chiave + r'"\s*:\s*("?[A-Za-z0-9_.-]{1,30}"?)')
+    # La pagina incorpora i dati come JSON dentro una stringa: le virgolette possono arrivare
+    # escapate (\\"chiave\\":valore), quindi il backslash prima di ogni virgoletta e' opzionale.
+    chiave: re.compile(r'\\?"' + chiave + r'\\?"\s*:\s*\\?("?[A-Za-z0-9_.-]{1,30}"?)')
     for chiave in ("is_closed", "is_reserved", "is_hidden", "is_draft", "can_buy", "item_closing_action")
 }
 _TRACC_PREZZO_RES = (
     re.compile(r'property="product:price:amount"\s+content="([\d.,]+)"'),
-    re.compile(r'"price"\s*:\s*\{[^{}]{0,80}?"amount"\s*:\s*"?([\d.]+)'),
+    re.compile(r'\\?"price\\?"\s*:\s*\{[^{}]{0,80}?\\?"amount\\?"\s*:\s*\\?"?([\d.]+)'),
     re.compile(r'itemprop="price"[^>]*content="([\d.,]+)"'),
 )
 
@@ -10334,8 +10336,9 @@ def _tracc_e_sparito(http_status, segnali):
         return True
     if segnali.get("availability") in ("OutOfStock", "SoldOut", "Discontinued"):
         return True
-    if segnali.get("barra_venduto"):
-        return True
+    # NB: "barra_venduto" (testo >Venduto<) NON basta ancora: la pagina elenca anche altri articoli del
+    # venditore, alcuni gia' venduti con il loro badge. Si usa solo dopo averlo confrontato con un annuncio
+    # attivo (comando /venduto) o con un segnale piu' specifico dell'articolo in pagina.
     return False
 
 
@@ -10364,26 +10367,34 @@ def _tracc_prossimi(righe, ora=None):
     return da_fare
 
 
-_DIAG_VENDUTO_RE = re.compile(
-    r"venduto|is_closed|is_reserved|is_hidden|item_closing_action|can_buy|\"sold\"|original_price|price_before|previous_price|discount",
+_DIAG_CHIAVI_RE = re.compile(
+    r'\\?"((?:is_[a-z_]+)|(?:[a-z_]*(?:closed|sold|status|reserved|hidden|visible)[a-z_]*)|'
+    r'(?:[a-z_]*(?:price|amount|discount)[a-z_]*))\\?"\s*:\s*(\\?"?[^,}\]]{0,40})',
     re.IGNORECASE,
 )
 
 
-def diagnostica_pagina_venduto(html_pagina, max_snippet=14, raggio=70):
-    """Per capire come la pagina segnala un capo venduto: segnali estratti + frammenti di testo attorno
-    alle parole chiave (senza tag lunghi). Pura, testabile."""
+def diagnostica_pagina_venduto(html_pagina, url=None, raggio=260, max_snippet=4):
+    """Per capire come la pagina segnala lo stato venduto, ignorando il dizionario delle traduzioni
+    (chiavi con il punto): segnali estratti, frammenti attorno all'id dell'articolo, coppie
+    chiave:valore di stato/prezzo (uniche) e intorno al testo 'Venduto'. Pura, testabile."""
     segnali, prezzo = _tracc_estrai_segnali(html_pagina)
-    snippet, ultimo_fine = [], -1
-    for m in _DIAG_VENDUTO_RE.finditer(html_pagina):
-        if m.start() < ultimo_fine:
-            continue
-        a, b = max(0, m.start() - raggio), min(len(html_pagina), m.end() + raggio)
-        snippet.append(re.sub(r"\s+", " ", html_pagina[a:b]))
-        ultimo_fine = b
-        if len(snippet) >= max_snippet:
-            break
-    return segnali, prezzo, snippet
+    item_id = _estrai_item_id_da_url(url) if url else None
+    snippet_id, coppie, viste = [], [], set()
+    if item_id:
+        for m in re.finditer(re.escape(str(item_id)), html_pagina):
+            a, b = max(0, m.start() - raggio), min(len(html_pagina), m.end() + raggio)
+            snippet_id.append(re.sub(r"\s+", " ", html_pagina[a:b]))
+            if len(snippet_id) >= max_snippet:
+                break
+    for m in _DIAG_CHIAVI_RE.finditer(html_pagina):
+        k = (m.group(1), m.group(2))
+        if k not in viste:
+            viste.add(k)
+            coppie.append(f"{m.group(1)}={m.group(2)}")
+    m = re.search(r">\s*Venduto\s*<", html_pagina)
+    intorno_barra = re.sub(r"\s+", " ", html_pagina[max(0, m.start() - 300):m.end() + 200]) if m else None
+    return segnali, prezzo, snippet_id, coppie, intorno_barra
 
 
 async def tracc_ricontrolla():
@@ -11666,11 +11677,15 @@ async def on_comando_venduto(event):
                 http_status, html_pagina = resp.status_code, resp.text
         except httpx.HTTPStatusError as e:
             http_status = e.response.status_code
-        segnali, prezzo, snippet = diagnostica_pagina_venduto(html_pagina)
+        segnali, prezzo, snippet_id, coppie, intorno_barra = diagnostica_pagina_venduto(html_pagina, url)
         testo = (f"HTTP {http_status} | sparito={'si' if _tracc_e_sparito(http_status, segnali) else 'no'} | "
-                 f"prezzo letto={prezzo}\nSegnali: {segnali or 'nessuno'}\n\nFrammenti:\n" + "\n---\n".join(snippet))
-        log.info("DIAG VENDUTO | url=%s | http=%s | prezzo=%s | segnali=%s | frammenti=%s",
-                 url, http_status, prezzo, segnali, " ### ".join(snippet)[:3000])
+                 f"prezzo letto={prezzo}\nSegnali: {segnali or 'nessuno'}\n\n"
+                 f"Intorno a 'Venduto': {intorno_barra}\n\n"
+                 f"Chiavi stato/prezzo: {' ; '.join(coppie[:80])}\n\n"
+                 f"Intorno all'id articolo:\n" + "\n---\n".join(snippet_id))
+        log.info("DIAG VENDUTO | url=%s | http=%s | prezzo=%s | segnali=%s | barra=%s | chiavi=%s | id=%s",
+                 url, http_status, prezzo, segnali, intorno_barra, " ; ".join(coppie[:120]),
+                 " ### ".join(snippet_id)[:5000])
         for pezzo in _spezza_per_telegram(testo):
             await event.respond(pezzo, parse_mode=None)
     except Exception:
