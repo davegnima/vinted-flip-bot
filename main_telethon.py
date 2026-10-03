@@ -10229,7 +10229,8 @@ TRACCIAMENTO_ATTIVO = os.environ.get("TRACCIAMENTO_ATTIVO", "1").strip() == "1"
 TRACCIAMENTO_FILE = os.environ.get("TRACCIAMENTO_FILE", "/data/tracciamento_esiti.jsonl")
 TRACCIAMENTO_STADI_MINUTI = (15, 60, 240, 720, 1440, 4320, 10080, 20160)  # 15m 1h 4h 12h 1g 3g 7g 14g
 TRACCIAMENTO_MAX_PER_CICLO = 30
-TRACCIAMENTO_INTERVALLO_SECONDI = 600
+TRACCIAMENTO_STADIO_DECISIVO_MIN = 60
+TRACCIAMENTO_INTERVALLO_SECONDI = 300
 _tracc_item_visti = set()
 _tracc_visti_caricati = [False]
 
@@ -10462,6 +10463,17 @@ def _tracc_stato(http_status, segnali):
     return "n.d."
 
 
+def _tracc_affare_1h(stato, stadio_min, eta_min):
+    """Etichetta di mercato (criterio dell'utente: se non e' venduto entro un'ora non era un affare):
+    'si' se risulta venduto entro ~1h dalla valutazione, 'no' se al controllo dell'ora e' ancora
+    attivo/prenotato, '?' altrimenti (controlli senza risposta, stadi successivi). Pura."""
+    if stato == "venduto" and eta_min <= 75:
+        return "si"
+    if stato in ("attivo", "attivo?", "prenotato") and stadio_min == 60:
+        return "no"
+    return "?"
+
+
 def _tracc_prossimi(righe, ora=None):
     """Ricontrolli da fare adesso: [(record, stadio_minuti, eta_minuti)]. Per ogni annuncio
     l'ultimo stadio scaduto (gli stadi saltati perche' il bot era fermo non si recuperano), a meno che non sia gia' risultato sparito.
@@ -10565,7 +10577,13 @@ async def tracc_ricontrolla():
     in giorni da chi mai. Un annuncio risultato sparito non si ricontrolla piu'."""
     righe = _tracc_leggi()
     fatti = 0
-    for r, stadio, eta_min in _tracc_prossimi(righe)[:TRACCIAMENTO_MAX_PER_CICLO]:
+    # I controlli entro 1 ora (15 min, 1h) decidono se un annuncio era davvero un affare (l'utente: se non
+    # e' venduto entro un'ora non era un COMPRA): non hanno limite per ciclo, cosi' restano puntuali. Il
+    # tetto vale solo per gli stadi successivi, meno urgenti.
+    prossimi = _tracc_prossimi(righe)
+    presto = [x for x in prossimi if x[1] <= TRACCIAMENTO_STADIO_DECISIVO_MIN]
+    tardi = [x for x in prossimi if x[1] > TRACCIAMENTO_STADIO_DECISIVO_MIN][:TRACCIAMENTO_MAX_PER_CICLO]
+    for r, stadio, eta_min in presto + tardi:
         http_status, segnali, prezzo_ora, tempi = None, {}, None, {}
         try:
             resp = await _vinted_get_con_retry(r["url"], timeout=15, max_retries=1)
@@ -10585,9 +10603,10 @@ async def tracc_ricontrolla():
             "tempi": tempi,
         })
         log.info(
-            "RICONTROLLO | item=%s | brand='%s' | stadio=%smin | eta=%smin | http=%s | sparito=%s | stato=%s | segnali=%s | prezzo_valutato=%s | prezzo_ora=%s | esito=%s | target=%s | tempi=%s",
+            "RICONTROLLO | item=%s | brand='%s' | stadio=%smin | eta=%smin | http=%s | sparito=%s | stato=%s | affare_1h=%s | segnali=%s | prezzo_valutato=%s | prezzo_ora=%s | esito=%s | target=%s | tempi=%s",
             r.get("item_id"), r.get("brand") or "n/d", stadio, round(eta_min), http_status,
-            "si" if sparito else "no", _tracc_stato(http_status, segnali), segnali or "nessuno",
+            "si" if sparito else "no", _tracc_stato(http_status, segnali), _tracc_affare_1h(_tracc_stato(http_status, segnali), stadio, eta_min),
+            segnali or "nessuno",
             r.get("prezzo"), prezzo_ora, r.get("esito"), r.get("target"), tempi or "nessuno",
         )
         fatti += 1
