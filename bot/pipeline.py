@@ -15,7 +15,7 @@ from bot.prompts import GEMINI_CERVELLO_SYSTEM_PROMPT, GEMINI_OCCHI_SYSTEM_PROMP
 from bot.schemas import OCCHIO_RESPONSE_SCHEMA_GEMINI
 from bot.tracciamento import SKIP_GIA_VENDUTI, _log_esito, tracc_avvia_serie, tracc_registra_gia_venduto, tracc_registra_valutato
 from bot.comps_filtri import _arricchisci_brand_per_ricerca
-from bot.tempi import _calcola_tempi_pipeline, _formatta_tappe_pipeline
+from bot.tempi import _calcola_tempi_pipeline, _formatta_durata, _formatta_tappe_pipeline
 from bot.testo import _escapa_markdown_legacy
 from bot.vinted_scrape import _scrapa_guardaroba_venditore, scrape_vinted_listing
 from bot.skip_report import build_skip_report, check_skip_pre_cervello
@@ -776,6 +776,10 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
                   " · ".join(pezzi_tempi), " · ".join(dettaglio_tappe))
 
     output_finale = output_finale + "\n" + footer_costo + footer_tempi
+    # Footer del messaggio compatto: costo IA e tempo notifica come emoji + valore (dettaglio per tappa nei log).
+    _notifica = _secondi_tempi.get("telegram_notifica")
+    footer_compatto = (f"💵 ${costo_totale:.3f}" if scenario_usato != "SKIP" else "") + (
+        f" · ⏱ {_formatta_durata(_notifica)}" if _notifica else "")
 
     # Verdetto + riga economica in cima al messaggio, poi brand accodato alla
     # riga decisione (richiesto dall'utente il 2026-09-20, secondo giro di
@@ -796,7 +800,8 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
     testo_unificato = None
     if scenario_usato != "SKIP" and "\n" in output_finale:
         header, output_finale, testo_unificato = componi_testi_verdetto(
-            listing_info, verdetto_calcolato, output_finale, info_foto, campioni_target, stima_instabile, url=url)
+            listing_info, verdetto_calcolato, output_finale, info_foto, campioni_target, stima_instabile, url=url,
+            v=v, footer_compatto=footer_compatto)
 
     try:
         fv_registra_gemini(listing_info, url, decisione, verdetto_calcolato,

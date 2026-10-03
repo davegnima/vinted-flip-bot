@@ -59,17 +59,37 @@ def test_unificato_prima_riga_ha_verdetto_prezzo_brand():
     assert "💶 35,00 €" in righe[1] and "Dries van Noten" in righe[1]
 
 
-def test_analisi_analista_con_capo_scelta_vendita_lavori():
+def _compatto(url="https://www.vinted.it/items/1-x"):
     v = _v()
-    v.update(descrizione_capo="Camicia cotone taglia 38", canale_vendita="Vinted, domanda alta",
-             lavori_necessari="stiro, 5 minuti")
     verdetto = m.calcola_verdetto(v, 35.0)
     out = m.render_messaggio_verdetto(v, verdetto, [], {"n_memoria": 0, "n_prezzi_pool": 6, "n_comp": 2})
-    assert "👗 **Capo:** Camicia cotone taglia 38" in out
-    assert "🎯 **Scelta:** Camicia mainline in cotone." in out
-    assert "⏱ **Vendita:** ~35 giorni · 🛒 Vinted, domanda alta" in out
-    assert "🛠 **Lavori:** stiro, 5 minuti" in out
-    assert out.index("Analisi dell'analista") < out.index("Azioni") if "Azioni" in out else True
+    return m.componi_testi_verdetto(LISTING, verdetto, out, "", "60/60/95", False, url=url, v=v,
+                                    footer_compatto="💵 $0.037 · ⏱ 32s")[2]
+
+
+def test_messaggio_compatto_contenuto_e_breve():
+    t = _compatto()
+    righe = t.splitlines()
+    assert righe[0].endswith("[vedi su Vinted](https://www.vinted.it/items/1-x)") and "COMPRA" in righe[0]
+    assert "→ 🎯" in righe[1] and "ROI" in righe[1]                  # acquisto (spese incluse) -> atteso
+    assert "Dries van Noten" in righe[2] and "Shirt dries van noten" in righe[2] and "~35 gg" in righe[2]
+    assert "🧠 Camicia mainline in cotone." in t
+    assert t.rstrip().endswith("💵 $0.037 · ⏱ 32s")
+    assert "Comp considerati" not in t and "---" not in t and len(t) < 900
+
+
+def _markdown_legacy_valido(testo):
+    """Controllo grezzo del parser Markdown legacy di Telegram: *, _ e ` fuori dai link devono essere pari."""
+    import re
+    senza_link = re.sub(r"\]\([^)]*\)", "]", testo)
+    senza_escape = senza_link.replace("\\_", "").replace("\\*", "").replace("\\`", "")
+    return all(senza_escape.count(c) % 2 == 0 for c in "*_`")
+
+
+def test_messaggio_compatto_markdown_valido_e_tappe_senza_underscore():
+    assert _markdown_legacy_valido(_compatto())
+    nome = m._formatta_tappe_pipeline([("a", 0.0), ("campioni_target", 7.0)])[0]
+    assert "_" not in nome
 
 
 def test_caricato_senza_descrizione():

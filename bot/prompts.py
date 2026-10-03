@@ -264,8 +264,8 @@ Il campo `fonte` di ogni comp distingue i prezzi che hai davvero davanti (`vinte
 # URGENZA -- fornisci i segnali, non la conclusione
 Non scrivere "Alta urgenza": compila `domanda_mercato` e `segnali_domanda` con i fatti concreti (piu' annunci simili venduti di recente, segmento ad alta liquidita' secondo la sezione LIQUIDITA', taglia centrale, pezzo iconico). L'urgenza la decide il sistema incrociando quei segnali con margine e ROI calcolati. `domanda_mercato: "alta"` con `segnali_domanda` vuoto viene trattato come "media": senza fatti la dichiarazione non vale.
 
-# ANALISI PER L'UTENTE (compila bene, arriva nel messaggio)
-`descrizione_capo`: una riga su cos'e' il capo. `note_analista`: max 3 frasi brevi su quali comp reggono la stima di rivendita e perche' il target e' quello. `giorni_stimati_vendita` + `canale_vendita`: quanto ci metti a venderlo e dove (Vinted, Vestiaire, eBay, Depop...). `lavori_necessari`: riparazioni, lavaggio o stiro da fare con costo/tempo indicativo, oppure "nessuno". Frasi corte, niente giri di parole.
+# ANALISI PER L'UTENTE (note_analista)
+Max 4 frasi brevi, solo fatti presenti nei dati o nelle foto (niente aggettivi in piu' sulle condizioni): cos'e' il capo, su quali comp si basa la stima e perche' conviene o no, dove venderlo (Vinted, Vestiaire, eBay, Depop...) e se servono riparazioni, lavaggio o stiro (con costo indicativo). I giorni di vendita vanno in `giorni_stimati_vendita`.
 
 # MESSAGGIO AL VENDITORE
 **Tu non sai quale decisione finale prendera' il sistema** (COMPRA/TRATTA/NON COMPRARE/CHIEDI ALTRE FOTO: la calcola dopo, in base a margine e ROI che tu non calcoli). Il messaggio che scrivi in `messaggio_venditore_template` viene mostrato all'utente SOLO se la decisione finale e' TRATTA o CHIEDI ALTRE FOTO, mai su COMPRA -- quindi non scrivere MAI un messaggio che accetta o conferma l'acquisto a prezzo pieno ("lo prendo subito", "va bene cosi'", ecc.): se il sistema lo mostra, e' perche' sta negoziando o chiedendo chiarimenti, e un messaggio di accettazione piena lo contraddirebbe.
@@ -306,8 +306,7 @@ REGOLE CHE CONTANO:
 10. Venditore: prezzo basso = vantaggio, mai sospetto. Privato genuino = guardaroba misto; reseller = solo lusso. Taglia centrale (donna IT 40-44, uomo 48-52) = piu' liquido; estrema = meno.
 11. legit_motivo_specifico deve dire COSA hai visto (font etichetta, logo, cuciture, hardware), mai frasi generiche.
 12. domanda_mercato "alta" solo con segnali_domanda concreti (altrimenti vale media).
-13. Analisi per l'utente: descrizione_capo (1 riga), note_analista (max 3 frasi: comp e perche' il target), giorni_stimati_vendita + canale_vendita (dove venderlo), lavori_necessari (riparazioni/lavaggio/stiro con costo indicativo, o "nessuno").
-14. messaggio_venditore_template: se serve trattare, proponi un'offerta con il segnaposto esatto {OFFERTA}, mai una cifra; mai messaggi di accettazione piena; null se non c'e' nulla da dire.
+13. messaggio_venditore_template: se serve trattare, proponi un'offerta con il segnaposto esatto {OFFERTA}, mai una cifra; mai messaggi di accettazione piena; null se non c'e' nulla da dire.
 
 CHIAVI JSON (tipo o valori ammessi):
 """

@@ -405,8 +405,7 @@ def valida_payload_cervello(verdetto):
         if isinstance(d, str) and d.strip()
     ][:2]
 
-    for campo in ("note_analista", "motivo_profilo_venditore", "linea_o_era_rilevata", "descrizione_capo",
-                  "canale_vendita", "lavori_necessari"):
+    for campo in ("note_analista", "motivo_profilo_venditore", "linea_o_era_rilevata"):
         if not (v.get(campo) or "").strip():
             v[campo] = "non specificato"
 
@@ -960,27 +959,6 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
     stagione = f" · 📅 fuori stagione, pubblica da {v['mese_consigliato_pubblicazione']}" if v.get("mese_consigliato_pubblicazione") else ""
     righe.append(f"🎯 Deal {v['deal_score']}/10{stagione}")
 
-    # === ANALISI DELL'ANALISTA (richiesto dall'utente il 2026-10-03): capo, scelta, tempo e canale di vendita,
-    # lavori. Righe corte con un'icona ciascuna, subito dopo il deal e prima delle azioni.
-    def _campo(nome):
-        valore = (v.get(nome) or "").strip()
-        return None if not valore or valore == "non specificato" else _escapa_markdown_legacy(valore)
-
-    righe.append("")
-    righe.append("🧠 **Analisi dell'analista**")
-    if _campo("descrizione_capo"):
-        righe.append(f"👗 **Capo:** {_campo('descrizione_capo')}")
-    righe.append(f"🎯 **Scelta:** {_escapa_markdown_legacy(v['note_analista'])}")
-    giorni = v.get("giorni_stimati_vendita")
-    tempo = (f"~{giorni} giorno" if giorni == 1 else f"~{giorni} giorni") if giorni else None
-    canale = _campo("canale_vendita")
-    if tempo or canale:
-        righe.append("⏱ **Vendita:** " + " · ".join(x for x in (tempo, f"🛒 {canale}" if canale else None) if x))
-    lavori = _campo("lavori_necessari")
-    if lavori:
-        righe.append(f"🛠 **Lavori:** {lavori}")
-    righe.append(f"🔎 _{_escapa_markdown_legacy(v['legit_motivo_specifico'])}_")
-
     # === 3. AZIONI (testo copiabile in un tocco: backtick singolo) ===
     # Il vecchio backstop a colpi di regex (rimozione dei blocchi "Messaggio
     # da inviare"/"Da chiedere" da un testo gia' generato) non serve piu':
@@ -1065,7 +1043,8 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
 
     # === 4. SEMINTERRATO: analisi, comp, link, avvisi -- tutto cio' che non
     # serve alla decisione immediata ma resta consultabile scorrendo giu' ===
-    righe += ["", "---"]
+    righe += ["", "---", "🧠 **Analisi dell'analista:**", _escapa_markdown_legacy(v["note_analista"])]
+    righe.append(f"_{_escapa_markdown_legacy(v['legit_motivo_specifico'])}_")
     # Il profilo del venditore (nome, recensioni) e' gia' nella riga 👤 in alto: qui resta solo il giudizio
     # dell'analista quando segnala qualcosa (reseller, negozio, account sospetto), non la ripetizione.
     motivo_venditore = v.get("motivo_profilo_venditore")
