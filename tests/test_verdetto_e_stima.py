@@ -202,3 +202,59 @@ def test_cascata_fascia_alta_con_fallback_alla_base(monkeypatch):
     assert gs.cascata_per("occhio") == ["occ-lite"]
     assert gs.cascata_per("cervello_alto") == ["cer-lite"]      # alta non configurata: vale la base della fase
     assert "occ-top" in gs.tutti_i_modelli_cascata()
+
+
+def test_pausa_del_pannello_segue_il_reset_dichiarato_dal_provider():
+    sec = pn.secondi_reset_da_corpo
+    assert sec('{"reset_seconds":20796,"retry_after":"x"}') == 20796
+    assert sec("[mistral/x] [429]: upstream error (reset after 3s)") == 3
+    assert sec("Rate limit reached ... (reset after 4m 40s)") == 280
+    assert sec("Please try again in 5m23.568s. Need more tokens?") == 5 * 60 + 23.568
+    assert sec("errore generico") is None
+    pn._panel_reset_s["x/1"] = 3
+    pn._panel_segna_errore("x/1", "http429", adesso=1000)
+    assert pn._panel_pausa["x/1"] == 1000 + 10                  # minimo 10 s, non i 30 minuti fissi
+    pn._panel_segna_errore("y/2", "http429", adesso=1000)       # nessun tempo dichiarato: pausa standard
+    assert pn._panel_pausa["y/2"] == 1000 + pn.PANEL_PAUSA_QUOTA_MIN * 60
+
+def test_riserva_scala_sui_modelli_in_ordine_e_salta_quelli_in_pausa(monkeypatch):
+    import asyncio
+    import bot.riserva_llm as rl
+    chiamati = []
+
+    async def finta(modello, system, contenuto, max_tokens):
+        chiamati.append(modello)
+        if modello == "a/uno":
+            return None, 5, "http429"
+        if modello == "b/due":
+            return "non e' json", 5, None
+        return '{"prezzo_target_vendita_eur": 80}', 5, None
+
+    monkeypatch.setattr(rl, "_panel_chiama", finta)
+    monkeypatch.setattr(rl, "_panel_pausa", {})
+    monkeypatch.setattr(pn, "_panel_pausa", rl._panel_pausa)
+    lista = ["a/uno", "b/due@c", "c/tre"]
+    ok = lambda d: d.get("prezzo_target_vendita_eur", 0) > 0
+    d, modello = asyncio.run(rl._prova_in_ordine("cervello", lista, lambda c: "sys", "u", 100, ok))
+    assert modello == "c/tre" and d["prezzo_target_vendita_eur"] == 80
+    assert chiamati == ["a/uno", "b/due", "c/tre"]                      # il suffisso @c non arriva al gateway
+    assert "a/uno" in rl._panel_pausa                                     # il 429 mette il modello in pausa
+    chiamati.clear()
+    asyncio.run(rl._prova_in_ordine("cervello", lista, lambda c: "sys", "u", 100, ok))
+    assert chiamati == ["b/due", "c/tre"]                                 # a/uno e' in pausa: salta al successivo
+
+
+def test_cascata_gemini_esaurita_solo_se_tutti_i_modelli_sono_senza_quota(monkeypatch):
+    monkeypatch.setattr(gs, "GEMINI_CASCATA", ["m-top", "m-lite"])
+    monkeypatch.setattr(gs, "GEMINI_CASCATA_OCCHIO", [])
+    monkeypatch.setattr(gs, "GEMINI_API_KEYS", ["k1"])
+    monkeypatch.setattr(gs, "_gemini_key_quota_esaurita_fino", {("k1", "m-top"): 9e12})
+    assert gs.gemini_cascata_esaurita("occhio") is False
+    gs._gemini_key_quota_esaurita_fino[("k1", "m-lite")] = 9e12
+    assert gs.gemini_cascata_esaurita("occhio") is True
+
+
+def test_reset_del_provider_vale_anche_per_i_modelli_con_suffisso_compatto():
+    pn._panel_reset_s["x/9"] = 3
+    pn._panel_segna_errore("x/9@c", "http429", adesso=500)
+    assert pn._panel_pausa["x/9@c"] == 500 + 10

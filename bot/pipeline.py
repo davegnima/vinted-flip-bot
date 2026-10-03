@@ -21,6 +21,7 @@ from bot.vinted_scrape import _scrapa_guardaroba_venditore, scrape_vinted_listin
 from bot.skip_report import build_skip_report, check_skip_pre_cervello
 from bot.filtri import check_skip_pre_gemini
 from bot.gemini_api import chiama_gemini, chiama_gemini_cervello_forzato
+from bot.riserva_llm import cervello_con_riserva, occhio_con_riserva
 from bot.openai_api import chiama_openai_cervello_forzato
 from bot.foto import download_image_bytes
 from bot.categorie import estrai_categoria_da_titolo
@@ -349,9 +350,9 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
     occhio_json = None
     problemi_occhio = []
     if OCCHIO_OUTPUT_JSON:
-        output_grezzo, costo_occhi, _ = await chiama_gemini(
-            GEMINI_OCCHI_SYSTEM_PROMPT_JSON, user_text_occhi, photo_bytes_list,
-            grounding=False, response_schema=OCCHIO_RESPONSE_SCHEMA_GEMINI, ruolo=ruolo_occhio)
+        output_grezzo, costo_occhi, _ = await occhio_con_riserva(
+            GEMINI_OCCHI_SYSTEM_PROMPT_JSON, user_text_occhi, photo_bytes_list, ruolo_occhio,
+            OCCHIO_RESPONSE_SCHEMA_GEMINI)
         try:
             occhio_json, problemi_occhio = valida_payload_occhio(json.loads(output_grezzo))
             output_occhi = render_occhio_da_json(occhio_json, problemi_occhio)
@@ -537,7 +538,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
 
         chiama_cervello = (
             chiama_openai_cervello_forzato if CERVELLO_PROVIDER == "openai"
-            else partial(chiama_gemini_cervello_forzato, ruolo=ruolo_cervello)
+            else partial(cervello_con_riserva, chiama_gemini_cervello_forzato, ruolo_cervello)
         )
         # Mappa URL delle ricerche on-demand (Punto 3 esteso il 2026-09-25):
         # riempita IN PLACE da chiama_cervello mentre elabora le eventuali
@@ -631,7 +632,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             target=f"{v['prezzo_target_vendita_eur']:.0f}" if isinstance(v.get("prezzo_target_vendita_eur"), (int, float)) else None,
             n_comp=len(verdetto_calcolato["comp_usati"]),
             campioni=campioni_target, instabile="si" if stima_instabile else None,
-            tier="alto" if tier_alto else "base", tier_da=tier_da,
+            tier="alto" if tier_alto else "base", tier_da=tier_da, riserva=v.get("_riserva"),
         )
         tracc_registra_valutato(
             listing_info, url, decisione,

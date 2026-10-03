@@ -29,6 +29,11 @@ EXTRA_LLM_KEY = (os.environ.get("EXTRA_LLM_KEY") or "").strip()
 EXTRA_LLM_MODEL = (os.environ.get("EXTRA_LLM_MODEL") or "").strip()   # retrocompatibile: un solo modello cervello
 PANEL_OCCHIO_MODELLI = [m.strip() for m in (os.environ.get("PANEL_OCCHIO_MODELLI") or "").split(",") if m.strip()]
 PANEL_CERVELLO_MODELLI = [m.strip() for m in (os.environ.get("PANEL_CERVELLO_MODELLI") or EXTRA_LLM_MODEL).split(",") if m.strip()]
+# Modelli di RISERVA del flusso principale (via lo stesso gateway): quando le cascate Gemini sono esaurite, o una
+# chiamata Gemini fallisce, la fase passa a questi modelli in ordine (dal migliore). Il suffisso @c usa il prompt
+# compatto del Cervello. Vedi riserva_llm. Restano anche nel pannello (richiesto dall'utente: confronto giornaliero di qualita' e costo).
+RISERVA_OCCHIO_MODELLI = [m.strip() for m in (os.environ.get("RISERVA_OCCHIO_MODELLI") or "").split(",") if m.strip()]
+RISERVA_CERVELLO_MODELLI = [m.strip() for m in (os.environ.get("RISERVA_CERVELLO_MODELLI") or "").split(",") if m.strip()]
 PANEL_TIMEOUT = _env_float("PANEL_TIMEOUT", 60)
 PANEL_MAX_ANNUNCI_ORA = int(_env_float("PANEL_MAX_ANNUNCI_ORA", 60))
 PANEL_MAX_FOTO = int(_env_float("PANEL_MAX_FOTO", 6))
@@ -82,10 +87,33 @@ def panel_scegli_modelli(tipo, modelli, adesso=None):
     return [attivi[(inizio + i) % len(attivi)] for i in range(n)]
 
 
+_panel_reset_s = {}   # modello -> secondi di attesa dichiarati dal provider nell'ultimo 429 (dal corpo dell'errore)
+
+
+def secondi_reset_da_corpo(testo):
+    """Secondi d'attesa dichiarati in un errore 429: 'reset_seconds' (OmniRoute), 'reset after 4m 40s',
+    'try again in 5m23.5s' (Groq), 'reset after 3s'. None se non indicati."""
+    if not testo:
+        return None
+    m = re.search(r'"reset_seconds"\s*:\s*(\d+)', testo)
+    if m:
+        return float(m.group(1))
+    m = re.search(r'(?:reset after|try again in)\s*(?:(\d+)\s*m)?\s*(?:(\d+(?:\.\d+)?)\s*s)?', testo, re.IGNORECASE)
+    if m and (m.group(1) or m.group(2)):
+        return int(m.group(1) or 0) * 60 + float(m.group(2) or 0)
+    return None
+
+
 def _panel_segna_errore(modello, err, adesso=None):
-    """Quota/accesso/modello dismesso: pausa, per non sprecare chiamate e riprovare piu' tardi."""
+    """Quota/accesso/modello dismesso: pausa, per non sprecare chiamate e riprovare piu' tardi. Sul 429 la pausa
+    segue il tempo dichiarato dal provider (3 s di Mistral, 5 min di Groq, mezzanotte di OpenRouter), non un
+    valore fisso: prima un 429 da 3 secondi fermava il modello per 30 minuti."""
     adesso = adesso if adesso is not None else time.time()
-    if err in ("http429", "http402", "http403"):
+    nudo = modello.split("@")[0]      # _panel_chiama registra il reset col nome senza suffisso @c
+    attesa = (_panel_reset_s.pop(modello, None) or _panel_reset_s.pop(nudo, None)) if err == "http429" else None
+    if attesa is not None:
+        _panel_pausa[modello] = adesso + min(max(attesa + 5, 10), 6 * 3600)
+    elif err in ("http429", "http402", "http403"):
         _panel_pausa[modello] = adesso + PANEL_PAUSA_QUOTA_MIN * 60
     elif err in ("http404", "http410"):
         _panel_pausa[modello] = adesso + 6 * 3600
@@ -111,7 +139,7 @@ def estrai_target_da_testo_llm(testo):
     return float(t) if isinstance(t, (int, float)) and not isinstance(t, bool) and t > 0 else None
 
 
-async def _panel_chiama(modello, system, user_content, max_tokens):
+async def _panel_chiama(modello, system, user_content, max_tokens, uso=None):
     """Una chiamata al gateway. Ritorna (testo|None, ms, errore|None). Non solleva mai."""
     t0 = time.time()
     async with _panel_sem:
@@ -129,8 +157,16 @@ async def _panel_chiama(modello, system, user_content, max_tokens):
             if not resp.is_success:
                 # il corpo dell'errore dice il vero motivo (limite al secondo, quota finita, chiave, modello...)
                 log.warning("PANEL HTTP %d da %s: %s", resp.status_code, modello, (resp.text or "")[:300].replace("\n", " "))
+                if resp.status_code == 429:
+                    attesa = secondi_reset_da_corpo(resp.text)
+                    if attesa is not None:
+                        _panel_reset_s[modello] = attesa
                 return None, ms, f"http{resp.status_code}"
-            testo = (resp.json().get("choices") or [{}])[0].get("message", {}).get("content")
+            dati = resp.json()
+            testo = (dati.get("choices") or [{}])[0].get("message", {}).get("content")
+            if uso is not None:   # token reali consumati (ingresso/uscita): serve a confrontare costo e quota dei modelli
+                u = dati.get("usage") or {}
+                uso["tok"] = f"{u.get('prompt_tokens', 0)}/{u.get('completion_tokens', 0)}"
             return testo, ms, None
         except Exception as e:
             return None, int((time.time() - t0) * 1000), type(e).__name__
@@ -153,16 +189,17 @@ def _campi_occhio_panel(o, problemi):
 
 async def _panel_occhio_modello(item_id, brand, modello, system, user_text, immagini):
     contenuto = [{"type": "text", "text": user_text}] + immagini
-    testo, ms, err = await _panel_chiama(modello, system, contenuto, 4000)
+    uso = {}
+    testo, ms, err = await _panel_chiama(modello, system, contenuto, 4000, uso)
     if err:
         _panel_segna_errore(modello, err)
         return _riga_panel("occhio", item_id, brand, modello, False, ms, errore=err)
     d = estrai_json_da_testo_llm(testo)
     if d is None:
-        return _riga_panel("occhio", item_id, brand, modello, False, ms, errore="json_non_valido")
+        return _riga_panel("occhio", item_id, brand, modello, False, ms, errore="json_non_valido", tok=uso.get("tok"))
     try:
         o, problemi = valida_payload_occhio(d)
-        _riga_panel("occhio", item_id, brand, modello, True, ms, **_campi_occhio_panel(o, problemi))
+        _riga_panel("occhio", item_id, brand, modello, True, ms, tok=uso.get("tok"), **_campi_occhio_panel(o, problemi))
     except Exception as e:
         _riga_panel("occhio", item_id, brand, modello, False, ms, errore=type(e).__name__)
 
@@ -190,17 +227,18 @@ async def _panel_cervello_modello(item_id, brand, modello, system, user_text, pr
     nome = modello_chiamato = modello
     if modello.endswith("@c"):
         modello, system = modello[:-2], system_compatto or prompt_cervello_compatto()
-    testo, ms, err = await _panel_chiama(modello, system, user_text, 6000)
+    uso = {}
+    testo, ms, err = await _panel_chiama(modello, system, user_text, 6000, uso)
     if err:
         _panel_segna_errore(modello_chiamato, err)
         return _riga_panel("cervello", item_id, brand, nome, False, ms, errore=err)
     d = estrai_json_da_testo_llm(testo)
     if d is None:
-        return _riga_panel("cervello", item_id, brand, nome, False, ms, errore="json_non_valido")
+        return _riga_panel("cervello", item_id, brand, nome, False, ms, errore="json_non_valido", tok=uso.get("tok"))
     try:
         v, problemi = valida_payload_cervello(d)
         vc = calcola_verdetto(v, prezzo)
-        _riga_panel("cervello", item_id, brand, nome, True, ms, target=_fmt0(v.get("prezzo_target_vendita_eur")),
+        _riga_panel("cervello", item_id, brand, nome, True, ms, tok=uso.get("tok"), target=_fmt0(v.get("prezzo_target_vendita_eur")),
                     esito=vc["decisione"], margine=_fmt0(vc.get("margine")), roi=_fmt0(vc.get("roi")),
                     legit=v.get("legit_verdetto"), problemi=len(problemi))
     except Exception as e:
