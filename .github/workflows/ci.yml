@@ -20,6 +20,6 @@ jobs:
       - name: Installa le dipendenze
         run: pip install -r requirements.txt -r requirements-dev.txt
       - name: Nomi non definiti e codice morto evidente (pyflakes)
-        run: python -m pyflakes main_telethon.py generate_session.py | grep -i "undefined name" && exit 1 || true
+        run: python -m pyflakes main_telethon.py bot generate_session.py | grep -i "undefined name" && exit 1 || true
       - name: Test
         run: python -m pytest -q
