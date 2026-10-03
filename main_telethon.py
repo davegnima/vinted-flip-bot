@@ -3758,18 +3758,35 @@ def _gemini_e_errore_quota_giornaliera(status_code, corpo_testo):
     return "resource_exhausted" in testo_lower or "free_tier" in testo_lower or "exceeded your current quota" in testo_lower
 
 
-def _gemini_segna_key_quota_esaurita(key, modello=None):
+def _gemini_secondi_retry(corpo_testo):
+    """Secondi di attesa suggeriti da Google in un 429 (campo retryDelay "37046s" o testo "retry in 46.8s" /
+    "retry in 10h17m26s"). None se assenti. Distingue il limite al minuto (decine di secondi) da quello
+    giornaliero (ore): il 2026-10-03 gemini-3.5-flash (5 richieste/minuto) veniva escluso per 6 ore."""
+    if not corpo_testo:
+        return None
+    m = re.search(r'"retryDelay"\s*:\s*"([\d.]+)s"', corpo_testo)
+    if m:
+        return float(m.group(1))
+    m = re.search(r"retry in (?:(\d+)h)?(?:(\d+)m)?(?:([\d.]+)s)?", corpo_testo)
+    if m and any(m.groups()):
+        return int(m.group(1) or 0) * 3600 + int(m.group(2) or 0) * 60 + float(m.group(3) or 0)
+    return None
+
+
+def _gemini_segna_key_quota_esaurita(key, modello=None, secondi=None):
     """Marca `key` come a quota giornaliera esaurita per
     RAFFREDDAMENTO_QUOTA_ESAURITA_GEMINI_SECONDI: la rotazione la salta
     finche' il cooldown non scade (vedi _gemini_prossima_key /
     _gemini_key_in_quota_esaurita)."""
     gia_segnalata = _gemini_key_in_quota_esaurita(key, modello)
-    _gemini_key_quota_esaurita_fino[(key, modello or "")] = time.time() + RAFFREDDAMENTO_QUOTA_ESAURITA_GEMINI_SECONDI
+    durata = RAFFREDDAMENTO_QUOTA_ESAURITA_GEMINI_SECONDI
+    if secondi is not None:
+        durata = min(max(secondi + 2, 5), 24 * 3600)   # attesa indicata da Google (minuto o giorno), non 6h fisse
+    _gemini_key_quota_esaurita_fino[(key, modello or "")] = time.time() + durata
     if not gia_segnalata:
         log.warning(
-            "Gemini: key in errore 429 di quota GIORNALIERA esaurita (non un rate-limit transitorio) "
-            "per il modello %s -- esclusa dalla rotazione per %d minuti.",
-            modello or "(qualsiasi)", RAFFREDDAMENTO_QUOTA_ESAURITA_GEMINI_SECONDI // 60,
+            "Gemini: key in errore 429 di quota esaurita per il modello %s -- esclusa dalla rotazione per %s.",
+            modello or "(qualsiasi)", f"{durata / 60:.0f} minuti" if durata >= 120 else f"{durata:.0f} secondi",
         )
 
 
@@ -5458,7 +5475,7 @@ async def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, groundi
                 # solo se le key sono finite (o ce n'e' una sola) si torna al
                 # backoff come per gli altri errori transitori.
                 if _gemini_e_errore_quota_giornaliera(resp.status_code, resp.text):
-                    _gemini_segna_key_quota_esaurita(key_usata, modello_usato)
+                    _gemini_segna_key_quota_esaurita(key_usata, modello_usato, _gemini_secondi_retry(resp.text))
                     if GEMINI_CASCATA and _gemini_url_effettivo(api_url) != url_usato:
                         continue   # quota finita su tutte le key di questo modello: si scala subito al successivo
                 if _gemini_prossima_key(modello_usato):
@@ -6227,7 +6244,7 @@ async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca
                     if modello_cambiato and attempt < tentativi_effettivi:
                         continue
                     if _gemini_e_errore_quota_giornaliera(resp.status_code, resp.text):
-                        _gemini_segna_key_quota_esaurita(key_usata, modello_usato)
+                        _gemini_segna_key_quota_esaurita(key_usata, modello_usato, _gemini_secondi_retry(resp.text))
                         if (GEMINI_CASCATA and attempt < tentativi_effettivi
                                 and _gemini_url_effettivo(api_url) != url_usato):
                             continue   # si scala subito al modello successivo della cascata
