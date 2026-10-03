@@ -1,0 +1,78 @@
+import asyncio
+
+import httpx
+import pytest
+
+import main_telethon as m
+
+
+ATTIVO = {"is_reserved": "false", "can_buy": "true"}
+VENDUTO = {"can_buy": "false", "barra_venduto": True}
+
+
+@pytest.mark.parametrize("http,segnali,atteso", [
+    (200, ATTIVO, "attivo"),
+    (200, VENDUTO, "venduto"),
+    (200, {"is_reserved": "true", "can_buy": "false"}, "prenotato"),
+    (404, {}, "rimosso"),
+    (410, {}, "rimosso"),
+    (None, {}, "attivo?"),
+    (200, {"can_buy": "true", "barra_venduto": True}, "attivo"),  # la barra di un altro articolo non conta
+    (200, {"is_closed": "true"}, "venduto"),
+    (500, {}, "n.d."),
+])
+def test_stato(http, segnali, atteso):
+    assert m._tracc_stato(http, segnali) == atteso
+
+
+def test_fasce_e_classi():
+    assert [m._tracc_bucket(o) for o in (2, 15, 16, 31, 61, 301, 901, 3600, 3601)] == [
+        "<=15s", "<=15s", "<=30s", "<=1min", "<=5min", "<=15min", "<=60min", "<=60min", ">60min"]
+    assert [m._tracc_classe(o, "venduto") for o in (15, 300, 301, 900, 901)] == [
+        "AFFARE", "AFFARE", "MEDIO AFFARE", "MEDIO AFFARE", "NORMALE"]
+    assert m._tracc_classe(3600, "attivo") == "NON AFFARE"
+    assert m._tracc_classe(300, "attivo") is None
+
+
+def test_segnali_sul_formato_reale_con_virgolette_escapate():
+    html = '<div class="web_ui__Cell__body">Venduto</div> \\"can_buy\\":false \\"price\\":{\\"amount\\":\\"25\\"}'
+    segnali, prezzo = m._tracc_estrai_segnali(html)
+    assert segnali == {"can_buy": "false", "barra_venduto": True} and prezzo == 25.0
+
+
+def test_timestamp_candidati_ignora_vecchi_e_id():
+    import time
+    ora = int(time.time())
+    html = f'{{"a":{ora - 3600},"vecchio":"{ora - 86400 * 400}","id":12345678901,"iso":"2026-10-02T16:54:01Z"}}'
+    trovati = m.trova_timestamp_candidati(html, giorni=3650)
+    valori = [t.split(" -> ")[1].split(" = ")[0] for t in trovati]  # il valore trovato, senza il contesto
+    assert str(ora - 3600) in valori and "12345678901" not in valori
+    assert str(ora - 86400 * 400) in valori  # con giorni=3650 anche il vecchio e' ammesso
+    assert m.trova_timestamp_candidati(html, giorni=45) and str(ora - 86400 * 400) not in [
+        t.split(" -> ")[1].split(" = ")[0] for t in m.trova_timestamp_candidati(html, giorni=45)]
+
+
+def test_serie_si_ferma_alla_vendita_e_salta_gli_scartati(monkeypatch):
+    monkeypatch.setattr(m, "TRACCIAMENTO_SERIE_SECONDI", (0.01, 0.02, 0.03))
+    chiamate = []
+
+    async def pagina(url, max_retries=1):
+        chiamate.append(url)
+        return 200, ('<div>Venduto</div> \\"can_buy\\":false' if "/10-" in url else '\\"can_buy\\":true')
+
+    monkeypatch.setattr(m, "_tracc_leggi_pagina", pagina)
+    m._tracc_stop.clear()
+
+    async def prova():
+        import time
+        t0 = time.time()
+        for item in ("10", "20"):
+            asyncio.get_running_loop().create_task(
+                m._tracc_serie(item, f"https://www.vinted.it/items/{item}-x", "X", 20.0, t0))
+        m._tracc_stop.add("30")  # scartato prima del verdetto
+        asyncio.get_running_loop().create_task(m._tracc_serie("30", "https://www.vinted.it/items/30-x", "X", 20.0, t0))
+        await asyncio.sleep(0.3)
+
+    asyncio.run(prova())
+    per_item = {i: sum(1 for c in chiamate if f"/{i}-" in c) for i in ("10", "20", "30")}
+    assert per_item["30"] == 0 and per_item["20"] == 3 and per_item["10"] == 1
