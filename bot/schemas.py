@@ -883,15 +883,16 @@ CERVELLO_RESPONSE_SCHEMA = {
             "items": {"type": "STRING"},
             "description": "Segnali concreti e verificabili. Array vuoto se non ce ne sono.",
         },
-        "deal_score": {"type": "INTEGER", "description": "Qualita' complessiva del deal, da 1 a 10."},
+        "deal_score": {"type": "INTEGER", "description": "Qualita' dell'affare da 1 a 10: quanto il prezzo d'acquisto e' sotto il valore di rivendita che stimi, pesato per autenticita' e liquidita' (1-3 pessimo o rischioso, 4-6 normale, 7-10 vero affare). Spiegalo in note_analista."},
 
         # --- 7. TESTO PER TELEGRAM (nessun numero finanziario qui dentro)
         "note_analista": {
             "type": "STRING",
             "description": (
-                "Max 4 frasi brevi, solo dati dall'annuncio e dalle foto: cos'e' il capo (tipo, materiale, "
-                "taglia, stato), su quali comp si basa la stima e perche' conviene o no, dove lo vendi "
-                "(Vinted, Vestiaire, eBay...) e se servono riparazioni, lavaggio o stiro. "
+                "Max 6 frasi brevi, solo fatti dall'annuncio e dalle foto: cos'e' il capo (tipo, materiale, taglia, stato); "
+                "perche' e' autentico o sospetto (cosa hai visto); su quali comp si basa il prezzo di rivendita e "
+                "perche' proprio quello; perche' quel deal_score; dove lo vendi (Vinted, Vestiaire, eBay...) e se "
+                "servono riparazioni, lavaggio o stiro. "
                 "Non scrivere margine, ROI, decisione, giorni di vendita: li inserisce il sistema."
             ),
         },

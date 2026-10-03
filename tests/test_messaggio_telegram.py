@@ -75,7 +75,8 @@ def test_messaggio_compatto_contenuto_e_breve():
     assert "Dries van Noten" in righe[2] and "Shirt dries van noten" in righe[2] and "~35 gg" in righe[2]
     assert "🧠 Camicia mainline in cotone." in t
     assert t.rstrip().endswith("💵 $0.037 · ⏱ 32s")
-    assert "Comp considerati" not in t and "---" not in t and len(t) < 900
+    assert "📊 Comp:\n• €120 · Chemise Dries Van Noten" in t and "---" not in t
+    assert "🎯 4/10" in t                                            # NON COMPRARE: score del modello (8) riportato in fascia
 
 
 def _markdown_legacy_valido(testo):

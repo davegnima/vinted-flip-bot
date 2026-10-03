@@ -392,7 +392,7 @@ async def _aggiorna_stato_scheda(stato, nuovo_stato):
         log.warning("Aggiornamento riga di stato della scheda non riuscito:\n%s", traceback.format_exc())
 
 
-def _compatta_testo(testo, max_len=420):
+def _compatta_testo(testo, max_len=900):
     testo = " ".join((testo or "").split())
     return testo if len(testo) <= max_len else testo[:max_len].rsplit(" ", 1)[0] + "…"
 
@@ -412,12 +412,23 @@ def _blocco_azioni(output_finale):
     return None
 
 
-def _riga_comp_compatta(v):
-    prezzi = sorted(c["prezzo_eur"] for c in v.get("comp_candidati", []) if not c.get("escluso"))
-    if not prezzi:
+def _blocco_comp(output_finale):
+    """Elenco dei comp (righe '• €prezzo · titolo con link _[fonte]_') dal render completo, con intestazione breve."""
+    righe = [r for r in output_finale.split("\n") if r.startswith("• €")]
+    return ("📊 Comp:\n" + "\n".join(righe)) if righe else None
+
+
+def _deal_score_coerente(v, decisione):
+    """Il deal_score e' un'opinione del modello, la decisione la calcola Python da margine e ROI: se divergono
+    (es. 8/10 su un NON COMPRARE) il punteggio mostrato viene riportato dentro la fascia della decisione."""
+    score = v.get("deal_score")
+    if not isinstance(score, (int, float)):
         return None
-    intervallo = f"€{prezzi[0]:.0f}" if prezzi[0] == prezzi[-1] else f"€{prezzi[0]:.0f}-{prezzi[-1]:.0f}"
-    return f"📊 {len(prezzi)} comp {intervallo}"
+    if decisione == "NON COMPRARE":
+        return min(int(score), 4)
+    if decisione == "COMPRA":
+        return max(int(score), 7)
+    return int(score)
 
 
 def componi_messaggio_compatto(listing_info, v, verdetto, output_finale, url=None, riga_fv="", footer=""):
@@ -452,15 +463,17 @@ def componi_messaggio_compatto(listing_info, v, verdetto, output_finale, url=Non
              "probabilmente_falso": "❌"}.get(v.get("legit_verdetto"), "❔")
     righe.append(f"{legit} {esc(_compatta_testo(v.get('legit_motivo_specifico'), 160))}")
     righe.append(f"🛡️ fake {ETICHETTA_RISCHIO.get(v.get('rischio_fake'), '?')} · conf "
-                 f"{ETICHETTA_CONFIDENZA.get(v.get('confidenza'), '?')} · 🎯 {v.get('deal_score')}/10")
+                 f"{ETICHETTA_CONFIDENZA.get(v.get('confidenza'), '?')} · 🎯 {_deal_score_coerente(v, dec)}/10")
     dettagli = _righe_dettagli_annuncio(listing_info)
     if dettagli:
         righe.append(dettagli)
     righe.append(" · ".join(x.strip() for x in (
-        _riga_venditore_annuncio(listing_info), _riga_caricato_annuncio(listing_info),
-        _riga_comp_compatta(v)) if x))
+        _riga_venditore_annuncio(listing_info), _riga_caricato_annuncio(listing_info)) if x))
     if riga_fv:
         righe.append(riga_fv)
+    comp = _blocco_comp(output_finale)
+    if comp:
+        righe += ["", comp]
     azioni = _blocco_azioni(output_finale)
     if azioni:
         righe += ["", azioni]
