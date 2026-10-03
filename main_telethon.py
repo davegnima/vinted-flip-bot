@@ -10336,10 +10336,29 @@ def _tracc_e_sparito(http_status, segnali):
         return True
     if segnali.get("availability") in ("OutOfStock", "SoldOut", "Discontinued"):
         return True
-    # NB: "barra_venduto" (testo >Venduto<) NON basta ancora: la pagina elenca anche altri articoli del
-    # venditore, alcuni gia' venduti con il loro badge. Si usa solo dopo averlo confrontato con un annuncio
-    # attivo (comando /venduto) o con un segnale piu' specifico dell'articolo in pagina.
+    # Verificato il 2026-10-03 con /venduto su un annuncio venduto e uno attivo: la pagina venduta resta
+    # online (HTTP 200) con la barra "Venduto" nel riquadro dell'articolo (assente nell'attivo) e
+    # "can_buy": false (nell'attivo true).
+    # Con "can_buy": true la barra non conta (potrebbe essere il badge di un altro articolo in pagina).
+    if segnali.get("barra_venduto") and str(segnali.get("can_buy", "")).lower() != "true":
+        return True
     return False
+
+
+def _tracc_stato(http_status, segnali):
+    """Stato leggibile dell'annuncio ricontrollato: venduto / rimosso / prenotato / attivo / n.d."""
+    segnali = segnali or {}
+    if http_status in (404, 410):
+        return "rimosso"
+    if _tracc_e_sparito(200 if http_status is None else http_status, segnali):
+        return "venduto"
+    if str(segnali.get("is_reserved", "")).lower() == "true":
+        return "prenotato"
+    if str(segnali.get("can_buy", "")).lower() == "true":
+        return "attivo"
+    if isinstance(http_status, int) and http_status == 200:
+        return "attivo?"
+    return "n.d."
 
 
 def _tracc_prossimi(righe, ora=None):
@@ -10418,12 +10437,12 @@ async def tracc_ricontrolla():
         _tracc_scrivi({
             "tipo": "ricontrollo", "item_id": str(r.get("item_id")), "stadio_min": stadio,
             "eta_min": round(eta_min), "http": http_status, "segnali": segnali,
-            "prezzo_ora": prezzo_ora, "finale": sparito,
+            "prezzo_ora": prezzo_ora, "finale": sparito, "stato": _tracc_stato(http_status, segnali),
         })
         log.info(
-            "RICONTROLLO | item=%s | brand='%s' | stadio=%smin | eta=%smin | http=%s | sparito=%s | segnali=%s | prezzo_valutato=%s | prezzo_ora=%s | esito=%s | target=%s",
+            "RICONTROLLO | item=%s | brand='%s' | stadio=%smin | eta=%smin | http=%s | sparito=%s | stato=%s | segnali=%s | prezzo_valutato=%s | prezzo_ora=%s | esito=%s | target=%s",
             r.get("item_id"), r.get("brand") or "n/d", stadio, round(eta_min), http_status,
-            "si" if sparito else "no", segnali or "nessuno",
+            "si" if sparito else "no", _tracc_stato(http_status, segnali), segnali or "nessuno",
             r.get("prezzo"), prezzo_ora, r.get("esito"), r.get("target"),
         )
         fatti += 1
