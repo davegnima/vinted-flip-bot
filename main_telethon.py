@@ -10596,6 +10596,52 @@ def consolida_target_cervello(targets, spread_max=None):
     return valore, spread, instabile
 
 
+# Secondo parere "in ombra" via gateway OpenAI-compatibile (OmniRoute): spento se manca l'URL. Una sola chiamata
+# senza ricerche, in background con timeout: non entra nella mediana e non ritarda mai il verdetto, il target
+# viene solo loggato accanto a quello primario per confrontare i modelli.
+EXTRA_LLM_URL = (os.environ.get("EXTRA_LLM_URL") or "").strip()   # es. http://omniroute.railway.internal:20128/v1/chat/completions
+EXTRA_LLM_KEY = (os.environ.get("EXTRA_LLM_KEY") or "").strip()
+EXTRA_LLM_MODEL = (os.environ.get("EXTRA_LLM_MODEL") or "").strip()
+EXTRA_LLM_TIMEOUT = _env_float("EXTRA_LLM_TIMEOUT", 20)
+
+
+def estrai_target_da_testo_llm(testo):
+    """Prezzo target da una risposta testuale del modello extra (JSON, anche dentro ```), None se non valido."""
+    if not isinstance(testo, str):
+        return None
+    m = re.search(r"\{.*\}", testo, re.S)
+    if not m:
+        return None
+    try:
+        t = json.loads(m.group(0)).get("prezzo_target_vendita_eur")
+    except (json.JSONDecodeError, AttributeError):
+        return None
+    return float(t) if isinstance(t, (int, float)) and not isinstance(t, bool) and t > 0 else None
+
+
+async def _ombra_target_extra(item_id, user_text, target_primario):
+    if not (EXTRA_LLM_URL and EXTRA_LLM_MODEL):
+        return
+    try:
+        headers = {"Content-Type": "application/json"}
+        if EXTRA_LLM_KEY:
+            headers["Authorization"] = f"Bearer {EXTRA_LLM_KEY}"
+        payload = {"model": EXTRA_LLM_MODEL, "temperature": 0.2, "max_tokens": 2500,
+                   "messages": [{"role": "system", "content": GEMINI_CERVELLO_SYSTEM_PROMPT},
+                                {"role": "user", "content": user_text}]}
+        resp = await asyncio.wait_for(
+            _client_generico.post(EXTRA_LLM_URL, headers=headers, json=payload, timeout=EXTRA_LLM_TIMEOUT),
+            timeout=EXTRA_LLM_TIMEOUT + 2)
+        if not resp.is_success:
+            log.info("OMBRA | %s | http %s", item_id, resp.status_code)
+            return
+        testo = (resp.json().get("choices") or [{}])[0].get("message", {}).get("content")
+        log.info("OMBRA | %s | modello=%s | target_extra=%s | target_primario=%s", item_id, EXTRA_LLM_MODEL,
+                 estrai_target_da_testo_llm(testo), target_primario)
+    except Exception as e:
+        log.info("OMBRA | %s | fallita: %s", item_id, type(e).__name__)
+
+
 async def _campione_target_cervello(chiama, user_text, forza_ricerca):
     """Una valutazione in piu' del Cervello. Ritorna (v|None, problemi, costo): v e' il verdetto validato (il
     chiamante usa quello piu' vicino alla mediana, cosi' testo e numeri restano coerenti)."""
@@ -11209,6 +11255,9 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
                 legit_cervello = v.get("legit_verdetto")
                 verdetto_calcolato = calcola_verdetto(v, prezzo_prodotto)
             t_tappe.append(("campioni_target", time.time()))
+        if EXTRA_LLM_URL and verdetto_calcolato["decisione"] in ("COMPRA", "TRATTA"):
+            asyncio.create_task(_ombra_target_extra(
+                item_id_annuncio, user_text_cervello, v.get("prezzo_target_vendita_eur")))
         decisione = verdetto_calcolato["decisione"]
         urgenza = verdetto_calcolato["urgenza"]
         output_finale = render_messaggio_verdetto(

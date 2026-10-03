@@ -37,3 +37,12 @@ def test_verdetto_deterministico_e_monotono_nel_target():
 def test_margine_e_roi_coerenti():
     r = m.calcola_verdetto(m.valida_payload_cervello(_v(120))[0], 20.0)
     assert r["margine"] is not None and r["roi"] is not None and r["margine"] > 0
+
+
+def test_estrai_target_da_testo_llm():
+    import main_telethon as m
+    assert m.estrai_target_da_testo_llm('```json\n{"prezzo_target_vendita_eur": 120}\n```') == 120.0
+    assert m.estrai_target_da_testo_llm('{"prezzo_target_vendita_eur": 0}') is None
+    assert m.estrai_target_da_testo_llm('{"prezzo_target_vendita_eur": true}') is None
+    assert m.estrai_target_da_testo_llm("niente json") is None
+    assert m.estrai_target_da_testo_llm(None) is None
