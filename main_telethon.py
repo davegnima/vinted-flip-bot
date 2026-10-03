@@ -9916,6 +9916,7 @@ ANALISI_GEMINI_ATTIVA = os.environ.get("ANALISI_GEMINI", "1").strip() != "0"
 
 
 STATO_ANALISI_COMPLETATA = "✅ Analisi completata, risposta qui sotto"
+STATO_ANALISI_COMPLETATA_UNIFICATA = "✅ Analisi completata"
 STATO_ANALISI_INTERROTTA = "⚠️ Analisi interrotta per un errore"
 
 
@@ -10069,7 +10070,7 @@ async def _invia_galleria_anticipata(listing_info, url, photo_bytes_list, stato=
 
 async def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header, output_finale,
                                     decisione, e_compra, scenario_usato, urgenza="Bassa",
-                                    margine=None, msg_id_galleria=None):
+                                    margine=None, msg_id_galleria=None, stato=None):
     item_id = _estrai_item_id_da_url(url)
     # L'urgenza ora arriva calcolata da calcola_verdetto invece di essere
     # dedotta dal testo del verdetto (_e_urgenza_alta cercava parole come
@@ -10101,7 +10102,31 @@ async def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header,
                 disable_notification=silenzioso,
             )
 
-    if url:
+    # Richiesto dall'utente il 2026-10-03: un solo messaggio per annuncio. Se non e' un COMPRA (il push
+    # arriva solo con un messaggio NUOVO: una modifica non notifica) l'analisi viene scritta nella scheda
+    # "Analisi in corso", la cui riga di stato diventa "Analisi completata". Se non entra in un messaggio
+    # o la modifica fallisce, si ricade sul messaggio separato di prima.
+    unificato = False
+    if (stato and decisione != "COMPRA" and ANALISI_GEMINI_ATTIVA and stato.get("msg_id_scheda")
+            and stato.get("url_scheda")):
+        try:
+            vecchio = stato.get("stato_testo_iniziale")
+            testo_scheda = stato.get("testo_scheda") or ""
+            if vecchio and vecchio in testo_scheda:
+                testo_unico = (testo_scheda.replace(vecchio, STATO_ANALISI_COMPLETATA_UNIFICATA)
+                               + "\n\n" + "—" * 20 + "\n" + header + output_finale)
+                if len(testo_unico) <= 3900:
+                    unificato = await telegram_edit_message(
+                        TELEGRAM_OWNER_CHAT_ID, stato["msg_id_scheda"], testo_unico, stato["url_scheda"])
+                    if unificato:
+                        stato["scheda_unificata"] = True
+        except Exception:
+            log.warning("Analisi non unificata alla scheda, invio separato:\n%s", traceback.format_exc())
+            unificato = False
+
+    if unificato:
+        pass
+    elif url:
         await telegram_send_with_buttons(
             TELEGRAM_OWNER_CHAT_ID, header + output_finale, url, item_id if e_compra_urgente else None,
             disable_notification=silenzioso, reply_to=msg_id_galleria,
@@ -10199,6 +10224,10 @@ async def _aggiorna_stato_scheda(stato, nuovo_stato):
     modifica fallisce la scheda resta com'era."""
     if not stato or not ANALISI_GEMINI_ATTIVA or not stato.get("msg_id_scheda"):
         return
+    if stato.get("scheda_unificata"):
+        return  # la scheda contiene gia' lo stato finale e l'analisi: non riscriverla
+    if stato.get("stato_finale_override") and nuovo_stato == STATO_ANALISI_COMPLETATA:
+        nuovo_stato = stato["stato_finale_override"]
     try:
         vecchio = stato.get("stato_testo_iniziale")
         testo = stato.get("testo_scheda") or ""
@@ -11349,14 +11378,16 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
                 " · ".join(_formatta_tappe_pipeline(t_tappe)),
             )
             if msg_id_galleria is not None:
-                # La galleria e' gia' in chat: chiuderla invece di lasciarla
-                # appesa su "Analisi in corso...".
-                await telegram_send_message(
-                    TELEGRAM_OWNER_CHAT_ID,
-                    f"🔇 {decisione}: margine {margine_finale:.2f} € sotto la soglia di notifica "
-                    f"({SOGLIA_MARGINE_ASSOLUTO_NOTIFICA} €), verdetto completo non inviato.",
-                    disable_notification=True, reply_to=msg_id_galleria,
-                )
+                # La galleria e' gia' in chat: chiuderla invece di lasciarla appesa su "Analisi in corso...".
+                # Dal 2026-10-03 senza un messaggio in piu': si riscrive la riga di stato della scheda.
+                testo_gate = (f"🔇 {decisione}: margine {margine_finale:.2f} € sotto la soglia di notifica "
+                              f"({SOGLIA_MARGINE_ASSOLUTO_NOTIFICA} €), verdetto non inviato")
+                if stato is not None and stato.get("msg_id_scheda"):
+                    stato["stato_finale_override"] = testo_gate
+                else:
+                    await telegram_send_message(
+                        TELEGRAM_OWNER_CHAT_ID, testo_gate + ".", disable_notification=True, reply_to=msg_id_galleria,
+                    )
             return
 
     if scenario_usato == "SKIP":
@@ -11513,7 +11544,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
         header, output_finale, decisione, e_compra,
         scenario_usato, urgenza,
         margine=verdetto_calcolato["margine"] if verdetto_calcolato else None,
-        msg_id_galleria=msg_id_galleria,
+        msg_id_galleria=msg_id_galleria, stato=stato,
     )
 
 
