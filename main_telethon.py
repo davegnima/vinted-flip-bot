@@ -10325,6 +10325,26 @@ def _tracc_estrai_segnali(html_pagina):
     return segnali, prezzo
 
 
+# Campi temporali nella pagina (created_at, updated_at, *_ts...). Servono a capire se la pagina espone
+# QUANDO l'annuncio e' passato a venduto (richiesto dall'utente il 2026-10-03). Si registrano per ogni
+# ricontrollo: il confronto tra annunci venduti e attivi dira' se qualche campo cambia alla vendita.
+_TRACC_TEMPI_RE = re.compile(
+    r'\\?"([a-z_]*(?:_at|_ts|timestamp|_date|_time)[a-z_]*)\\?"\s*:\s*\\?"?([0-9][0-9T:\-+.Z ]{5,31})'
+)
+
+
+def _tracc_estrai_tempi(html_pagina, max_voci=14):
+    """{chiave: valore} dei campi temporali (prima occorrenza di ogni chiave+valore). Pura."""
+    tempi = {}
+    for m in _TRACC_TEMPI_RE.finditer(html_pagina):
+        k, v = m.group(1), m.group(2).strip()
+        if k not in tempi:
+            tempi[k] = v
+        if len(tempi) >= max_voci:
+            break
+    return tempi
+
+
 def _tracc_e_sparito(http_status, segnali):
     """True se la pagina indica che l'annuncio non e' piu' in vendita (venduto o rimosso).
     I segnali di 'venduto' non sono ancora noti con certezza: si accettano i piu' plausibili
@@ -10413,6 +10433,7 @@ def diagnostica_pagina_venduto(html_pagina, url=None, raggio=260, max_snippet=4)
             coppie.append(f"{m.group(1)}={m.group(2)}")
     m = re.search(r">\s*Venduto\s*<", html_pagina)
     intorno_barra = re.sub(r"\s+", " ", html_pagina[max(0, m.start() - 300):m.end() + 200]) if m else None
+    coppie = [f"TEMPO {k}={v}" for k, v in _tracc_estrai_tempi(html_pagina, 30).items()] + coppie
     return segnali, prezzo, snippet_id, coppie, intorno_barra
 
 
@@ -10423,12 +10444,13 @@ async def tracc_ricontrolla():
     righe = _tracc_leggi()
     fatti = 0
     for r, stadio, eta_min in _tracc_prossimi(righe)[:TRACCIAMENTO_MAX_PER_CICLO]:
-        http_status, segnali, prezzo_ora = None, {}, None
+        http_status, segnali, prezzo_ora, tempi = None, {}, None, {}
         try:
             resp = await _vinted_get_con_retry(r["url"], timeout=15, max_retries=1)
             if resp is not None:
                 http_status = resp.status_code
                 segnali, prezzo_ora = _tracc_estrai_segnali(resp.text)
+                tempi = _tracc_estrai_tempi(resp.text)
         except httpx.HTTPStatusError as e:
             http_status = e.response.status_code
         except Exception as e:
@@ -10438,12 +10460,13 @@ async def tracc_ricontrolla():
             "tipo": "ricontrollo", "item_id": str(r.get("item_id")), "stadio_min": stadio,
             "eta_min": round(eta_min), "http": http_status, "segnali": segnali,
             "prezzo_ora": prezzo_ora, "finale": sparito, "stato": _tracc_stato(http_status, segnali),
+            "tempi": tempi,
         })
         log.info(
-            "RICONTROLLO | item=%s | brand='%s' | stadio=%smin | eta=%smin | http=%s | sparito=%s | stato=%s | segnali=%s | prezzo_valutato=%s | prezzo_ora=%s | esito=%s | target=%s",
+            "RICONTROLLO | item=%s | brand='%s' | stadio=%smin | eta=%smin | http=%s | sparito=%s | stato=%s | segnali=%s | prezzo_valutato=%s | prezzo_ora=%s | esito=%s | target=%s | tempi=%s",
             r.get("item_id"), r.get("brand") or "n/d", stadio, round(eta_min), http_status,
             "si" if sparito else "no", _tracc_stato(http_status, segnali), segnali or "nessuno",
-            r.get("prezzo"), prezzo_ora, r.get("esito"), r.get("target"),
+            r.get("prezzo"), prezzo_ora, r.get("esito"), r.get("target"), tempi or "nessuno",
         )
         fatti += 1
     return fatti
