@@ -10309,6 +10309,10 @@ def _tracc_estrai_segnali(html_pagina):
         segnali["availability"] = m.group(1)
     if re.search(r"\bvenduto\b", html_pagina[:200000], re.IGNORECASE):
         segnali["testo_venduto"] = True
+    # Una pagina venduta NON sparisce (404): resta online con la barra verde "Venduto" (verificato
+    # dall'utente il 2026-10-03). Si cerca il testo come contenuto di un elemento.
+    if re.search(r">\s*Venduto\s*<", html_pagina):
+        segnali["barra_venduto"] = True
     prezzo = None
     for rx in _TRACC_PREZZO_RES:
         m = rx.search(html_pagina)
@@ -10329,6 +10333,8 @@ def _tracc_e_sparito(http_status, segnali):
     if str(segnali.get("is_closed", "")).lower() == "true":
         return True
     if segnali.get("availability") in ("OutOfStock", "SoldOut", "Discontinued"):
+        return True
+    if segnali.get("barra_venduto"):
         return True
     return False
 
@@ -10356,6 +10362,28 @@ def _tracc_prossimi(righe, ora=None):
             da_fare.append((r, scaduti[-1], eta_min))
     da_fare.sort(key=lambda x: (x[1], x[2]))
     return da_fare
+
+
+_DIAG_VENDUTO_RE = re.compile(
+    r"venduto|is_closed|is_reserved|is_hidden|item_closing_action|can_buy|\"sold\"|original_price|price_before|previous_price|discount",
+    re.IGNORECASE,
+)
+
+
+def diagnostica_pagina_venduto(html_pagina, max_snippet=14, raggio=70):
+    """Per capire come la pagina segnala un capo venduto: segnali estratti + frammenti di testo attorno
+    alle parole chiave (senza tag lunghi). Pura, testabile."""
+    segnali, prezzo = _tracc_estrai_segnali(html_pagina)
+    snippet, ultimo_fine = [], -1
+    for m in _DIAG_VENDUTO_RE.finditer(html_pagina):
+        if m.start() < ultimo_fine:
+            continue
+        a, b = max(0, m.start() - raggio), min(len(html_pagina), m.end() + raggio)
+        snippet.append(re.sub(r"\s+", " ", html_pagina[a:b]))
+        ultimo_fine = b
+        if len(snippet) >= max_snippet:
+            break
+    return segnali, prezzo, snippet
 
 
 async def tracc_ricontrolla():
@@ -11618,6 +11646,39 @@ def _formatta_risultati_test_proxy(risultati):
         righe.append(f"\n✅ Funzionanti ({len(ok_list)}):")
         righe.append("  " + ", ".join(r["etichetta"] for r in ok_list))
     return "\n".join(righe)
+
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'(?i)^/venduto\s+(https?://\S+)'))
+async def on_comando_venduto(event):
+    """/venduto <url annuncio Vinted>: legge la pagina con i proxy del bot e mostra come segnala lo
+    stato venduto (richiesto dall'utente il 2026-10-03: la pagina venduta resta online con la barra
+    'Venduto'). Serve a scegliere il segnale giusto per il tracciamento vendite."""
+    try:
+        url = event.pattern_match.group(1).strip()
+        if "vinted." not in url:
+            await event.respond("Mi serve un link di un annuncio vinted.", parse_mode=None)
+            return
+        await event.respond("Leggo la pagina, un attimo...", parse_mode=None)
+        http_status, html_pagina = None, ""
+        try:
+            resp = await _vinted_get_con_retry(url, timeout=15, max_retries=3)
+            if resp is not None:
+                http_status, html_pagina = resp.status_code, resp.text
+        except httpx.HTTPStatusError as e:
+            http_status = e.response.status_code
+        segnali, prezzo, snippet = diagnostica_pagina_venduto(html_pagina)
+        testo = (f"HTTP {http_status} | sparito={'si' if _tracc_e_sparito(http_status, segnali) else 'no'} | "
+                 f"prezzo letto={prezzo}\nSegnali: {segnali or 'nessuno'}\n\nFrammenti:\n" + "\n---\n".join(snippet))
+        log.info("DIAG VENDUTO | url=%s | http=%s | prezzo=%s | segnali=%s | frammenti=%s",
+                 url, http_status, prezzo, segnali, " ### ".join(snippet)[:3000])
+        for pezzo in _spezza_per_telegram(testo):
+            await event.respond(pezzo, parse_mode=None)
+    except Exception:
+        log.error("Errore nel comando /venduto:\n%s", traceback.format_exc())
+        try:
+            await event.respond("⚠️ Comando /venduto fallito, vedi i log Railway.", parse_mode=None)
+        except Exception:
+            pass
 
 
 @client.on(events.NewMessage(outgoing=True, pattern=r'(?i)^/test_?proxy\b'))
