@@ -9,7 +9,8 @@ from datetime import datetime, timezone
 import httpx
 
 from bot.verdetto import _a_float, _estrai_item_id_da_url
-from bot.fair_value import _jsonl_append
+from bot.fair_value import _jsonl_append, _jsonl_read
+from bot import db
 from bot.tempi import _parse_created_at_dt
 from bot.vinted_http import _vinted_get_con_retry
 from bot.categorie import estrai_categoria_da_titolo
@@ -55,7 +56,20 @@ _TRACC_BARRA_RE = re.compile(r">\s*Venduto\s*<")
 
 
 def _tracc_scrivi(record):
+    db.scrivi_evento("tracciamento", record.get("item_id"), record.get("brand"), dict(record))
     return _jsonl_append(TRACCIAMENTO_FILE, record, "Tracciamento")
+
+
+def importa_tracciamento_jsonl():
+    """Una tantum: se la tabella eventi non ha ancora righe di tracciamento, ci copia lo storico del file JSONL
+    (che resta dov'e': si scrive in entrambi). Ritorna quante righe ha importato."""
+    if db.conta_eventi("tracciamento"):
+        return 0
+    n = 0
+    for r in _jsonl_read(TRACCIAMENTO_FILE, "Tracciamento"):
+        if db.scrivi_evento("tracciamento", r.get("item_id"), r.get("brand"), r, ts=r.get("ts")):
+            n += 1
+    return n
 
 
 def _tracc_estrai_segnali(html_pagina):
@@ -266,6 +280,7 @@ def trova_timestamp_candidati(html_pagina, giorni=45, max_voci=40):
 def _log_esito(listing_info, esito, **campi):
     """Una riga greppable per annuncio con il brand del tracker (richiesto
     dall'utente il 2026-10-01) per l'analisi giornaliera per brand dai log."""
+    _id = None
     try:
         _id = _estrai_item_id_da_url(listing_info.get("url")) if listing_info.get("url") else None
         if _id:
@@ -281,5 +296,7 @@ def _log_esito(listing_info, esito, **campi):
         extra = "".join(f" | {k}={v}" for k, v in campi.items() if v not in (None, ""))
         log.info("ESITO | brand='%s' | titolo='%s' | esito=%s%s",
                  (listing_info.get("brand") or "n/d"), listing_info.get("title"), esito, extra)
+        db.scrivi_evento("esito", _id, listing_info.get("brand"),
+                         {"titolo": listing_info.get("title"), "esito": esito, **campi})
     except Exception:
         pass

@@ -39,6 +39,9 @@ from telethon.sessions import StringSession
 from PIL import Image
 
 from bot import http_clients as hc
+from bot.db import DB_FILE
+from bot.gemini_stato import ripristina_stato_gemini
+from bot.tracciamento import importa_tracciamento_jsonl
 from bot.costanti import (
     BRAND_BLOCKLIST,
     CATEGORIA_KEYWORDS,
@@ -1494,6 +1497,13 @@ async def main():
         "calcolato da campi tipizzati" if OCCHIO_OUTPUT_JSON else "da match testuale",
     )
     await inizializza_client_http()
+    try:
+        n_quote, n_esclusi = ripristina_stato_gemini()
+        importati = importa_tracciamento_jsonl() if TRACCIAMENTO_ATTIVO else 0
+        log.info("DB %s: ripristinati %d cooldown di quota Gemini e %d modelli esclusi; tracciamento importato: %d righe.",
+                 DB_FILE, n_quote, n_esclusi, importati)
+    except Exception:
+        log.warning("DB non inizializzato (il bot prosegue senza persistenza):\n%s", traceback.format_exc())
     if TRACCIAMENTO_ATTIVO:
         _tracc_item_visti.update(str(r.get("item_id")) for r in _jsonl_read(TRACCIAMENTO_FILE, "Tracciamento")
                                  if r.get("tipo") == "valutato")

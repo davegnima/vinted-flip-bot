@@ -13,5 +13,6 @@ os.environ.update({
     "TRACCIAMENTO_FILE": os.path.join(_TMP, "tracciamento.jsonl"),
     "FAIR_VALUE_LOG_FILE": os.path.join(_TMP, "fair_value_log.jsonl"),
     "FAIR_VALUE_APPRESO_FILE": os.path.join(_TMP, "fair_value_appreso.json"),
+    "DB_FILE": os.path.join(_TMP, "vinted_bot.sqlite3"),
 })
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
