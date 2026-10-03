@@ -10634,6 +10634,40 @@ def _panel_ammesso(adesso=None):
     return True
 
 
+PANEL_MODELLI_PER_ANNUNCIO = int(_env_float("PANEL_MODELLI_PER_ANNUNCIO", 0))   # 0 = tutti; N = rotazione a gruppi di N
+PANEL_PAUSA_QUOTA_MIN = _env_float("PANEL_PAUSA_QUOTA_MIN", 30)
+_panel_pausa = {}    # modello -> timestamp fino a cui e' in pausa (quota finita / non disponibile)
+_panel_giro = {"occhio": 0, "cervello": 0}
+
+
+def _panel_e_modello_principale(modello):
+    """True se il modello e' lo stesso del flusso principale (stessa quota giornaliera): mai nel pannello."""
+    nome = modello.split("@")[0]
+    return nome in {f"gemini/{GEMINI_MODEL_OCCHIO}", f"gemini/{GEMINI_MODEL_CERVELLO}"}
+
+
+def panel_scegli_modelli(tipo, modelli, adesso=None):
+    """Modelli da interrogare per questo annuncio: esclude quelli del flusso principale e quelli in pausa
+    (quota finita), poi ruota a gruppi di PANEL_MODELLI_PER_ANNUNCIO per distribuire i limiti giornalieri."""
+    adesso = adesso if adesso is not None else time.time()
+    attivi = [m for m in modelli if not _panel_e_modello_principale(m) and _panel_pausa.get(m, 0) <= adesso]
+    n = PANEL_MODELLI_PER_ANNUNCIO
+    if n <= 0 or n >= len(attivi):
+        return attivi
+    inizio = _panel_giro[tipo] % len(attivi)
+    _panel_giro[tipo] += n
+    return [attivi[(inizio + i) % len(attivi)] for i in range(n)]
+
+
+def _panel_segna_errore(modello, err, adesso=None):
+    """Quota/accesso/modello dismesso: pausa, per non sprecare chiamate e riprovare piu' tardi."""
+    adesso = adesso if adesso is not None else time.time()
+    if err in ("http429", "http402", "http403"):
+        _panel_pausa[modello] = adesso + PANEL_PAUSA_QUOTA_MIN * 60
+    elif err in ("http404", "http410"):
+        _panel_pausa[modello] = adesso + 6 * 3600
+
+
 def estrai_json_da_testo_llm(testo):
     """Primo oggetto JSON in una risposta testuale (anche dentro ```), None se non valido."""
     if not isinstance(testo, str):
@@ -10694,6 +10728,7 @@ async def _panel_occhio_modello(item_id, brand, modello, system, user_text, imma
     contenuto = [{"type": "text", "text": user_text}] + immagini
     testo, ms, err = await _panel_chiama(modello, system, contenuto, 4000)
     if err:
+        _panel_segna_errore(modello, err)
         return _riga_panel("occhio", item_id, brand, modello, False, ms, errore=err)
     d = estrai_json_da_testo_llm(testo)
     if d is None:
@@ -10719,7 +10754,7 @@ async def panel_occhio(item_id, brand, user_text, photo_bytes_list, occhio_json,
         system = (GEMINI_OCCHI_SYSTEM_PROMPT_JSON +
                   "\n\nRispondi SOLO con un oggetto JSON valido conforme a questo schema, senza altro testo:\n" + schema)
         await asyncio.gather(*(_panel_occhio_modello(item_id, brand, m, system, user_text, immagini)
-                               for m in PANEL_OCCHIO_MODELLI))
+                               for m in panel_scegli_modelli("occhio", PANEL_OCCHIO_MODELLI)))
     except Exception:
         log.warning("Pannello occhio fallito:\n%s", traceback.format_exc())
 
@@ -10771,11 +10806,12 @@ def prompt_cervello_compatto():
 
 
 async def _panel_cervello_modello(item_id, brand, modello, system, user_text, prezzo, system_compatto=None):
-    nome = modello
+    nome = modello_chiamato = modello
     if modello.endswith("@c"):
         modello, system = modello[:-2], system_compatto or prompt_cervello_compatto()
     testo, ms, err = await _panel_chiama(modello, system, user_text, 6000)
     if err:
+        _panel_segna_errore(modello_chiamato, err)
         return _riga_panel("cervello", item_id, brand, nome, False, ms, errore=err)
     d = estrai_json_da_testo_llm(testo)
     if d is None:
@@ -10807,7 +10843,7 @@ async def panel_cervello(item_id, brand, user_text, prezzo, v_primario, verdetto
         system = (GEMINI_CERVELLO_SYSTEM_PROMPT +
                   "\n\nRispondi SOLO con un oggetto JSON valido conforme a questo schema, senza altro testo:\n" + schema)
         await asyncio.gather(*(_panel_cervello_modello(item_id, brand, m, system, user_text, prezzo)
-                               for m in PANEL_CERVELLO_MODELLI))
+                               for m in panel_scegli_modelli("cervello", PANEL_CERVELLO_MODELLI)))
     except Exception:
         log.warning("Pannello cervello fallito:\n%s", traceback.format_exc())
 
