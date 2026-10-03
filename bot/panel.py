@@ -8,7 +8,7 @@ import traceback
 
 
 from bot.schemas import CERVELLO_RESPONSE_SCHEMA_OPENAI, OCCHIO_RESPONSE_SCHEMA_GEMINI, _schema_gemini_to_openai
-from bot.gemini_stato import GEMINI_CASCATA, GEMINI_MODELLI_RISERVA
+from bot.gemini_stato import GEMINI_MODELLI_RISERVA, tutti_i_modelli_cascata
 from bot.prompts import GEMINI_CERVELLO_SYSTEM_PROMPT, GEMINI_OCCHI_SYSTEM_PROMPT_JSON, prompt_cervello_compatto
 from bot.config import GEMINI_MODEL_CERVELLO, GEMINI_MODEL_OCCHIO, _env_float
 from bot.verdetto import calcola_verdetto, valida_payload_cervello
@@ -65,7 +65,7 @@ _panel_giro = {"occhio": 0, "cervello": 0}
 def _panel_e_modello_principale(modello):
     """True se il modello e' lo stesso del flusso principale (stessa quota giornaliera): mai nel pannello."""
     nome = modello.split("@")[0]
-    principali = {GEMINI_MODEL_OCCHIO, GEMINI_MODEL_CERVELLO, *GEMINI_MODELLI_RISERVA, *GEMINI_CASCATA}
+    principali = {GEMINI_MODEL_OCCHIO, GEMINI_MODEL_CERVELLO, *GEMINI_MODELLI_RISERVA, *tutti_i_modelli_cascata()}
     return nome in {f"gemini/{m}" for m in principali}
 
 

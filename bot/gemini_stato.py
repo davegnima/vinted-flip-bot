@@ -112,6 +112,21 @@ GEMINI_MODEL_FALLBACK = GEMINI_MODELLI_RISERVA[0] if GEMINI_MODELLI_RISERVA else
 # Occhio e Cervello partono dal primo modello e, quando la quota giornaliera finisce su TUTTE le key, scalano al
 # successivo senza attese. Vuota = comportamento di prima (modello principale + GEMINI_MODEL_FALLBACK).
 GEMINI_CASCATA = [m.strip() for m in os.environ.get("GEMINI_CASCATA", "").split(",") if m.strip()]
+# Cascata per FASE (richiesta dall'utente il 2026-10-03): l'Occhio gira su ogni annuncio e conta la velocita',
+# il Cervello decide il prezzo e merita i modelli migliori (quota gratuita di pochi richieste al giorno).
+# GEMINI_CASCATA_OCCHIO / GEMINI_CASCATA_CERVELLO; se una manca vale la GEMINI_CASCATA generica.
+GEMINI_CASCATA_OCCHIO = [m.strip() for m in os.environ.get("GEMINI_CASCATA_OCCHIO", "").split(",") if m.strip()]
+GEMINI_CASCATA_CERVELLO = [m.strip() for m in os.environ.get("GEMINI_CASCATA_CERVELLO", "").split(",") if m.strip()]
+
+
+def cascata_per(ruolo=None):
+    """Catena di modelli (dal migliore al piu' leggero) per la fase `ruolo` ("occhio" | "cervello"), [] = nessuna."""
+    specifica = {"occhio": GEMINI_CASCATA_OCCHIO, "cervello": GEMINI_CASCATA_CERVELLO}.get(ruolo) or []
+    return specifica or GEMINI_CASCATA
+
+
+def tutti_i_modelli_cascata():
+    return {*GEMINI_CASCATA, *GEMINI_CASCATA_OCCHIO, *GEMINI_CASCATA_CERVELLO}
 RAFFREDDAMENTO_MODELLO_SOVRACCARICO_SECONDI = 15 * 60
 RAFFREDDAMENTO_MODELLO_INESISTENTE_SECONDI = 24 * 3600
 _gemini_modello_escluso_fino = {}
@@ -157,16 +172,17 @@ def _gemini_segna_modello_non_disponibile(modello, secondi, motivo):
     db.salva_modello_escluso(modello, _gemini_modello_escluso_fino[modello])
 
 
-def _gemini_url_effettivo(api_url):
+def _gemini_url_effettivo(api_url, ruolo=None):
     """URL del primo modello disponibile della catena principale ->
     GEMINI_MODELLI_RISERVA. Se sono tutti esclusi si torna al principale
     (e da li' valgono rotazione key e backoff come prima). Sostituisce solo il
     nome del modello nel path, quindi vale per Occhio e Cervello."""
-    if GEMINI_CASCATA:
-        for modello in GEMINI_CASCATA:
+    cascata = cascata_per(ruolo)
+    if cascata:
+        for modello in cascata:
             if not _gemini_modello_escluso(modello) and not _gemini_modello_senza_quota(modello):
                 return re.sub(r"/models/[^:/]+:", f"/models/{modello}:", api_url)
-        return re.sub(r"/models/[^:/]+:", f"/models/{GEMINI_CASCATA[-1]}:", api_url)
+        return re.sub(r"/models/[^:/]+:", f"/models/{cascata[-1]}:", api_url)
     principale = _gemini_modello_da_url(api_url)
     if not principale or not GEMINI_MODELLI_RISERVA:
         return api_url
@@ -179,7 +195,7 @@ def _gemini_url_effettivo(api_url):
     return api_url
 
 
-def _gemini_gestisci_modello_non_disponibile(api_url, url_usato, status_code, corpo_testo):
+def _gemini_gestisci_modello_non_disponibile(api_url, url_usato, status_code, corpo_testo, ruolo=None):
     """Chiamata dopo una risposta non-2xx. Se l'errore dice che il MODELLO
     (non la key) non e' disponibile, lo esclude e ritorna True quando esiste
     un altro modello della catena su cui ritentare subito."""
@@ -194,7 +210,7 @@ def _gemini_gestisci_modello_non_disponibile(api_url, url_usato, status_code, co
             modello, RAFFREDDAMENTO_MODELLO_INESISTENTE_SECONDI, "non disponibile (404)")
     else:
         return False
-    return _gemini_url_effettivo(api_url) != url_usato
+    return _gemini_url_effettivo(api_url, ruolo) != url_usato
 
 
 # ---------------------------------------------------------------------------

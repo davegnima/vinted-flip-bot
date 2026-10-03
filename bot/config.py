@@ -337,3 +337,8 @@ def _env_float(nome, default):
 
 
 MAX_ANALISI_PARALLELE = max(1, int(os.environ.get("MAX_ANALISI_PARALLELE", "4")))
+
+
+# Resellbot (venduti eBay/Poshmark): DISATTIVATO il 2026-10-03 su richiesta dell'utente -- rispondeva 429/bloccato su
+# praticamente ogni ricerca e il bot ripiegava comunque su Google. Con RESELLBOT_ATTIVO=1 torna la fonte primaria.
+RESELLBOT_ATTIVO = os.environ.get("RESELLBOT_ATTIVO", "0").strip().lower() in ("1", "true", "si", "yes")

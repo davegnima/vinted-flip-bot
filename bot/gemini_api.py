@@ -4,7 +4,7 @@ import asyncio
 
 
 from bot.schemas import CERVELLO_RESPONSE_SCHEMA
-from bot.gemini_stato import GEMINI_API_KEYS, GEMINI_CASCATA, MAX_RETRIES_GEMINI_IN_BLACKOUT, _gemini_e_errore_quota_giornaliera, _gemini_gestisci_modello_non_disponibile, _gemini_in_blackout, _gemini_key_attuale, _gemini_modello_da_url, _gemini_prossima_key, _gemini_registra_esito, _gemini_secondi_retry, _gemini_segna_key_quota_esaurita, _gemini_url_effettivo
+from bot.gemini_stato import GEMINI_API_KEYS, cascata_per, MAX_RETRIES_GEMINI_IN_BLACKOUT, _gemini_e_errore_quota_giornaliera, _gemini_gestisci_modello_non_disponibile, _gemini_in_blackout, _gemini_key_attuale, _gemini_modello_da_url, _gemini_prossima_key, _gemini_registra_esito, _gemini_secondi_retry, _gemini_segna_key_quota_esaurita, _gemini_url_effettivo
 from bot.config import GEMINI_API_URL_CERVELLO, GEMINI_API_URL_OCCHIO, PREZZO_CERVELLO_INPUT, PREZZO_CERVELLO_OUTPUT, PREZZO_GROUNDING_PER_QUERY, PREZZO_OCCHIO_INPUT, PREZZO_OCCHIO_OUTPUT
 from bot.serper_base import cerca_serper_mirata
 from bot.foto import costruisci_parts_foto
@@ -18,7 +18,7 @@ def costo_gemini_token(usage, prezzo_input=PREZZO_OCCHIO_INPUT, prezzo_output=PR
 
 
 async def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, grounding=False, max_retries=4,
-                        api_url=GEMINI_API_URL_OCCHIO, prezzo_input=PREZZO_OCCHIO_INPUT, prezzo_output=PREZZO_OCCHIO_OUTPUT,
+                        api_url=GEMINI_API_URL_OCCHIO, prezzo_input=PREZZO_OCCHIO_INPUT, prezzo_output=PREZZO_OCCHIO_OUTPUT, ruolo="occhio",
                         response_schema=None):
     """response_schema: se valorizzato, la risposta e' JSON conforme allo
     schema invece che prosa libera (usato dall'Occhio con
@@ -63,7 +63,7 @@ async def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, groundi
     # fallback (prosa/skip), invece di aspettare minuti su una chiamata che
     # quasi certamente fallira' comunque.
     max_retries_effettivi = MAX_RETRIES_GEMINI_IN_BLACKOUT if _gemini_in_blackout() else max_retries
-    if GEMINI_CASCATA:
+    if cascata_per(ruolo):
         max_retries_effettivi += len(GEMINI_API_KEYS)   # i 429 di quota esaurita sono rapidi: non bruciano il budget
 
     backoff_seconds = 2
@@ -75,7 +75,7 @@ async def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, groundi
             # ma se Gemini smette proprio di rispondere invece di restituire
             # un errore, 90s per tentativo x piu' tentativi x piu' round del
             # Cervello e' comunque troppo. 30s resta ampio per foto+prompt.
-            url_usato = _gemini_url_effettivo(api_url)
+            url_usato = _gemini_url_effettivo(api_url, ruolo)
             modello_usato = _gemini_modello_da_url(url_usato)
             key_usata = _gemini_key_attuale(modello_usato)
             # Key nell'header e non nella query string (FIX 2026-09-24): come
@@ -100,12 +100,12 @@ async def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, groundi
                 # log 24-25/09: 67 404 su gemini-2.5-flash-lite, 0 marcature).
                 # Ora si continua solo se resta budget di tentativi.
                 modello_cambiato = _gemini_gestisci_modello_non_disponibile(
-                    api_url, url_usato, resp.status_code, resp.text)
+                    api_url, url_usato, resp.status_code, resp.text, ruolo)
                 if modello_cambiato and attempt < max_retries_effettivi:
                     continue
             if resp.is_success:
                 _gemini_registra_esito(True)
-                log.info("GEMINI_USO | generico | %s", modello_usato)
+                log.info("GEMINI_USO | %s | %s", ruolo, modello_usato)
                 data = resp.json()
                 candidates = data.get("candidates", [])
                 if candidates:
@@ -142,7 +142,7 @@ async def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, groundi
                 # backoff come per gli altri errori transitori.
                 if _gemini_e_errore_quota_giornaliera(resp.status_code, resp.text):
                     _gemini_segna_key_quota_esaurita(key_usata, modello_usato, _gemini_secondi_retry(resp.text))
-                    if GEMINI_CASCATA and _gemini_url_effettivo(api_url) != url_usato:
+                    if cascata_per(ruolo) and _gemini_url_effettivo(api_url, ruolo) != url_usato:
                         continue   # quota finita su tutte le key di questo modello: si scala subito al successivo
                 if _gemini_prossima_key(modello_usato):
                     continue
@@ -300,7 +300,7 @@ async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca
         # direttamente al verdetto (vedi "si passa comunque al verdetto" nel
         # chiamante) invece di aspettare minuti in piu' per round.
         tentativi_effettivi = MAX_RETRIES_GEMINI_IN_BLACKOUT if _gemini_in_blackout() else tentativi_rimasti
-        if GEMINI_CASCATA:
+        if cascata_per("cervello"):
             tentativi_effettivi += len(GEMINI_API_KEYS)
 
         backoff_seconds = 2
@@ -308,7 +308,7 @@ async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca
             try:
                 # Timeout abbassato da 90 a 30s (richiesto dall'utente il
                 # 2026-09-22, stesso motivo di chiama_gemini).
-                url_usato = _gemini_url_effettivo(api_url)
+                url_usato = _gemini_url_effettivo(api_url, "cervello")
                 modello_usato = _gemini_modello_da_url(url_usato)
                 key_usata = _gemini_key_attuale(modello_usato)
                 resp = await hc._client_generico.post(
@@ -319,13 +319,13 @@ async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca
                     # 2026-09-26: la marcatura di esclusione va sempre eseguita,
                     # anche sull'ultimo tentativo (vedi commento esteso li').
                     modello_cambiato = _gemini_gestisci_modello_non_disponibile(
-                        api_url, url_usato, resp.status_code, resp.text)
+                        api_url, url_usato, resp.status_code, resp.text, "cervello")
                     if modello_cambiato and attempt < tentativi_effettivi:
                         continue
                     if _gemini_e_errore_quota_giornaliera(resp.status_code, resp.text):
                         _gemini_segna_key_quota_esaurita(key_usata, modello_usato, _gemini_secondi_retry(resp.text))
-                        if (GEMINI_CASCATA and attempt < tentativi_effettivi
-                                and _gemini_url_effettivo(api_url) != url_usato):
+                        if (cascata_per("cervello") and attempt < tentativi_effettivi
+                                and _gemini_url_effettivo(api_url, "cervello") != url_usato):
                             continue   # si scala subito al modello successivo della cascata
                     codici_con_rotazione = {429, 500, 502, 503, 504}
                     if resp.status_code in codici_con_rotazione and attempt < tentativi_effettivi:
