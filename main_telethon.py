@@ -18,6 +18,7 @@ import asyncio
 import base64
 import logging
 import statistics
+import difflib
 import traceback
 import zlib
 import importlib.util
@@ -1240,13 +1241,22 @@ def stima_fair_value(listing_info):
     return out
 
 
-def _riga_confronto_fair_value(stima, verdetto):
-    """Riga nel verdetto: giudizio rapido accanto alla vendita stimata da
-    Gemini (con la newline finale, oppure stringa vuota)."""
-    if not stima or not verdetto or not verdetto.get("vendita_attesa"):
+def _riga_fair_value_unica(stima, verdetto, campioni=None, instabile=False):
+    """UNICA riga di fair value del verdetto (prima erano due: 'Fair value' nella scheda e 'Rapido…Gemini…'
+    nel verdetto): giudizio rapido (con intervallo), stima di Gemini, semaforo e, se le valutazioni
+    indipendenti del Cervello divergono, l'avviso di stima instabile. Stringa vuota se non c'e' nulla."""
+    parti = []
+    if stima:
+        parti.append(f"Fair value ~{stima['fv']} € ({stima['minimo']}-{stima['massimo']})")
+    if verdetto and verdetto.get("vendita_attesa"):
+        parti.append(f"Gemini ~{verdetto['vendita_attesa']:.0f} €")
+    if not parti:
         return ""
-    sem = stima.get("semaforo") or ""
-    return f"📊 Rapido ~{stima['fv']} € {sem} · Gemini ~{verdetto['vendita_attesa']:.0f} €\n"
+    if stima and stima.get("semaforo"):
+        parti.append(stima["semaforo"])
+    if instabile and campioni:
+        parti.append(f"⚠️ stima instabile {campioni} €")
+    return "📊 " + " · ".join(parti)
 
 
 def _riga_fair_value_testo(stima):
@@ -9716,7 +9726,7 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
         f"· Conf {ETICHETTA_CONFIDENZA.get(v['confidenza'], '?')}"
     )
     stagione = f" · 📅 fuori stagione, pubblica da {v['mese_consigliato_pubblicazione']}" if v.get("mese_consigliato_pubblicazione") else ""
-    righe.append(f"🕐 ~{v['giorni_stimati_vendita']}gg · Deal {v['deal_score']}/10{stagione}")
+    righe.append(f"🎯 Deal {v['deal_score']}/10{stagione}")
 
     # === 3. AZIONI (testo copiabile in un tocco: backtick singolo) ===
     # Il vecchio backstop a colpi di regex (rimozione dei blocchi "Messaggio
@@ -9804,8 +9814,13 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
     # serve alla decisione immediata ma resta consultabile scorrendo giu' ===
     righe += ["", "---", "🧠 **Analisi dell'analista:**", _escapa_markdown_legacy(v["note_analista"])]
     righe.append(f"_{_escapa_markdown_legacy(v['legit_motivo_specifico'])}_")
-    if v.get("motivo_profilo_venditore") and v["motivo_profilo_venditore"] != "non specificato":
-        righe.append(f"👤 Venditore: {_escapa_markdown_legacy(v['motivo_profilo_venditore'])}")
+    # Il profilo del venditore (nome, recensioni) e' gia' nella riga 👤 in alto: qui resta solo il giudizio
+    # dell'analista quando segnala qualcosa (reseller, negozio, account sospetto), non la ripetizione.
+    motivo_venditore = v.get("motivo_profilo_venditore")
+    if motivo_venditore and motivo_venditore != "non specificato" and re.search(
+            r"reseller|rivendit|professional|negozio|commerciant|sospett|bot\b|nuovo account|poche recension|fake",
+            motivo_venditore, re.IGNORECASE):
+        righe.append(f"👤 {_escapa_markdown_legacy(motivo_venditore)}")
 
     # --- comp usati, con la provenienza dichiarata accanto a ogni prezzo
     comp_utilizzabili = [c for c in v.get("comp_candidati", []) if not c.get("escluso")]
@@ -9816,6 +9831,8 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
             etichetta = comp.get("etichetta_fonte") or ETICHETTA_FONTE_COMP.get(
                 comp.get("fonte_reale", comp["fonte"]), "?")
             titolo = comp["titolo_verbatim"]
+            # il titolo copiato dal pool finisce spesso con ' — €120.00': il prezzo e' gia' all'inizio della riga
+            titolo = re.sub(r"\s*[—–-]\s*€\s*\d+(?:[.,]\d+)?\s*$", "", titolo)
             titolo = titolo[:60] + "…" if len(titolo) > 60 else titolo
             titolo = _escapa_markdown_legacy(titolo)
             # Link cliccabile al comp (Punto 3, 2026-09-25): lookup deterministico
@@ -9839,7 +9856,8 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
             # sostituire un'informazione gia' piu' precisa.
             if url_comp and etichetta in ("eBay/Poshmark", "ricerca on-demand"):
                 etichetta = _etichetta_piattaforma_da_url(url_comp) or etichetta
-            righe.append(f"• €{comp['prezzo_eur']:.2f} — {titolo_reso} _[{etichetta}]_")
+            prezzo_comp = f"{comp['prezzo_eur']:.0f}" if float(comp["prezzo_eur"]).is_integer() else f"{comp['prezzo_eur']:.2f}"
+            righe.append(f"• €{prezzo_comp} · {titolo_reso} _[{etichetta}]_")
         # Split per fonte calcolato su TUTTI i comp utilizzabili (non solo i
         # primi 6 mostrati sopra in dettaglio) -- richiesto dall'utente il
         # 2026-09-20 per vedere a colpo d'occhio quanto pesa ciascuna fonte
@@ -9858,7 +9876,7 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
             if conteggio_fonti.get(fonte)
         )
         if split_txt:
-            righe.append(f"_Split fonti: {split_txt}_")
+            righe.append(f"_Fonti ({len(comp_utilizzabili)} comp, {len(comp_visibili)} mostrati): {split_txt}_")
 
     # Link manuale alla ricerca visuale: rimosso il 2026-09-25 su richiesta
     # dell'utente (non usa piu' la ricerca visuale per ora, quindi anche il
@@ -9979,49 +9997,32 @@ def _eta_annuncio_testo(age_days):
 LUNGHEZZA_MAX_DESCRIZIONE_SCHEDA = 600
 
 
-def _scheda_annuncio_testo(listing_info, url, n_foto):
-    """Scheda dell'annuncio per il messaggio di testo che segue la galleria
-    (richiesto dall'utente il 2026-09-29). PREZZO E BRAND SEMPRE IN PRIMA
-    RIGA: e' il messaggio piu' recente della chat, quindi quello che compare
-    nell'anteprima della notifica, e l'utente vuole vedere prima quelli e
-    non "N foto". Solo dati gia' letti dal tracker e dalla pagina annuncio
-    (nessuna richiesta in piu' a Vinted); testo libero sempre passato da
-    _escapa_markdown_legacy perche' il messaggio va con parse_mode=Markdown."""
+def _righe_dettagli_annuncio(listing_info):
+    """Riga ✨ condizione · 🧵 materiale · 🎨 colore · 📏 taglia (o None)."""
     esc = _escapa_markdown_legacy
-    prezzo = _a_float(listing_info.get("price"), None)
-    brand = (listing_info.get("brand") or "").strip()
-    testa = []
-    if prezzo is not None:
-        testa.append(f"💶 {prezzo:.2f} €".replace(".", ","))
-    if brand and brand != "?":
-        testa.append(f"🏷️ {esc(brand)}")
-    righe = []
-    if testa:
-        righe.append("*" + " · ".join(testa) + "*")
-    righe.append(esc(listing_info.get("title") or "Annuncio"))
-    righe.append("")
-
     dettagli = []
     for emoji, chiave in (("📏", "size"), ("✨", "condition"), ("🧵", "material_raw"), ("🎨", "color_raw")):
         valore = (listing_info.get(chiave) or "").strip() if isinstance(listing_info.get(chiave), str) else None
         if valore:
             dettagli.append(f"{emoji} {esc(valore)}")
-    if dettagli:
-        righe.append(" · ".join(dettagli))
+    return " · ".join(dettagli) or None
 
-    riga_fv = _riga_fair_value_testo(listing_info.get("fair_value"))
-    if riga_fv:
-        righe.append(esc(riga_fv))
 
+def _riga_caricato_annuncio(listing_info):
+    """🕒 online da N min / 'Caricato' relativo della pagina (solo il primo pezzo: il campo grezzo contiene
+    anche descrizione e hashtag, vedi bug del 2026-10-03)."""
     eta = _eta_annuncio_testo(listing_info.get("age_days"))
     if eta:
-        righe.append(f"🕒 {eta}")
-    elif listing_info.get("uploaded_text"):
-        # data di pubblicazione esatta non trovata: si mostra l'etichetta
-        # relativa della pagina ("2 ore fa"), solo per display (non entra
-        # nei calcoli dei tempi di pipeline).
-        righe.append(f"🕒 Caricato: {esc(str(listing_info['uploaded_text']))}")
+        return f"🕒 {eta}"
+    if listing_info.get("uploaded_text"):
+        relativo = str(listing_info["uploaded_text"]).split(",")[0].strip()
+        if relativo:
+            return f"🕒 Caricato: {_escapa_markdown_legacy(relativo)}"
+    return None
 
+
+def _riga_venditore_annuncio(listing_info):
+    esc = _escapa_markdown_legacy
     venditore = []
     if listing_info.get("seller_login"):
         venditore.append(esc(str(listing_info["seller_login"])))
@@ -10033,19 +10034,67 @@ def _scheda_annuncio_testo(listing_info, url, n_foto):
         venditore.append(f"{listing_info['seller_items_count']} articoli")
     if listing_info.get("seller_country"):
         venditore.append(esc(str(listing_info["seller_country"])))
-    if venditore:
-        righe.append("👤 " + " · ".join(venditore))
+    return ("👤 " + " · ".join(venditore)) if venditore else None
 
+
+def _descrizione_utile(listing_info):
+    """Descrizione compattata e accorciata, oppure None se non aggiunge nulla al titolo (molti venditori
+    ripetono il titolo nella descrizione: la riga sarebbe un doppione)."""
     descrizione = " ".join((listing_info.get("description") or "").split())
-    if descrizione:
-        if len(descrizione) > LUNGHEZZA_MAX_DESCRIZIONE_SCHEDA:
-            descrizione = descrizione[:LUNGHEZZA_MAX_DESCRIZIONE_SCHEDA].rstrip() + "…"
-        righe.append("")
-        righe.append(f"📝 {esc(descrizione)}")
+    if not descrizione:
+        return None
+    norm = lambda t: re.sub(r"[^a-z0-9]+", " ", (t or "").lower()).strip()
+    d, t = norm(descrizione), norm(listing_info.get("title"))
+    if t:
+        parole_t, parole_d = t.split(), d.split()
+        # doppione: tutte le parole del titolo ci sono anche nella descrizione (anche con un refuso) e la
+        # descrizione ha al massimo 4 parole in piu'
+        tutte = all(any(w == x or difflib.SequenceMatcher(None, w, x).ratio() >= 0.8 for x in parole_d)
+                    for w in parole_t)
+        if d in t or (tutte and len(parole_d) <= len(parole_t) + 4):
+            return None
+    if len(descrizione) > LUNGHEZZA_MAX_DESCRIZIONE_SCHEDA:
+        descrizione = descrizione[:LUNGHEZZA_MAX_DESCRIZIONE_SCHEDA].rstrip() + "…"
+    return descrizione
 
+
+def _scheda_annuncio_testo(listing_info, url, n_foto):
+    """Scheda dell'annuncio per il messaggio di testo che segue la galleria
+    (richiesto dall'utente il 2026-09-29). PREZZO E BRAND SEMPRE IN PRIMA
+    RIGA: e' il messaggio piu' recente della chat, quindi quello che compare
+    nell'anteprima della notifica, e l'utente vuole vedere prima quelli e
+    non "N foto". Solo dati gia' letti dal tracker e dalla pagina annuncio
+    (nessuna richiesta in piu' a Vinted); testo libero sempre passato da
+    _escapa_markdown_legacy perche' il messaggio va con parse_mode=Markdown."""
+    esc = _escapa_markdown_legacy
+    righe = []
+    testa = _testa_prezzo_brand(listing_info)
+    if testa:
+        righe.append("*" + testa + "*")
+    righe.append(esc(listing_info.get("title") or "Annuncio"))
     righe.append("")
-    righe.append(_stato_analisi_testo(n_foto))
+    riga_fv = _riga_fair_value_testo(listing_info.get("fair_value"))
+    for riga in (_righe_dettagli_annuncio(listing_info), esc(riga_fv) if riga_fv else None,
+                 _riga_caricato_annuncio(listing_info), _riga_venditore_annuncio(listing_info)):
+        if riga:
+            righe.append(riga)
+    descrizione = _descrizione_utile(listing_info)
+    if descrizione:
+        righe += ["", f"📝 {esc(descrizione)}"]
+    righe += ["", _stato_analisi_testo(n_foto)]
     return "\n".join(righe)
+
+
+def _testa_prezzo_brand(listing_info):
+    """'💶 35,00 € · 🏷️ Brand' (o None): la riga piu' vista del messaggio."""
+    prezzo = _a_float(listing_info.get("price"), None)
+    brand = (listing_info.get("brand") or "").strip()
+    testa = []
+    if prezzo is not None:
+        testa.append(f"💶 {prezzo:.2f} €".replace(".", ","))
+    if brand and brand != "?":
+        testa.append(f"🏷️ {_escapa_markdown_legacy(brand)}")
+    return " · ".join(testa) or None
 
 
 async def _invia_galleria_anticipata(listing_info, url, photo_bytes_list, stato=None):
@@ -10102,7 +10151,7 @@ async def _invia_galleria_anticipata(listing_info, url, photo_bytes_list, stato=
 
 async def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header, output_finale,
                                     decisione, e_compra, scenario_usato, urgenza="Bassa",
-                                    margine=None, msg_id_galleria=None, stato=None):
+                                    margine=None, msg_id_galleria=None, stato=None, testo_unificato=None):
     item_id = _estrai_item_id_da_url(url)
     # L'urgenza ora arriva calcolata da calcola_verdetto invece di essere
     # dedotta dal testo del verdetto (_e_urgenza_alta cercava parole come
@@ -10145,8 +10194,9 @@ async def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header,
             vecchio = stato.get("stato_testo_iniziale")
             testo_scheda = stato.get("testo_scheda") or ""
             if vecchio and vecchio in testo_scheda:
-                testo_unico = (testo_scheda.replace(vecchio, STATO_ANALISI_COMPLETATA_UNIFICATA)
-                               + "\n\n" + "—" * 20 + "\n" + header + output_finale)
+                testo_unico = testo_unificato or (
+                    testo_scheda.replace(vecchio, STATO_ANALISI_COMPLETATA_UNIFICATA)
+                    + "\n\n" + "—" * 20 + "\n" + header + output_finale)
                 if len(testo_unico) <= 3900:
                     unificato = await telegram_edit_message(
                         TELEGRAM_OWNER_CHAT_ID, stato["msg_id_scheda"], testo_unico, stato["url_scheda"])
@@ -10524,7 +10574,7 @@ def trova_timestamp_candidati(html_pagina, giorni=45, max_voci=40):
 # annunci che arrivano a COMPRA/TRATTA si chiede il target una o due volte in piu' e si usa la mediana. Non
 # e' un tetto al ROI: un'eccezione vera da' sempre numeri alti e coerenti, e resta alta. Se le valutazioni
 # divergono molto il messaggio lo dice ("stima instabile").
-CERVELLO_CAMPIONI_EXTRA = int(_env_float("CERVELLO_CAMPIONI_EXTRA", 1))
+CERVELLO_CAMPIONI_EXTRA = int(_env_float("CERVELLO_CAMPIONI_EXTRA", 2))  # in parallelo: stessa latenza di 1
 CERVELLO_SPREAD_MAX = _env_float("CERVELLO_SPREAD_MAX", 1.35)
 
 
@@ -10547,18 +10597,21 @@ def consolida_target_cervello(targets, spread_max=None):
 
 
 async def _campione_target_cervello(chiama, user_text, forza_ricerca):
-    """Una valutazione in piu' del Cervello, solo per leggerne il prezzo target. Ritorna (target|None, costo)."""
+    """Una valutazione in piu' del Cervello. Ritorna (v|None, problemi, costo): v e' il verdetto validato (il
+    chiamante usa quello piu' vicino alla mediana, cosi' testo e numeri restano coerenti)."""
     try:
         vj, err, costo, _n, _raw = await chiama(
             GEMINI_CERVELLO_SYSTEM_PROMPT, user_text, forza_ricerca=forza_ricerca, mappa_url_ricerche_extra={})
         if err:
-            return None, costo or 0.0
-        v2, _ = valida_payload_cervello(vj)
+            return None, [], costo or 0.0
+        v2, problemi2 = valida_payload_cervello(vj)
         t = v2.get("prezzo_target_vendita_eur")
-        return (t if isinstance(t, (int, float)) and t > 0 else None), costo or 0.0
+        if not (isinstance(t, (int, float)) and t > 0):
+            return None, [], costo or 0.0
+        return v2, problemi2, costo or 0.0
     except Exception:
         log.warning("Campione extra del Cervello fallito:\n%s", traceback.format_exc())
-        return None, 0.0
+        return None, [], 0.0
 
 
 def _log_esito(listing_info, esito, **campi):
@@ -10581,6 +10634,53 @@ def _log_esito(listing_info, esito, **campi):
                  (listing_info.get("brand") or "n/d"), listing_info.get("title"), esito, extra)
     except Exception:
         pass
+
+
+def componi_testi_verdetto(listing_info, verdetto_calcolato, output_finale, info_foto="", campioni_target=None,
+                           stima_instabile=False):
+    """Dal testo di render_messaggio_verdetto (prima riga = decisione, seconda = margine, poi il resto) costruisce:
+    - header: intestazione del messaggio STANDALONE (COMPRA, che deve restare un messaggio nuovo per il push);
+    - resto: il corpo senza le prime due righe;
+    - unificato: il messaggio unico che sostituisce la scheda "Analisi in corso" (tutti gli altri esiti):
+      verdetto + prezzo + brand in prima riga, poi ogni dato UNA volta sola (richiesto dall'utente il 2026-10-03).
+    Pura, testabile."""
+    righe_output = output_finale.split("\n", 2)
+    riga_verdetto = righe_output[0]
+    riga_margine = righe_output[1] if len(righe_output) > 1 else ""
+    resto_output = righe_output[2] if len(righe_output) > 2 else ""
+
+    brand_escapato = _escapa_markdown_legacy(listing_info.get("brand"))
+    riga_verdetto_con_brand = riga_verdetto + (f" · {brand_escapato}" if brand_escapato else "")
+    riga_fv = _riga_fair_value_unica(listing_info.get("fair_value"), verdetto_calcolato, campioni_target, stima_instabile)
+
+    header = (
+        riga_verdetto_con_brand + "\n"
+        + (riga_margine + "\n" if riga_margine else "")
+        + (riga_fv + "\n" if riga_fv else "")
+        + f"🆕 *{_escapa_markdown_legacy(listing_info.get('title'))}*"
+        + info_foto
+        + f"\n{'—' * 20}\n"
+    )
+
+    testa = _testa_prezzo_brand(listing_info)
+    deal, _, resto = resto_output.partition("\n\n")
+    blocchi = [
+        riga_verdetto + (f" · {testa}" if testa else ""),
+        _escapa_markdown_legacy(listing_info.get("title") or "Annuncio"),
+        _righe_dettagli_annuncio(listing_info),
+        _riga_caricato_annuncio(listing_info),
+        info_foto.strip() or None,
+        "",
+        riga_margine or None,
+        deal or None,
+        riga_fv or None,
+        _riga_venditore_annuncio(listing_info),
+    ]
+    descrizione = _descrizione_utile(listing_info)
+    if descrizione:
+        blocchi.append(f"📝 {_escapa_markdown_legacy(descrizione)}")
+    unificato = "\n".join(b for b in blocchi if b is not None) + "\n\n" + resto
+    return header, resto_output, unificato
 
 
 async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricevuto_bot=None, stato=None,
@@ -10889,6 +10989,9 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
     urgenza = "Bassa"
     n_query_grounding = 0
     costo_cervello = 0.0
+    costo_campioni = 0.0
+    campioni_target = None
+    stima_instabile = False
     pool_ricerca_grezzo = ""
     tentare_ricerca_visuale = False
     fonte_visuale_riuscita = False
@@ -11087,21 +11190,23 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
         campioni_target = None
         stima_instabile = False
         if CERVELLO_CAMPIONI_EXTRA > 0 and verdetto_calcolato["decisione"] in ("COMPRA", "TRATTA"):
-            targets_campioni = [v.get("prezzo_target_vendita_eur")]
-            for _ in range(CERVELLO_CAMPIONI_EXTRA):
-                t_extra, costo_extra = await _campione_target_cervello(chiama_cervello, user_text_cervello, forza_ricerca)
-                costo_totale += costo_extra
-                targets_campioni.append(t_extra)
-            _, spread_c, instabile_c = consolida_target_cervello(targets_campioni)
-            if instabile_c and len([t for t in targets_campioni if t]) < 3:
-                t_extra, costo_extra = await _campione_target_cervello(chiama_cervello, user_text_cervello, forza_ricerca)
-                costo_totale += costo_extra
-                targets_campioni.append(t_extra)
-            valore_c, spread_c, stima_instabile = consolida_target_cervello(targets_campioni)
-            validi_c = sorted(t for t in targets_campioni if isinstance(t, (int, float)) and t > 0)
-            campioni_target = "/".join(f"{t:.0f}" for t in validi_c)
-            if valore_c is not None and len(validi_c) > 1:
+            # Valutazioni extra in PARALLELO (la latenza e' quella di una sola chiamata). Si usa la mediana dei
+            # target e, come verdetto di riferimento, la valutazione piu' vicina alla mediana: testo
+            # dell'analista, comparabili e numeri restano coerenti tra loro.
+            extra = await asyncio.gather(*(
+                _campione_target_cervello(chiama_cervello, user_text_cervello, forza_ricerca)
+                for _ in range(CERVELLO_CAMPIONI_EXTRA)))
+            costo_campioni = sum(c for _, _, c in extra)
+            costo_totale += costo_campioni
+            campioni = [(v, problemi)] + [(v2, p2) for v2, p2, _ in extra if v2 is not None]
+            targets = [c[0].get("prezzo_target_vendita_eur") for c in campioni]
+            valore_c, spread_c, stima_instabile = consolida_target_cervello(targets)
+            campioni_target = "/".join(f"{t:.0f}" for t in sorted(t for t in targets if t))
+            if valore_c is not None and len(campioni) > 1:
+                v, problemi = min(campioni, key=lambda c: abs(c[0]["prezzo_target_vendita_eur"] - valore_c))
                 v["prezzo_target_vendita_eur"] = valore_c
+                stats_comp = classifica_provenienza_comp(v, pool_ricerca_grezzo)
+                legit_cervello = v.get("legit_verdetto")
                 verdetto_calcolato = calcola_verdetto(v, prezzo_prodotto)
             t_tappe.append(("campioni_target", time.time()))
         decisione = verdetto_calcolato["decisione"]
@@ -11111,9 +11216,6 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             item_id=item_id_annuncio, cover_photo_id=cover_photo_id, brand=brand_per_ricerca,
             catalog_id=catalog_id, mappa_url_comp=mappa_url_comp,
         )
-        if stima_instabile and campioni_target:
-            output_finale += (f"\n\n⚠️ Stima instabile: {campioni_target} € nelle valutazioni indipendenti del prezzo "
-                              f"di rivendita, uso il valore centrale. Verifica i comparabili prima di fidarti.")
 
         log.info(
             "Verdetto '%s': %s (%s urgenza) — margine=%s ROI=%s — comp usati=%d (%d da memoria) — limiti=%s",
@@ -11213,7 +11315,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
         + f"🆕 *{_escapa_markdown_legacy(listing_info.get('title'))}*\n"
         f"🏷️ {_escapa_markdown_legacy(listing_info.get('brand')) or '?'} · 💰 {listing_info.get('price') or '?'} EUR"
         f"{info_foto}"
-        + f"\n{url or ''}\n{'—' * 20}\n"
+        + f"\n{'—' * 20}\n"  # niente URL nel testo: c'e' il bottone "Apri su Vinted"
     )
 
     # ---- BLOCCO DIAGNOSTICO: da dove vengono i comp REALMENTE ricevuti ----
@@ -11235,18 +11337,15 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
 
     # ---- FOOTER: scenario + costo IA -- entrambi dettagli diagnostici, non
     # decisionali, quindi in fondo al messaggio (vedi nota sopra su header) ----
-    footer_scenario = f"\n\n🔧 _Scenario {scenario_usato}{info_scenario}_"
+    # Lo scenario e' un dettaglio diagnostico: nel log, non nel messaggio.
+    log.info("Scenario %s%s per '%s'", scenario_usato, info_scenario, listing_info.get("title"))
     if scenario_usato == "SKIP":
-        footer_costo = (
-            f"\n💵 _Costo IA: 👁 {GEMINI_MODEL_OCCHIO} ${costo_occhi:.4f} "
-            f"· Cervello non consultato · Totale ${costo_occhi:.4f}_"
-        )
+        footer_costo = f"\n💵 _Costo IA: 👁 ${costo_occhi:.4f} · Cervello non consultato_"
     else:
-        modello_cervello = OPENAI_MODEL_CERVELLO if CERVELLO_PROVIDER == "openai" else GEMINI_MODEL_CERVELLO
         footer_costo = (
-            f"\n💵 _Costo IA: 👁 {GEMINI_MODEL_OCCHIO} ${costo_occhi:.4f} "
-            f"+ 🧠 {modello_cervello} ${costo_cervello:.4f} "
-            f"= Totale ${costo_totale:.4f}_"
+            f"\n💵 _Costo IA: 👁 ${costo_occhi:.4f} + 🧠 ${costo_cervello:.4f}"
+            + (f" + campioni ${costo_campioni:.4f}" if costo_campioni else "")
+            + f" = ${costo_totale:.4f}_"
         )
     # ---- FOOTER: tempi (richiesto dall'utente il 2026-09-21, "perdo casi
     # perche' gia' acquistati -- vorrei monitorare il delay tra ogni step:
@@ -11272,14 +11371,13 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
     dettaglio_tappe = _formatta_tappe_pipeline(t_tappe)
 
     pezzi_tempi, _secondi_tempi = _calcola_tempi_pipeline(listing_info, msg_date, t_ricevuto_bot)
-    footer_tempi = f"\n⏱ _Tempi: {' · '.join(pezzi_tempi)}_" if pezzi_tempi else ""
-    if dettaglio_tappe:
-        footer_tempi += f"\n   _{' · '.join(dettaglio_tappe)}_"
+    footer_tempi = (f"\n⏱ _✅ completata · {' · '.join(pezzi_tempi + dettaglio_tappe)}_"
+                    if (pezzi_tempi or dettaglio_tappe) else "")
     if pezzi_tempi or dettaglio_tappe:
         log.info("Tempi pipeline per '%s': %s (%s)", listing_info.get("title"),
                   " · ".join(pezzi_tempi), " · ".join(dettaglio_tappe))
 
-    output_finale = output_finale + footer_scenario + footer_costo + footer_tempi
+    output_finale = output_finale + "\n" + footer_costo + footer_tempi
 
     # Verdetto + riga economica in cima al messaggio, poi brand accodato alla
     # riga decisione (richiesto dall'utente il 2026-09-20, secondo giro di
@@ -11297,23 +11395,10 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
     # (piu' verboso, "## Verdetto operativo" come intestazione di sezione,
     # non righe singole) e non fa parte del layout compatto riprogettato in
     # questa sessione.
+    testo_unificato = None
     if scenario_usato != "SKIP" and "\n" in output_finale:
-        righe_output = output_finale.split("\n", 2)
-        riga_verdetto = righe_output[0]
-        riga_margine = righe_output[1] if len(righe_output) > 1 else ""
-        output_finale = righe_output[2] if len(righe_output) > 2 else ""
-
-        brand_escapato = _escapa_markdown_legacy(listing_info.get("brand"))
-        riga_verdetto_con_brand = riga_verdetto + (f" · {brand_escapato}" if brand_escapato else "")
-
-        header = (
-            riga_verdetto_con_brand + "\n"
-            + (riga_margine + "\n" if riga_margine else "")
-            + (_riga_confronto_fair_value(listing_info.get("fair_value"), verdetto_calcolato) or "")
-            + f"🆕 *{_escapa_markdown_legacy(listing_info.get('title'))}*"
-            + info_foto
-            + f"\n{url or ''}\n{'—' * 20}\n"
-        )
+        header, output_finale, testo_unificato = componi_testi_verdetto(
+            listing_info, verdetto_calcolato, output_finale, info_foto, campioni_target, stima_instabile)
 
     try:
         fv_registra_gemini(listing_info, url, decisione, verdetto_calcolato,
@@ -11325,7 +11410,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
         header, output_finale, decisione, e_compra,
         scenario_usato, urgenza,
         margine=verdetto_calcolato["margine"] if verdetto_calcolato else None,
-        msg_id_galleria=msg_id_galleria, stato=stato,
+        msg_id_galleria=msg_id_galleria, stato=stato, testo_unificato=testo_unificato,
     )
 
 
