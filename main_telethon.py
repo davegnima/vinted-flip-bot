@@ -11875,6 +11875,83 @@ async def on_comando_venduto(event):
             pass
 
 
+def percorsi_tempo_json(obj, giorni=45, max_voci=60, _prefisso="", _out=None):
+    """Percorre un JSON e raccoglie le foglie che sembrano un istante recente (epoch s/ms o data ISO)
+    o hanno una chiave di tipo tempo/stato, come 'percorso = valore (UTC)'. Pura, testabile."""
+    out = [] if _out is None else _out
+    ora = time.time()
+    if len(out) >= max_voci:
+        return out
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            percorsi_tempo_json(v, giorni, max_voci, f"{_prefisso}.{k}" if _prefisso else str(k), out)
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj[:5]):
+            percorsi_tempo_json(v, giorni, max_voci, f"{_prefisso}[{i}]", out)
+    else:
+        chiave = _prefisso.rsplit(".", 1)[-1].lower()
+        voce = None
+        try:
+            if isinstance(obj, (int, float)) and not isinstance(obj, bool) and obj > 1e9:
+                ts = obj / 1000 if obj > 1e11 else float(obj)
+                if ora - giorni * 86400 <= ts <= ora + 86400:
+                    voce = datetime.fromtimestamp(ts, timezone.utc).strftime("%Y-%m-%d %H:%M:%S") + " UTC"
+            elif isinstance(obj, str) and re.match(r"^20\d\d-[01]\d-[0-3]\d[T ]", obj):
+                txt = obj.replace(" ", "T")
+                txt = txt[:-1] + "+00:00" if txt.endswith("Z") else txt
+                dt = datetime.fromisoformat(txt)
+                dt = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+                if ora - giorni * 86400 <= dt.timestamp() <= ora + 86400:
+                    voce = dt.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S") + " UTC"
+        except Exception:
+            voce = None
+        if voce:
+            out.append(f"{_prefisso} = {obj} ({voce})")
+        elif any(x in chiave for x in ("closed", "sold", "status", "closing", "can_buy", "reserved", "hidden", "visible")):
+            out.append(f"{_prefisso} = {obj}")
+    return out
+
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'(?i)^/apiitem\s+(\S+)'))
+async def on_comando_apiitem(event):
+    """/apiitem <link o id>: chiede a Vinted i dati strutturati dell'articolo (API usata dall'app, con i
+    cookie gia' in uso dal bot) e mostra cosa espone su stato e tempi. Diagnostica per cercare un
+    timestamp di vendita (la pagina HTML non ne contiene)."""
+    try:
+        arg = event.pattern_match.group(1).strip()
+        item_id = _estrai_item_id_da_url(arg) if "vinted." in arg else (arg if arg.isdigit() else None)
+        if not item_id:
+            await event.respond("Mi serve il link dell'annuncio o il suo id numerico.", parse_mode=None)
+            return
+        righe = []
+        for percorso in (f"/api/v2/items/{item_id}", f"/api/v2/items/{item_id}/details"):
+            url_api = f"https://www.vinted.it{percorso}"
+            http_status, dati = None, None
+            try:
+                resp = await _vinted_get_con_retry(url_api, timeout=15, max_retries=2,
+                                                   headers_extra={"Accept": "application/json, text/plain, */*"})
+                if resp is not None:
+                    http_status = resp.status_code
+                    dati = resp.json()
+            except httpx.HTTPStatusError as e:
+                http_status = e.response.status_code
+            except Exception as e:
+                http_status = f"errore:{type(e).__name__}"
+            chiavi = list(dati.keys())[:25] if isinstance(dati, dict) else None
+            voci = percorsi_tempo_json(dati) if dati is not None else []
+            righe.append(f"{percorso} -> HTTP {http_status} | chiavi: {chiavi}\n" + "\n".join(voci[:40]))
+            log.info("DIAG API | %s | http=%s | chiavi=%s | tempi/stati=%s", url_api, http_status, chiavi, " ## ".join(voci))
+        righe.insert(0, f"Adesso {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC")
+        for pezzo in _spezza_per_telegram("\n\n".join(righe)):
+            await event.respond(pezzo, parse_mode=None)
+    except Exception:
+        log.error("Errore nel comando /apiitem:\n%s", traceback.format_exc())
+        try:
+            await event.respond("⚠️ Comando /apiitem fallito, vedi i log Railway.", parse_mode=None)
+        except Exception:
+            pass
+
+
 @client.on(events.NewMessage(outgoing=True, pattern=r'(?i)^/test_?proxy\b'))
 async def on_comando_test_proxy(event):
     """Comando digitato dal proprietario in QUALSIASI chat (e' il suo stesso
