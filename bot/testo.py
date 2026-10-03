@@ -99,3 +99,16 @@ def _escapa_markdown_legacy(testo):
     if not testo:
         return testo
     return re.sub(r"([_*`\[])", r"\\\1", testo)
+
+
+def _normalizza_titolo_per_dedup(title):
+    if not title:
+        return ""
+    t = title.strip()
+    t_senza_virgolette = re.sub(r"['\"][^'\"]*['\"]\s*$", "", t).strip()
+    if t_senza_virgolette != t:
+        base = t_senza_virgolette
+    else:
+        parole = t.split()
+        base = " ".join(parole[:-1]) if len(parole) > 1 else t
+    return re.sub(r"\s+", " ", base).strip().lower()

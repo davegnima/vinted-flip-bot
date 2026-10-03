@@ -124,3 +124,13 @@ async def cerca_serper_mirata(query):
         log.info("cerca_serper_mirata: scartate %d righe di rumore (snippet vuoto/placeholder o valuta non comparabile) per query '%s'.", scartate, query)
     testo = "\n".join(lines) if lines else "Nessun risultato trovato per questa query."
     return testo, mappa_url
+
+
+def _e_errore_crediti_serper(resp):
+    if resp.status_code in (400, 401, 402, 403, 429):
+        testo_body = (resp.text or "").lower()
+        if resp.status_code in (401, 402, 403, 429):
+            return True
+        if any(k in testo_body for k in ("credit", "insufficient", "balance", "payment", "quota")):
+            return True
+    return False
