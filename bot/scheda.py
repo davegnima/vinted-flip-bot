@@ -6,7 +6,7 @@ import traceback
 
 
 from bot.config import BRAND_ESCLUSI_ALERT_CHIEDI_FOTO, MAX_ANALISI_PARALLELE, SOGLIA_MARGINE_ALERT_CHIEDI_FOTO, TELEGRAM_ALERT_CHAT_ID, TELEGRAM_OWNER_CHAT_ID
-from bot.verdetto import _a_float, _estrai_item_id_da_url
+from bot.verdetto import EMOJI_DECISIONE, ETICHETTA_CONFIDENZA, ETICHETTA_RISCHIO, _a_float, _estrai_item_id_da_url
 from bot.testo import _escapa_markdown_legacy
 from bot.fair_value import _riga_fair_value_testo, _riga_fair_value_unica
 from bot.logger import log
@@ -392,8 +392,101 @@ async def _aggiorna_stato_scheda(stato, nuovo_stato):
         log.warning("Aggiornamento riga di stato della scheda non riuscito:\n%s", traceback.format_exc())
 
 
+def _compatta_testo(testo, max_len=900):
+    testo = " ".join((testo or "").split())
+    return testo if len(testo) <= max_len else testo[:max_len].rsplit(" ", 1)[0] + "…"
+
+
+def _blocco_azioni(output_finale):
+    """Il blocco '💬 Azioni (tocca per copiare)' di render_messaggio_verdetto (testo da incollare al venditore),
+    oppure None. E' fatto di righe consecutive fino alla prima riga vuota."""
+    righe = output_finale.split("\n")
+    for i, riga in enumerate(righe):
+        if riga.startswith("💬"):
+            blocco = []
+            for r in righe[i:]:
+                if not r.strip() or r.startswith("---"):
+                    break
+                blocco.append(r)
+            return "\n".join(blocco)
+    return None
+
+
+def _blocco_comp(output_finale):
+    """Elenco dei comp (righe '• €prezzo · titolo con link _[fonte]_') dal render completo, con intestazione breve."""
+    righe = [r for r in output_finale.split("\n") if r.startswith("• €")]
+    return ("📊 Comp:\n" + "\n".join(righe)) if righe else None
+
+
+def _deal_score_coerente(v, decisione):
+    """Il deal_score e' un'opinione del modello, la decisione la calcola Python da margine e ROI: se divergono
+    (es. 8/10 su un NON COMPRARE) il punteggio mostrato viene riportato dentro la fascia della decisione."""
+    score = v.get("deal_score")
+    if not isinstance(score, (int, float)):
+        return None
+    if decisione == "NON COMPRARE":
+        return min(int(score), 4)
+    if decisione == "COMPRA":
+        return max(int(score), 7)
+    return int(score)
+
+
+def componi_messaggio_compatto(listing_info, v, verdetto, output_finale, url=None, riga_fv="", footer=""):
+    """Messaggio breve per tutte le decisioni (richiesto dall'utente il 2026-10-03): verdetto + link, prezzo
+    d'acquisto (spese incluse) -> atteso, brand e nome, giorni; poi la sola analisi dell'analista e i dati
+    ridotti a emoji + valore. Il testo da copiare al venditore (TRATTA / CHIEDI ALTRE FOTO) e gli avvisi
+    ⚠️ vengono dal render completo."""
+    esc = _escapa_markdown_legacy
+    dec = verdetto["decisione"]
+    emoji = EMOJI_DECISIONE.get(dec, "🔵")
+    link = f" · [vedi su Vinted]({url})" if url else ""
+    urgente = " 🔥" if verdetto.get("urgenza") == "Alta" and dec == "COMPRA" else ""
+    righe = [f"{emoji} *{dec}*{urgente}{link}"]
+    if verdetto.get("margine") is None:
+        righe.append("💶 prezzo non rilevato: calcolo non disponibile")
+    else:
+        righe.append(f"💶 {verdetto['acquisto_pieno']:.0f} € → 🎯 {verdetto['vendita_attesa']:.0f} € · "
+                     f"*+{verdetto['margine']:.0f} €* · ROI {verdetto['roi']:.0f}%")
+        if dec == "TRATTA":
+            righe.append(f"🤝 offri {verdetto['tratta_prezzo_prodotto']:.0f} € → *+{verdetto['tratta_margine']:.0f} €* "
+                         f"· ROI {verdetto['tratta_roi']:.0f}%")
+    brand = (listing_info.get("brand") or "").strip()
+    titolo = esc(listing_info.get("title") or "Annuncio")
+    riga_nome = (f"🏷️ {esc(brand)} · " if brand and brand != "?" else "🏷️ ") + titolo
+    giorni = v.get("giorni_stimati_vendita")
+    if giorni:
+        riga_nome += f" · ⏱ ~{giorni} gg"
+    righe.append(riga_nome)
+    righe.append("")
+    righe.append("🧠 " + esc(_compatta_testo(v.get("note_analista"))))
+    legit = {"probabilmente_autentico": "✅", "sospetto_servono_altre_foto": "❓",
+             "probabilmente_falso": "❌"}.get(v.get("legit_verdetto"), "❔")
+    righe.append(f"{legit} {esc(_compatta_testo(v.get('legit_motivo_specifico'), 160))}")
+    righe.append(f"🛡️ fake {ETICHETTA_RISCHIO.get(v.get('rischio_fake'), '?')} · conf "
+                 f"{ETICHETTA_CONFIDENZA.get(v.get('confidenza'), '?')} · 🎯 {_deal_score_coerente(v, dec)}/10")
+    dettagli = _righe_dettagli_annuncio(listing_info)
+    if dettagli:
+        righe.append(dettagli)
+    righe.append(" · ".join(x.strip() for x in (
+        _riga_venditore_annuncio(listing_info), _riga_caricato_annuncio(listing_info)) if x))
+    if riga_fv:
+        righe.append(riga_fv)
+    comp = _blocco_comp(output_finale)
+    if comp:
+        righe += ["", comp]
+    azioni = _blocco_azioni(output_finale)
+    if azioni:
+        righe += ["", azioni]
+    avvisi = [r for r in output_finale.split("\n") if r.startswith("⚠️")]
+    if avvisi:
+        righe += [""] + avvisi
+    if footer:
+        righe += ["", footer]
+    return "\n".join(r for r in righe if r is not None)
+
+
 def componi_testi_verdetto(listing_info, verdetto_calcolato, output_finale, info_foto="", campioni_target=None,
-                           stima_instabile=False, url=None):
+                           stima_instabile=False, url=None, v=None, footer_compatto=""):
     """Dal testo di render_messaggio_verdetto (prima riga = decisione, seconda = margine, poi il resto) costruisce:
     - header: intestazione del messaggio STANDALONE (COMPRA, che deve restare un messaggio nuovo per il push);
     - resto: il corpo senza le prime due righe;
@@ -423,6 +516,10 @@ def componi_testi_verdetto(listing_info, verdetto_calcolato, output_finale, info
 
     testa = _testa_prezzo_brand(listing_info)
     deal, _, resto = resto_output.partition("\n\n")
+    if v is not None and verdetto_calcolato:
+        compatto = componi_messaggio_compatto(listing_info, v, verdetto_calcolato, output_finale, url=url,
+                                              riga_fv=riga_fv, footer=footer_compatto)
+        return header, resto_output, compatto
     sep = "—" * 20
     blocchi = [
         riga_verdetto,

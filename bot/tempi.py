@@ -70,5 +70,6 @@ def _formatta_tappe_pipeline(t_tappe):
     ometterla, e su questa pipeline (scrape + Occhio + ricerca comp +
     Cervello, tutte chiamate di rete) un 0s vero e' comunque informativo
     (quello stadio non e' il collo di bottiglia)."""
-    return [f"{nome} {_formatta_durata(t - t_prec) or '0s'}"
+    # underscore nel nome tappa (es. campioni_target) spezzerebbe il footer in corsivo del messaggio Telegram
+    return [f"{nome.replace('_', ' ')} {_formatta_durata(t - t_prec) or '0s'}"
             for (_, t_prec), (nome, t) in zip(t_tappe, t_tappe[1:])]
