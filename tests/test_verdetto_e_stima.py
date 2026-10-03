@@ -67,10 +67,10 @@ def test_panel_tetto_orario(monkeypatch):
 def test_riga_panel_occhio_senza_collisioni(caplog):
     import logging
     import main_telethon as m
-    o, problemi = m.valida_payload_occhio({"verdetto_legit": "probabilmente_autentico", "modello_riconosciuto": "giacca X"})
+    o, problemi = m.valida_payload_occhio({"verdetto_legit": "probabilmente_autentico", "modello_riconosciuto": "giacca X", "motivo_sintetico": "font | etichetta ok"})
     with caplog.at_level(logging.INFO):
         m._riga_panel("occhio", "1", "Prada", "PRIMARIO", True, 0, **m._campi_occhio_panel(o, problemi))
-    assert "PANEL | occhio | 1 | Prada | PRIMARIO | ok" in caplog.text and "capo=giacca X" in caplog.text
+    assert "PANEL | occhio | 1 | Prada | PRIMARIO | ok" in caplog.text and "capo=giacca X" in caplog.text and "motivo_legit=font / etichetta ok" in caplog.text and "legit=probabilmente_autentico" in caplog.text
 
 
 def test_prompt_cervello_compatto_contiene_tutte_le_chiavi():
