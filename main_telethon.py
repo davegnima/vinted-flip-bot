@@ -10279,9 +10279,38 @@ def _tracc_leggi():
 
 
 SKIP_GIA_VENDUTI = os.environ.get("SKIP_GIA_VENDUTI", "0").strip() == "1"
-TRACCIAMENTO_MICRO_SECONDI = (30, 90, 180, 300)  # dopo la valutazione, solo COMPRA/TRATTA/CHIEDI FOTO
+# Scansioni misurate dall'ARRIVO DEL MESSAGGIO del tracker (t0): il momento piu' vicino alla pubblicazione
+# che il bot conosce (la pagina non contiene istanti assoluti). Richiesto dall'utente il 2026-10-03: capire
+# se il capo e' venduto "istantaneamente, entro 15s, 30s, 1min, 5min, 15min, 60min".
+#  - al primo scrape (~2-3s da t0) lo stato e' gia' letto -> bucket "istantaneo";
+#  - per TUTTI gli annunci: controlli a 15s e 30s da t0 (poche richieste, finiscono presto);
+#  - per COMPRA/TRATTA/CHIEDI FOTO: 1min, 5min, 15min, 60min da t0 (i controlli a 15 e 60 min
+#    sostituiscono gli stadi di 15 min e 1h del ciclo lungo).
+TRACCIAMENTO_PRECOCI_SECONDI = (15, 30)
+TRACCIAMENTO_MICRO_SECONDI = (60, 300, 900, 3600)
 TRACCIAMENTO_MICRO_ESITI = ("COMPRA", "TRATTA", "CHIEDI ALTRE FOTO")
 _tracc_micro_sem = []
+_tracc_venduti_visti = set()
+
+
+def _tracc_bucket(offset_s):
+    """Etichetta leggibile della fascia di vendita dato l'offset (secondi da t0) del primo controllo che
+    ha trovato l'articolo venduto. Pura."""
+    if offset_s is None:
+        return "?"
+    if offset_s <= 15:
+        return "<=15s"
+    if offset_s <= 30:
+        return "<=30s"
+    if offset_s <= 60:
+        return "<=1min"
+    if offset_s <= 300:
+        return "<=5min"
+    if offset_s <= 900:
+        return "<=15min"
+    if offset_s <= 3600:
+        return "<=60min"
+    return ">60min"
 
 
 def _pub_ts(listing_info):
@@ -10295,59 +10324,90 @@ def tracc_registra_gia_venduto(listing_info, url):
     try:
         pub = _pub_ts(listing_info)
         dopo = round(time.time() - pub) if pub else None
-        _log_esito(listing_info, "GIA_VENDUTO", dopo_pubblicazione_s=dopo, prezzo=listing_info.get("price"))
+        t0 = listing_info.get("t0_messaggio")
+        da_msg = round(time.time() - t0, 1) if t0 else None
+        _log_esito(listing_info, "GIA_VENDUTO", dopo_messaggio_s=da_msg, bucket="istantaneo", prezzo=listing_info.get("price"))
         item_id = _estrai_item_id_da_url(url) if url else None
         if TRACCIAMENTO_ATTIVO and item_id:
             _tracc_scrivi({
                 "tipo": "gia_venduto", "item_id": str(item_id), "url": url, "brand": listing_info.get("brand"),
                 "titolo": listing_info.get("title"), "prezzo": _a_float(listing_info.get("price"), None),
                 "categoria": estrai_categoria_da_titolo(listing_info.get("title") or "", listing_info.get("description")),
-                "dopo_pubblicazione_s": dopo, "fair_value": (listing_info.get("fair_value") or {}).get("fv")
+                "dopo_pubblicazione_s": dopo, "dopo_messaggio_s": da_msg, "bucket": "istantaneo", "fair_value": (listing_info.get("fair_value") or {}).get("fv")
                 if isinstance(listing_info.get("fair_value"), dict) else None,
             })
     except Exception:
         log.warning("Tracciamento: gia' venduto non registrato:\n%s", traceback.format_exc())
 
 
-async def _tracc_micro(item_id, url, brand, esito, prezzo, target, pub_ts, t0):
-    """Ricontrolli lampo di un affare (30s, 90s, 3min, 5min dopo la valutazione): i veri affari si
-    vendono in secondi/minuti. Per ogni controllo si registra anche il tempo dalla PUBBLICAZIONE."""
+async def _tracc_serie(item_id, url, brand, esito, prezzo, target, t0, offsets):
+    """Serie di ricontrolli ancorati a t0 (arrivo del messaggio del tracker): attende ciascun offset
+    (secondi), rilegge la pagina e si ferma alla prima vendita. Per ogni controllo registra i secondi
+    reali trascorsi da t0 e la fascia (bucket) se venduto."""
     if not _tracc_micro_sem:
-        _tracc_micro_sem.append(asyncio.Semaphore(5))
-    for s_dopo in TRACCIAMENTO_MICRO_SECONDI:
+        _tracc_micro_sem.append(asyncio.Semaphore(8))
+    for s_dopo in offsets:
         try:
+            if str(item_id) in _tracc_venduti_visti:
+                return
             attesa = t0 + s_dopo - time.time()
             if attesa > 0:
                 await asyncio.sleep(attesa)
-            http_status, segnali, prezzo_ora, tempi = None, {}, None, {}
+            if str(item_id) in _tracc_venduti_visti:
+                return
+            http_status, segnali, prezzo_ora = None, {}, None
             async with _tracc_micro_sem[0]:
                 try:
                     resp = await _vinted_get_con_retry(url, timeout=15, max_retries=1)
                     if resp is not None:
                         http_status = resp.status_code
                         segnali, prezzo_ora = _tracc_estrai_segnali(resp.text)
-                        tempi = _tracc_estrai_tempi(resp.text)
                 except httpx.HTTPStatusError as e:
                     http_status = e.response.status_code
                 except Exception as e:
                     http_status = f"errore:{type(e).__name__}"
+            reale = round(time.time() - t0, 1)
             sparito = _tracc_e_sparito(http_status, segnali)
             stato = _tracc_stato(http_status, segnali)
-            dalla_pub = round(time.time() - pub_ts) if pub_ts else None
-            _tracc_scrivi({
-                "tipo": "ricontrollo", "item_id": str(item_id), "stadio_s": s_dopo, "dalla_pubblicazione_s": dalla_pub,
+            bucket = _tracc_bucket(s_dopo) if stato == "venduto" else None
+            rec = {
+                "tipo": "ricontrollo", "item_id": str(item_id), "stadio_s": s_dopo, "da_messaggio_s": reale,
                 "http": http_status, "segnali": segnali, "prezzo_ora": prezzo_ora, "finale": sparito,
-                "stato": stato, "tempi": tempi,
-            })
+                "stato": stato, "bucket": bucket,
+            }
+            if s_dopo in (900, 3600):
+                rec["stadio_min"] = s_dopo // 60  # sostituisce gli stadi 15 min / 1h del ciclo lungo
+            _tracc_scrivi(rec)
             log.info(
-                "RICONTROLLO LAMPO | item=%s | brand='%s' | dopo_valutazione=%ss | dalla_pubblicazione=%ss | http=%s | stato=%s | prezzo_valutato=%s | prezzo_ora=%s | esito=%s | target=%s",
-                item_id, brand or "n/d", s_dopo, dalla_pub, http_status, stato, prezzo, prezzo_ora, esito, target,
+                "RICONTROLLO LAMPO | item=%s | brand='%s' | offset=%ss | da_messaggio=%ss | http=%s | stato=%s | bucket=%s | prezzo_valutato=%s | prezzo_ora=%s | esito=%s | target=%s",
+                item_id, brand or "n/d", s_dopo, reale, http_status, stato, bucket or "-", prezzo, prezzo_ora, esito, target,
             )
+            if stato == "venduto":
+                _tracc_venduti_visti.add(str(item_id))
             if sparito:
-                break
+                return
         except Exception:
             log.warning("Ricontrollo lampo fallito:\n%s", traceback.format_exc())
-            break
+            return
+
+
+def tracc_avvia_precoci(listing_info, url):
+    """Subito dopo il primo scrape, per OGNI annuncio: controlli a 15s e 30s da t0."""
+    if not TRACCIAMENTO_ATTIVO:
+        return
+    try:
+        item_id = _estrai_item_id_da_url(url) if url else None
+        t0 = listing_info.get("t0_messaggio")
+        if not item_id or not t0:
+            return
+        if listing_info.get("stato_vendita") == "venduto":
+            _tracc_venduti_visti.add(str(item_id))
+            return
+        asyncio.get_running_loop().create_task(_tracc_serie(
+            item_id, url, listing_info.get("brand"), "n/d", _a_float(listing_info.get("price"), None), None,
+            t0, TRACCIAMENTO_PRECOCI_SECONDI))
+    except Exception:
+        log.warning("Tracciamento: controlli precoci non avviati:\n%s", traceback.format_exc())
 
 
 def tracc_registra_valutato(listing_info, url, esito, target=None, n_comp=None):
@@ -10373,10 +10433,10 @@ def tracc_registra_valutato(listing_info, url, esito, target=None, n_comp=None):
             "target": target, "n_comp": n_comp, "pub_ts": _pub_ts(listing_info),
             "stato_scrape": listing_info.get("stato_vendita"),
         })
-        if esito in TRACCIAMENTO_MICRO_ESITI:
-            asyncio.get_running_loop().create_task(_tracc_micro(
+        if esito in TRACCIAMENTO_MICRO_ESITI and listing_info.get("t0_messaggio"):
+            asyncio.get_running_loop().create_task(_tracc_serie(
                 item_id, url, listing_info.get("brand"), esito, _a_float(listing_info.get("price"), None),
-                target, _pub_ts(listing_info), time.time()))
+                target, listing_info["t0_messaggio"], TRACCIAMENTO_MICRO_SECONDI))
     except Exception:
         log.warning("Tracciamento: registrazione fallita:\n%s", traceback.format_exc())
 
@@ -10698,6 +10758,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
                                    permesso=None):
     listing_info = dict(parsed)
     listing_info["url"] = url
+    listing_info["t0_messaggio"] = t_ricevuto_bot or time.time()
     costo_totale = 0.0
 
     # Cronometro a tappe (richiesto dall'utente il 2026-09-21, dopo aver
@@ -10771,6 +10832,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             tracc_registra_gia_venduto(listing_info, url)
             if SKIP_GIA_VENDUTI:
                 return
+        tracc_avvia_precoci(listing_info, url)
 
         # FILTRO PRE-GEMINI
         e_skip_pre, motivo_skip_pre = check_skip_pre_gemini(listing_info)
