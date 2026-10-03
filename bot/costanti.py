@@ -176,3 +176,28 @@ CATEGORIA_TERMINE_EN = {
     "occhiali": "glasses",
     "tuta": "jumpsuit",
 }
+
+
+VINTED_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) "
+        "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Accept-Language": "it-IT,it;q=0.9",
+    "Accept-Encoding": "gzip, deflate",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+}
+IMAGE_DOWNLOAD_HEADERS = {
+    "User-Agent": VINTED_HEADERS["User-Agent"],
+    "Accept-Language": VINTED_HEADERS["Accept-Language"],
+    "Referer": "https://www.vinted.it/",
+    "Accept": "image/webp,image/avif,image/jpeg,image/png,image/*,*/*;q=0.8",
+    "Sec-Fetch-Dest": "image", "Sec-Fetch-Mode": "no-cors", "Sec-Fetch-Site": "same-site",
+    "Connection": "keep-alive",
+}
