@@ -341,4 +341,8 @@ MAX_ANALISI_PARALLELE = max(1, int(os.environ.get("MAX_ANALISI_PARALLELE", "4"))
 
 # Resellbot (venduti eBay/Poshmark): DISATTIVATO il 2026-10-03 su richiesta dell'utente -- rispondeva 429/bloccato su
 # praticamente ogni ricerca e il bot ripiegava comunque su Google. Con RESELLBOT_ATTIVO=1 torna la fonte primaria.
+# Fascia di prezzo per scegliere il modello Gemini PRIMA dell'Occhio (richiesto dall'utente il 2026-10-03): dal prezzo
+# richiesto in su l'annuncio usa le cascate "_ALTO" (modelli migliori, quota gratuita di poche richieste al giorno);
+# sotto, quelle base (modelli leggeri). Si decide subito dal prezzo del tracker: nessun secondo perso in coda.
+GEMINI_SOGLIA_PREZZO_ALTO = _env_float("GEMINI_SOGLIA_PREZZO_ALTO", 50)
 RESELLBOT_ATTIVO = os.environ.get("RESELLBOT_ATTIVO", "0").strip().lower() in ("1", "true", "si", "yes")

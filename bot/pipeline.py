@@ -3,11 +3,12 @@ import json
 import time
 import asyncio
 import traceback
+from functools import partial
 
 
 from bot.scheda import ANALISI_GEMINI_ATTIVA, STATO_ANALISI_COMPLETATA, STATO_ANALISI_INTERROTTA, _PermessoAnalisi, _aggiorna_stato_scheda, _invia_galleria_anticipata, _invia_risultato_telegram, componi_testi_verdetto
 from bot.verdetto import CERVELLO_CAMPIONI_EXTRA, _a_float, _estrai_item_id_da_url, _estrai_prezzi_da_pool_ricerca, _riepilogo_comp_per_fonte, calcola_verdetto, classifica_provenienza_comp, consolida_target_cervello, render_messaggio_verdetto, valida_payload_cervello
-from bot.config import CERVELLO_PROVIDER, DEBUG_CONFRONTO_COMP_TELEGRAM, OCCHIO_OUTPUT_JSON, RAFFREDDAMENTO_SERPER_SECONDI, SERPER_API_KEY, SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO, SOGLIA_MARGINE_ASSOLUTO_NOTIFICA, TELEGRAM_OWNER_CHAT_ID, _serper_fallimenti_consecutivi, _serper_notifica_esaurimento_inviata, _serper_timestamp_ultimo_fallimento
+from bot.config import GEMINI_SOGLIA_PREZZO_ALTO, CERVELLO_PROVIDER, DEBUG_CONFRONTO_COMP_TELEGRAM, OCCHIO_OUTPUT_JSON, RAFFREDDAMENTO_SERPER_SECONDI, SERPER_API_KEY, SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO, SOGLIA_MARGINE_ASSOLUTO_NOTIFICA, TELEGRAM_OWNER_CHAT_ID, _serper_fallimenti_consecutivi, _serper_notifica_esaurimento_inviata, _serper_timestamp_ultimo_fallimento
 from bot.panel import EXTRA_LLM_URL, PANEL_CERVELLO_MODELLI, PANEL_OCCHIO_MODELLI, _bg_task, panel_cervello, panel_occhio
 from bot.fair_value import FAIR_VALUE_FILTRA, check_skip_fair_value, fv_registra_gemini, fv_registra_rapida, stima_fair_value
 from bot.prompts import GEMINI_CERVELLO_SYSTEM_PROMPT, GEMINI_OCCHI_SYSTEM_PROMPT, GEMINI_OCCHI_SYSTEM_PROMPT_JSON
@@ -62,6 +63,13 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
         if permesso is not None:
             permesso.rilascia()
         await _aggiorna_stato_scheda(stato, esito_finale)
+
+
+def ruoli_gemini_per_prezzo(prezzo, soglia=None):
+    """(tier_alto, ruolo_occhio, ruolo_cervello) dal prezzo richiesto: dalla soglia in su le cascate '_alto'."""
+    soglia = GEMINI_SOGLIA_PREZZO_ALTO if soglia is None else soglia
+    alto = prezzo is not None and prezzo >= soglia
+    return alto, ("occhio_alto" if alto else "occhio"), ("cervello_alto" if alto else "cervello")
 
 
 async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None, t_ricevuto_bot=None, stato=None,
@@ -315,6 +323,11 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             "esplicitamente il limite."
         )
 
+    # Fascia di modello Gemini scelta SUBITO dal prezzo richiesto (dato del tracker, disponibile prima dell'Occhio):
+    # dalla soglia in su Occhio e Cervello partono dalle cascate "_alto" (modelli migliori), sotto da quelle base.
+    # Nessuna chiamata in piu' ne' in coda: cambia solo quale modello si interroga per primo.
+    tier_alto, ruolo_occhio, ruolo_cervello = ruoli_gemini_per_prezzo(_a_float(listing_info.get("price"), None))
+
     # --- OCCHIO: due rami, scelti da OCCHIO_OUTPUT_JSON.
     # In entrambi i casi il resto della pipeline riceve `output_occhi` come
     # testo: in modalita' JSON e' il rendering del dict, cosi' build_skip_report
@@ -324,7 +337,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
     if OCCHIO_OUTPUT_JSON:
         output_grezzo, costo_occhi, _ = await chiama_gemini(
             GEMINI_OCCHI_SYSTEM_PROMPT_JSON, user_text_occhi, photo_bytes_list,
-            grounding=False, response_schema=OCCHIO_RESPONSE_SCHEMA_GEMINI)
+            grounding=False, response_schema=OCCHIO_RESPONSE_SCHEMA_GEMINI, ruolo=ruolo_occhio)
         try:
             occhio_json, problemi_occhio = valida_payload_occhio(json.loads(output_grezzo))
             output_occhi = render_occhio_da_json(occhio_json, problemi_occhio)
@@ -342,7 +355,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             output_occhi = output_grezzo
     else:
         output_occhi, costo_occhi, _ = await chiama_gemini(
-            GEMINI_OCCHI_SYSTEM_PROMPT, user_text_occhi, photo_bytes_list, grounding=False)
+            GEMINI_OCCHI_SYSTEM_PROMPT, user_text_occhi, photo_bytes_list, grounding=False, ruolo=ruolo_occhio)
     costo_totale += costo_occhi
     t_tappe.append(("occhio", time.time()))
     if EXTRA_LLM_URL and PANEL_OCCHIO_MODELLI:
@@ -510,7 +523,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
 
         chiama_cervello = (
             chiama_openai_cervello_forzato if CERVELLO_PROVIDER == "openai"
-            else chiama_gemini_cervello_forzato
+            else partial(chiama_gemini_cervello_forzato, ruolo=ruolo_cervello)
         )
         # Mappa URL delle ricerche on-demand (Punto 3 esteso il 2026-09-25):
         # riempita IN PLACE da chiama_cervello mentre elabora le eventuali
@@ -604,6 +617,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             target=f"{v['prezzo_target_vendita_eur']:.0f}" if isinstance(v.get("prezzo_target_vendita_eur"), (int, float)) else None,
             n_comp=len(verdetto_calcolato["comp_usati"]),
             campioni=campioni_target, instabile="si" if stima_instabile else None,
+            tier="alto" if tier_alto else "base",
         )
         tracc_registra_valutato(
             listing_info, url, decisione,
