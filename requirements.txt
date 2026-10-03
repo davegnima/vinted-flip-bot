@@ -1,6 +1,6 @@
 requests==2.32.3
 httpx==0.28.1
 telethon==1.36.0
-Pillow
-brotli
-curl_cffi
+Pillow==12.3.0
+brotli==1.2.0
+curl_cffi==0.16.3
