@@ -10227,7 +10227,10 @@ async def _aggiorna_stato_scheda(stato, nuovo_stato):
 # ("RICONTROLLO | ...") per capire quali sono affidabili prima di usarli.
 TRACCIAMENTO_ATTIVO = os.environ.get("TRACCIAMENTO_ATTIVO", "1").strip() == "1"
 TRACCIAMENTO_FILE = os.environ.get("TRACCIAMENTO_FILE", "/data/tracciamento_esiti.jsonl")
-TRACCIAMENTO_STADI_MINUTI = (15, 60, 240, 720, 1440, 4320, 10080, 20160)  # 15m 1h 4h 12h 1g 3g 7g 14g
+# Nessun ricontrollo oltre l'ora (richiesto dall'utente il 2026-10-03: "dopo 1h se non venduto non e' un
+# affare e non voglio ricontrollare"): la serie fine ancorata a t0 si chiude al controllo dei 60 min. Per
+# riattivare il ciclo lungo basta rimettere gli stadi qui, es. (240, 720, 1440, 4320, 10080, 20160).
+TRACCIAMENTO_STADI_MINUTI = ()
 TRACCIAMENTO_MAX_PER_CICLO = 30
 TRACCIAMENTO_STADIO_DECISIVO_MIN = 60
 TRACCIAMENTO_INTERVALLO_SECONDI = 300
@@ -12095,7 +12098,7 @@ async def main():
         "calcolato da campi tipizzati" if OCCHIO_OUTPUT_JSON else "da match testuale",
     )
     await inizializza_client_http()
-    if TRACCIAMENTO_ATTIVO:
+    if TRACCIAMENTO_ATTIVO and TRACCIAMENTO_STADI_MINUTI:
         asyncio.create_task(tracc_ciclo_infinito())
     try:
         fv_carica_appreso()
