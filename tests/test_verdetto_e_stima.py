@@ -46,3 +46,19 @@ def test_estrai_target_da_testo_llm():
     assert m.estrai_target_da_testo_llm('{"prezzo_target_vendita_eur": true}') is None
     assert m.estrai_target_da_testo_llm("niente json") is None
     assert m.estrai_target_da_testo_llm(None) is None
+
+
+def test_estrai_json_da_testo_llm():
+    import main_telethon as m
+    assert m.estrai_json_da_testo_llm('ecco:\n```json\n{"a": 1}\n```') == {"a": 1}
+    assert m.estrai_json_da_testo_llm("[1,2]") is None
+    assert m.estrai_json_da_testo_llm("{rotto") is None
+
+
+def test_panel_tetto_orario(monkeypatch):
+    import main_telethon as m
+    monkeypatch.setattr(m, "PANEL_MAX_ANNUNCI_ORA", 2)
+    monkeypatch.setattr(m, "_panel_ingressi", [])
+    assert m._panel_ammesso(1000) and m._panel_ammesso(1001)
+    assert not m._panel_ammesso(1002)
+    assert m._panel_ammesso(1000 + 3601)   # la finestra scorre
