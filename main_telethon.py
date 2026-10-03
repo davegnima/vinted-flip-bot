@@ -10291,6 +10291,7 @@ SKIP_GIA_VENDUTI = os.environ.get("SKIP_GIA_VENDUTI", "0").strip() == "1"
 #    sostituiscono gli stadi di 15 min e 1h del ciclo lungo).
 TRACCIAMENTO_PRECOCI_SECONDI = (15, 30, 60, 300, 900, 3600)  # per TUTTI gli annunci scrapati
 TRACCIAMENTO_MICRO_SECONDI = ()  # (sostituito dalla serie unica di TRACCIAMENTO_PRECOCI_SECONDI)
+_tracc_esclusi = set()  # annunci scartati prima del verdetto (SKIP_*, errore): nessun controllo (richiesta dell'utente)
 _tracc_esiti = {}  # item_id -> (esito, target): lo valorizza _log_esito, lo legge la serie nei log
 TRACCIAMENTO_MICRO_ESITI = ("COMPRA", "TRATTA", "CHIEDI ALTRE FOTO")
 _tracc_micro_sem = []
@@ -10369,12 +10370,12 @@ async def _tracc_serie(item_id, url, brand, esito, prezzo, target, t0, offsets):
         _tracc_micro_sem.append(asyncio.Semaphore(8))
     for s_dopo in offsets:
         try:
-            if str(item_id) in _tracc_venduti_visti:
+            if str(item_id) in _tracc_venduti_visti or str(item_id) in _tracc_esclusi:
                 return
             attesa = t0 + s_dopo - time.time()
             if attesa > 0:
                 await asyncio.sleep(attesa)
-            if str(item_id) in _tracc_venduti_visti:
+            if str(item_id) in _tracc_venduti_visti or str(item_id) in _tracc_esclusi:
                 return
             http_status, segnali, prezzo_ora = None, {}, None
             async with _tracc_micro_sem[0]:
@@ -10757,6 +10758,8 @@ def _log_esito(listing_info, esito, **campi):
         _id = _estrai_item_id_da_url(listing_info.get("url")) if listing_info.get("url") else None
         if _id:
             _tracc_esiti[str(_id)] = (esito, campi.get("target"))
+            if str(esito).startswith("SKIP_") or esito == "ERRORE_CERVELLO":
+                _tracc_esclusi.add(str(_id))
             if len(_tracc_esiti) > 5000:
                 for _k in list(_tracc_esiti)[:1000]:
                     _tracc_esiti.pop(_k, None)
