@@ -10213,8 +10213,8 @@ async def _aggiorna_stato_scheda(stato, nuovo_stato):
 # ---------------------------------------------------------------------------
 # Serve a capire se le stime di rivendita sono realistiche SENZA che l'utente
 # compri o rivenda nulla: ogni annuncio che arriva a un verdetto viene
-# riregistrato dopo 3, 7 e 14 giorni (stessa pagina Vinted che il bot gia'
-# legge) per vedere se e' sparito/venduto, se il prezzo e' sceso e a quanto.
+# ricontrollato dopo 15 min, 1h, 4h, 12h, 1g, 3g, 7g, 14g (stessa pagina Vinted che il bot gia'
+# legge; un annuncio sparito non si ricontrolla piu') per vedere se e' sparito/venduto, se il prezzo e' sceso e a quanto.
 # Un capo che a X EUR sparisce in pochi giorni conferma che X e' un prezzo che
 # il mercato paga; uno che resta a lungo o scende di prezzo lo smentisce.
 # FASE 1 = SOLO RACCOLTA: nessuna decisione cambia. Dato che non si sa a
@@ -10223,9 +10223,9 @@ async def _aggiorna_stato_scheda(stato, nuovo_stato):
 # ("RICONTROLLO | ...") per capire quali sono affidabili prima di usarli.
 TRACCIAMENTO_ATTIVO = os.environ.get("TRACCIAMENTO_ATTIVO", "1").strip() == "1"
 TRACCIAMENTO_FILE = os.environ.get("TRACCIAMENTO_FILE", "/data/tracciamento_esiti.jsonl")
-TRACCIAMENTO_STADI_GIORNI = (3, 7, 14)
-TRACCIAMENTO_MAX_PER_CICLO = 20
-TRACCIAMENTO_INTERVALLO_SECONDI = 6 * 3600
+TRACCIAMENTO_STADI_MINUTI = (15, 60, 240, 720, 1440, 4320, 10080, 20160)  # 15m 1h 4h 12h 1g 3g 7g 14g
+TRACCIAMENTO_MAX_PER_CICLO = 30
+TRACCIAMENTO_INTERVALLO_SECONDI = 600
 _tracc_item_visti = set()
 _tracc_visti_caricati = [False]
 
@@ -10319,23 +10319,52 @@ def _tracc_estrai_segnali(html_pagina):
     return segnali, prezzo
 
 
-async def tracc_ricontrolla():
-    """Un ciclo di ricontrolli: i valutati che hanno superato uno stadio senza
-    ancora un ricontrollo per quello stadio. Poche richieste per ciclo."""
-    righe = _tracc_leggi()
-    gia = {(str(r.get("item_id")), r.get("stadio")) for r in righe if r.get("tipo") == "ricontrollo"}
-    ora = time.time()
+def _tracc_e_sparito(http_status, segnali):
+    """True se la pagina indica che l'annuncio non e' piu' in vendita (venduto o rimosso).
+    I segnali di 'venduto' non sono ancora noti con certezza: si accettano i piu' plausibili
+    e l'analisi giornaliera verifica a posteriori quali sono davvero affidabili."""
+    if http_status in (404, 410):
+        return True
+    segnali = segnali or {}
+    if str(segnali.get("is_closed", "")).lower() == "true":
+        return True
+    if segnali.get("availability") in ("OutOfStock", "SoldOut", "Discontinued"):
+        return True
+    return False
+
+
+def _tracc_prossimi(righe, ora=None):
+    """Ricontrolli da fare adesso: [(record, stadio_minuti, eta_minuti)]. Per ogni annuncio
+    l'ultimo stadio scaduto (gli stadi saltati perche' il bot era fermo non si recuperano), a meno che non sia gia' risultato sparito.
+    I piu' giovani prima (e' li' che si decide la velocita' di vendita). Pura, testabile."""
+    ora = time.time() if ora is None else ora
+    fatti = {}
+    chiusi = set()
+    for r in righe:
+        if r.get("tipo") == "ricontrollo":
+            fatti.setdefault(str(r.get("item_id")), set()).add(r.get("stadio_min"))
+            if r.get("finale"):
+                chiusi.add(str(r.get("item_id")))
     da_fare = []
     for r in righe:
-        if r.get("tipo") != "valutato":
+        if r.get("tipo") != "valutato" or str(r.get("item_id")) in chiusi:
             continue
-        eta_giorni = (ora - (r.get("ts") or ora)) / 86400
-        for stadio in TRACCIAMENTO_STADI_GIORNI:
-            if eta_giorni >= stadio and (str(r.get("item_id")), stadio) not in gia:
-                da_fare.append((r, stadio, eta_giorni))
-                break
+        eta_min = (ora - (r.get("ts") or ora)) / 60
+        ultimo_fatto = max((x for x in fatti.get(str(r.get("item_id")), set()) if x), default=0)
+        scaduti = [st for st in TRACCIAMENTO_STADI_MINUTI if eta_min >= st and st > ultimo_fatto]
+        if scaduti:
+            da_fare.append((r, scaduti[-1], eta_min))
+    da_fare.sort(key=lambda x: (x[1], x[2]))
+    return da_fare
+
+
+async def tracc_ricontrolla():
+    """Un ciclo di ricontrolli. Gli stadi sono fitti all'inizio (15 min, 1h, 4h, 12h, 24h) e
+    poi si diradano (3, 7, 14 giorni), cosi' si distingue chi sparisce in minuti da chi
+    in giorni da chi mai. Un annuncio risultato sparito non si ricontrolla piu'."""
+    righe = _tracc_leggi()
     fatti = 0
-    for r, stadio, eta_giorni in da_fare[:TRACCIAMENTO_MAX_PER_CICLO]:
+    for r, stadio, eta_min in _tracc_prossimi(righe)[:TRACCIAMENTO_MAX_PER_CICLO]:
         http_status, segnali, prezzo_ora = None, {}, None
         try:
             resp = await _vinted_get_con_retry(r["url"], timeout=15, max_retries=1)
@@ -10346,14 +10375,16 @@ async def tracc_ricontrolla():
             http_status = e.response.status_code
         except Exception as e:
             http_status = f"errore:{type(e).__name__}"
+        sparito = _tracc_e_sparito(http_status, segnali)
         _tracc_scrivi({
-            "tipo": "ricontrollo", "item_id": str(r.get("item_id")), "stadio": stadio,
-            "eta_giorni": round(eta_giorni, 1), "http": http_status, "segnali": segnali,
-            "prezzo_ora": prezzo_ora,
+            "tipo": "ricontrollo", "item_id": str(r.get("item_id")), "stadio_min": stadio,
+            "eta_min": round(eta_min), "http": http_status, "segnali": segnali,
+            "prezzo_ora": prezzo_ora, "finale": sparito,
         })
         log.info(
-            "RICONTROLLO | item=%s | brand='%s' | stadio=%sg | http=%s | segnali=%s | prezzo_valutato=%s | prezzo_ora=%s | esito=%s | target=%s",
-            r.get("item_id"), r.get("brand") or "n/d", stadio, http_status, segnali or "nessuno",
+            "RICONTROLLO | item=%s | brand='%s' | stadio=%smin | eta=%smin | http=%s | sparito=%s | segnali=%s | prezzo_valutato=%s | prezzo_ora=%s | esito=%s | target=%s",
+            r.get("item_id"), r.get("brand") or "n/d", stadio, round(eta_min), http_status,
+            "si" if sparito else "no", segnali or "nessuno",
             r.get("prezzo"), prezzo_ora, r.get("esito"), r.get("target"),
         )
         fatti += 1
@@ -10361,7 +10392,7 @@ async def tracc_ricontrolla():
 
 
 async def tracc_ciclo_infinito():
-    await asyncio.sleep(600)
+    await asyncio.sleep(120)
     while True:
         try:
             await tracc_ricontrolla()
