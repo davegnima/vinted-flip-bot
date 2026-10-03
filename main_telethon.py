@@ -1286,24 +1286,28 @@ _FV_NUOVE_RIGHE_PER_RICALCOLO = 10
 _fv_righe_da_ricalcolo = [0]
 
 
-def _fv_scrivi(record):
-    """Aggiunge una riga all'archivio. Mai bloccante."""
+_JSONL_CARTELLE_CREATE = set()
+
+
+def _jsonl_append(path, record, nome):
+    """Aggiunge una riga JSON (con timestamp) a un archivio .jsonl. Mai bloccante."""
     try:
-        cartella = os.path.dirname(FAIR_VALUE_LOG_FILE)
-        if cartella:
+        cartella = os.path.dirname(path)
+        if cartella and cartella not in _JSONL_CARTELLE_CREATE:
             os.makedirs(cartella, exist_ok=True)
-        with open(FAIR_VALUE_LOG_FILE, "a", encoding="utf-8") as f:
+            _JSONL_CARTELLE_CREATE.add(cartella)
+        with open(path, "a", encoding="utf-8") as f:
             f.write(json.dumps({"ts": int(time.time()), **record}, ensure_ascii=False) + "\n")
         return True
     except Exception:
-        log.warning("Archivio fair value non scritto:\n%s", traceback.format_exc())
+        log.warning("%s non scritto:\n%s", nome, traceback.format_exc())
         return False
 
 
-def _fv_leggi():
+def _jsonl_read(path, nome):
     righe = []
     try:
-        with open(FAIR_VALUE_LOG_FILE, encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             for riga in f:
                 riga = riga.strip()
                 if riga:
@@ -1314,8 +1318,17 @@ def _fv_leggi():
     except FileNotFoundError:
         pass
     except Exception:
-        log.warning("Archivio fair value non letto:\n%s", traceback.format_exc())
+        log.warning("%s non letto:\n%s", nome, traceback.format_exc())
     return righe
+
+
+def _fv_scrivi(record):
+    """Aggiunge una riga all'archivio. Mai bloccante."""
+    return _jsonl_append(FAIR_VALUE_LOG_FILE, record, "Archivio fair value")
+
+
+def _fv_leggi():
+    return _jsonl_read(FAIR_VALUE_LOG_FILE, "Archivio fair value")
 
 
 def fv_registra_rapida(listing_info, url, scartato=False):
@@ -4812,7 +4825,7 @@ async def scrape_vinted_listing(url, includi_guardaroba=True):
         try:
             result["stato_vendita"] = _tracc_stato(resp.status_code, _tracc_estrai_segnali(html_pagina)[0])
         except Exception:
-            pass
+            log.warning("Stato vendita non letto per %s:\n%s", url, traceback.format_exc())
 
         marker_venditore = re.search(r'data-testid="profile-username"', html_pagina)
 
@@ -10122,16 +10135,13 @@ async def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header,
                         stato["scheda_unificata"] = True
         except Exception:
             log.warning("Analisi non unificata alla scheda, invio separato:\n%s", traceback.format_exc())
-            unificato = False
 
-    if unificato:
-        pass
-    elif url:
+    if not unificato and url:
         await telegram_send_with_buttons(
             TELEGRAM_OWNER_CHAT_ID, header + output_finale, url, item_id if e_compra_urgente else None,
             disable_notification=silenzioso, reply_to=msg_id_galleria,
         )
-    else:
+    elif not unificato:
         await telegram_send_message(TELEGRAM_OWNER_CHAT_ID, header + output_finale,
                                     disable_notification=silenzioso, reply_to=msg_id_galleria)
 
@@ -10242,29 +10252,28 @@ async def _aggiorna_stato_scheda(stato, nuovo_stato):
 
 
 # ---------------------------------------------------------------------------
-# TRACCIAMENTO ESITI -- sell-through passivo (richiesto dall'utente il 2026-10-02)
+# TRACCIAMENTO VENDITE (richiesto dall'utente il 2026-10-02/03)
 # ---------------------------------------------------------------------------
-# Serve a capire se le stime di rivendita sono realistiche SENZA che l'utente
-# compri o rivenda nulla: ogni annuncio che arriva a un verdetto viene
-# ricontrollato dopo 15 min, 1h, 4h, 12h, 1g, 3g, 7g, 14g (stessa pagina Vinted che il bot gia'
-# legge; un annuncio sparito non si ricontrolla piu') per vedere se e' sparito/venduto, se il prezzo e' sceso e a quanto.
-# Un capo che a X EUR sparisce in pochi giorni conferma che X e' un prezzo che
-# il mercato paga; uno che resta a lungo o scende di prezzo lo smentisce.
-# FASE 1 = SOLO RACCOLTA: nessuna decisione cambia. Dato che non si sa a
-# priori come la pagina segnali "venduto", si registrano i segnali grezzi
-# (is_closed, is_reserved, ... , esito HTTP) e si leggono nei log
-# ("RICONTROLLO | ...") per capire quali sono affidabili prima di usarli.
+# Serve a istruire la stima di fair price e l'urgenza SENZA che l'utente compri o rivenda nulla: per ogni
+# annuncio che arriva a un verdetto si controlla se e quanto in fretta viene venduto. Criterio dell'utente:
+# AFFARE se venduto entro 5 min, MEDIO AFFARE entro 15 min, NORMALE entro 1h, NON AFFARE se dopo 1h e'
+# ancora invenduto (e dopo 1h non si ricontrolla piu'). Una pagina venduta NON sparisce: resta online
+# (HTTP 200) con la barra "Venduto" e can_buy=false. La pagina non contiene istanti assoluti (verificato
+# con /venduto) e l'utente ha vietato le API Vinted: la velocita' e' una fascia fra controlli, misurata da
+# t0 = arrivo del messaggio del tracker (il momento piu' vicino alla pubblicazione che il bot conosce).
+#  - al primo scrape (~2-3s da t0) lo stato e' gia' letto -> "istantaneo" (GIA_VENDUTO);
+#  - serie di controlli a 15s, 30s, 1min, 5min, 15min, 60min da t0, fermata alla prima vendita;
+#  - nessun controllo per gli annunci scartati prima del verdetto (SKIP_*, errore del Cervello).
+# Solo raccolta: nessuna decisione cambia (SKIP_GIA_VENDUTI=1 interrompe l'analisi dei gia' venduti).
 TRACCIAMENTO_ATTIVO = os.environ.get("TRACCIAMENTO_ATTIVO", "1").strip() == "1"
 TRACCIAMENTO_FILE = os.environ.get("TRACCIAMENTO_FILE", "/data/tracciamento_esiti.jsonl")
-# Nessun ricontrollo oltre l'ora (richiesto dall'utente il 2026-10-03: "dopo 1h se non venduto non e' un
-# affare e non voglio ricontrollare"): la serie fine ancorata a t0 si chiude al controllo dei 60 min. Per
-# riattivare il ciclo lungo basta rimettere gli stadi qui, es. (240, 720, 1440, 4320, 10080, 20160).
-TRACCIAMENTO_STADI_MINUTI = ()
-TRACCIAMENTO_MAX_PER_CICLO = 30
-TRACCIAMENTO_STADIO_DECISIVO_MIN = 60
-TRACCIAMENTO_INTERVALLO_SECONDI = 300
-_tracc_item_visti = set()
-_tracc_visti_caricati = [False]
+SKIP_GIA_VENDUTI = os.environ.get("SKIP_GIA_VENDUTI", "0").strip() == "1"
+TRACCIAMENTO_SERIE_SECONDI = (15, 30, 60, 300, 900, 3600)
+_TRACC_FASCE = ((15, "<=15s"), (30, "<=30s"), (60, "<=1min"), (300, "<=5min"), (900, "<=15min"), (3600, "<=60min"))
+_tracc_item_visti = set()  # annunci gia' registrati (caricato all'avvio da main)
+_tracc_stop = set()  # annunci venduti, rimossi o scartati prima del verdetto: la serie si ferma
+_tracc_esiti = {}  # item_id -> (esito, target): lo valorizza _log_esito, lo legge la serie nei log
+_tracc_sem = asyncio.Semaphore(8)
 
 _TRACC_SEGNALI_RE = {
     # La pagina incorpora i dati come JSON dentro una stringa: le virgolette possono arrivare
@@ -10277,217 +10286,12 @@ _TRACC_PREZZO_RES = (
     re.compile(r'\\?"price\\?"\s*:\s*\{[^{}]{0,80}?\\?"amount\\?"\s*:\s*\\?"?([\d.]+)'),
     re.compile(r'itemprop="price"[^>]*content="([\d.,]+)"'),
 )
+_TRACC_AVAILABILITY_RE = re.compile(r"schema\.org/(InStock|OutOfStock|SoldOut|Discontinued)")
+_TRACC_BARRA_RE = re.compile(r">\s*Venduto\s*<")
 
 
 def _tracc_scrivi(record):
-    try:
-        cartella = os.path.dirname(TRACCIAMENTO_FILE)
-        if cartella:
-            os.makedirs(cartella, exist_ok=True)
-        with open(TRACCIAMENTO_FILE, "a", encoding="utf-8") as f:
-            f.write(json.dumps({"ts": int(time.time()), **record}, ensure_ascii=False) + "\n")
-        return True
-    except Exception:
-        log.warning("Tracciamento non scritto:\n%s", traceback.format_exc())
-        return False
-
-
-def _tracc_leggi():
-    righe = []
-    try:
-        with open(TRACCIAMENTO_FILE, encoding="utf-8") as f:
-            for riga in f:
-                riga = riga.strip()
-                if riga:
-                    try:
-                        righe.append(json.loads(riga))
-                    except ValueError:
-                        pass
-    except FileNotFoundError:
-        pass
-    except Exception:
-        log.warning("Tracciamento non letto:\n%s", traceback.format_exc())
-    return righe
-
-
-SKIP_GIA_VENDUTI = os.environ.get("SKIP_GIA_VENDUTI", "0").strip() == "1"
-# Scansioni misurate dall'ARRIVO DEL MESSAGGIO del tracker (t0): il momento piu' vicino alla pubblicazione
-# che il bot conosce (la pagina non contiene istanti assoluti). Richiesto dall'utente il 2026-10-03: capire
-# se il capo e' venduto "istantaneamente, entro 15s, 30s, 1min, 5min, 15min, 60min".
-#  - al primo scrape (~2-3s da t0) lo stato e' gia' letto -> bucket "istantaneo";
-#  - per TUTTI gli annunci: controlli a 15s e 30s da t0 (poche richieste, finiscono presto);
-#  - per COMPRA/TRATTA/CHIEDI FOTO: 1min, 5min, 15min, 60min da t0 (i controlli a 15 e 60 min
-#    sostituiscono gli stadi di 15 min e 1h del ciclo lungo).
-TRACCIAMENTO_PRECOCI_SECONDI = (15, 30, 60, 300, 900, 3600)  # per TUTTI gli annunci scrapati
-TRACCIAMENTO_MICRO_SECONDI = ()  # (sostituito dalla serie unica di TRACCIAMENTO_PRECOCI_SECONDI)
-_tracc_esclusi = set()  # annunci scartati prima del verdetto (SKIP_*, errore): nessun controllo (richiesta dell'utente)
-_tracc_esiti = {}  # item_id -> (esito, target): lo valorizza _log_esito, lo legge la serie nei log
-TRACCIAMENTO_MICRO_ESITI = ("COMPRA", "TRATTA", "CHIEDI ALTRE FOTO")
-_tracc_micro_sem = []
-_tracc_venduti_visti = set()
-
-
-def _tracc_classe(offset_s, stato):
-    """Classe di mercato (criterio dell'utente, 2026-10-03): AFFARE se venduto entro 5 min, MEDIO AFFARE
-    entro 15 min, NORMALE entro 1h, NON AFFARE se al controllo dell'ora e' ancora invenduto.
-    offset_s = secondi da t0 del controllo; stato = stato letto in quel controllo. Pura."""
-    if stato == "venduto":
-        if offset_s <= 300:
-            return "AFFARE"
-        if offset_s <= 900:
-            return "MEDIO AFFARE"
-        if offset_s <= 3600:
-            return "NORMALE"
-        return "NORMALE(>1h)"
-    if offset_s >= 3600 and stato in ("attivo", "attivo?", "prenotato"):
-        return "NON AFFARE"
-    return None
-
-
-def _tracc_bucket(offset_s):
-    """Etichetta leggibile della fascia di vendita dato l'offset (secondi da t0) del primo controllo che
-    ha trovato l'articolo venduto. Pura."""
-    if offset_s is None:
-        return "?"
-    if offset_s <= 15:
-        return "<=15s"
-    if offset_s <= 30:
-        return "<=30s"
-    if offset_s <= 60:
-        return "<=1min"
-    if offset_s <= 300:
-        return "<=5min"
-    if offset_s <= 900:
-        return "<=15min"
-    if offset_s <= 3600:
-        return "<=60min"
-    return ">60min"
-
-
-def _pub_ts(listing_info):
-    dt = _parse_created_at_dt(listing_info.get("created_at"))
-    return dt.timestamp() if dt else None
-
-
-def tracc_registra_gia_venduto(listing_info, url):
-    """Annuncio gia' venduto quando il bot lo scrapa (secondi dopo la pubblicazione): il segnale piu'
-    forte di un affare. Si logga con i secondi trascorsi dalla pubblicazione e si archivia."""
-    try:
-        pub = _pub_ts(listing_info)
-        dopo = round(time.time() - pub) if pub else None
-        t0 = listing_info.get("t0_messaggio")
-        da_msg = round(time.time() - t0, 1) if t0 else None
-        _log_esito(listing_info, "GIA_VENDUTO", dopo_messaggio_s=da_msg, bucket="istantaneo", classe="AFFARE", prezzo=listing_info.get("price"))
-        item_id = _estrai_item_id_da_url(url) if url else None
-        if TRACCIAMENTO_ATTIVO and item_id:
-            _tracc_scrivi({
-                "tipo": "gia_venduto", "item_id": str(item_id), "url": url, "brand": listing_info.get("brand"),
-                "titolo": listing_info.get("title"), "prezzo": _a_float(listing_info.get("price"), None),
-                "categoria": estrai_categoria_da_titolo(listing_info.get("title") or "", listing_info.get("description")),
-                "dopo_pubblicazione_s": dopo, "dopo_messaggio_s": da_msg, "bucket": "istantaneo", "fair_value": (listing_info.get("fair_value") or {}).get("fv")
-                if isinstance(listing_info.get("fair_value"), dict) else None,
-            })
-    except Exception:
-        log.warning("Tracciamento: gia' venduto non registrato:\n%s", traceback.format_exc())
-
-
-async def _tracc_serie(item_id, url, brand, esito, prezzo, target, t0, offsets):
-    """Serie di ricontrolli ancorati a t0 (arrivo del messaggio del tracker): attende ciascun offset
-    (secondi), rilegge la pagina e si ferma alla prima vendita. Per ogni controllo registra i secondi
-    reali trascorsi da t0 e la fascia (bucket) se venduto."""
-    if not _tracc_micro_sem:
-        _tracc_micro_sem.append(asyncio.Semaphore(8))
-    for s_dopo in offsets:
-        try:
-            if str(item_id) in _tracc_venduti_visti or str(item_id) in _tracc_esclusi:
-                return
-            attesa = t0 + s_dopo - time.time()
-            if attesa > 0:
-                await asyncio.sleep(attesa)
-            if str(item_id) in _tracc_venduti_visti or str(item_id) in _tracc_esclusi:
-                return
-            http_status, segnali, prezzo_ora = None, {}, None
-            async with _tracc_micro_sem[0]:
-                try:
-                    resp = await _vinted_get_con_retry(url, timeout=15, max_retries=1)
-                    if resp is not None:
-                        http_status = resp.status_code
-                        segnali, prezzo_ora = _tracc_estrai_segnali(resp.text)
-                except httpx.HTTPStatusError as e:
-                    http_status = e.response.status_code
-                except Exception as e:
-                    http_status = f"errore:{type(e).__name__}"
-            reale = round(time.time() - t0, 1)
-            sparito = _tracc_e_sparito(http_status, segnali)
-            stato = _tracc_stato(http_status, segnali)
-            bucket = _tracc_bucket(s_dopo) if stato == "venduto" else None
-            classe = _tracc_classe(s_dopo, stato)
-            esito_ora, target_ora = _tracc_esiti.get(str(item_id), (esito, target))
-            rec = {
-                "tipo": "ricontrollo", "item_id": str(item_id), "stadio_s": s_dopo, "da_messaggio_s": reale,
-                "http": http_status, "segnali": segnali, "prezzo_ora": prezzo_ora, "finale": sparito,
-                "stato": stato, "bucket": bucket, "classe": classe,
-            }
-            if s_dopo in (900, 3600):
-                rec["stadio_min"] = s_dopo // 60  # sostituisce gli stadi 15 min / 1h del ciclo lungo
-            _tracc_scrivi(rec)
-            log.info(
-                "RICONTROLLO LAMPO | item=%s | brand='%s' | offset=%ss | da_messaggio=%ss | http=%s | stato=%s | bucket=%s | classe=%s | prezzo_valutato=%s | prezzo_ora=%s | esito=%s | target=%s",
-                item_id, brand or "n/d", s_dopo, reale, http_status, stato, bucket or "-", classe or "-", prezzo, prezzo_ora, esito_ora, target_ora,
-            )
-            if stato == "venduto":
-                _tracc_venduti_visti.add(str(item_id))
-            if sparito:
-                return
-        except Exception:
-            log.warning("Ricontrollo lampo fallito:\n%s", traceback.format_exc())
-            return
-
-
-def tracc_avvia_precoci(listing_info, url):
-    """Subito dopo il primo scrape, per OGNI annuncio: controlli a 15s e 30s da t0."""
-    if not TRACCIAMENTO_ATTIVO:
-        return
-    try:
-        item_id = _estrai_item_id_da_url(url) if url else None
-        t0 = listing_info.get("t0_messaggio")
-        if not item_id or not t0:
-            return
-        if listing_info.get("stato_vendita") == "venduto":
-            _tracc_venduti_visti.add(str(item_id))
-            return
-        asyncio.get_running_loop().create_task(_tracc_serie(
-            item_id, url, listing_info.get("brand"), "n/d", _a_float(listing_info.get("price"), None), None,
-            t0, TRACCIAMENTO_PRECOCI_SECONDI))
-    except Exception:
-        log.warning("Tracciamento: controlli precoci non avviati:\n%s", traceback.format_exc())
-
-
-def tracc_registra_valutato(listing_info, url, esito, target=None, n_comp=None):
-    """Registra un annuncio arrivato a un verdetto, una sola volta per item id."""
-    if not TRACCIAMENTO_ATTIVO:
-        return
-    try:
-        item_id = _estrai_item_id_da_url(url) if url else None
-        if not item_id:
-            return
-        item_id = str(item_id)
-        if not _tracc_visti_caricati[0]:
-            _tracc_item_visti.update(str(r.get("item_id")) for r in _tracc_leggi() if r.get("tipo") == "valutato")
-            _tracc_visti_caricati[0] = True
-        if item_id in _tracc_item_visti:
-            return
-        _tracc_item_visti.add(item_id)
-        _tracc_scrivi({
-            "tipo": "valutato", "item_id": item_id, "url": url,
-            "brand": listing_info.get("brand"), "titolo": listing_info.get("title"),
-            "categoria": estrai_categoria_da_titolo(listing_info.get("title") or "", listing_info.get("description")),
-            "prezzo": _a_float(listing_info.get("price"), None), "esito": esito,
-            "target": target, "n_comp": n_comp, "pub_ts": _pub_ts(listing_info),
-            "stato_scrape": listing_info.get("stato_vendita"),
-        })
-    except Exception:
-        log.warning("Tracciamento: registrazione fallita:\n%s", traceback.format_exc())
+    return _jsonl_append(TRACCIAMENTO_FILE, record, "Tracciamento")
 
 
 def _tracc_estrai_segnali(html_pagina):
@@ -10497,14 +10301,11 @@ def _tracc_estrai_segnali(html_pagina):
         m = rx.search(html_pagina)
         if m:
             segnali[chiave] = m.group(1).strip('"')
-    m = re.search(r"schema\.org/(InStock|OutOfStock|SoldOut|Discontinued)", html_pagina)
+    m = _TRACC_AVAILABILITY_RE.search(html_pagina)
     if m:
         segnali["availability"] = m.group(1)
-    if re.search(r"\bvenduto\b", html_pagina[:200000], re.IGNORECASE):
-        segnali["testo_venduto"] = True
-    # Una pagina venduta NON sparisce (404): resta online con la barra verde "Venduto" (verificato
-    # dall'utente il 2026-10-03). Si cerca il testo come contenuto di un elemento.
-    if re.search(r">\s*Venduto\s*<", html_pagina):
+    # Verificato il 2026-10-03: la barra verde "Venduto" e' il contenuto di un elemento della pagina.
+    if _TRACC_BARRA_RE.search(html_pagina):
         segnali["barra_venduto"] = True
     prezzo = None
     for rx in _TRACC_PREZZO_RES:
@@ -10516,114 +10317,158 @@ def _tracc_estrai_segnali(html_pagina):
     return segnali, prezzo
 
 
-# Campi temporali nella pagina (created_at, updated_at, *_ts...). Servono a capire se la pagina espone
-# QUANDO l'annuncio e' passato a venduto (richiesto dall'utente il 2026-10-03). Si registrano per ogni
-# ricontrollo: il confronto tra annunci venduti e attivi dira' se qualche campo cambia alla vendita.
-_TRACC_TEMPI_RE = re.compile(
-    r'\\?"([A-Za-z_]*(?:_at|_ts|[Tt]imestamp|[Dd]ate|[Tt]ime|[a-z]At|_on))\\?"\s*:\s*\\?"?([0-9][0-9T:\-+.Z ]{5,31})'
-)
-
-
-def _tracc_estrai_tempi(html_pagina, max_voci=14):
-    """{chiave: valore} dei campi temporali (prima occorrenza di ogni chiave+valore). Pura."""
-    tempi = {}
-    for m in _TRACC_TEMPI_RE.finditer(html_pagina):
-        k, v = m.group(1), m.group(2).strip()
-        if k not in tempi:
-            tempi[k] = v
-        if len(tempi) >= max_voci:
-            break
-    return tempi
-
-
-def _tracc_e_sparito(http_status, segnali):
-    """True se la pagina indica che l'annuncio non e' piu' in vendita (venduto o rimosso).
-    I segnali di 'venduto' non sono ancora noti con certezza: si accettano i piu' plausibili
-    e l'analisi giornaliera verifica a posteriori quali sono davvero affidabili."""
-    if http_status in (404, 410):
-        return True
-    segnali = segnali or {}
-    if str(segnali.get("is_closed", "")).lower() == "true":
-        return True
-    if segnali.get("availability") in ("OutOfStock", "SoldOut", "Discontinued"):
-        return True
-    # Verificato il 2026-10-03 con /venduto su un annuncio venduto e uno attivo: la pagina venduta resta
-    # online (HTTP 200) con la barra "Venduto" nel riquadro dell'articolo (assente nell'attivo) e
-    # "can_buy": false (nell'attivo true).
-    # Con "can_buy": true la barra non conta (potrebbe essere il badge di un altro articolo in pagina).
-    if segnali.get("barra_venduto") and str(segnali.get("can_buy", "")).lower() != "true":
-        return True
-    return False
-
-
 def _tracc_stato(http_status, segnali):
-    """Stato leggibile dell'annuncio ricontrollato: venduto / rimosso / prenotato / attivo / n.d."""
+    """Unico classificatore dello stato: venduto / rimosso / prenotato / attivo / n.d. Verificato il
+    2026-10-03 con /venduto su un annuncio venduto e uno attivo: venduto = HTTP 200 + barra "Venduto" +
+    can_buy=false; attivo = can_buy=true. Con can_buy=true la barra non conta (potrebbe essere il badge di
+    un altro articolo in pagina)."""
     segnali = segnali or {}
     if http_status in (404, 410):
         return "rimosso"
-    if _tracc_e_sparito(200 if http_status is None else http_status, segnali):
+    can_buy = str(segnali.get("can_buy", "")).lower()
+    if (str(segnali.get("is_closed", "")).lower() == "true"
+            or segnali.get("availability") in ("OutOfStock", "SoldOut", "Discontinued")
+            or (segnali.get("barra_venduto") and can_buy != "true")):
         return "venduto"
     if str(segnali.get("is_reserved", "")).lower() == "true":
         return "prenotato"
-    if str(segnali.get("can_buy", "")).lower() == "true":
+    if can_buy == "true":
         return "attivo"
-    if isinstance(http_status, int) and http_status == 200:
+    if http_status is None or http_status == 200:
         return "attivo?"
     return "n.d."
 
 
-def _tracc_affare_1h(stato, stadio_min, eta_min):
-    """Etichetta di mercato (criterio dell'utente: se non e' venduto entro un'ora non era un affare):
-    'si' se risulta venduto entro ~1h dalla valutazione, 'no' se al controllo dell'ora e' ancora
-    attivo/prenotato, '?' altrimenti (controlli senza risposta, stadi successivi). Pura."""
-    if stato == "venduto" and eta_min <= 75:
-        return "si"
-    if stato in ("attivo", "attivo?", "prenotato") and stadio_min == 60:
-        return "no"
-    return "?"
+def _tracc_bucket(offset_s):
+    """Fascia di vendita dato l'offset (secondi da t0) del primo controllo che ha trovato il venduto. Pura."""
+    for limite, etichetta in _TRACC_FASCE:
+        if offset_s <= limite:
+            return etichetta
+    return ">60min"
 
 
-def _tracc_prossimi(righe, ora=None):
-    """Ricontrolli da fare adesso: [(record, stadio_minuti, eta_minuti)]. Per ogni annuncio
-    l'ultimo stadio scaduto (gli stadi saltati perche' il bot era fermo non si recuperano), a meno che non sia gia' risultato sparito.
-    I piu' giovani prima (e' li' che si decide la velocita' di vendita). Pura, testabile."""
-    ora = time.time() if ora is None else ora
-    fatti = {}
-    chiusi = set()
-    con_serie = set()
-    for r in righe:
-        if r.get("tipo") == "ricontrollo":
-            fatti.setdefault(str(r.get("item_id")), set()).add(r.get("stadio_min"))
-            if r.get("stadio_s"):
-                con_serie.add(str(r.get("item_id")))
-            if r.get("finale"):
-                chiusi.add(str(r.get("item_id")))
-    da_fare = []
-    for r in righe:
-        if r.get("tipo") != "valutato" or str(r.get("item_id")) in chiusi:
-            continue
-        eta_min = (ora - (r.get("ts") or ora)) / 60
-        ultimo_fatto = max((x for x in fatti.get(str(r.get("item_id")), set()) if x), default=0)
-        if str(r.get("item_id")) in con_serie:
-            ultimo_fatto = max(ultimo_fatto, 60)  # 15 min e 1h li copre la serie fine ancorata a t0
-        scaduti = [st for st in TRACCIAMENTO_STADI_MINUTI if eta_min >= st and st > ultimo_fatto]
-        if scaduti:
-            da_fare.append((r, scaduti[-1], eta_min))
-    da_fare.sort(key=lambda x: (x[1], x[2]))
-    return da_fare
+def _tracc_classe(offset_s, stato):
+    """Classe di mercato (criterio dell'utente): AFFARE se venduto entro 5 min, MEDIO AFFARE entro 15 min,
+    NORMALE entro 1h, NON AFFARE se al controllo dell'ora e' ancora invenduto. Pura."""
+    if stato == "venduto":
+        return "AFFARE" if offset_s <= 300 else "MEDIO AFFARE" if offset_s <= 900 else "NORMALE"
+    if offset_s >= 3600 and stato in ("attivo", "attivo?", "prenotato"):
+        return "NON AFFARE"
+    return None
 
 
-_DIAG_CHIAVI_RE = re.compile(
-    r'\\?"((?:is_[a-z_]+)|(?:[a-z_]*(?:closed|sold|status|reserved|hidden|visible)[a-z_]*)|'
-    r'(?:[a-z_]*(?:price|amount|discount)[a-z_]*))\\?"\s*:\s*(\\?"?[^,}\]]{0,40})',
-    re.IGNORECASE,
-)
+async def _tracc_leggi_pagina(url, max_retries=1):
+    """(http_status, html) della pagina annuncio, con gli errori HTTP/rete ridotti a un codice."""
+    try:
+        resp = await _vinted_get_con_retry(url, timeout=15, max_retries=max_retries)
+        if resp is not None:
+            return resp.status_code, resp.text
+        return None, ""
+    except httpx.HTTPStatusError as e:
+        return e.response.status_code, ""
+    except Exception as e:
+        return f"errore:{type(e).__name__}", ""
+
+
+def tracc_registra_gia_venduto(listing_info, url, t0):
+    """Annuncio gia' venduto quando il bot lo scrapa (secondi dopo l'arrivo del messaggio): il segnale piu'
+    forte di un affare."""
+    try:
+        da_msg = round(time.time() - t0, 1)
+        _log_esito(listing_info, "GIA_VENDUTO", dopo_messaggio_s=da_msg, bucket="istantaneo", classe="AFFARE",
+                   prezzo=listing_info.get("price"))
+        item_id = _estrai_item_id_da_url(url) if url else None
+        if TRACCIAMENTO_ATTIVO and item_id:
+            _tracc_scrivi({
+                "tipo": "gia_venduto", "item_id": str(item_id), "url": url, "brand": listing_info.get("brand"),
+                "titolo": listing_info.get("title"), "prezzo": _a_float(listing_info.get("price"), None),
+                "categoria": estrai_categoria_da_titolo(listing_info.get("title") or "", listing_info.get("description")),
+                "dopo_messaggio_s": da_msg, "bucket": "istantaneo",
+            })
+    except Exception:
+        log.warning("Tracciamento: gia' venduto non registrato:\n%s", traceback.format_exc())
+
+
+async def _tracc_serie(item_id, url, brand, prezzo, t0):
+    """Serie di controlli ancorati a t0: attende ciascun offset, rilegge la pagina e si ferma alla prima
+    vendita (o se l'annuncio e' scartato). Registra i secondi reali da t0, la fascia e la classe."""
+    item_id = str(item_id)
+    for s_dopo in TRACCIAMENTO_SERIE_SECONDI:
+        try:
+            if item_id in _tracc_stop:
+                return
+            attesa = t0 + s_dopo - time.time()
+            if attesa > 0:
+                await asyncio.sleep(attesa)
+                if item_id in _tracc_stop:
+                    return
+            async with _tracc_sem:
+                http_status, html_pagina = await _tracc_leggi_pagina(url)
+            segnali, prezzo_ora = _tracc_estrai_segnali(html_pagina)
+            reale = round(time.time() - t0, 1)
+            stato = _tracc_stato(http_status, segnali)
+            bucket = _tracc_bucket(s_dopo) if stato == "venduto" else None
+            classe = _tracc_classe(s_dopo, stato)
+            esito, target = _tracc_esiti.get(item_id, ("n/d", None))
+            _tracc_scrivi({
+                "tipo": "ricontrollo", "item_id": item_id, "stadio_s": s_dopo, "da_messaggio_s": reale,
+                "http": http_status, "segnali": segnali, "prezzo_ora": prezzo_ora, "stato": stato,
+                "bucket": bucket, "classe": classe,
+            })
+            log.info(
+                "RICONTROLLO LAMPO | item=%s | brand='%s' | offset=%ss | da_messaggio=%ss | http=%s | stato=%s | bucket=%s | classe=%s | prezzo_valutato=%s | prezzo_ora=%s | esito=%s | target=%s",
+                item_id, brand or "n/d", s_dopo, reale, http_status, stato, bucket or "-", classe or "-",
+                prezzo, prezzo_ora, esito, target,
+            )
+            if stato in ("venduto", "rimosso"):
+                _tracc_stop.add(item_id)
+                return
+        except Exception:
+            log.warning("Ricontrollo lampo fallito:\n%s", traceback.format_exc())
+            return
+
+
+def tracc_avvia_serie(listing_info, url, t0):
+    """Subito dopo il primo scrape: avvia la serie di controlli per l'annuncio (se non gia' venduto)."""
+    if not TRACCIAMENTO_ATTIVO:
+        return
+    try:
+        item_id = _estrai_item_id_da_url(url) if url else None
+        if not item_id:
+            return
+        if listing_info.get("stato_vendita") == "venduto":
+            _tracc_stop.add(str(item_id))
+            return
+        asyncio.get_running_loop().create_task(_tracc_serie(
+            item_id, url, listing_info.get("brand"), _a_float(listing_info.get("price"), None), t0))
+    except Exception:
+        log.warning("Tracciamento: serie di controlli non avviata:\n%s", traceback.format_exc())
+
+
+def tracc_registra_valutato(listing_info, url, esito, target=None, n_comp=None):
+    """Registra un annuncio arrivato a un verdetto, una sola volta per item id."""
+    if not TRACCIAMENTO_ATTIVO:
+        return
+    try:
+        item_id = _estrai_item_id_da_url(url) if url else None
+        if not item_id or str(item_id) in _tracc_item_visti:
+            return
+        item_id = str(item_id)
+        _tracc_item_visti.add(item_id)
+        _tracc_scrivi({
+            "tipo": "valutato", "item_id": item_id, "url": url,
+            "brand": listing_info.get("brand"), "titolo": listing_info.get("title"),
+            "categoria": estrai_categoria_da_titolo(listing_info.get("title") or "", listing_info.get("description")),
+            "prezzo": _a_float(listing_info.get("price"), None), "esito": esito,
+            "target": target, "n_comp": n_comp, "stato_scrape": listing_info.get("stato_vendita"),
+        })
+    except Exception:
+        log.warning("Tracciamento: registrazione fallita:\n%s", traceback.format_exc())
 
 
 _CAND_TS_RE = re.compile(
-    r'(?P<ctx>.{0,70}?)(?P<val>(?<![0-9])(?:1[5-9][0-9]{8}(?:[0-9]{3})?)(?![0-9])|'
-    r'20[0-9]{2}-[01][0-9]-[0-3][0-9][T ][0-2][0-9]:[0-5][0-9](?::[0-5][0-9])?(?:\.[0-9]+)?(?:Z|[+-][0-9]{2}:?[0-9]{2})?)',
-    re.DOTALL,
+    r'(?<![0-9])(?:1[5-9][0-9]{8}(?:[0-9]{3})?|'
+    r'20[0-9]{2}-[01][0-9]-[0-3][0-9][T ][0-2][0-9]:[0-5][0-9](?::[0-5][0-9])?(?:\.[0-9]+)?(?:Z|[+-][0-9]{2}:?[0-9]{2})?)(?![0-9])'
 )
 
 
@@ -10634,107 +10479,24 @@ def trova_timestamp_candidati(html_pagina, giorni=45, max_voci=40):
     ora = time.time()
     trovati, visti = [], set()
     for m in _CAND_TS_RE.finditer(html_pagina):
-        val = m.group("val")
-        try:
-            if val.isdigit():
-                v = int(val)
-                ts = v / 1000 if len(val) == 13 else float(v)
-            else:
-                txt = val.replace(" ", "T")
-                if txt.endswith("Z"):
-                    txt = txt[:-1] + "+00:00"
-                dt = datetime.fromisoformat(txt)
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
-                ts = dt.timestamp()
-        except Exception:
-            continue
-        if not (ora - giorni * 86400 <= ts <= ora + 86400):
-            continue
+        val = m.group(0)
         if val in visti:
             continue
+        if val.isdigit():
+            ts = int(val) / 1000 if len(val) == 13 else float(val)
+        else:
+            dt = _parse_created_at_dt(val.replace(" ", "T"))
+            if dt is None:
+                continue
+            ts = dt.timestamp()
+        if not (ora - giorni * 86400 <= ts <= ora + 86400):
+            continue
         visti.add(val)
-        ctx = re.sub(r"\s+", " ", m.group("ctx"))[-60:]
+        ctx = re.sub(r"\s+", " ", html_pagina[max(0, m.start() - 60):m.start()])
         trovati.append(f"{ctx} -> {val} = {datetime.fromtimestamp(ts, timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC")
         if len(trovati) >= max_voci:
             break
     return trovati
-
-
-def diagnostica_pagina_venduto(html_pagina, url=None, raggio=260, max_snippet=4):
-    """Per capire come la pagina segnala lo stato venduto, ignorando il dizionario delle traduzioni
-    (chiavi con il punto): segnali estratti, frammenti attorno all'id dell'articolo, coppie
-    chiave:valore di stato/prezzo (uniche) e intorno al testo 'Venduto'. Pura, testabile."""
-    segnali, prezzo = _tracc_estrai_segnali(html_pagina)
-    item_id = _estrai_item_id_da_url(url) if url else None
-    snippet_id, coppie, viste = [], [], set()
-    if item_id:
-        for m in re.finditer(re.escape(str(item_id)), html_pagina):
-            a, b = max(0, m.start() - raggio), min(len(html_pagina), m.end() + raggio)
-            snippet_id.append(re.sub(r"\s+", " ", html_pagina[a:b]))
-            if len(snippet_id) >= max_snippet:
-                break
-    for m in _DIAG_CHIAVI_RE.finditer(html_pagina):
-        k = (m.group(1), m.group(2))
-        if k not in viste:
-            viste.add(k)
-            coppie.append(f"{m.group(1)}={m.group(2)}")
-    m = re.search(r">\s*Venduto\s*<", html_pagina)
-    intorno_barra = re.sub(r"\s+", " ", html_pagina[max(0, m.start() - 300):m.end() + 200]) if m else None
-    coppie = [f"TEMPO {k}={v}" for k, v in _tracc_estrai_tempi(html_pagina, 30).items()] + coppie
-    return segnali, prezzo, snippet_id, coppie, intorno_barra
-
-
-async def tracc_ricontrolla():
-    """Un ciclo di ricontrolli. Gli stadi sono fitti all'inizio (15 min, 1h, 4h, 12h, 24h) e
-    poi si diradano (3, 7, 14 giorni), cosi' si distingue chi sparisce in minuti da chi
-    in giorni da chi mai. Un annuncio risultato sparito non si ricontrolla piu'."""
-    righe = _tracc_leggi()
-    fatti = 0
-    # I controlli entro 1 ora (15 min, 1h) decidono se un annuncio era davvero un affare (l'utente: se non
-    # e' venduto entro un'ora non era un COMPRA): non hanno limite per ciclo, cosi' restano puntuali. Il
-    # tetto vale solo per gli stadi successivi, meno urgenti.
-    prossimi = _tracc_prossimi(righe)
-    presto = [x for x in prossimi if x[1] <= TRACCIAMENTO_STADIO_DECISIVO_MIN]
-    tardi = [x for x in prossimi if x[1] > TRACCIAMENTO_STADIO_DECISIVO_MIN][:TRACCIAMENTO_MAX_PER_CICLO]
-    for r, stadio, eta_min in presto + tardi:
-        http_status, segnali, prezzo_ora, tempi = None, {}, None, {}
-        try:
-            resp = await _vinted_get_con_retry(r["url"], timeout=15, max_retries=1)
-            if resp is not None:
-                http_status = resp.status_code
-                segnali, prezzo_ora = _tracc_estrai_segnali(resp.text)
-                tempi = _tracc_estrai_tempi(resp.text)
-        except httpx.HTTPStatusError as e:
-            http_status = e.response.status_code
-        except Exception as e:
-            http_status = f"errore:{type(e).__name__}"
-        sparito = _tracc_e_sparito(http_status, segnali)
-        _tracc_scrivi({
-            "tipo": "ricontrollo", "item_id": str(r.get("item_id")), "stadio_min": stadio,
-            "eta_min": round(eta_min), "http": http_status, "segnali": segnali,
-            "prezzo_ora": prezzo_ora, "finale": sparito, "stato": _tracc_stato(http_status, segnali),
-            "tempi": tempi,
-        })
-        log.info(
-            "RICONTROLLO | item=%s | brand='%s' | stadio=%smin | eta=%smin | http=%s | sparito=%s | stato=%s | affare_1h=%s | segnali=%s | prezzo_valutato=%s | prezzo_ora=%s | esito=%s | target=%s | tempi=%s",
-            r.get("item_id"), r.get("brand") or "n/d", stadio, round(eta_min), http_status,
-            "si" if sparito else "no", _tracc_stato(http_status, segnali), _tracc_affare_1h(_tracc_stato(http_status, segnali), stadio, eta_min),
-            segnali or "nessuno",
-            r.get("prezzo"), prezzo_ora, r.get("esito"), r.get("target"), tempi or "nessuno",
-        )
-        fatti += 1
-    return fatti
-
-
-async def tracc_ciclo_infinito():
-    await asyncio.sleep(120)
-    while True:
-        try:
-            await tracc_ricontrolla()
-        except Exception:
-            log.warning("Ciclo ricontrolli fallito:\n%s", traceback.format_exc())
-        await asyncio.sleep(TRACCIAMENTO_INTERVALLO_SECONDI)
 
 
 # Stima del prezzo target piu' stabile (richiesto dall'utente il 2026-10-03). Il 2026-10-02 lo stesso
@@ -10788,7 +10550,7 @@ def _log_esito(listing_info, esito, **campi):
         if _id:
             _tracc_esiti[str(_id)] = (esito, campi.get("target"))
             if str(esito).startswith("SKIP_") or esito == "ERRORE_CERVELLO":
-                _tracc_esclusi.add(str(_id))
+                _tracc_stop.add(str(_id))
             if len(_tracc_esiti) > 5000:
                 for _k in list(_tracc_esiti)[:1000]:
                     _tracc_esiti.pop(_k, None)
@@ -10823,7 +10585,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
                                    permesso=None):
     listing_info = dict(parsed)
     listing_info["url"] = url
-    listing_info["t0_messaggio"] = t_ricevuto_bot or time.time()
+    t0 = t_ricevuto_bot or time.time()  # arrivo del messaggio del tracker: riferimento dei controlli vendite
     costo_totale = 0.0
 
     # Cronometro a tappe (richiesto dall'utente il 2026-09-21, dopo aver
@@ -10894,10 +10656,10 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
         # flip. Per ora si registra soltanto (verifica del segnale su dati reali); SKIP_GIA_VENDUTI=1
         # interrompe l'analisi (inutile notificare un capo non piu' acquistabile).
         if listing_info.get("stato_vendita") == "venduto":
-            tracc_registra_gia_venduto(listing_info, url)
+            tracc_registra_gia_venduto(listing_info, url, t0)
             if SKIP_GIA_VENDUTI:
                 return
-        tracc_avvia_precoci(listing_info, url)
+        tracc_avvia_serie(listing_info, url, t0)
 
         # FILTRO PRE-GEMINI
         e_skip_pre, motivo_skip_pre = check_skip_pre_gemini(listing_info)
@@ -11983,36 +11745,23 @@ def _formatta_risultati_test_proxy(risultati):
 
 @client.on(events.NewMessage(outgoing=True, pattern=r'(?i)^/venduto\s+(https?://\S+)'))
 async def on_comando_venduto(event):
-    """/venduto <url annuncio Vinted>: legge la pagina con i proxy del bot e mostra come segnala lo
-    stato venduto (richiesto dall'utente il 2026-10-03: la pagina venduta resta online con la barra
-    'Venduto'). Serve a scegliere il segnale giusto per il tracciamento vendite."""
+    """/venduto <url annuncio Vinted>: legge la pagina con i proxy del bot e mostra stato, prezzo letto,
+    segnali e ogni istante recente trovato (diagnostica del tracciamento vendite, 2026-10-03)."""
     try:
         url = event.pattern_match.group(1).strip()
         if "vinted." not in url:
             await event.respond("Mi serve un link di un annuncio vinted.", parse_mode=None)
             return
         await event.respond("Leggo la pagina, un attimo...", parse_mode=None)
-        http_status, html_pagina = None, ""
-        try:
-            resp = await _vinted_get_con_retry(url, timeout=15, max_retries=3)
-            if resp is not None:
-                http_status, html_pagina = resp.status_code, resp.text
-        except httpx.HTTPStatusError as e:
-            http_status = e.response.status_code
-        segnali, prezzo, snippet_id, coppie, intorno_barra = diagnostica_pagina_venduto(html_pagina, url)
-        testo = (f"HTTP {http_status} | sparito={'si' if _tracc_e_sparito(http_status, segnali) else 'no'} | "
-                 f"prezzo letto={prezzo}\nSegnali: {segnali or 'nessuno'}\n\n"
-                 f"Date/istanti trovati (adesso {datetime.now(timezone.utc).strftime('%H:%M:%S')} UTC):\n"
-                 + "\n".join(trova_timestamp_candidati(html_pagina)[:25]) + "\n\n"
-                 f"Intorno a 'Venduto': {intorno_barra}\n\n"
-                 f"Chiavi stato/prezzo: {' ; '.join(coppie[:80])}\n\n"
-                 f"Intorno all'id articolo:\n" + "\n---\n".join(snippet_id))
+        http_status, html_pagina = await _tracc_leggi_pagina(url, max_retries=3)
+        segnali, prezzo = _tracc_estrai_segnali(html_pagina)
         candidati = trova_timestamp_candidati(html_pagina)
-        log.info("DIAG TIMESTAMP | url=%s | adesso=%s UTC | candidati=%s", url,
-                 datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"), " ## ".join(candidati))
-        log.info("DIAG VENDUTO | url=%s | http=%s | prezzo=%s | segnali=%s | barra=%s | chiavi=%s | id=%s",
-                 url, http_status, prezzo, segnali, intorno_barra, " ; ".join(coppie[:120]),
-                 " ### ".join(snippet_id)[:5000])
+        adesso = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        testo = (f"HTTP {http_status} | stato={_tracc_stato(http_status, segnali)} | prezzo letto={prezzo}\n"
+                 f"Segnali: {segnali or 'nessuno'}\n\nIstanti recenti trovati (adesso {adesso} UTC):\n"
+                 + ("\n".join(candidati[:25]) or "nessuno"))
+        log.info("DIAG VENDUTO | url=%s | http=%s | prezzo=%s | segnali=%s | istanti=%s", url, http_status,
+                 prezzo, segnali, " ## ".join(candidati))
         for pezzo in _spezza_per_telegram(testo):
             await event.respond(pezzo, parse_mode=None)
     except Exception:
@@ -12132,8 +11881,9 @@ async def main():
         "calcolato da campi tipizzati" if OCCHIO_OUTPUT_JSON else "da match testuale",
     )
     await inizializza_client_http()
-    if TRACCIAMENTO_ATTIVO and TRACCIAMENTO_STADI_MINUTI:
-        asyncio.create_task(tracc_ciclo_infinito())
+    if TRACCIAMENTO_ATTIVO:
+        _tracc_item_visti.update(str(r.get("item_id")) for r in _jsonl_read(TRACCIAMENTO_FILE, "Tracciamento")
+                                 if r.get("tipo") == "valutato")
     try:
         fv_carica_appreso()
         fv_ricalibra()
