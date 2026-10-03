@@ -68,14 +68,18 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
 def ruoli_gemini(prezzo, stima_rapida, soglia=None):
     """(tier_alto, ruolo_occhio, ruolo_cervello, da_cosa) per scegliere la cascata Gemini PRIMA dell'Occhio.
     Decide la stima rapida di fair value (tabella + appreso, istantanea): semaforo 🟢/🟡 = margine/ROI promettenti ->
-    cascate '_alto' (modelli migliori); 🔴 = poco margine -> base. Se la stima manca o ha confidenza bassa (⚪) si
+    cascate '_alto' (modelli migliori); 🔴 = poco margine -> base, salvo prezzo >= soglia (le eccezioni sono i capi che la
+    tabella sottostima). Se la stima manca o ha confidenza bassa (⚪) si
     ripiega sul prezzo richiesto: dalla soglia (GEMINI_SOGLIA_PREZZO_ALTO) in su = alto."""
     soglia = GEMINI_SOGLIA_PREZZO_ALTO if soglia is None else soglia
     semaforo = (stima_rapida or {}).get("semaforo")
     if semaforo in ("🟢", "🟡"):
         alto, da = True, "stima"
     elif semaforo == "🔴":
-        alto, da = False, "stima"
+        # stima rapida bassa: base, MA dalla soglia di prezzo in su alto lo stesso (le eccezioni sono proprio i capi che
+        # la tabella sottostima: es. Dries van Noten 50 EUR, stima rossa, poi COMPRA con target 150)
+        alto = prezzo is not None and prezzo >= soglia
+        da = "prezzo" if alto else "stima"
     else:
         alto, da = (prezzo is not None and prezzo >= soglia), "prezzo"
     return alto, ("occhio_alto" if alto else "occhio"), ("cervello_alto" if alto else "cervello"), da

@@ -184,7 +184,8 @@ def test_ruoli_gemini_dalla_stima_rapida_con_fallback_sul_prezzo():
     r = pipeline.ruoli_gemini
     assert r(20, {"semaforo": "🟢"}, 50) == (True, "occhio_alto", "cervello_alto", "stima")    # promettente anche se costa poco
     assert r(120, {"semaforo": "🟡"}, 50) == (True, "occhio_alto", "cervello_alto", "stima")
-    assert r(120, {"semaforo": "🔴"}, 50) == (False, "occhio", "cervello", "stima")             # caro ma senza margine: base
+    assert r(120, {"semaforo": "🔴"}, 50) == (True, "occhio_alto", "cervello_alto", "prezzo")   # rosso ma sopra soglia: alto
+    assert r(30, {"semaforo": "🔴"}, 50) == (False, "occhio", "cervello", "stima")             # rosso e sotto soglia: base
     assert r(80, {"semaforo": "⚪"}, 50) == (True, "occhio_alto", "cervello_alto", "prezzo")    # confidenza bassa: prezzo
     assert r(30, {"semaforo": "⚪"}, 50) == (False, "occhio", "cervello", "prezzo")
     assert r(80, None, 50) == (True, "occhio_alto", "cervello_alto", "prezzo")                  # nessuna stima: prezzo
