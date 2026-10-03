@@ -9,6 +9,7 @@ google_search, che su Gemini non e' forzabile in modo affidabile).
 
 import os
 import re
+import sys
 import html
 import json
 import time
@@ -258,7 +259,8 @@ MAX_GALLERY_PHOTOS = 10
 # inequivocabile quale codice sta girando su Railway dopo un deploy, senza
 # doverlo dedurre dai timestamp dei log. Aggiorna la data quando fai una
 # modifica significativa (facoltativo, ma utile per il debug futuro).
-BOT_VERSION = "2026-10-01-fair-value-sottolinee"
+# Su Railway e' lo SHA breve del commit in esecuzione (RAILWAY_GIT_COMMIT_SHA); altrove la stringa fissa.
+BOT_VERSION = (os.environ.get("RAILWAY_GIT_COMMIT_SHA") or "")[:7] or "2026-10-01-fair-value-sottolinee"
 
 # ---------------------------------------------------------------------------
 # PARAMETRI ECONOMICI -- l'unica fonte di verita' per TUTTI i calcoli
@@ -820,7 +822,24 @@ CATEGORIA_TERMINE_EN = {
     "tuta": "jumpsuit",
 }
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+# INFO su stdout, WARNING/ERROR su stderr (prima tutto andava su stderr e Railway marcava ogni riga come
+# "error", rendendo inutile il filtro per livello). Formato e testi dei messaggi invariati: l'analisi
+# giornaliera dei log filtra per testo.
+_LOG_FORMATO = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
+
+
+class _SoloSottoWarning(logging.Filter):
+    def filter(self, record):
+        return record.levelno < logging.WARNING
+
+
+_log_out = logging.StreamHandler(sys.stdout)
+_log_out.addFilter(_SoloSottoWarning())
+_log_out.setFormatter(_LOG_FORMATO)
+_log_err = logging.StreamHandler(sys.stderr)
+_log_err.setLevel(logging.WARNING)
+_log_err.setFormatter(_LOG_FORMATO)
+logging.basicConfig(level=logging.INFO, handlers=[_log_out, _log_err])
 log = logging.getLogger("vinted_flip_bot")
 # httpx logga a INFO l'URL completo di OGNI richiesta ("HTTP Request: POST
 # https://api.telegram.org/bot<TOKEN>/sendMessage ..."): con il livello
@@ -11869,6 +11888,12 @@ async def on_new_message(event):
 
 async def main():
     log.info("Vinted Oracle avviato su Telethon. Versione: %s", BOT_VERSION)
+    try:
+        from importlib.metadata import version as _v
+        log.info("Ambiente: python %s · %s", sys.version.split()[0], " · ".join(
+            f"{pkg} {_v(pkg)}" for pkg in ("telethon", "httpx", "Pillow", "brotli", "curl_cffi")))
+    except Exception:
+        log.warning("Versioni delle dipendenze non leggibili:\n%s", traceback.format_exc())
     log.info(
         "Cervello: %s (output JSON strutturato) · comp da memoria del modello: %s",
         OPENAI_MODEL_CERVELLO if CERVELLO_PROVIDER == "openai" else GEMINI_MODEL_CERVELLO,
