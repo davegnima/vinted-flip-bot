@@ -127,6 +127,8 @@ async def _panel_chiama(modello, system, user_content, max_tokens):
                 timeout=PANEL_TIMEOUT + 3)
             ms = int((time.time() - t0) * 1000)
             if not resp.is_success:
+                # il corpo dell'errore dice il vero motivo (limite al secondo, quota finita, chiave, modello...)
+                log.warning("PANEL HTTP %d da %s: %s", resp.status_code, modello, (resp.text or "")[:300].replace("\n", " "))
                 return None, ms, f"http{resp.status_code}"
             testo = (resp.json().get("choices") or [{}])[0].get("message", {}).get("content")
             return testo, ms, None
