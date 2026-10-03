@@ -6,6 +6,7 @@ import time
 
 from bot.config import GEMINI_API_KEY
 from bot.logger import log
+from bot import db
 # ---- fine import ----
 # RILEVAMENTO BLACKOUT GEMINI (richiesto dall'utente il 2026-09-22, log reale:
 # ~12 minuti di 503 "high demand" hanno fatto costare a Occhio/Cervello 1-6
@@ -153,6 +154,7 @@ def _gemini_segna_modello_non_disponibile(modello, secondi, motivo):
         log.warning("Gemini: modello %s %s -- escluso per %d minuti, passo al successivo della catena.",
                     modello, motivo, secondi // 60)
     _gemini_modello_escluso_fino[modello] = time.time() + secondi
+    db.salva_modello_escluso(modello, _gemini_modello_escluso_fino[modello])
 
 
 def _gemini_url_effettivo(api_url):
@@ -336,6 +338,7 @@ def _gemini_segna_key_quota_esaurita(key, modello=None, secondi=None):
     if secondi is not None:
         durata = min(max(secondi + 2, 5), 24 * 3600)   # attesa indicata da Google (minuto o giorno), non 6h fisse
     _gemini_key_quota_esaurita_fino[(key, modello or "")] = time.time() + durata
+    db.salva_quota_gemini(key, modello, _gemini_key_quota_esaurita_fino[(key, modello or "")])
     if not gia_segnalata:
         log.warning(
             "Gemini: key in errore 429 di quota esaurita per il modello %s -- esclusa dalla rotazione per %s.",
@@ -359,3 +362,12 @@ def _gemini_key_in_quota_esaurita(key, modello=None):
         del _gemini_key_quota_esaurita_fino[chiave]
         return False
     return True
+
+
+def ripristina_stato_gemini():
+    """All'avvio: ricarica dal DB i cooldown di quota e le esclusioni di modello ancora validi, cosi' un riavvio
+    (ogni deploy) non fa rispendere chiamate per riscoprire le quote finite. Ritorna (n_quote, n_modelli)."""
+    quote, esclusi = db.carica_stato_gemini(GEMINI_API_KEYS)
+    _gemini_key_quota_esaurita_fino.update(quote)
+    _gemini_modello_escluso_fino.update(esclusi)
+    return len(quote), len(esclusi)

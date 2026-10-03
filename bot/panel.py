@@ -14,6 +14,7 @@ from bot.config import GEMINI_MODEL_CERVELLO, GEMINI_MODEL_OCCHIO, _env_float
 from bot.verdetto import calcola_verdetto, valida_payload_cervello
 from bot.foto import costruisci_parts_foto
 from bot.logger import log
+from bot import db
 from bot.occhio import valida_payload_occhio
 from bot import http_clients as hc
 # ---- fine import ----
@@ -137,6 +138,7 @@ def _riga_panel(tipo, item_id, brand, modello, ok, ms, **campi):
     extra = " | ".join(f"{k}={v}" for k, v in campi.items() if v is not None)
     log.info("PANEL | %s | %s | %s | %s | %s | %dms%s", tipo, item_id, brand or "-", modello,
              "ok" if ok else "ERR", ms, f" | {extra}" if extra else "")
+    db.scrivi_evento("panel", item_id, brand, {"tipo": tipo, "modello": modello, "ok": bool(ok), "ms": ms, **campi})
 
 
 def _campi_occhio_panel(o, problemi):
