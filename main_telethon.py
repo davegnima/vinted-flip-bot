@@ -10721,7 +10721,8 @@ def _campi_occhio_panel(o, problemi):
     return {"problemi": len(problemi), "legit": o.get("verdetto_legit"), "conf": o.get("confidenza_legit"),
             "evid": o.get("qualita_evidenza"), "cond": o.get("condizione_osservata"),
             "brand_letto": str(o.get("brand_letto_etichetta") or "")[:30] or None,
-            "capo": str(o.get("modello_riconosciuto") or "")[:40] or None}
+            "capo": str(o.get("modello_riconosciuto") or "")[:40] or None,
+            "motivo_legit": str(o.get("motivo_sintetico") or "").replace("|", "/").replace("\n", " ")[:100] or None}
 
 
 async def _panel_occhio_modello(item_id, brand, modello, system, user_text, immagini):
