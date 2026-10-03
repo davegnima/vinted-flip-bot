@@ -10724,21 +10724,70 @@ async def panel_occhio(item_id, brand, user_text, photo_bytes_list, occhio_json,
         log.warning("Pannello occhio fallito:\n%s", traceback.format_exc())
 
 
-async def _panel_cervello_modello(item_id, brand, modello, system, user_text, prezzo):
+# Versione COMPATTA del prompt del Cervello, SOLO per i modelli del pannello con contesto/TPM piccolo o che
+# sbagliano col prompt completo (si attiva con il suffisso "@c" nel nome modello, es. "nvidia/moonshotai/kimi-k3@c").
+# Condensa le regole che spostano di piu' il target (sconto ASK, filtro outlier, linee/diffusion, tetti noti,
+# materiale, cosa NON calcolare). Il flusso principale con Gemini resta sul prompt completo: li' le calibrazioni
+# per brand (Loro Piana, Brunello, M Missoni, JPG...) non vanno perse. Nel log il modello compare come "...@c",
+# quindi la classifica distingue le due versioni.
+CERVELLO_PROMPT_COMPATTO = """Sei il valutatore di un flipper di lusso second-hand. Ricevi analisi visiva e comp di mercato. Rispondi SOLO con un oggetto JSON (nessun testo fuori, nessun markdown) con le chiavi elencate in fondo.
+
+REGOLE CHE CONTANO:
+1. NON calcolare margine, ROI, decisione, urgenza, offerte. L'unico numero economico e' prezzo_target_vendita_eur: prezzo LORDO di rivendita realistico in Italia.
+2. Elenca in comp_candidati OGNI prezzo comp ricevuto (prezzo e titolo copiati alla lettera, mai a memoria; se ricordi un prezzo non presente nei dati: fonte memoria_modello). Segna escluso:true i comp di categoria/linea/materiale diversi o fuori scala.
+3. Filtro outlier: mediana dei comp della STESSA categoria; scarta quelli > 3x o < 1/3 della mediana. Meno di 2 comp validi: stima prudente e dichiaralo in note_analista.
+4. I comp Vinted sono ASK (annunci attivi, gonfiati): scegli il comp di riferimento e applica sconto 20-30% (sconto_ask_applicato_pct). I comp eBay/Poshmark con [venduto: data] sono vendite confermate USA: senza sconto ASK ma riduci per il mercato italiano. Comp NWT/nuovi non sono comparabili a un usato: abbassa ancora.
+5. prezzo_target_vendita_eur non supera il comp di riferimento scontato ne' tetto_prezzo_linea_eur. Un target molto sopra il prezzo d'acquisto e' lecito (cerchiamo venditori che prezzano male) ma se supera 3x con meno di 3 comp validi spiega il motivo in note_analista.
+6. Linee/diffusion valgono molto meno del mainline e NON vanno mai mischiate nei comp: M Missoni/Missoni Sport (maglieria 25-45 EUR, strutturati 50-90), Y-3, McQ, See by Chloe, MM6, Weekend/Studio/Sportmax, Versace Jeans/Versus, Emporio/Exchange Armani, Love Moschino, Red Label Westwood, Marni x H&M, Link/Theory (Helmut Lang dopo 2006). JEAN'S Paul Gaultier (apostrofo): tetto 30 EUR; JPG.JEAN'S: nessun tetto. Veilance solo se l'etichetta lo dice.
+7. Maglieria usata Loro Piana: cashmere 90-160, lana/misti 60-110. Brunello Cucinelli: cashmere/seta 70-120, cotone/lana 40-75, leggeri 35-70. Oltre questi range giustifica in note_analista.
+8. Materiale: materiale_confermato=true se compare in titolo, descrizione, attributi o etichetta; false solo se nessuno ne parla. Se ignoto sii prudente.
+9. Difetti: difetto_significativo=true con sconto_difetto_pct e descrizione_difetto (NON scontare a mano il target). Solo gravita_difetto_strutturale=grave (buco aperto, strappo, cerniera rotta) rende il capo non vendibile.
+10. Venditore: prezzo basso = vantaggio, mai sospetto. Privato genuino = guardaroba misto; reseller = solo lusso. Taglia centrale (donna IT 40-44, uomo 48-52) = piu' liquido; estrema = meno.
+11. legit_motivo_specifico deve dire COSA hai visto (font etichetta, logo, cuciture, hardware), mai frasi generiche.
+12. domanda_mercato "alta" solo con segnali_domanda concreti (altrimenti vale media).
+13. messaggio_venditore_template: se serve trattare, proponi un'offerta con il segnaposto esatto {OFFERTA}, mai una cifra; mai messaggi di accettazione piena; null se non c'e' nulla da dire.
+
+CHIAVI JSON (tipo o valori ammessi):
+"""
+
+
+def _schema_scheletro(schema):
+    """Elenco compatto 'chiave: tipo|valori' dello schema OpenAI del Cervello (niente descrizioni)."""
+    def tipo(p):
+        if "enum" in p:
+            return "|".join(map(str, p["enum"]))
+        t = p.get("type")
+        if t == "array":
+            it = p.get("items", {})
+            if it.get("type") == "object":
+                return "[{" + ", ".join(f"{k}:{tipo(v)}" for k, v in it.get("properties", {}).items()) + "}]"
+            return "[" + tipo(it) + "]"
+        return "/".join(map(str, t)) if isinstance(t, list) else str(t)
+    return "\n".join(f"{k}: {tipo(v)}" for k, v in schema.get("properties", {}).items())
+
+
+def prompt_cervello_compatto():
+    return CERVELLO_PROMPT_COMPATTO + _schema_scheletro(CERVELLO_RESPONSE_SCHEMA_OPENAI)
+
+
+async def _panel_cervello_modello(item_id, brand, modello, system, user_text, prezzo, system_compatto=None):
+    nome = modello
+    if modello.endswith("@c"):
+        modello, system = modello[:-2], system_compatto or prompt_cervello_compatto()
     testo, ms, err = await _panel_chiama(modello, system, user_text, 6000)
     if err:
-        return _riga_panel("cervello", item_id, brand, modello, False, ms, errore=err)
+        return _riga_panel("cervello", item_id, brand, nome, False, ms, errore=err)
     d = estrai_json_da_testo_llm(testo)
     if d is None:
-        return _riga_panel("cervello", item_id, brand, modello, False, ms, errore="json_non_valido")
+        return _riga_panel("cervello", item_id, brand, nome, False, ms, errore="json_non_valido")
     try:
         v, problemi = valida_payload_cervello(d)
         vc = calcola_verdetto(v, prezzo)
-        _riga_panel("cervello", item_id, brand, modello, True, ms, target=_fmt0(v.get("prezzo_target_vendita_eur")),
+        _riga_panel("cervello", item_id, brand, nome, True, ms, target=_fmt0(v.get("prezzo_target_vendita_eur")),
                     esito=vc["decisione"], margine=_fmt0(vc.get("margine")), roi=_fmt0(vc.get("roi")),
                     legit=v.get("legit_verdetto"), problemi=len(problemi))
     except Exception as e:
-        _riga_panel("cervello", item_id, brand, modello, False, ms, errore=type(e).__name__)
+        _riga_panel("cervello", item_id, brand, nome, False, ms, errore=type(e).__name__)
 
 
 def _fmt0(x):
