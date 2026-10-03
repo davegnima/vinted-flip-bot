@@ -82,10 +82,32 @@ def panel_scegli_modelli(tipo, modelli, adesso=None):
     return [attivi[(inizio + i) % len(attivi)] for i in range(n)]
 
 
+_panel_reset_s = {}   # modello -> secondi di attesa dichiarati dal provider nell'ultimo 429 (dal corpo dell'errore)
+
+
+def secondi_reset_da_corpo(testo):
+    """Secondi d'attesa dichiarati in un errore 429: 'reset_seconds' (OmniRoute), 'reset after 4m 40s',
+    'try again in 5m23.5s' (Groq), 'reset after 3s'. None se non indicati."""
+    if not testo:
+        return None
+    m = re.search(r'"reset_seconds"\s*:\s*(\d+)', testo)
+    if m:
+        return float(m.group(1))
+    m = re.search(r'(?:reset after|try again in)\s*(?:(\d+)\s*m)?\s*(?:(\d+(?:\.\d+)?)\s*s)?', testo, re.IGNORECASE)
+    if m and (m.group(1) or m.group(2)):
+        return int(m.group(1) or 0) * 60 + float(m.group(2) or 0)
+    return None
+
+
 def _panel_segna_errore(modello, err, adesso=None):
-    """Quota/accesso/modello dismesso: pausa, per non sprecare chiamate e riprovare piu' tardi."""
+    """Quota/accesso/modello dismesso: pausa, per non sprecare chiamate e riprovare piu' tardi. Sul 429 la pausa
+    segue il tempo dichiarato dal provider (3 s di Mistral, 5 min di Groq, mezzanotte di OpenRouter), non un
+    valore fisso: prima un 429 da 3 secondi fermava il modello per 30 minuti."""
     adesso = adesso if adesso is not None else time.time()
-    if err in ("http429", "http402", "http403"):
+    attesa = _panel_reset_s.pop(modello, None) if err == "http429" else None
+    if attesa is not None:
+        _panel_pausa[modello] = adesso + min(max(attesa + 5, 10), 6 * 3600)
+    elif err in ("http429", "http402", "http403"):
         _panel_pausa[modello] = adesso + PANEL_PAUSA_QUOTA_MIN * 60
     elif err in ("http404", "http410"):
         _panel_pausa[modello] = adesso + 6 * 3600
@@ -129,6 +151,10 @@ async def _panel_chiama(modello, system, user_content, max_tokens):
             if not resp.is_success:
                 # il corpo dell'errore dice il vero motivo (limite al secondo, quota finita, chiave, modello...)
                 log.warning("PANEL HTTP %d da %s: %s", resp.status_code, modello, (resp.text or "")[:300].replace("\n", " "))
+                if resp.status_code == 429:
+                    attesa = secondi_reset_da_corpo(resp.text)
+                    if attesa is not None:
+                        _panel_reset_s[modello] = attesa
                 return None, ms, f"http{resp.status_code}"
             testo = (resp.json().get("choices") or [{}])[0].get("message", {}).get("content")
             return testo, ms, None

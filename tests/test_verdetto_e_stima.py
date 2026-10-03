@@ -202,3 +202,17 @@ def test_cascata_fascia_alta_con_fallback_alla_base(monkeypatch):
     assert gs.cascata_per("occhio") == ["occ-lite"]
     assert gs.cascata_per("cervello_alto") == ["cer-lite"]      # alta non configurata: vale la base della fase
     assert "occ-top" in gs.tutti_i_modelli_cascata()
+
+
+def test_pausa_del_pannello_segue_il_reset_dichiarato_dal_provider():
+    sec = pn.secondi_reset_da_corpo
+    assert sec('{"reset_seconds":20796,"retry_after":"x"}') == 20796
+    assert sec("[mistral/x] [429]: upstream error (reset after 3s)") == 3
+    assert sec("Rate limit reached ... (reset after 4m 40s)") == 280
+    assert sec("Please try again in 5m23.568s. Need more tokens?") == 5 * 60 + 23.568
+    assert sec("errore generico") is None
+    pn._panel_reset_s["x/1"] = 3
+    pn._panel_segna_errore("x/1", "http429", adesso=1000)
+    assert pn._panel_pausa["x/1"] == 1000 + 10                  # minimo 10 s, non i 30 minuti fissi
+    pn._panel_segna_errore("y/2", "http429", adesso=1000)       # nessun tempo dichiarato: pausa standard
+    assert pn._panel_pausa["y/2"] == 1000 + pn.PANEL_PAUSA_QUOTA_MIN * 60
