@@ -79,3 +79,20 @@ def test_prompt_cervello_compatto_contiene_tutte_le_chiavi():
     for k in m.CERVELLO_RESPONSE_SCHEMA_OPENAI["properties"]:
         assert k + ":" in p
     assert len(p) < len(m.GEMINI_CERVELLO_SYSTEM_PROMPT) / 3
+
+
+def test_panel_scelta_modelli_rotazione_pausa_ed_esclusione_principale(monkeypatch):
+    import main_telethon as m
+    monkeypatch.setattr(m, "_panel_pausa", {})
+    monkeypatch.setattr(m, "_panel_giro", {"occhio": 0, "cervello": 0})
+    lista = [f"gemini/{m.GEMINI_MODEL_CERVELLO}", "a/1", "b/2@c", "c/3", "d/4"]
+    monkeypatch.setattr(m, "PANEL_MODELLI_PER_ANNUNCIO", 0)
+    assert m.panel_scegli_modelli("cervello", lista, adesso=100) == ["a/1", "b/2@c", "c/3", "d/4"]   # niente modello principale
+    monkeypatch.setattr(m, "PANEL_MODELLI_PER_ANNUNCIO", 2)
+    assert m.panel_scegli_modelli("cervello", lista, adesso=100) == ["a/1", "b/2@c"]
+    assert m.panel_scegli_modelli("cervello", lista, adesso=100) == ["c/3", "d/4"]
+    assert m.panel_scegli_modelli("cervello", lista, adesso=100) == ["a/1", "b/2@c"]                 # giro completo
+    m._panel_segna_errore("a/1", "http429", adesso=100)                                                # quota finita
+    monkeypatch.setattr(m, "PANEL_MODELLI_PER_ANNUNCIO", 0)
+    assert "a/1" not in m.panel_scegli_modelli("cervello", lista, adesso=100 + 60)
+    assert "a/1" in m.panel_scegli_modelli("cervello", lista, adesso=100 + 31 * 60)                    # pausa scaduta
