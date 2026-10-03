@@ -8,6 +8,7 @@ import asyncio
 
 from bot.costanti import CATEGORIA_TERMINE_EN, VINTED_BRAND_IDS
 from bot.config import REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET, REDDIT_USERNAME, VISUAL_SEARCH_ATTIVA
+from bot.config import RESELLBOT_ATTIVO
 from bot.serper_fonti import _cerca_ebay_sold_via_resellbot, _serper_batch_query_ebay_sold, _serper_scrape_page_diretto
 from bot.comps_filtri import _estrai_articoli_da_alt_vinted, _estrai_mappa_url_comp_vinted, _filtra_comp_per_brand_sottolinee, _filtra_comp_per_categoria, _rimuovi_comp_autoreferenziale
 from bot.vinted_http import _vinted_get_con_retry
@@ -190,6 +191,13 @@ async def _cerca_ebay_sold_con_fallback(brand, categoria, material_per_ricerca=N
     in_cache = _sold_cache_leggi(chiave_cache, SOLD_CACHE_FRESCA_SECONDI)
     if in_cache:
         return in_cache[0], True, in_cache[1]
+    if not RESELLBOT_ATTIVO:
+        # Resellbot disattivato: si va direttamente su Google/eBay, niente chiamate sprecate ne' cache dei venduti.
+        testo_fallback, ok_fallback = await _serper_batch_query_ebay_sold(brand, categoria, material_per_ricerca, dettaglio_distintivo)
+        if ok_fallback:
+            return (f"{testo_fallback}\n(Nota: eBay/Poshmark da ricerca Google, non da vendite confermate: "
+                    f"trattali come prezzi ASK.)"), True, {}
+        return f"ricerca Google eBay/Poshmark fallita: {testo_fallback}", False, {}
     testo, ok, mappa_url = await _cerca_ebay_sold_via_resellbot(brand, categoria, material_per_ricerca, dettaglio_distintivo)
     if ok:
         _sold_cache_scrivi(chiave_cache, testo, mappa_url)

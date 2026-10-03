@@ -141,3 +141,39 @@ def test_secondi_retry_gemini_minuto_vs_giorno(monkeypatch):
     assert 36000 < gs._gemini_key_quota_esaurita_fino[("k", "y")] - __import__("time").time() < 38000
     m._gemini_segna_key_quota_esaurita("k", "z")                       # senza indicazione: 6 ore come prima
     assert 21000 < gs._gemini_key_quota_esaurita_fino[("k", "z")] - __import__("time").time() < 22000
+
+
+def test_cascata_per_fase_occhio_e_cervello(monkeypatch):
+    monkeypatch.setattr(gs, "GEMINI_CASCATA", ["gen-1"])
+    monkeypatch.setattr(gs, "GEMINI_CASCATA_OCCHIO", ["occ-lite"])
+    monkeypatch.setattr(gs, "GEMINI_CASCATA_CERVELLO", ["cer-top", "cer-lite"])
+    monkeypatch.setattr(gs, "GEMINI_API_KEYS", ["k1"])
+    monkeypatch.setattr(gs, "_gemini_key_quota_esaurita_fino", {})
+    monkeypatch.setattr(gs, "_gemini_modello_escluso_fino", {})
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-x:generateContent"
+    assert "/models/occ-lite:" in gs._gemini_url_effettivo(url, "occhio")
+    assert "/models/cer-top:" in gs._gemini_url_effettivo(url, "cervello")
+    assert "/models/gen-1:" in gs._gemini_url_effettivo(url)                       # senza fase: cascata generica
+    gs._gemini_segna_key_quota_esaurita("k1", "cer-top", 3600)
+    assert "/models/cer-lite:" in gs._gemini_url_effettivo(url, "cervello")          # il Cervello scala...
+    assert "/models/occ-lite:" in gs._gemini_url_effettivo(url, "occhio")            # ...l'Occhio non ne risente
+    monkeypatch.setattr(gs, "GEMINI_CASCATA_OCCHIO", [])
+    assert gs.cascata_per("occhio") == ["gen-1"]                                     # fase non configurata: generica
+    assert {"gen-1", "cer-top", "cer-lite"} <= gs.tutti_i_modelli_cascata()
+
+
+def test_resellbot_disattivato_va_diretto_su_google(monkeypatch):
+    import asyncio
+    from bot import comps
+
+    async def non_chiamare(*a, **k):
+        raise AssertionError("Resellbot non deve essere chiamato")
+
+    async def google(*a, **k):
+        return "risultati google", True
+
+    monkeypatch.setattr(comps, "RESELLBOT_ATTIVO", False)
+    monkeypatch.setattr(comps, "_cerca_ebay_sold_via_resellbot", non_chiamare)
+    monkeypatch.setattr(comps, "_serper_batch_query_ebay_sold", google)
+    testo, ok, mappa = asyncio.run(comps._cerca_ebay_sold_con_fallback("Prada", "giacca", None, None))
+    assert ok and "risultati google" in testo and "ASK" in testo and mappa == {}
