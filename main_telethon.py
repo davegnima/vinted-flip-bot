@@ -10286,11 +10286,29 @@ SKIP_GIA_VENDUTI = os.environ.get("SKIP_GIA_VENDUTI", "0").strip() == "1"
 #  - per TUTTI gli annunci: controlli a 15s e 30s da t0 (poche richieste, finiscono presto);
 #  - per COMPRA/TRATTA/CHIEDI FOTO: 1min, 5min, 15min, 60min da t0 (i controlli a 15 e 60 min
 #    sostituiscono gli stadi di 15 min e 1h del ciclo lungo).
-TRACCIAMENTO_PRECOCI_SECONDI = (15, 30)
-TRACCIAMENTO_MICRO_SECONDI = (60, 300, 900, 3600)
+TRACCIAMENTO_PRECOCI_SECONDI = (15, 30, 60, 300, 900, 3600)  # per TUTTI gli annunci scrapati
+TRACCIAMENTO_MICRO_SECONDI = ()  # (sostituito dalla serie unica di TRACCIAMENTO_PRECOCI_SECONDI)
+_tracc_esiti = {}  # item_id -> (esito, target): lo valorizza _log_esito, lo legge la serie nei log
 TRACCIAMENTO_MICRO_ESITI = ("COMPRA", "TRATTA", "CHIEDI ALTRE FOTO")
 _tracc_micro_sem = []
 _tracc_venduti_visti = set()
+
+
+def _tracc_classe(offset_s, stato):
+    """Classe di mercato (criterio dell'utente, 2026-10-03): AFFARE se venduto entro 5 min, MEDIO AFFARE
+    entro 15 min, NORMALE entro 1h, NON AFFARE se al controllo dell'ora e' ancora invenduto.
+    offset_s = secondi da t0 del controllo; stato = stato letto in quel controllo. Pura."""
+    if stato == "venduto":
+        if offset_s <= 300:
+            return "AFFARE"
+        if offset_s <= 900:
+            return "MEDIO AFFARE"
+        if offset_s <= 3600:
+            return "NORMALE"
+        return "NORMALE(>1h)"
+    if offset_s >= 3600 and stato in ("attivo", "attivo?", "prenotato"):
+        return "NON AFFARE"
+    return None
 
 
 def _tracc_bucket(offset_s):
@@ -10326,7 +10344,7 @@ def tracc_registra_gia_venduto(listing_info, url):
         dopo = round(time.time() - pub) if pub else None
         t0 = listing_info.get("t0_messaggio")
         da_msg = round(time.time() - t0, 1) if t0 else None
-        _log_esito(listing_info, "GIA_VENDUTO", dopo_messaggio_s=da_msg, bucket="istantaneo", prezzo=listing_info.get("price"))
+        _log_esito(listing_info, "GIA_VENDUTO", dopo_messaggio_s=da_msg, bucket="istantaneo", classe="AFFARE", prezzo=listing_info.get("price"))
         item_id = _estrai_item_id_da_url(url) if url else None
         if TRACCIAMENTO_ATTIVO and item_id:
             _tracc_scrivi({
@@ -10370,17 +10388,19 @@ async def _tracc_serie(item_id, url, brand, esito, prezzo, target, t0, offsets):
             sparito = _tracc_e_sparito(http_status, segnali)
             stato = _tracc_stato(http_status, segnali)
             bucket = _tracc_bucket(s_dopo) if stato == "venduto" else None
+            classe = _tracc_classe(s_dopo, stato)
+            esito_ora, target_ora = _tracc_esiti.get(str(item_id), (esito, target))
             rec = {
                 "tipo": "ricontrollo", "item_id": str(item_id), "stadio_s": s_dopo, "da_messaggio_s": reale,
                 "http": http_status, "segnali": segnali, "prezzo_ora": prezzo_ora, "finale": sparito,
-                "stato": stato, "bucket": bucket,
+                "stato": stato, "bucket": bucket, "classe": classe,
             }
             if s_dopo in (900, 3600):
                 rec["stadio_min"] = s_dopo // 60  # sostituisce gli stadi 15 min / 1h del ciclo lungo
             _tracc_scrivi(rec)
             log.info(
-                "RICONTROLLO LAMPO | item=%s | brand='%s' | offset=%ss | da_messaggio=%ss | http=%s | stato=%s | bucket=%s | prezzo_valutato=%s | prezzo_ora=%s | esito=%s | target=%s",
-                item_id, brand or "n/d", s_dopo, reale, http_status, stato, bucket or "-", prezzo, prezzo_ora, esito, target,
+                "RICONTROLLO LAMPO | item=%s | brand='%s' | offset=%ss | da_messaggio=%ss | http=%s | stato=%s | bucket=%s | classe=%s | prezzo_valutato=%s | prezzo_ora=%s | esito=%s | target=%s",
+                item_id, brand or "n/d", s_dopo, reale, http_status, stato, bucket or "-", classe or "-", prezzo, prezzo_ora, esito_ora, target_ora,
             )
             if stato == "venduto":
                 _tracc_venduti_visti.add(str(item_id))
@@ -10433,10 +10453,6 @@ def tracc_registra_valutato(listing_info, url, esito, target=None, n_comp=None):
             "target": target, "n_comp": n_comp, "pub_ts": _pub_ts(listing_info),
             "stato_scrape": listing_info.get("stato_vendita"),
         })
-        if esito in TRACCIAMENTO_MICRO_ESITI and listing_info.get("t0_messaggio"):
-            asyncio.get_running_loop().create_task(_tracc_serie(
-                item_id, url, listing_info.get("brand"), esito, _a_float(listing_info.get("price"), None),
-                target, listing_info["t0_messaggio"], TRACCIAMENTO_MICRO_SECONDI))
     except Exception:
         log.warning("Tracciamento: registrazione fallita:\n%s", traceback.format_exc())
 
@@ -10541,9 +10557,12 @@ def _tracc_prossimi(righe, ora=None):
     ora = time.time() if ora is None else ora
     fatti = {}
     chiusi = set()
+    con_serie = set()
     for r in righe:
         if r.get("tipo") == "ricontrollo":
             fatti.setdefault(str(r.get("item_id")), set()).add(r.get("stadio_min"))
+            if r.get("stadio_s"):
+                con_serie.add(str(r.get("item_id")))
             if r.get("finale"):
                 chiusi.add(str(r.get("item_id")))
     da_fare = []
@@ -10552,6 +10571,8 @@ def _tracc_prossimi(righe, ora=None):
             continue
         eta_min = (ora - (r.get("ts") or ora)) / 60
         ultimo_fatto = max((x for x in fatti.get(str(r.get("item_id")), set()) if x), default=0)
+        if str(r.get("item_id")) in con_serie:
+            ultimo_fatto = max(ultimo_fatto, 60)  # 15 min e 1h li copre la serie fine ancorata a t0
         scaduti = [st for st in TRACCIAMENTO_STADI_MINUTI if eta_min >= st and st > ultimo_fatto]
         if scaduti:
             da_fare.append((r, scaduti[-1], eta_min))
@@ -10729,6 +10750,15 @@ async def _campione_target_cervello(chiama, user_text, forza_ricerca):
 def _log_esito(listing_info, esito, **campi):
     """Una riga greppable per annuncio con il brand del tracker (richiesto
     dall'utente il 2026-10-01) per l'analisi giornaliera per brand dai log."""
+    try:
+        _id = _estrai_item_id_da_url(listing_info.get("url")) if listing_info.get("url") else None
+        if _id:
+            _tracc_esiti[str(_id)] = (esito, campi.get("target"))
+            if len(_tracc_esiti) > 5000:
+                for _k in list(_tracc_esiti)[:1000]:
+                    _tracc_esiti.pop(_k, None)
+    except Exception:
+        pass
     try:
         extra = "".join(f" | {k}={v}" for k, v in campi.items() if v not in (None, ""))
         log.info("ESITO | brand='%s' | titolo='%s' | esito=%s%s",
