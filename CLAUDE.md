@@ -19,7 +19,7 @@ tracker (messaggio Telegram) -> `process_listing` (`bot/pipeline.py`) -> scrape 
 - Fascia Gemini scelta prima dell'Occhio da `ruoli_gemini` (stima rapida verde/gialla = alta; rossa = alta solo se prezzo >= `GEMINI_SOGLIA_PREZZO_ALTO`; stima a confidenza bassa = si sceglie dal prezzo).
 - Stima rapida (`stima_fair_value`): ogni annuncio con brand ha un semaforo. Ordine: tabella dati -> appreso dai verdetti -> livello del brand x fattore categoria -> livello di default. Categoria da titolo, descrizione o catalogo Vinted (mappa che si impara sola: `CATALOGO_CATEGORIE_FILE`). Stime a confidenza bassa: soglie del semaforo x `FAIR_VALUE_RIGORE_BASSA`; voci non apprese x `FAIR_VALUE_TARATURA_GLOBALE` (1,20; Missoni prima linea +10%, Cucinelli +15% in piu').
 - Cascate Gemini per fase, dal modello migliore al piu' leggero: `bot/gemini_stato.py`. 4 account Google, quote per (key, modello).
-- Riserva a scalata via OmniRoute (`bot/riserva_llm.py`): spenta finche' `RISERVA_OCCHIO_MODELLI` / `RISERVA_CERVELLO_MODELLI` sono vuote. Attiva dal 4/10 (Gemini senza quota). Il target dei modelli di riserva si corregge con `RISERVA_FATTORI_TARGET` (Ministral 14B 1,0; gpt-oss-120b 0,95; gpt-oss-20b 0,55).
+- Riserva a scalata via OmniRoute (`bot/riserva_llm.py`): spenta finche' `RISERVA_OCCHIO_MODELLI` / `RISERVA_CERVELLO_MODELLI` sono vuote. Attiva dal 4/10 (Gemini senza quota). Dopo un 429 di Gemini la fase salta Gemini per `GEMINI_PAUSA_429_SECONDI` (300) e va dritta alla riserva; poi riprova. Il target dei modelli di riserva si corregge con `RISERVA_FATTORI_TARGET` (Ministral 14B 1,0; gpt-oss-120b 0,95; gpt-oss-20b 0,55).
 - Risparmio Gemini (4/10): campioni extra del Cervello 1 (`CERVELLO_CAMPIONI_EXTRA`, 2 campioni in totale); fascia alta solo con stima 🟢/🟡 a confidenza alta/media; rosso sicuro (🔴, confidenza alta/media, margine rapido negativo, prezzo < `GEMINI_SOGLIA_PREZZO_ALTO`) salta il Cervello: esito `SKIP_ROSSO`, spento con `SALTA_CERVELLO_ROSSO=0`.
 - Preavviso (`valuta_preavviso` in `bot/fair_value.py`): un album con TUTTE le foto e il semaforo parte nel gruppo COMPRA (`TELEGRAM_ALERT_CHAT_ID`, con suono) appena le foto sono scaricate, se la stima rapida e' promettente; a fine analisi lo stesso messaggio viene AGGIORNATO col verdetto (didascalia, max 1024 caratteri), senza altri messaggi nel gruppo; se l'annuncio viene scartato prima del verdetto, la riga finale riporta il motivo e il link al messaggio originale nella chat principale (solo se e' un supergruppo) (senza gruppo, la scheda in chat principale diventa push) (soglie `PREAVVISO_*`, spento con `PREAVVISO_ATTIVO=0`); non cambia il semaforo.
 - Pannello in ombra (`bot/panel.py`): modelli extra via OmniRoute, solo log `PANEL | ...`, mai nel verdetto.
@@ -36,7 +36,7 @@ tracker (messaggio Telegram) -> `process_listing` (`bot/pipeline.py`) -> scrape 
 - I client HTTP riassegnati a runtime si leggono come `hc._client_generico`, `hc._client_telegram`, `hc._CLIENT_VINTED_AUTH`: mai importarli per nome.
 
 ## Test e CI
-- `python3 -m pytest -q` (110 test) e `python3 -m pyflakes main_telethon.py bot` (nomi non definiti). La CI (`.github/workflows/ci.yml`) fa lo stesso su Python 3.13.
+- `python3 -m pytest -q` (112 test) e `python3 -m pyflakes main_telethon.py bot` (nomi non definiti). La CI (`.github/workflows/ci.yml`) fa lo stesso su Python 3.13.
 - `tests/test_struttura.py` importa ogni modulo da solo: un import circolare lo rompe.
 - Railway fa il deploy da `main` a ogni merge (circa 1,5 minuti). Branch di lavoro: `claude/...`, PR verso `main`, squash merge.
 
