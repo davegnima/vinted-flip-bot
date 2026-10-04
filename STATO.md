@@ -22,6 +22,7 @@ Da rileggere all'inizio di ogni sessione nuova, dopo `CLAUDE.md`. Aggiornare a o
 
 - Pausa Gemini dopo 429 (PR cascata-429): la fase (occhio/cervello) salta Gemini per 5 minuti dopo un 429 e usa la riserva; `gemini_cascata_esaurita` conta anche i modelli esclusi. Verificare nei log che spariscano i 429 ripetuti e che `RISERVA |` copra Occhio e Cervello.
 
+- Riserva a pagamento (PR gemini-pagamento): usa la variabile Railway `GEMINI_API_KEY` (la chiave a pagamento dell'utente; le gratuite sono in `GEMINI_API_KEYS`); spenta se `GEMINI_API_KEY` e' anche nella rotazione; `GEMINI_MODELLO_PAGAMENTO` (default gemini-3.1-flash-lite), tetto `PAGAMENTO_MAX_RICHIESTE_GIORNO` (600 al giorno UTC). Log: `RISERVA | fase | pagamento/... | ok | ... PAGAMENTO richieste_oggi=N/M`. Nel recap contare le richieste a pagamento e stimare la spesa.
 - Tempi da caricato (PR tempi-da-caricato): se la pagina non espone `created_at` (succede quasi sempre), l'ora di caricamento si ricava dal "Caricato N secondi fa" letto allo scrape (`t_scrape` - N). Errore tipico 1-2 s; con unita' in minuti o ore i tempi hanno `~`. Nel preavviso: `⏱ caricato→telegram · telegram→preavviso · totale`. Controllare nei log `PREAVVISO_INVIATO` che `pub_telegram` e `pub_preavviso` ci siano.
 
 ## Variabili Railway del worker (non in repo)
