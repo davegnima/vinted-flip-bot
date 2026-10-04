@@ -187,7 +187,22 @@ FAIR_VALUE_FATTORE_SENZA_CATEGORIA = 1.0   # categoria non rilevabile: capo "med
 # del Cervello (0,68 sui capi venduti in fretta; Missoni 0,62, Cucinelli 0,60). Si applica solo alle voci NON apprese
 # (quelle apprese hanno gia' imparato dai verdetti). Campione piccolo: rivedere col recap mattutino.
 FAIR_VALUE_TARATURA_GLOBALE = _env_float("FAIR_VALUE_TARATURA_GLOBALE", 1.20)
-FAIR_VALUE_TARATURA_BRAND = {"missoni": 1.10, "brunello cucinelli": 1.15}   # in piu' del fattore globale (Missoni: solo prima linea)
+def _fattori_da_env(testo):
+    """'missoni=1.10,brunello cucinelli=1.15' -> {'missoni': 1.1, 'brunello cucinelli': 1.15}. Voci non valide ignorate."""
+    out = {}
+    for voce in (testo or "").split(","):
+        nome, _, val = voce.partition("=")
+        try:
+            if nome.strip():
+                out[nome.strip().lower()] = float(val)
+        except ValueError:
+            pass
+    return out
+
+
+# In piu' del fattore globale (Missoni: solo prima linea). Modificabile da Railway: FAIR_VALUE_TARATURA_BRAND.
+FAIR_VALUE_TARATURA_BRAND = _fattori_da_env(os.environ.get(
+    "FAIR_VALUE_TARATURA_BRAND", "missoni=1.10,brunello cucinelli=1.15"))
 # Le stime a confidenza bassa ora hanno un colore (prima ⚪), ma con soglie piu' alte di questo fattore.
 FAIR_VALUE_RIGORE_BASSA = _env_float("FAIR_VALUE_RIGORE_BASSA", 1.5)
 # Borse (watch 5): (minimo, fair value, massimo) per modelli correnti in

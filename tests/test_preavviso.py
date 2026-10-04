@@ -274,3 +274,10 @@ def test_tempi_da_caricato_con_testo_relativo():
     assert pezzi[0].startswith("pubblicato→telegram 12s") and "totale 23s" in pezzi[-1]
     pezzi2, _ = _calcola_tempi_pipeline({"uploaded_text": "2 minuti fa", "t_scrape": t_scrape}, msg_date, None, t_riferimento=t_scrape)
     assert "~" in pezzi2[0]
+
+
+def test_taratura_brand_da_env():
+    from bot.fair_value import FAIR_VALUE_TARATURA_BRAND, _fattori_da_env
+    assert FAIR_VALUE_TARATURA_BRAND == {"missoni": 1.10, "brunello cucinelli": 1.15}
+    assert _fattori_da_env("Prada=1.3, rotto, x=abc ,=2") == {"prada": 1.3}
+    assert _fattori_da_env("") == {}
