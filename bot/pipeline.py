@@ -6,7 +6,7 @@ import traceback
 from functools import partial
 
 
-from bot.scheda import ANALISI_GEMINI_ATTIVA, STATO_ANALISI_COMPLETATA, STATO_ANALISI_INTERROTTA, _PermessoAnalisi, _aggiorna_stato_scheda, _invia_galleria_anticipata, _invia_risultato_telegram, invia_preavviso, componi_testi_verdetto
+from bot.scheda import ANALISI_GEMINI_ATTIVA, STATO_ANALISI_COMPLETATA, STATO_ANALISI_INTERROTTA, _PermessoAnalisi, _aggiorna_stato_scheda, _invia_galleria_anticipata, _invia_risultato_telegram, aggiorna_preavviso, invia_preavviso, componi_testi_verdetto
 from bot.verdetto import CERVELLO_CAMPIONI_EXTRA, _a_float, _estrai_item_id_da_url, _estrai_prezzi_da_pool_ricerca, _riepilogo_comp_per_fonte, calcola_verdetto, classifica_provenienza_comp, consolida_target_cervello, render_messaggio_verdetto, valida_payload_cervello
 from bot.config import GEMINI_SOGLIA_PREZZO_ALTO, TELEGRAM_ALERT_CHAT_ID, CERVELLO_PROVIDER, DEBUG_CONFRONTO_COMP_TELEGRAM, OCCHIO_OUTPUT_JSON, RAFFREDDAMENTO_SERPER_SECONDI, SERPER_API_KEY, SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO, SOGLIA_MARGINE_ASSOLUTO_NOTIFICA, TELEGRAM_OWNER_CHAT_ID, _serper_fallimenti_consecutivi, _serper_notifica_esaurimento_inviata, _serper_timestamp_ultimo_fallimento
 from bot.panel import EXTRA_LLM_URL, PANEL_CERVELLO_MODELLI, PANEL_OCCHIO_MODELLI, _bg_task, panel_cervello, panel_occhio
@@ -32,8 +32,6 @@ from bot.comps import search_comps_completo, verifica_codici_prodotto_reddit
 from bot.telegram_api import telegram_send_message
 from bot.serper_base import valuta_qualita_comp
 # ---- fine import ----
-_task_preavviso = set()   # riferimenti ai task di invio, perche' non vengano raccolti a meta'
-
 
 async def _campione_target_cervello(chiama, user_text, forza_ricerca):
     """Una valutazione in piu' del Cervello. Ritorna (v|None, problemi, costo): v e' il verdetto validato (il
@@ -56,6 +54,8 @@ async def _campione_target_cervello(chiama, user_text, forza_ricerca):
 async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricevuto_bot=None, stato=None,
                           semaforo=None):
     permesso = _PermessoAnalisi(semaforo) if semaforo is not None else None
+    if stato is None:
+        stato = {}
     esito_finale = STATO_ANALISI_COMPLETATA
     try:
         await _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=msg_date,
@@ -68,6 +68,11 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
         if permesso is not None:
             permesso.rilascia()
         await _aggiorna_stato_scheda(stato, esito_finale)
+        # preavviso rimasto senza verdetto (scartato prima del Cervello o analisi interrotta): riga finale
+        if stato.get("task_preavviso") is not None and not stato.get("preavviso_aggiornato"):
+            await aggiorna_preavviso(
+                stato, url, riga_finale=("⚠️ _analisi interrotta per un errore_" if esito_finale == STATO_ANALISI_INTERROTTA
+                                         else "ℹ️ _scartato prima del verdetto_"))
 
 
 def ruoli_gemini(prezzo, stima_rapida, soglia=None):
@@ -219,11 +224,8 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
                      "".join(f" | {k}={v}" for k, v in _feat.items()
                              if k not in ("prezzo", "semaforo", "fv", "margine", "conf", "regola")))
             if listing_info["preavviso"] and TELEGRAM_ALERT_CHAT_ID:
-                # subito, senza aspettare foto e Occhio: i venduti entro 30 s non lasciano tempo
+                # l'invio parte appena le foto sono scaricate (album completo nel gruppo COMPRA, vedi sotto)
                 listing_info["preavviso_gruppo"] = True
-                _t_pre = asyncio.create_task(invia_preavviso(dict(listing_info), url, cover_photo_bytes))
-                _task_preavviso.add(_t_pre)
-                _t_pre.add_done_callback(_task_preavviso.discard)
             if _item_pre:
                 db.scrivi_evento("annuncio", _item_pre, listing_info.get("brand"),
                                  {**_feat, "titolo": listing_info.get("title")})
@@ -286,6 +288,10 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
         )
     listing_info["fallback_solo_cover_photo"] = fallback_solo_cover_photo
     t_tappe.append(("foto", time.time()))
+    if listing_info.get("preavviso_gruppo") and stato is not None:
+        # PREAVVISO nel gruppo COMPRA: album con tutte le foto + semaforo, in parallelo al resto; a fine analisi
+        # lo stesso messaggio viene aggiornato col verdetto
+        stato["task_preavviso"] = asyncio.create_task(invia_preavviso(dict(listing_info), url, photo_bytes_list))
     if not photo_bytes_list:
         await telegram_send_message(
             TELEGRAM_OWNER_CHAT_ID,

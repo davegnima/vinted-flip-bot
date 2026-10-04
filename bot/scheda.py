@@ -1,4 +1,5 @@
 """Modulo estratto da main_telethon.py (spostamento meccanico)."""
+import asyncio
 import os
 import re
 import difflib
@@ -10,7 +11,7 @@ from bot.verdetto import EMOJI_DECISIONE, ETICHETTA_CONFIDENZA, ETICHETTA_RISCHI
 from bot.testo import _escapa_markdown_legacy
 from bot.fair_value import _riga_fair_value_testo, _riga_fair_value_unica
 from bot.logger import log
-from bot.telegram_api import telegram_edit_message, telegram_send_media_group, telegram_send_message, telegram_send_photo, telegram_send_photo_con_bottone, telegram_send_with_buttons
+from bot.telegram_api import telegram_edit_caption, telegram_edit_message, telegram_send_media_group, telegram_send_message, telegram_send_photo, telegram_send_photo_con_bottone, telegram_send_with_buttons
 # ---- fine import ----
 # GALLERIA ANTICIPATA (richiesto dall'utente il 2026-09-28): la galleria
 # completa arriva nella chat principale APPENA le foto sono scaricate, prima
@@ -173,9 +174,13 @@ def _testa_prezzo_brand(listing_info):
     return " · ".join(testa) or None
 
 
-def testo_preavviso(listing_info, url=None):
+RIGA_PREAVVISO_IN_ATTESA = "_preavviso del semaforo: la valutazione completa arriva dopo_"
+
+
+def testo_preavviso(listing_info, url=None, riga_finale=RIGA_PREAVVISO_IN_ATTESA):
     """Messaggio breve del PREAVVISO (gruppo COMPRA): prima riga = fulmine, semaforo, margine rapido, prezzo e brand
-    (e' quello che compare nell'anteprima della notifica), poi titolo, dettagli e fair value rapido. Pura."""
+    (e' quello che compare nell'anteprima della notifica), poi titolo, dettagli, fair value rapido, link e riga finale
+    (sostituita a fine analisi). Pura."""
     esc = _escapa_markdown_legacy
     fv = listing_info.get("fair_value") or {}
     testa = _testa_prezzo_brand(listing_info) or ""
@@ -184,28 +189,94 @@ def testo_preavviso(listing_info, url=None):
     for riga in (_righe_dettagli_annuncio(listing_info), esc(_riga_fair_value_testo(fv) or "")):
         if riga:
             righe.append(riga)
-    righe += ["", "_preavviso del semaforo: la valutazione completa arriva dopo_"]
+    if url:
+        righe.append(f"[vedi su Vinted]({url})")
+    righe += ["", riga_finale]
     return "\n".join(righe)
 
 
-async def invia_preavviso(listing_info, url, cover_photo_bytes=None):
-    """Manda il PREAVVISO nel gruppo COMPRA con suono, appena la stima rapida e' pronta (prima di foto e Occhio).
-    Con la foto di copertina del tracker (se c'e') e il bottone; altrimenti solo testo con bottone.
-    Ritorna True se spedito. Non solleva mai: un problema qui non deve fermare l'analisi."""
+def didascalia_verdetto(testo, limite=1024):
+    """Riduce il messaggio del verdetto alla didascalia di una foto (max 1024): tiene i paragrafi interi dall'alto
+    finche' ci stanno; se il primo e' gia' troppo lungo lo tronca all'ultima riga intera. Pura."""
+    testo = (testo or "").strip()
+    if len(testo) <= limite:
+        return testo
+    out = ""
+    for par in testo.split("\n\n"):
+        candidato = (out + "\n\n" + par) if out else par
+        if len(candidato) > limite:
+            break
+        out = candidato
+    if out:
+        return out
+    righe, acc = testo.split("\n"), ""
+    for r in righe:
+        if len(acc) + len(r) + 2 > limite:
+            break
+        acc += (r + "\n")
+    return acc.rstrip() + "…" if acc else testo[:limite - 1] + "…"
+
+
+async def invia_preavviso(listing_info, url, photo_bytes_list=None):
+    """Manda il PREAVVISO nel gruppo COMPRA con suono: ALBUM con tutte le foto (una sola foto: foto con bottone),
+    didascalia = testo_preavviso. Senza foto: solo testo con bottone. A fine analisi lo stesso messaggio viene
+    AGGIORNATO col verdetto (vedi aggiorna_preavviso): un solo messaggio per annuncio nel gruppo.
+    Ritorna {"msg_id", "tipo": album|foto|testo, "base"} oppure None. Non solleva mai."""
     if not TELEGRAM_ALERT_CHAT_ID or not url:
-        return False
+        return None
     testo = testo_preavviso(listing_info, url)
+    foto = list(photo_bytes_list or [])
     try:
-        id_msg = None
-        if cover_photo_bytes:
+        if len(foto) > 1:
+            id_msg = await telegram_send_media_group(
+                TELEGRAM_ALERT_CHAT_ID, foto, caption=testo, disable_notification=False, parse_mode="Markdown")
+            if id_msg is not None:
+                return {"msg_id": id_msg, "tipo": "album", "base": listing_info}
+        elif len(foto) == 1:
             id_msg = await telegram_send_photo_con_bottone(
-                TELEGRAM_ALERT_CHAT_ID, cover_photo_bytes, testo, url, disable_notification=False)
-        if id_msg is None:   # niente copertina o foto non partita: almeno il testo
-            id_msg = await telegram_send_with_buttons(
-                TELEGRAM_ALERT_CHAT_ID, testo, url, None, disable_notification=False)
-        return id_msg is not None
+                TELEGRAM_ALERT_CHAT_ID, foto[0], testo, url, disable_notification=False)
+            if id_msg is not None:
+                return {"msg_id": id_msg, "tipo": "foto", "base": listing_info}
+        id_msg = await telegram_send_with_buttons(
+            TELEGRAM_ALERT_CHAT_ID, testo, url, None, disable_notification=False)
+        if id_msg is not None:
+            return {"msg_id": id_msg, "tipo": "testo", "base": listing_info}
     except Exception:
         log.warning("Preavviso non inviato:\n%s", traceback.format_exc())
+    return None
+
+
+async def aggiorna_preavviso(stato, url, testo_verdetto=None, riga_finale=None):
+    """Sostituisce il contenuto del messaggio di preavviso: con il verdetto (didascalia ridotta se e' una foto) o,
+    senza verdetto, con la scheda del preavviso e una riga finale ("scartato", "interrotta"). Una sola volta per
+    annuncio. Ritorna True se il messaggio e' stato aggiornato."""
+    if not stato or stato.get("preavviso_aggiornato"):
+        return False
+    task = stato.get("task_preavviso")
+    if task is None:
+        return False
+    try:
+        info = await asyncio.wait_for(task, 15)
+    except Exception:
+        return False
+    if not info:
+        return False
+    try:
+        if testo_verdetto is not None:
+            testo = testo_verdetto
+        else:
+            testo = testo_preavviso(info["base"], url, riga_finale=riga_finale or RIGA_PREAVVISO_IN_ATTESA)
+        if info["tipo"] == "testo":
+            ok = await telegram_edit_message(TELEGRAM_ALERT_CHAT_ID, info["msg_id"], testo, url)
+        else:
+            ok = await telegram_edit_caption(
+                TELEGRAM_ALERT_CHAT_ID, info["msg_id"], didascalia_verdetto(testo),
+                url if info["tipo"] == "foto" else None)
+        if ok:
+            stato["preavviso_aggiornato"] = True
+        return ok
+    except Exception:
+        log.warning("Preavviso non aggiornato:\n%s", traceback.format_exc())
         return False
 
 
@@ -365,6 +436,27 @@ async def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header,
         and margine > SOGLIA_MARGINE_ALERT_CHIEDI_FOTO
         and not e_brand_escluso_alert
     )
+    # Preavviso gia' nel gruppo (album con tutte le foto): lo si AGGIORNA col verdetto invece di mandare altri
+    # messaggi (richiesto dall'utente il 2026-10-04). Vale per ogni esito; se la modifica non riesce, per i soli
+    # esiti da notificare si ricade sul testo in risposta all'album.
+    if TELEGRAM_ALERT_CHAT_ID and stato and stato.get("task_preavviso") is not None:
+        if await aggiorna_preavviso(stato, url, testo_verdetto=testo_messaggio):
+            return
+        if stato.get("preavviso_aggiornato"):
+            return
+        if decisione == "COMPRA" or e_chiedi_foto_di_valore:
+            try:
+                info = await asyncio.wait_for(stato["task_preavviso"], 15)
+            except Exception:
+                info = None
+            if info:
+                if url:
+                    await telegram_send_with_buttons(
+                        TELEGRAM_ALERT_CHAT_ID, testo_messaggio, url,
+                        item_id if (e_compra_urgente and item_id) else None, reply_to=info["msg_id"])
+                else:
+                    await telegram_send_message(TELEGRAM_ALERT_CHAT_ID, testo_messaggio, reply_to=info["msg_id"])
+                return
     if TELEGRAM_ALERT_CHAT_ID and (decisione == "COMPRA" or e_chiedi_foto_di_valore):
         if len(photo_bytes_list) > 1:
             await telegram_send_media_group(

@@ -168,26 +168,43 @@ async def telegram_send_photo_con_bottone(chat_id, photo_bytes, caption, url_ann
     return _primo_message_id(resp)
 
 
-async def telegram_send_media_group(chat_id, photos_bytes_list, caption=None, disable_notification=False):
-    """Ritorna il message_id della prima foto dell'album (None se fallito)."""
+async def telegram_send_media_group(chat_id, photos_bytes_list, caption=None, disable_notification=False,
+                                    parse_mode=None):
+    """Ritorna il message_id della prima foto dell'album (None se fallito). Con parse_mode la didascalia e'
+    formattata; se Telegram la rifiuta (400) si ritenta senza formattazione."""
     if not photos_bytes_list:
         return None
     files = {}
-    media = []
     for i, photo_bytes in enumerate(photos_bytes_list[:10]):
-        key = f"photo{i}"
-        files[key] = (f"photo{i}.jpg", photo_bytes, "image/jpeg")
-        item = {"type": "photo", "media": f"attach://{key}"}
-        if i == 0 and caption:
-            item["caption"] = caption[:1024]
-        media.append(item)
+        files[f"photo{i}"] = (f"photo{i}.jpg", photo_bytes, "image/jpeg")
+
+    def _media(con_parse):
+        media = []
+        for i in range(len(files)):
+            item = {"type": "photo", "media": f"attach://photo{i}"}
+            if i == 0 and caption:
+                item["caption"] = caption[:1024]
+                if con_parse and parse_mode:
+                    item["parse_mode"] = parse_mode
+            media.append(item)
+        return media
+
     resp = await _telegram_post(
         "sendMediaGroup",
-        data={"chat_id": chat_id, "media": json.dumps(media), "disable_notification": disable_notification},
+        data={"chat_id": chat_id, "media": json.dumps(_media(True)), "disable_notification": disable_notification},
         files=files,
         timeout=60,
     )
-    _telegram_esito_ok(resp, "sendMediaGroup", f"{len(media)} foto")
+    if parse_mode and resp is not None and not resp.is_success:
+        log.warning("telegram_send_media_group: %s fallita -- HTTP %d: %s -- ritento senza parse_mode",
+                    parse_mode, resp.status_code, resp.text[:300])
+        resp = await _telegram_post(
+            "sendMediaGroup",
+            data={"chat_id": chat_id, "media": json.dumps(_media(False)), "disable_notification": disable_notification},
+            files=files,
+            timeout=60,
+        )
+    _telegram_esito_ok(resp, "sendMediaGroup", f"{len(files)} foto")
     return _primo_message_id(resp)
 
 
@@ -265,6 +282,25 @@ async def telegram_edit_message(chat_id, message_id, text, url_annuncio=None):
         if "not modified" in (resp.text or ""):
             return True
         resp = await _telegram_post("editMessageText", json=payload)
+        if resp is not None and not resp.is_success and "not modified" in (resp.text or ""):
+            return True
+    return bool(resp is not None and resp.is_success)
+
+
+async def telegram_edit_caption(chat_id, message_id, caption, url_annuncio=None):
+    """Modifica la didascalia di una foto (o della prima foto di un album) GIA' inviata dal bot: nessuna nuova
+    notifica. Su un album i bottoni non esistono (url_annuncio va passato solo per una foto singola: editMessageCaption
+    senza reply_markup toglie il bottone). Ritorna True se la modifica e' andata a buon fine ("not modified" = ok)."""
+    if not message_id:
+        return False
+    payload = {"chat_id": chat_id, "message_id": int(message_id), "caption": (caption or "")[:1024]}
+    if url_annuncio:
+        payload["reply_markup"] = {"inline_keyboard": [[{"text": "🔗 Apri su Vinted", "url": url_annuncio}]]}
+    resp = await _telegram_post("editMessageCaption", json={**payload, "parse_mode": "Markdown"})
+    if resp is not None and not resp.is_success:
+        if "not modified" in (resp.text or ""):
+            return True
+        resp = await _telegram_post("editMessageCaption", json=payload)
         if resp is not None and not resp.is_success and "not modified" in (resp.text or ""):
             return True
     return bool(resp is not None and resp.is_success)

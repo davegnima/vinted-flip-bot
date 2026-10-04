@@ -108,23 +108,74 @@ def test_taratura_brand_in_piu_della_globale():
     assert cuc["moltiplicatore"] == round(1.20 * 1.15, 2)
 
 
-def test_invia_preavviso_con_copertina_e_senza(monkeypatch):
-    import asyncio
+def _finti(monkeypatch):
+    import asyncio  # noqa: F401
     from bot import scheda
     chiamate = []
 
-    async def foto(chat, b, testo, url, disable_notification=False):
-        chiamate.append(("foto", chat, disable_notification))
+    async def album(chat, foto, caption=None, disable_notification=False, parse_mode=None):
+        chiamate.append(("album", len(foto), disable_notification, parse_mode))
         return 7
 
-    async def testo(chat, t, url, item=None, disable_notification=False, reply_to=None):
-        chiamate.append(("testo", chat, disable_notification))
+    async def foto1(chat, b, testo, url, disable_notification=False):
+        chiamate.append(("foto", disable_notification))
         return 8
 
+    async def testo(chat, t, url, item=None, disable_notification=False, reply_to=None):
+        chiamate.append(("testo", disable_notification))
+        return 9
+
+    async def edit_cap(chat, mid, cap, url=None):
+        chiamate.append(("edit_cap", mid, len(cap) <= 1024, bool(url)))
+        return True
+
+    async def edit_txt(chat, mid, t, url=None):
+        chiamate.append(("edit_txt", mid))
+        return True
+
     monkeypatch.setattr(scheda, "TELEGRAM_ALERT_CHAT_ID", "-100")
-    monkeypatch.setattr(scheda, "telegram_send_photo_con_bottone", foto)
+    monkeypatch.setattr(scheda, "telegram_send_media_group", album)
+    monkeypatch.setattr(scheda, "telegram_send_photo_con_bottone", foto1)
     monkeypatch.setattr(scheda, "telegram_send_with_buttons", testo)
+    monkeypatch.setattr(scheda, "telegram_edit_caption", edit_cap)
+    monkeypatch.setattr(scheda, "telegram_edit_message", edit_txt)
+    return scheda, chiamate
+
+
+def test_preavviso_album_foto_o_testo(monkeypatch):
+    import asyncio
+    scheda, chiamate = _finti(monkeypatch)
     info = {"price": 15, "brand": "Prada", "title": "Gonna", "fair_value": _stima("🟢", 40)}
-    assert asyncio.run(scheda.invia_preavviso(info, "https://www.vinted.it/items/1-x", b"jpg"))
-    assert asyncio.run(scheda.invia_preavviso(info, "https://www.vinted.it/items/1-x", None))
-    assert chiamate == [("foto", "-100", False), ("testo", "-100", False)]
+    u = "https://www.vinted.it/items/1-x"
+    a = asyncio.run(scheda.invia_preavviso(info, u, [b"1", b"2", b"3"]))
+    f = asyncio.run(scheda.invia_preavviso(info, u, [b"1"]))
+    t = asyncio.run(scheda.invia_preavviso(info, u, []))
+    assert [a["tipo"], f["tipo"], t["tipo"]] == ["album", "foto", "testo"]
+    assert chiamate == [("album", 3, False, "Markdown"), ("foto", False), ("testo", False)]
+
+
+def test_aggiorna_preavviso_col_verdetto_una_sola_volta(monkeypatch):
+    import asyncio
+    scheda, chiamate = _finti(monkeypatch)
+    info = {"price": 15, "brand": "Prada", "title": "Gonna", "fair_value": _stima("🟢", 40)}
+    u = "https://www.vinted.it/items/1-x"
+
+    async def prova():
+        stato = {"task_preavviso": asyncio.ensure_future(scheda.invia_preavviso(info, u, [b"1", b"2"]))}
+        lungo = "🟢 *COMPRA*\n" + "x" * 3000
+        assert await scheda.aggiorna_preavviso(stato, u, testo_verdetto=lungo)
+        assert not await scheda.aggiorna_preavviso(stato, u, riga_finale="altro")   # gia' aggiornato
+        return stato
+    stato = asyncio.run(prova())
+    assert stato["preavviso_aggiornato"]
+    assert chiamate[-1] == ("edit_cap", 7, True, False)   # album: didascalia <= 1024, niente bottone
+
+
+def test_didascalia_verdetto_taglia_a_paragrafi():
+    from bot.scheda import didascalia_verdetto
+    corto = "a\n\nb"
+    assert didascalia_verdetto(corto) == corto
+    testo = "testa\nriga\n\n" + "c" * 600 + "\n\n" + "d" * 600
+    out = didascalia_verdetto(testo, 1024)
+    assert out.endswith("c" * 600) and "d" not in out and len(out) <= 1024
+    assert len(didascalia_verdetto("riga\n" * 400, 1024)) <= 1024
