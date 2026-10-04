@@ -1424,6 +1424,7 @@ async def on_new_message(event):
     try:
         msg_id = event.message.id
         if msg_id in _processed_message_ids:
+            log.info("MESSAGGIO SCARTATO | motivo=gia_elaborato | msg_id=%s", msg_id)
             return
         _processed_message_ids.add(msg_id)
         if len(_processed_message_ids) > 500:
@@ -1431,6 +1432,8 @@ async def on_new_message(event):
 
         sender = await event.get_sender()
         if not any(h in ((getattr(sender, "username", "") or "") + " " + (getattr(sender, "first_name", "") or "")).lower() for h in VINTED_TRACKER_NAME_HINTS):
+            log.info("MESSAGGIO SCARTATO | motivo=mittente_non_tracker | msg_id=%s | mittente=%s", msg_id,
+                     (getattr(sender, "username", "") or getattr(sender, "first_name", "") or "?")[:40])
             return
 
         text = event.message.message or ""
@@ -1446,7 +1449,13 @@ async def on_new_message(event):
                         url = getattr(btn, "url", None)
                         break
 
+        # Riga di ricezione: permette di confrontare i messaggi del tracker con gli ESITO e di capire dove si perde
+        # un annuncio (ricevuto ma non elaborato, oppure mai ricevuto).
+        log.info("MESSAGGIO TRACKER | msg_id=%s | item=%s | titolo=%s", msg_id, _estrai_item_id_da_url(url),
+                 (parsed.get("title") or "")[:60])
         if e_variante_recente(parsed, url):
+            log.info("MESSAGGIO SCARTATO | motivo=variante_recente_5min | msg_id=%s | item=%s | titolo=%s", msg_id,
+                     _estrai_item_id_da_url(url), (parsed.get("title") or "")[:60])
             return
 
         cover = await event.message.download_media(bytes) if event.message.photo else None
