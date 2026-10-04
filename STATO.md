@@ -11,6 +11,9 @@ Da rileggere all'inizio di ogni sessione nuova, dopo `CLAUDE.md`. Aggiornare a o
 - Icona `⚠️ dati deboli` per COMPRA/TRATTA con stima instabile o un solo comp.
 - Nota "senza strumenti" per pannello e riserva (Groq dava 400 per `cerca_comp_prezzo`).
 
+- Archivio per annuncio (PR archivio-annunci): la riga `PREAVVISO` ora ha categoria, condizione, materiale, taglia, lingua del titolo, n. foto, dati venditore, ora/giorno; evento `annuncio` nel DB; `ESITO` ha `item=`. Serve all'apprendimento dalla velocita' di rotazione (etichetta = classe di vendita, non il feedback dell'utente).
+- Recap mattutino spostato alle 05:47 (ora italiana) con sezione apprendimento dalla rotazione e indice di sostituibilita' del Cervello.
+
 ## Variabili Railway del worker (non in repo)
 - `PANEL_CERVELLO_MODELLI=mistral/ministral-14b-2512@c,zai/glm-4.7-flash@c,nvidia/nvidia/nemotron-3-super-120b-a12b@c,groq/openai/gpt-oss-120b@c,groq/openai/gpt-oss-20b@c`
 - `PANEL_OCCHIO_MODELLI=mistral/ministral-14b-2512`; `PANEL_MODELLI_PER_ANNUNCIO=8`; `GEMINI_SOGLIA_PREZZO_ALTO=50`; `RESELLBOT_ATTIVO=0`; `RISERVA_*` non impostate.

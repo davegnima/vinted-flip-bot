@@ -38,3 +38,14 @@ def test_dati_deboli():
     assert dati_deboli({"decisione": "TRATTA", "comp_usati": [{}, {}]}, stima_instabile=True)
     assert not dati_deboli({"decisione": "COMPRA", "comp_usati": [{}, {}]})
     assert not dati_deboli({"decisione": "NON COMPRARE", "comp_usati": []}, stima_instabile=True)
+
+
+def test_lingua_titolo_e_campi_annuncio():
+    from bot.tracciamento import campi_annuncio, lingua_titolo
+    assert lingua_titolo("Schulterfreies Oberteil von Dries van Noten M") == "de"
+    assert lingua_titolo("Veste en laine taille 38") == "fr"
+    assert lingua_titolo("Cappotto Max Mara lana") == "it"
+    c = campi_annuncio({"title": "Cappotto Max Mara", "condition": "Molto buone", "size": "M | 40",
+                        "seller_feedback_count": 12, "description": "ottimo"}, n_foto=5, adesso=0)
+    assert c["cond"] == "Molto_buone" and c["taglia"] == "M_/_40" and c["n_foto"] == 5
+    assert c["ora_utc"] == 0 and c["gs"] == 3 and c["lingua"] == "it" and c["v_rec"] == 12
