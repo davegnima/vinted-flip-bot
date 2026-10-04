@@ -153,6 +153,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
         # aspettano piu'.
         scraped = await scrape_vinted_listing(url, includi_guardaroba=False)
         t_tappe.append(("scrape", time.time()))
+        listing_info["t_scrape"] = time.time()   # per ricavare l'ora di caricamento dal "Caricato N secondi fa"
         listing_info.update({
             "size": scraped.get("size"), "condition": scraped.get("condition"),
             "description": scraped.get("description"), "age_days": scraped.get("age_days"),
@@ -301,7 +302,8 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
         # PREAVVISO nel gruppo COMPRA: album con tutte le foto + semaforo, in parallelo al resto; a fine analisi
         # lo stesso messaggio viene aggiornato col verdetto
         _pezzi_pre, _sec_pre = _calcola_tempi_pipeline(listing_info, msg_date, t_ricevuto_bot)
-        _riga_tempi_pre = ("⏱ " + " · ".join(p.replace("telegram→notifica", "telegram→preavviso") for p in _pezzi_pre)
+        _riga_tempi_pre = ("⏱ " + " · ".join(p.replace("telegram→notifica", "telegram→preavviso").replace("pubblicato", "caricato")
+                                         for p in _pezzi_pre)
                            ) if _pezzi_pre else None
         stato["task_preavviso"] = asyncio.create_task(invia_preavviso(
             dict(listing_info), url, photo_bytes_list, riga_tempi=_riga_tempi_pre, secondi=_sec_pre))

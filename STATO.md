@@ -22,6 +22,8 @@ Da rileggere all'inizio di ogni sessione nuova, dopo `CLAUDE.md`. Aggiornare a o
 
 - Pausa Gemini dopo 429 (PR cascata-429): la fase (occhio/cervello) salta Gemini per 5 minuti dopo un 429 e usa la riserva; `gemini_cascata_esaurita` conta anche i modelli esclusi. Verificare nei log che spariscano i 429 ripetuti e che `RISERVA |` copra Occhio e Cervello.
 
+- Tempi da caricato (PR tempi-da-caricato): se la pagina non espone `created_at` (succede quasi sempre), l'ora di caricamento si ricava dal "Caricato N secondi fa" letto allo scrape (`t_scrape` - N). Errore tipico 1-2 s; con unita' in minuti o ore i tempi hanno `~`. Nel preavviso: `⏱ caricato→telegram · telegram→preavviso · totale`. Controllare nei log `PREAVVISO_INVIATO` che `pub_telegram` e `pub_preavviso` ci siano.
+
 ## Variabili Railway del worker (non in repo)
 - `PANEL_CERVELLO_MODELLI=mistral/ministral-14b-2512@c,zai/glm-4.7-flash@c,nvidia/nvidia/nemotron-3-super-120b-a12b@c,groq/openai/gpt-oss-120b@c,groq/openai/gpt-oss-20b@c`
 - `PANEL_OCCHIO_MODELLI=mistral/ministral-14b-2512`; `PANEL_MODELLI_PER_ANNUNCIO=8`; `GEMINI_SOGLIA_PREZZO_ALTO=50`; `RESELLBOT_ATTIVO=0`; `RISERVA_OCCHIO_MODELLI` e `RISERVA_CERVELLO_MODELLI` impostate il 4/10.
