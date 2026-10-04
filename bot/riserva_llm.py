@@ -33,6 +33,25 @@ def modelli_disponibili(lista, adesso=None):
 # Fattore sul target dei modelli di riserva, dalla mediana del loro target / target di Gemini sul pannello
 # (2-3/10, 38 confronti per Ministral 14B, 8 per gpt-oss-120b, 5 per gpt-oss-20b molto dispersi). Formato env:
 # RISERVA_FATTORI_TARGET="ministral-14b=1.0,gpt-oss-120b=0.95,gpt-oss-20b=0.55" (sottostringa del nome del modello).
+# Pausa di Gemini dopo un 429 (2026-10-04): se la quota e' finita, ogni annuncio sprecava la chiamata (e secondi) prima
+# di cadere sulla riserva. Dopo un 429 la fase salta Gemini per GEMINI_PAUSA_429_SECONDI e va dritta alla riserva;
+# poi riprova (cosi' al reset della quota Gemini torna da solo).
+GEMINI_PAUSA_429_SECONDI = int(os.environ.get("GEMINI_PAUSA_429_SECONDI", "300"))
+_gemini_pausa_fino = {}
+
+
+def gemini_in_pausa(ruolo):
+    return time.time() < _gemini_pausa_fino.get(ruolo, 0)
+
+
+def segna_gemini_in_pausa_se_429(ruolo, errore):
+    """Se l'errore e' un 429 mette in pausa la fase `ruolo`. Ritorna True se l'ha messa."""
+    if "429" in str(errore):
+        _gemini_pausa_fino[ruolo] = time.time() + GEMINI_PAUSA_429_SECONDI
+        return True
+    return False
+
+
 def _carica_fattori(testo):
     out = {}
     for voce in (testo or "").split(","):
@@ -80,14 +99,15 @@ async def occhio_con_riserva(system_prompt, user_text, photo_bytes_list, ruolo, 
     """Occhio JSON: Gemini per primo; riserva se la cascata e' esaurita o Gemini fallisce. Stesso ritorno di
     chiama_gemini (testo JSON, costo, token)."""
     usa_riserva = riserva_attiva(RISERVA_OCCHIO_MODELLI) and photo_bytes_list
-    if usa_riserva and gemini_cascata_esaurita(ruolo):
-        log.info("RISERVA | occhio | cascata Gemini '%s' esaurita: si passa ai modelli di riserva", ruolo)
+    if usa_riserva and (gemini_cascata_esaurita(ruolo) or gemini_in_pausa(ruolo)):
+        log.info("RISERVA | occhio | cascata Gemini '%s' esaurita o in pausa: si passa ai modelli di riserva", ruolo)
         risultato = None
     else:
         risultato = await chiama_gemini(system_prompt, user_text, photo_bytes_list, grounding=False,
                                         response_schema=response_schema, ruolo=ruolo)
         if not (usa_riserva and str(risultato[0]).startswith("[ERRORE")):
             return risultato
+        segna_gemini_in_pausa_se_429(ruolo, risultato[0])
     parts = await costruisci_parts_foto(photo_bytes_list[:6])
     immagini = [{"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + p["inline_data"]["data"]}}
                 for p in parts]
@@ -105,13 +125,14 @@ async def cervello_con_riserva(chiama_gemini_fn, ruolo, system_prompt, user_text
     """Cervello: Gemini per primo (con le sue ricerche); riserva se la cascata e' esaurita o il verdetto manca.
     Ritorna la tupla a 5 elementi di chiama_gemini_cervello_forzato; il dict porta '_riserva' col modello usato."""
     usa_riserva = riserva_attiva(RISERVA_CERVELLO_MODELLI)
-    if usa_riserva and gemini_cascata_esaurita(ruolo):
-        log.info("RISERVA | cervello | cascata Gemini '%s' esaurita: si passa ai modelli di riserva", ruolo)
+    if usa_riserva and (gemini_cascata_esaurita(ruolo) or gemini_in_pausa(ruolo)):
+        log.info("RISERVA | cervello | cascata Gemini '%s' esaurita o in pausa: si passa ai modelli di riserva", ruolo)
         risultato = None
     else:
         risultato = await chiama_gemini_fn(system_prompt, user_text, **kw)
         if not (usa_riserva and risultato[0] is None):
             return risultato
+        segna_gemini_in_pausa_se_429(ruolo, risultato[1])
     schema = json.dumps(CERVELLO_RESPONSE_SCHEMA_OPENAI, ensure_ascii=False)
     completo = system_prompt + ISTRUZIONE_SOLO_JSON + schema
     d, modello = await _prova_in_ordine(

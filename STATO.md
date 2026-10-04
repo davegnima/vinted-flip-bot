@@ -20,6 +20,8 @@ Da rileggere all'inizio di ogni sessione nuova, dopo `CLAUDE.md`. Aggiornare a o
 
 - Quota Gemini finita (4/10 16:35 UTC): `gemini-3.1-flash-lite` 500 richieste/giorno per account, tutte e 4 le chiavi esaurite, reset 00:00 UTC. Riserva attivata: Occhio `mistral/ministral-14b-2512`; Cervello `mistral/ministral-14b-2512@c`, `groq/openai/gpt-oss-120b@c`. Fattori sul target di riserva (mediana target modello / target Gemini sul pannello 2-3/10: Ministral 0,93 su 38 casi, gpt-oss-120b 0,96 su 8, gpt-oss-20b 2,0 su 5 molto dispersi; l'1,4-2x visto il 4/10 era un solo caso). Risparmio: 1 campione extra, fascia alta solo con stima solida, SKIP_ROSSO. Da controllare nel recap: righe `RISERVA |`, esiti con `riserva=`, quanti `SKIP_ROSSO` e quanti di questi vendono in fretta (falsi negativi), COMPRA di riserva vs Gemini.
 
+- Pausa Gemini dopo 429 (PR cascata-429): la fase (occhio/cervello) salta Gemini per 5 minuti dopo un 429 e usa la riserva; `gemini_cascata_esaurita` conta anche i modelli esclusi. Verificare nei log che spariscano i 429 ripetuti e che `RISERVA |` copra Occhio e Cervello.
+
 ## Variabili Railway del worker (non in repo)
 - `PANEL_CERVELLO_MODELLI=mistral/ministral-14b-2512@c,zai/glm-4.7-flash@c,nvidia/nvidia/nemotron-3-super-120b-a12b@c,groq/openai/gpt-oss-120b@c,groq/openai/gpt-oss-20b@c`
 - `PANEL_OCCHIO_MODELLI=mistral/ministral-14b-2512`; `PANEL_MODELLI_PER_ANNUNCIO=8`; `GEMINI_SOGLIA_PREZZO_ALTO=50`; `RESELLBOT_ATTIVO=0`; `RISERVA_OCCHIO_MODELLI` e `RISERVA_CERVELLO_MODELLI` impostate il 4/10.

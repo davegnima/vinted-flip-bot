@@ -232,3 +232,27 @@ def test_preavviso_con_riga_dei_tempi(monkeypatch):
     esito = asyncio.run(scheda.invia_preavviso(
         info, info["url"], [b"1", b"2"], riga_tempi="⏱ totale 12s", secondi={"pub_telegram": 8.0, "telegram_notifica": 4.0, "totale": 12.0}))
     assert esito["riga_tempi"] == "⏱ totale 12s" and esito["tipo"] == "album"
+
+
+def test_pausa_gemini_dopo_429(monkeypatch):
+    from bot import riserva_llm as r
+    r._gemini_pausa_fino.clear()
+    assert not r.gemini_in_pausa("cervello")
+    assert not r.segna_gemini_in_pausa_se_429("cervello", "errore 500 generico")
+    assert r.segna_gemini_in_pausa_se_429("cervello", "Client error '429 Too Many Requests' for url ...")
+    assert r.gemini_in_pausa("cervello") and not r.gemini_in_pausa("occhio")
+    monkeypatch.setattr(r, "GEMINI_PAUSA_429_SECONDI", -1)
+    r.segna_gemini_in_pausa_se_429("occhio", "429")
+    assert not r.gemini_in_pausa("occhio")     # scaduta: Gemini si riprova
+    r._gemini_pausa_fino.clear()
+
+
+def test_cascata_esaurita_conta_anche_i_modelli_esclusi(monkeypatch):
+    from bot import gemini_stato as g
+    monkeypatch.setattr(g, "GEMINI_CASCATA", ["m-escluso", "m-senza-quota"])
+    monkeypatch.setattr(g, "GEMINI_CASCATA_CERVELLO", [])
+    monkeypatch.setattr(g, "_gemini_modello_escluso", lambda m: m == "m-escluso")
+    monkeypatch.setattr(g, "_gemini_modello_senza_quota", lambda m: m == "m-senza-quota")
+    assert g.gemini_cascata_esaurita("cervello")
+    monkeypatch.setattr(g, "_gemini_modello_senza_quota", lambda m: False)
+    assert not g.gemini_cascata_esaurita("cervello")

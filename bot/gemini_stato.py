@@ -381,7 +381,9 @@ def gemini_cascata_esaurita(ruolo=None):
     """True se TUTTI i modelli della cascata di `ruolo` hanno la quota finita su tutte le key: Gemini non puo'
     rispondere e si passa ai modelli di riserva (vedi riserva_llm)."""
     modelli = cascata_per(ruolo)
-    return bool(modelli) and all(_gemini_modello_senza_quota(m) for m in modelli)
+    # un modello escluso (404, sovraccarico) o senza quota su tutte le key non e' piu' utilizzabile: 4/10 la cascata
+    # restava "non esaurita" per un modello escluso e il bot continuava a chiamare Gemini ricevendo 429
+    return bool(modelli) and all(_gemini_modello_escluso(m) or _gemini_modello_senza_quota(m) for m in modelli)
 
 
 def _gemini_key_in_quota_esaurita(key, modello=None):
