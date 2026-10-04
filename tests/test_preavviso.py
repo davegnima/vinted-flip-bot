@@ -106,3 +106,25 @@ def test_taratura_brand_in_piu_della_globale():
     assert miss["moltiplicatore"] == round(1.20 * 1.10, 2)       # prima linea: +10% in piu'
     assert m_line["moltiplicatore"] == 1.2                       # sottolinea: solo la globale (o apprese)
     assert cuc["moltiplicatore"] == round(1.20 * 1.15, 2)
+
+
+def test_invia_preavviso_con_copertina_e_senza(monkeypatch):
+    import asyncio
+    from bot import scheda
+    chiamate = []
+
+    async def foto(chat, b, testo, url, disable_notification=False):
+        chiamate.append(("foto", chat, disable_notification))
+        return 7
+
+    async def testo(chat, t, url, item=None, disable_notification=False, reply_to=None):
+        chiamate.append(("testo", chat, disable_notification))
+        return 8
+
+    monkeypatch.setattr(scheda, "TELEGRAM_ALERT_CHAT_ID", "-100")
+    monkeypatch.setattr(scheda, "telegram_send_photo_con_bottone", foto)
+    monkeypatch.setattr(scheda, "telegram_send_with_buttons", testo)
+    info = {"price": 15, "brand": "Prada", "title": "Gonna", "fair_value": _stima("🟢", 40)}
+    assert asyncio.run(scheda.invia_preavviso(info, "https://www.vinted.it/items/1-x", b"jpg"))
+    assert asyncio.run(scheda.invia_preavviso(info, "https://www.vinted.it/items/1-x", None))
+    assert chiamate == [("foto", "-100", False), ("testo", "-100", False)]
