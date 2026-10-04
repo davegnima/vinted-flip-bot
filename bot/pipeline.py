@@ -10,7 +10,7 @@ from bot.scheda import ANALISI_GEMINI_ATTIVA, STATO_ANALISI_COMPLETATA, STATO_AN
 from bot.verdetto import CERVELLO_CAMPIONI_EXTRA, _a_float, _estrai_item_id_da_url, _estrai_prezzi_da_pool_ricerca, _riepilogo_comp_per_fonte, calcola_verdetto, classifica_provenienza_comp, consolida_target_cervello, render_messaggio_verdetto, valida_payload_cervello
 from bot.config import GEMINI_SOGLIA_PREZZO_ALTO, CERVELLO_PROVIDER, DEBUG_CONFRONTO_COMP_TELEGRAM, OCCHIO_OUTPUT_JSON, RAFFREDDAMENTO_SERPER_SECONDI, SERPER_API_KEY, SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO, SOGLIA_MARGINE_ASSOLUTO_NOTIFICA, TELEGRAM_OWNER_CHAT_ID, _serper_fallimenti_consecutivi, _serper_notifica_esaurimento_inviata, _serper_timestamp_ultimo_fallimento
 from bot.panel import EXTRA_LLM_URL, PANEL_CERVELLO_MODELLI, PANEL_OCCHIO_MODELLI, _bg_task, panel_cervello, panel_occhio
-from bot.fair_value import FAIR_VALUE_FILTRA, check_skip_fair_value, fv_registra_gemini, fv_registra_rapida, stima_fair_value
+from bot.fair_value import FAIR_VALUE_FILTRA, check_skip_fair_value, fv_registra_gemini, fv_registra_rapida, stima_fair_value, valuta_preavviso
 from bot.prompts import GEMINI_CERVELLO_SYSTEM_PROMPT, GEMINI_OCCHI_SYSTEM_PROMPT, GEMINI_OCCHI_SYSTEM_PROMPT_JSON
 from bot.schemas import OCCHIO_RESPONSE_SCHEMA_GEMINI
 from bot.tracciamento import SKIP_GIA_VENDUTI, _log_esito, tracc_avvia_serie, tracc_registra_gia_venduto, tracc_registra_valutato
@@ -194,6 +194,18 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             listing_info["fair_value"] = None
             e_skip_fv, motivo_skip_fv = False, None
         fv_registra_rapida(listing_info, url, scartato=bool(e_skip_fv and FAIR_VALUE_FILTRA))
+        # Una riga per OGNI annuncio (scatti o no): serve a tarare le soglie del preavviso con RICONTROLLO LAMPO.
+        try:
+            _fv_pre = listing_info.get("fair_value") or {}
+            _prezzo_pre = _a_float(listing_info.get("price"), None)
+            listing_info["preavviso"], _regola_pre = valuta_preavviso(listing_info.get("fair_value"), _prezzo_pre)
+            log.info("PREAVVISO | item=%s | brand='%s' | prezzo=%s | semaforo=%s | fv=%s | margine=%s | conf=%s | regola=%s",
+                     _estrai_item_id_da_url(url) if url else "n/d", listing_info.get("brand") or "n/d", _prezzo_pre,
+                     _fv_pre.get("semaforo") or "-", _fv_pre.get("fv"), _fv_pre.get("margine"), _fv_pre.get("conf") or "-",
+                     _regola_pre)
+        except Exception:
+            log.warning("Preavviso non valutato:\n%s", traceback.format_exc())
+            listing_info["preavviso"] = False
         if e_skip_fv:
             if FAIR_VALUE_FILTRA:
                 log.info("FILTRO FAIR VALUE ATTIVATO (silenzioso, no notifica): '%s'. Motivo: %s",

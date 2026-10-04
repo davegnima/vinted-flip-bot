@@ -141,7 +141,12 @@ def _scheda_annuncio_testo(listing_info, url, n_foto):
     righe = []
     testa = _testa_prezzo_brand(listing_info)
     if testa:
-        righe.append("*" + testa + "*")
+        # Preavviso: il fulmine e il margine rapido stanno nella prima riga, quella dell'anteprima della notifica.
+        fv = listing_info.get("fair_value") or {}
+        marca = ""
+        if listing_info.get("preavviso"):
+            marca = "⚡ " + (f"{fv['semaforo']} ~+{fv['margine']:.0f} € · " if fv.get("margine") is not None and fv.get("semaforo") else "")
+        righe.append(marca + "*" + testa + "*")
     righe.append(esc(listing_info.get("title") or "Annuncio"))
     righe.append("")
     riga_fv = _riga_fair_value_testo(listing_info.get("fair_value"))
@@ -172,8 +177,8 @@ async def _invia_galleria_anticipata(listing_info, url, photo_bytes_list, stato=
     """Manda nella chat principale l'ALBUM con tutte le foto e SUBITO DOPO la
     scheda di testo (prezzo, brand, dettagli, descrizione, bottone "Apri su
     Vinted"). Ordine voluto: la scheda e' l'ultimo messaggio, quindi e' lei
-    l'anteprima della notifica. Tutto silenzioso: la decisione non e' ancora
-    nota e il push resta legato al solo verdetto COMPRA.
+    l'anteprima della notifica. Silenzioso (la decisione non e' ancora nota e il push resta
+    legato al verdetto COMPRA), tranne la scheda quando scatta il PREAVVISO (vedi valuta_preavviso).
 
     Ritorna il message_id dell'album, a cui agganciare il verdetto. None se
     disattivata o se l'album non e' partito: in quel caso
@@ -203,7 +208,7 @@ async def _invia_galleria_anticipata(listing_info, url, photo_bytes_list, stato=
         scheda = _scheda_annuncio_testo(listing_info, url, n_foto)
         if url:
             id_scheda = await telegram_send_with_buttons(
-                TELEGRAM_OWNER_CHAT_ID, scheda, url, None, disable_notification=True, reply_to=id_album,
+                TELEGRAM_OWNER_CHAT_ID, scheda, url, None, disable_notification=not listing_info.get("preavviso"), reply_to=id_album,
             )
             if stato is not None and id_scheda:
                 # Serve a modificare la riga di stato a fine analisi.
@@ -213,7 +218,7 @@ async def _invia_galleria_anticipata(listing_info, url, photo_bytes_list, stato=
                 stato["stato_testo_iniziale"] = _stato_analisi_testo(n_foto)
         else:
             await telegram_send_message(
-                TELEGRAM_OWNER_CHAT_ID, scheda, disable_notification=True, reply_to=id_album,
+                TELEGRAM_OWNER_CHAT_ID, scheda, disable_notification=not listing_info.get("preavviso"), reply_to=id_album,
             )
     except Exception:
         log.warning("Scheda annuncio non inviata:\n%s", traceback.format_exc())
@@ -431,7 +436,15 @@ def _deal_score_coerente(v, decisione):
     return int(score)
 
 
-def componi_messaggio_compatto(listing_info, v, verdetto, output_finale, url=None, riga_fv="", footer=""):
+def dati_deboli(verdetto, stima_instabile=False):
+    """True per COMPRA/TRATTA appoggiati a dati fragili: stima instabile tra i campioni o un solo comp (richiesto
+    dall'utente il 2026-10-04). Solo un'icona nel messaggio: la decisione non cambia. Pura."""
+    if (verdetto or {}).get("decisione") not in ("COMPRA", "TRATTA"):
+        return False
+    return bool(stima_instabile) or len((verdetto or {}).get("comp_usati") or []) <= 1
+
+
+def componi_messaggio_compatto(listing_info, v, verdetto, output_finale, url=None, riga_fv="", footer="", deboli=False):
     """Messaggio breve per tutte le decisioni (richiesto dall'utente il 2026-10-03): verdetto + link, prezzo
     d'acquisto (spese incluse) -> atteso, brand e nome, giorni; poi la sola analisi dell'analista e i dati
     ridotti a emoji + valore. Il testo da copiare al venditore (TRATTA / CHIEDI ALTRE FOTO) e gli avvisi
@@ -463,7 +476,8 @@ def componi_messaggio_compatto(listing_info, v, verdetto, output_finale, url=Non
              "probabilmente_falso": "❌"}.get(v.get("legit_verdetto"), "❔")
     righe.append(f"{legit} {esc(_compatta_testo(v.get('legit_motivo_specifico'), 160))}")
     righe.append(f"🛡️ fake {ETICHETTA_RISCHIO.get(v.get('rischio_fake'), '?')} · conf "
-                 f"{ETICHETTA_CONFIDENZA.get(v.get('confidenza'), '?')} · 🎯 {_deal_score_coerente(v, dec)}/10")
+                 f"{ETICHETTA_CONFIDENZA.get(v.get('confidenza'), '?')} · 🎯 {_deal_score_coerente(v, dec)}/10"
+                 + (" · ⚠️ dati deboli" if deboli else ""))
     dettagli = _righe_dettagli_annuncio(listing_info)
     if dettagli:
         righe.append(dettagli)
@@ -518,7 +532,8 @@ def componi_testi_verdetto(listing_info, verdetto_calcolato, output_finale, info
     deal, _, resto = resto_output.partition("\n\n")
     if v is not None and verdetto_calcolato:
         compatto = componi_messaggio_compatto(listing_info, v, verdetto_calcolato, output_finale, url=url,
-                                              riga_fv=riga_fv, footer=footer_compatto)
+                                              riga_fv=riga_fv, footer=footer_compatto,
+                                              deboli=dati_deboli(verdetto_calcolato, stima_instabile))
         return header, resto_output, compatto
     sep = "—" * 20
     blocchi = [

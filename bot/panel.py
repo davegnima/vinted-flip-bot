@@ -223,12 +223,19 @@ async def panel_occhio(item_id, brand, user_text, photo_bytes_list, occhio_json,
         log.warning("Pannello occhio fallito:\n%s", traceback.format_exc())
 
 
+# Il prompt del Cervello cita la function cerca_comp_prezzo, che ai modelli del pannello/riserva non viene passata:
+# Groq rispondeva 400 "Tool choice is none, but model called a tool" (15+15 volte in 12 ore). Il testo toglie l'invito.
+NOTA_SENZA_RICERCA = ("\n\nNOTA: qui NON hai strumenti ne' funzioni: non chiamare cerca_comp_prezzo e ignora ogni invito a "
+                      "cercare sul web. Rispondi subito con il JSON usando solo i dati e i comp presenti qui; se sono scarsi "
+                      "abbassa la confidenza e marca fonte='memoria_modello' ogni prezzo che non compare nei dati ricevuti.")
+
+
 async def _panel_cervello_modello(item_id, brand, modello, system, user_text, prezzo, system_compatto=None):
     nome = modello_chiamato = modello
     if modello.endswith("@c"):
         modello, system = modello[:-2], system_compatto or prompt_cervello_compatto()
     uso = {}
-    testo, ms, err = await _panel_chiama(modello, system, user_text, 6000, uso)
+    testo, ms, err = await _panel_chiama(modello, system, user_text + NOTA_SENZA_RICERCA, 6000, uso)
     if err:
         _panel_segna_errore(modello_chiamato, err)
         return _riga_panel("cervello", item_id, brand, nome, False, ms, errore=err)
