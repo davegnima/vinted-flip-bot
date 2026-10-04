@@ -2,6 +2,8 @@
 import os
 import re
 import time
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 
 from bot.config import GEMINI_API_KEY
@@ -354,6 +356,28 @@ def _gemini_secondi_retry(corpo_testo):
     return None
 
 
+SOGLIA_QUOTA_GIORNALIERA_SECONDI = 3600
+
+
+def prossimo_reset_quota_gemini(adesso=None):
+    """Timestamp del prossimo reset della quota giornaliera free di Gemini: mezzanotte di Pacific (07:00 UTC con l'ora
+    legale, 08:00 UTC con quella solare)."""
+    adesso = adesso if adesso is not None else time.time()
+    pacifico = ZoneInfo("America/Los_Angeles")
+    ora = datetime.fromtimestamp(adesso, pacifico)
+    mezzanotte = (ora + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return mezzanotte.timestamp()
+
+
+def cooldown_quota_affidabile(fino, adesso=None):
+    """Un cooldown di quota si ripristina da DB solo se e' breve (limite al minuto) o finisce al reset di Pacific.
+    Quelli lunghi di altro tipo (da "retry in 23h" di Google) li ha scritti la regola vecchia: il reset vero era gia' passato."""
+    adesso = adesso if adesso is not None else time.time()
+    if fino - adesso <= SOGLIA_QUOTA_GIORNALIERA_SECONDI:
+        return True
+    return abs(fino - (prossimo_reset_quota_gemini(adesso) + 60)) <= 5
+
+
 def _gemini_segna_key_quota_esaurita(key, modello=None, secondi=None):
     """Marca `key` come a quota giornaliera esaurita per
     RAFFREDDAMENTO_QUOTA_ESAURITA_GEMINI_SECONDI: la rotazione la salta
@@ -363,6 +387,10 @@ def _gemini_segna_key_quota_esaurita(key, modello=None, secondi=None):
     durata = RAFFREDDAMENTO_QUOTA_ESAURITA_GEMINI_SECONDI
     if secondi is not None:
         durata = min(max(secondi + 2, 5), 24 * 3600)   # attesa indicata da Google (minuto o giorno), non 6h fisse
+    if durata >= SOGLIA_QUOTA_GIORNALIERA_SECONDI:
+        # quota del giorno: il "retry in 23h" di Google e' una stima sballata, il reset vero e' a mezzanotte Pacific.
+        # 4/10: 3.5-flash restava escluso fino alle 23:59 UTC anche se la quota era tornata alle 07:00 UTC (0/500 usate).
+        durata = min(durata, max(prossimo_reset_quota_gemini() - time.time(), 60) + 60)
     _gemini_key_quota_esaurita_fino[(key, modello or "")] = time.time() + durata
     db.salva_quota_gemini(key, modello, _gemini_key_quota_esaurita_fino[(key, modello or "")])
     if not gia_segnalata:
@@ -403,6 +431,7 @@ def ripristina_stato_gemini():
     """All'avvio: ricarica dal DB i cooldown di quota e le esclusioni di modello ancora validi, cosi' un riavvio
     (ogni deploy) non fa rispendere chiamate per riscoprire le quote finite. Ritorna (n_quote, n_modelli)."""
     quote, esclusi = db.carica_stato_gemini(GEMINI_API_KEYS)
+    quote = {k: f for k, f in quote.items() if cooldown_quota_affidabile(f)}
     _gemini_key_quota_esaurita_fino.update(quote)
     _gemini_modello_escluso_fino.update(esclusi)
     return len(quote), len(esclusi)
