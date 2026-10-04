@@ -220,3 +220,15 @@ def test_fattori_target_riserva_e_campioni():
     assert fattore_target_riserva("groq/openai/gpt-oss-20b@c") == 0.55
     assert fattore_target_riserva("altro/modello") == 1.0
     assert CERVELLO_CAMPIONI_EXTRA == 1
+
+
+def test_preavviso_con_riga_dei_tempi(monkeypatch):
+    import asyncio
+    scheda, chiamate = _finti(monkeypatch)
+    info = {"price": 15, "brand": "Prada", "title": "Gonna", "url": "https://www.vinted.it/items/1-x",
+            "fair_value": _stima("🟢", 40)}
+    t = scheda.testo_preavviso(info, info["url"], riga_tempi="⏱ pubblicato→telegram 8s · telegram→preavviso 4s · totale 12s")
+    assert "⏱ pubblicato→telegram 8s" in t and t.index("⏱") < t.index("preavviso del semaforo")
+    esito = asyncio.run(scheda.invia_preavviso(
+        info, info["url"], [b"1", b"2"], riga_tempi="⏱ totale 12s", secondi={"pub_telegram": 8.0, "telegram_notifica": 4.0, "totale": 12.0}))
+    assert esito["riga_tempi"] == "⏱ totale 12s" and esito["tipo"] == "album"

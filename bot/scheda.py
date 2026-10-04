@@ -1,5 +1,6 @@
 """Modulo estratto da main_telethon.py (spostamento meccanico)."""
 import asyncio
+import time
 import os
 import re
 import difflib
@@ -177,7 +178,7 @@ def _testa_prezzo_brand(listing_info):
 RIGA_PREAVVISO_IN_ATTESA = "_preavviso del semaforo: la valutazione completa arriva dopo_"
 
 
-def testo_preavviso(listing_info, url=None, riga_finale=RIGA_PREAVVISO_IN_ATTESA):
+def testo_preavviso(listing_info, url=None, riga_finale=RIGA_PREAVVISO_IN_ATTESA, riga_tempi=None):
     """Messaggio breve del PREAVVISO (gruppo COMPRA): prima riga = fulmine, semaforo, margine rapido, prezzo e brand
     (e' quello che compare nell'anteprima della notifica), poi titolo, dettagli, fair value rapido, link e riga finale
     (sostituita a fine analisi). Pura."""
@@ -191,6 +192,8 @@ def testo_preavviso(listing_info, url=None, riga_finale=RIGA_PREAVVISO_IN_ATTESA
             righe.append(riga)
     if url:
         righe.append(f"[vedi su Vinted]({url})")
+    if riga_tempi:
+        righe.append(esc(riga_tempi))
     righe += ["", riga_finale]
     return "\n".join(righe)
 
@@ -239,30 +242,45 @@ def didascalia_verdetto(testo, limite=1024):
     return acc.rstrip() + "…" if acc else testo[:limite - 1] + "…"
 
 
-async def invia_preavviso(listing_info, url, photo_bytes_list=None):
+def _preavviso_inviato(listing_info, id_msg, tipo, riga_tempi, secondi, t_inizio):
+    """Dict del preavviso inviato + riga di log con i tempi (secondi): pubblicazione -> telegram -> preavviso, piu' i
+    secondi spesi nell'invio. L'ora di consegna al telefono non e' osservabile: si misura fino alla risposta di Telegram."""
+    sec = secondi or {}
+    invio = time.time() - t_inizio
+    totale = (sec["totale"] + invio) if sec.get("totale") is not None else None
+    log.info("PREAVVISO_INVIATO | item=%s | tipo=%s | pub_telegram=%s | telegram_preavviso=%s | invio=%.1f | pub_preavviso=%s",
+             _estrai_item_id_da_url(listing_info.get("url")) if listing_info.get("url") else "n/d", tipo,
+             None if sec.get("pub_telegram") is None else round(sec["pub_telegram"], 1),
+             None if sec.get("telegram_notifica") is None else round(sec["telegram_notifica"], 1), invio,
+             None if totale is None else round(totale, 1))
+    return {"msg_id": id_msg, "tipo": tipo, "base": listing_info, "riga_tempi": riga_tempi}
+
+
+async def invia_preavviso(listing_info, url, photo_bytes_list=None, riga_tempi=None, secondi=None):
     """Manda il PREAVVISO nel gruppo COMPRA con suono: ALBUM con tutte le foto (una sola foto: foto con bottone),
     didascalia = testo_preavviso. Senza foto: solo testo con bottone. A fine analisi lo stesso messaggio viene
     AGGIORNATO col verdetto (vedi aggiorna_preavviso): un solo messaggio per annuncio nel gruppo.
     Ritorna {"msg_id", "tipo": album|foto|testo, "base"} oppure None. Non solleva mai."""
     if not TELEGRAM_ALERT_CHAT_ID or not url:
         return None
-    testo = testo_preavviso(listing_info, url)
+    testo = testo_preavviso(listing_info, url, riga_tempi=riga_tempi)
     foto = list(photo_bytes_list or [])
+    t_inizio = time.time()
     try:
         if len(foto) > 1:
             id_msg = await telegram_send_media_group(
                 TELEGRAM_ALERT_CHAT_ID, foto, caption=testo, disable_notification=False, parse_mode="Markdown")
             if id_msg is not None:
-                return {"msg_id": id_msg, "tipo": "album", "base": listing_info}
+                return _preavviso_inviato(listing_info, id_msg, "album", riga_tempi, secondi, t_inizio)
         elif len(foto) == 1:
             id_msg = await telegram_send_photo_con_bottone(
                 TELEGRAM_ALERT_CHAT_ID, foto[0], testo, url, disable_notification=False)
             if id_msg is not None:
-                return {"msg_id": id_msg, "tipo": "foto", "base": listing_info}
+                return _preavviso_inviato(listing_info, id_msg, "foto", riga_tempi, secondi, t_inizio)
         id_msg = await telegram_send_with_buttons(
             TELEGRAM_ALERT_CHAT_ID, testo, url, None, disable_notification=False)
         if id_msg is not None:
-            return {"msg_id": id_msg, "tipo": "testo", "base": listing_info}
+            return _preavviso_inviato(listing_info, id_msg, "testo", riga_tempi, secondi, t_inizio)
     except Exception:
         log.warning("Preavviso non inviato:\n%s", traceback.format_exc())
     return None
@@ -287,7 +305,8 @@ async def aggiorna_preavviso(stato, url, testo_verdetto=None, riga_finale=None):
         if testo_verdetto is not None:
             testo = testo_verdetto
         else:
-            testo = testo_preavviso(info["base"], url, riga_finale=riga_finale or RIGA_PREAVVISO_IN_ATTESA)
+            testo = testo_preavviso(info["base"], url, riga_finale=riga_finale or RIGA_PREAVVISO_IN_ATTESA,
+                                    riga_tempi=info.get("riga_tempi"))
         if info["tipo"] == "testo":
             ok = await telegram_edit_message(TELEGRAM_ALERT_CHAT_ID, info["msg_id"], testo, url)
         else:
