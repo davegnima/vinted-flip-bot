@@ -112,9 +112,13 @@ def calcola_scarto_occhio(o, solo_cover_photo=False, listing_info=None):
     # sull'annuncio"), quindi il Cervello lo VEDE e puo' comunque pesarlo
     # nel proprio ragionamento -- non e' stato ignorato, solo declassato da
     # scarto automatico a indizio.
+    # Stessa scelta per 'foto_di_uno_schermo' (richiesto dall'utente il 2026-10-04): non scarta piu', resta
+    # nel testo dell'Occhio come indizio per il Cervello. Gli altri segnali (screenshot di un altro annuncio,
+    # watermark di un altro sito, foto stock, descrizione incoerente) scartano come prima.
+    segnali_non_scartano = ("capi_diversi_tra_le_foto", "foto_di_uno_schermo")
     segnali_annuncio_affidabili = [
         s for s in (o.get("segnali_rischio_annuncio") or [])
-        if _norm(s) != "capi_diversi_tra_le_foto"
+        if _norm(s) not in segnali_non_scartano
     ]
     if segnali_annuncio_affidabili:
         return True, (
