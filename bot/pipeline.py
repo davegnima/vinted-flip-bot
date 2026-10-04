@@ -300,7 +300,11 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
     if listing_info.get("preavviso_gruppo") and stato is not None:
         # PREAVVISO nel gruppo COMPRA: album con tutte le foto + semaforo, in parallelo al resto; a fine analisi
         # lo stesso messaggio viene aggiornato col verdetto
-        stato["task_preavviso"] = asyncio.create_task(invia_preavviso(dict(listing_info), url, photo_bytes_list))
+        _pezzi_pre, _sec_pre = _calcola_tempi_pipeline(listing_info, msg_date, t_ricevuto_bot)
+        _riga_tempi_pre = ("⏱ " + " · ".join(p.replace("telegram→notifica", "telegram→preavviso") for p in _pezzi_pre)
+                           ) if _pezzi_pre else None
+        stato["task_preavviso"] = asyncio.create_task(invia_preavviso(
+            dict(listing_info), url, photo_bytes_list, riga_tempi=_riga_tempi_pre, secondi=_sec_pre))
     if not photo_bytes_list:
         await telegram_send_message(
             TELEGRAM_OWNER_CHAT_ID,
