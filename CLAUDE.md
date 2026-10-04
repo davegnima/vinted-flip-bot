@@ -17,6 +17,7 @@ tracker (messaggio Telegram) -> `process_listing` (`bot/pipeline.py`) -> scrape 
 - Fascia Gemini scelta prima dell'Occhio da `ruoli_gemini` (stima rapida verde/gialla = alta; rossa = alta solo se prezzo >= `GEMINI_SOGLIA_PREZZO_ALTO`).
 - Cascate Gemini per fase, dal modello migliore al piu' leggero: `bot/gemini_stato.py`. 4 account Google, quote per (key, modello).
 - Riserva a scalata via OmniRoute (`bot/riserva_llm.py`): spenta finche' `RISERVA_OCCHIO_MODELLI` / `RISERVA_CERVELLO_MODELLI` sono vuote.
+- Preavviso (`valuta_preavviso` in `bot/fair_value.py`): la scheda anticipata diventa push con suono se la stima rapida e' promettente (soglie `PREAVVISO_*`, spento con `PREAVVISO_ATTIVO=0`); non cambia il semaforo.
 - Pannello in ombra (`bot/panel.py`): modelli extra via OmniRoute, solo log `PANEL | ...`, mai nel verdetto.
 - SQLite (`bot/db.py`, `/data/vinted_bot.sqlite3`): quote Gemini e eventi. I log restano la fonte del recap.
 
@@ -31,7 +32,7 @@ tracker (messaggio Telegram) -> `process_listing` (`bot/pipeline.py`) -> scrape 
 - I client HTTP riassegnati a runtime si leggono come `hc._client_generico`, `hc._client_telegram`, `hc._CLIENT_VINTED_AUTH`: mai importarli per nome.
 
 ## Test e CI
-- `python3 -m pytest -q` (88 test) e `python3 -m pyflakes main_telethon.py bot` (nomi non definiti). La CI (`.github/workflows/ci.yml`) fa lo stesso su Python 3.13.
+- `python3 -m pytest -q` (93 test) e `python3 -m pyflakes main_telethon.py bot` (nomi non definiti). La CI (`.github/workflows/ci.yml`) fa lo stesso su Python 3.13.
 - `tests/test_struttura.py` importa ogni modulo da solo: un import circolare lo rompe.
 - Railway fa il deploy da `main` a ogni merge (circa 1,5 minuti). Branch di lavoro: `claude/...`, PR verso `main`, squash merge.
 
@@ -51,7 +52,7 @@ I log sono enormi. Regole:
    - esiti per annuncio: `"| ESITO |"`; saltati senza messaggio: `"SKIP non inviato"`
    - errori: `Traceback`, `"Markdown fallita"`, `"FALLITA"`
    - modelli: `"GEMINI_USO"`, `"RISERVA |"`, `"PANEL |"`, `"PANEL HTTP"`
-   - vendite rapide: `"RICONTROLLO LAMPO"`
+   - vendite rapide: `"RICONTROLLO LAMPO"`; preavviso push (una riga per annuncio, con semaforo e regola): `"PREAVVISO |"`
    - banda proxy: `"RIEPILOGO BANDA"`
 5. Dopo un deploy controllare solo righe successive all'avvio (`"Vinted Oracle avviato"` riporta la versione).
 6. Se non arrivano annunci analizzati (traffico basso, es. sabato sera) dirlo e aspettare, non rileggere in loop.

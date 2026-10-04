@@ -7,7 +7,7 @@ Il verdetto resta deterministico: il modello di riserva produce lo stesso JSON, 
 Differenza: nessuna ricerca on-demand (il Cervello di riserva usa i comp gia' nel prompt)."""
 import json
 
-from bot.panel import (EXTRA_LLM_URL, RISERVA_CERVELLO_MODELLI, RISERVA_OCCHIO_MODELLI, _panel_chiama, _panel_pausa,
+from bot.panel import (EXTRA_LLM_URL, NOTA_SENZA_RICERCA, RISERVA_CERVELLO_MODELLI, RISERVA_OCCHIO_MODELLI, _panel_chiama, _panel_pausa,
                        _panel_segna_errore, estrai_json_da_testo_llm)
 from bot.schemas import CERVELLO_RESPONSE_SCHEMA_OPENAI, OCCHIO_RESPONSE_SCHEMA_GEMINI, _schema_gemini_to_openai
 from bot.gemini_stato import gemini_cascata_esaurita
@@ -17,8 +17,6 @@ from bot.foto import costruisci_parts_foto
 from bot.logger import log
 import time
 
-NOTA_SENZA_RICERCA = ("\n\nNOTA: in questa valutazione non puoi cercare sul web. Usa solo i dati e i comp presenti qui; "
-                      "marca fonte='memoria_modello' ogni prezzo che non compare nei dati ricevuti.")
 ISTRUZIONE_SOLO_JSON = "\n\nRispondi SOLO con un oggetto JSON valido conforme a questo schema, senza altro testo:\n"
 
 

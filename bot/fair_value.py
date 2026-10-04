@@ -201,6 +201,32 @@ FAIR_VALUE_SCONTO_COMP = 0.70  # solo documentazione: gia' applicato nella tabel
 FAIR_VALUE_ROI_VERDE = _env_float("FAIR_VALUE_ROI_VERDE", 100)
 FAIR_VALUE_ROI_GIALLO = _env_float("FAIR_VALUE_ROI_GIALLO", 40)
 FAIR_VALUE_MARGINE_MIN_VERDE = _env_float("FAIR_VALUE_MARGINE_MIN_VERDE", 15)
+# PREAVVISO (richiesto dall'utente il 2026-10-04): il 37% degli affari e' venduto prima del verdetto (mediana ~30 s),
+# quindi la scheda con il semaforo (che parte ~4 s dopo il messaggio) diventa un push con suono quando la stima
+# rapida e' promettente. NON cambia il semaforo (usato da ruoli_gemini e dal filtro): e' una regola a parte.
+#  - regola "semaforo": 🟢 con margine rapido >= PREAVVISO_MARGINE_MIN;
+#  - regola "prezzo_basso": prezzo <= PREAVVISO_PREZZO_BASSO, stima non rossa e margine rapido >= PREAVVISO_MARGINE_BASSO
+#    (i venduti entro 30 s dell'analisi del 2026-10-03 costavano quasi tutti <= 30 EUR).
+PREAVVISO_ATTIVO = os.environ.get("PREAVVISO_ATTIVO", "1").strip() != "0"
+PREAVVISO_MARGINE_MIN = _env_float("PREAVVISO_MARGINE_MIN", 25)
+PREAVVISO_PREZZO_BASSO = _env_float("PREAVVISO_PREZZO_BASSO", 25)
+PREAVVISO_MARGINE_BASSO = _env_float("PREAVVISO_MARGINE_BASSO", 20)
+
+
+def valuta_preavviso(stima, prezzo):
+    """(scatta, regola): push immediato sulla scheda anticipata. Pura. Senza stima o con confidenza bassa (⚪) non scatta."""
+    if not PREAVVISO_ATTIVO or not stima or prezzo is None or prezzo <= 0:
+        return False, "no"
+    sem, marg = stima.get("semaforo"), stima.get("margine")
+    if sem not in ("🟢", "🟡") or marg is None:
+        return False, "no"
+    if sem == "🟢" and marg >= PREAVVISO_MARGINE_MIN:
+        return True, "semaforo"
+    if prezzo <= PREAVVISO_PREZZO_BASSO and marg >= PREAVVISO_MARGINE_BASSO:
+        return True, "prezzo_basso"
+    return False, "no"
+
+
 # Filtro risparmio Gemini: se FAIR_VALUE_FILTRA=1 gli annunci con confidenza
 # alta/media e ROI stimato sotto FAIR_VALUE_FILTRA_ROI_MIN % vengono scartati
 # in silenzio prima di foto e Gemini. Di default e' in modalita' PROVA (0):
