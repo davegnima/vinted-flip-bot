@@ -2,6 +2,8 @@
 
 Userbot Telethon che riceve gli annunci dal tracker (`davegnima/Vinted-Notifications`), li valuta con modelli AI e manda il verdetto su Telegram. Obiettivo: trovare capi sottoprezzati (margine >= 50 EUR e ROI >= 100%), pochi falsi, cercando le eccezioni (venditori che prezzano male).
 
+**A inizio sessione (o dopo una compattazione) rileggere `STATO.md`**: stato corrente, controlli da fare e punti aperti. Aggiornarlo a ogni tappa chiusa.
+
 ## Regole dell'utente (valgono sempre)
 - Niente AI a pagamento: solo piani gratuiti. Non attivare fatturazione, carte o crediti a pagamento da nessuna parte.
 - NIENTE API di Vinted e niente scraping di vinted.it da parte di Claude. Il bot scarica le pagine, Claude no.
