@@ -10,7 +10,7 @@ from bot.scheda import ANALISI_GEMINI_ATTIVA, STATO_ANALISI_COMPLETATA, STATO_AN
 from bot.verdetto import CERVELLO_CAMPIONI_EXTRA, _a_float, _estrai_item_id_da_url, _estrai_prezzi_da_pool_ricerca, _riepilogo_comp_per_fonte, calcola_verdetto, classifica_provenienza_comp, consolida_target_cervello, render_messaggio_verdetto, valida_payload_cervello
 from bot.config import GEMINI_SOGLIA_PREZZO_ALTO, TELEGRAM_ALERT_CHAT_ID, CERVELLO_PROVIDER, DEBUG_CONFRONTO_COMP_TELEGRAM, OCCHIO_OUTPUT_JSON, RAFFREDDAMENTO_SERPER_SECONDI, SERPER_API_KEY, SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO, SOGLIA_MARGINE_ASSOLUTO_NOTIFICA, TELEGRAM_OWNER_CHAT_ID, _serper_fallimenti_consecutivi, _serper_notifica_esaurimento_inviata, _serper_timestamp_ultimo_fallimento
 from bot.panel import EXTRA_LLM_URL, PANEL_CERVELLO_MODELLI, PANEL_OCCHIO_MODELLI, _bg_task, panel_cervello, panel_occhio
-from bot.fair_value import FAIR_VALUE_FILTRA, catalogo_impara, check_skip_fair_value, fv_registra_gemini, fv_registra_rapida, stima_fair_value, valuta_preavviso
+from bot.fair_value import FAIR_VALUE_FILTRA, check_skip_rosso, catalogo_impara, check_skip_fair_value, fv_registra_gemini, fv_registra_rapida, stima_fair_value, valuta_preavviso
 from bot.prompts import GEMINI_CERVELLO_SYSTEM_PROMPT, GEMINI_OCCHI_SYSTEM_PROMPT, GEMINI_OCCHI_SYSTEM_PROMPT_JSON
 from bot.schemas import OCCHIO_RESPONSE_SCHEMA_GEMINI
 from bot import db
@@ -85,8 +85,8 @@ def ruoli_gemini(prezzo, stima_rapida, soglia=None):
     ripiega sul prezzo richiesto: dalla soglia (GEMINI_SOGLIA_PREZZO_ALTO) in su = alto."""
     soglia = GEMINI_SOGLIA_PREZZO_ALTO if soglia is None else soglia
     semaforo = (stima_rapida or {}).get("semaforo")
-    if (stima_rapida or {}).get("conf") == "bassa":
-        semaforo = None   # stima debole (brand/categoria sconosciuti): colore indicativo, la fascia si sceglie dal prezzo
+    if (stima_rapida or {}).get("conf") in ("bassa", "stima"):
+        semaforo = None   # stima debole (brand/categoria sconosciuti o solo conoscenza di mercato): la fascia si sceglie dal prezzo
     if semaforo in ("🟢", "🟡"):
         alto, da = True, "stima"
     elif semaforo == "🔴":
@@ -446,6 +446,8 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
     legit_cervello = None
 
     e_skip, motivo_skip = check_skip_pre_cervello(output_occhi, listing_info, occhio_json=occhio_json)
+    if not e_skip:
+        e_skip, motivo_skip = check_skip_rosso(listing_info)
     if e_skip:
         log.info("FILTRO PRE-CERVELLO ATTIVATO. Motivo: %s", motivo_skip)
         if motivo_skip.startswith("[FALSO CONCLAMATO"):
@@ -453,7 +455,8 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
         output_finale = build_skip_report(listing_info, motivo_skip, output_occhi_testo=output_occhi)
         scenario_usato = "SKIP"
         listing_info["_motivo_scarto"] = motivo_skip   # intero, per il messaggio di preavviso
-        _log_esito(listing_info, "SKIP_PRE_CERVELLO", motivo=motivo_skip[:80])
+        _log_esito(listing_info, "SKIP_ROSSO" if motivo_skip.startswith("[ROSSO SICURO") else "SKIP_PRE_CERVELLO",
+                   motivo=motivo_skip[:80])
     else:
         titolo_annuncio = listing_info.get("title") or ""
         brand_annuncio = listing_info.get("brand") or ""

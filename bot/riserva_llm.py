@@ -6,6 +6,7 @@ ognuno col suo cooldown dichiarato dal provider (stessa tabella del pannello, co
 Il verdetto resta deterministico: il modello di riserva produce lo stesso JSON, validato come quello di Gemini.
 Differenza: nessuna ricerca on-demand (il Cervello di riserva usa i comp gia' nel prompt)."""
 import json
+import os
 
 from bot.panel import (EXTRA_LLM_URL, NOTA_SENZA_RICERCA, RISERVA_CERVELLO_MODELLI, RISERVA_OCCHIO_MODELLI, _panel_chiama, _panel_pausa,
                        _panel_segna_errore, estrai_json_da_testo_llm)
@@ -27,6 +28,33 @@ def riserva_attiva(lista):
 def modelli_disponibili(lista, adesso=None):
     adesso = adesso if adesso is not None else time.time()
     return [m for m in lista if _panel_pausa.get(m, 0) <= adesso]
+
+
+# Fattore sul target dei modelli di riserva, dalla mediana del loro target / target di Gemini sul pannello
+# (2-3/10, 38 confronti per Ministral 14B, 8 per gpt-oss-120b, 5 per gpt-oss-20b molto dispersi). Formato env:
+# RISERVA_FATTORI_TARGET="ministral-14b=1.0,gpt-oss-120b=0.95,gpt-oss-20b=0.55" (sottostringa del nome del modello).
+def _carica_fattori(testo):
+    out = {}
+    for voce in (testo or "").split(","):
+        if "=" in voce:
+            nome, _, val = voce.partition("=")
+            try:
+                out[nome.strip()] = float(val)
+            except ValueError:
+                pass
+    return out
+
+
+RISERVA_FATTORI_TARGET = _carica_fattori(os.environ.get(
+    "RISERVA_FATTORI_TARGET", "ministral-14b=1.0,gpt-oss-120b=0.95,gpt-oss-20b=0.55"))
+
+
+def fattore_target_riserva(modello):
+    """Fattore da applicare al target di un modello di riserva (1.0 se sconosciuto). Pura."""
+    for nome, f in RISERVA_FATTORI_TARGET.items():
+        if nome and nome in (modello or ""):
+            return f
+    return 1.0
 
 
 async def _prova_in_ordine(fase, lista, sistema_per, contenuto, max_tokens, valido):
@@ -94,4 +122,8 @@ async def cervello_con_riserva(chiama_gemini_fn, ruolo, system_prompt, user_text
     if d is None:
         return risultato or (None, "Gemini e modelli di riserva non disponibili", 0.0, 0, [])
     d["_riserva"] = modello
+    fattore = fattore_target_riserva(modello)
+    if fattore != 1.0 and isinstance(d.get("prezzo_target_vendita_eur"), (int, float)):
+        log.info("RISERVA | cervello | %s | target %s -> x%.2f", modello, d["prezzo_target_vendita_eur"], fattore)
+        d["prezzo_target_vendita_eur"] = round(d["prezzo_target_vendita_eur"] * fattore, 2)
     return d, None, 0.0, 0, []

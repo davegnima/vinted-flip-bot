@@ -1178,7 +1178,7 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
 # annunci che arrivano a COMPRA/TRATTA si chiede il target una o due volte in piu' e si usa la mediana. Non
 # e' un tetto al ROI: un'eccezione vera da' sempre numeri alti e coerenti, e resta alta. Se le valutazioni
 # divergono molto il messaggio lo dice ("stima instabile").
-CERVELLO_CAMPIONI_EXTRA = int(_env_float("CERVELLO_CAMPIONI_EXTRA", 2))  # in parallelo: stessa latenza di 1
+CERVELLO_CAMPIONI_EXTRA = int(_env_float("CERVELLO_CAMPIONI_EXTRA", 1))  # in parallelo: stessa latenza di 1
 CERVELLO_SPREAD_MAX = _env_float("CERVELLO_SPREAD_MAX", 1.35)
 
 
