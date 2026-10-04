@@ -6,14 +6,15 @@ import traceback
 from functools import partial
 
 
-from bot.scheda import ANALISI_GEMINI_ATTIVA, STATO_ANALISI_COMPLETATA, STATO_ANALISI_INTERROTTA, _PermessoAnalisi, _aggiorna_stato_scheda, _invia_galleria_anticipata, _invia_risultato_telegram, componi_testi_verdetto
+from bot.scheda import ANALISI_GEMINI_ATTIVA, STATO_ANALISI_COMPLETATA, STATO_ANALISI_INTERROTTA, _PermessoAnalisi, _aggiorna_stato_scheda, _invia_galleria_anticipata, _invia_risultato_telegram, invia_preavviso, componi_testi_verdetto
 from bot.verdetto import CERVELLO_CAMPIONI_EXTRA, _a_float, _estrai_item_id_da_url, _estrai_prezzi_da_pool_ricerca, _riepilogo_comp_per_fonte, calcola_verdetto, classifica_provenienza_comp, consolida_target_cervello, render_messaggio_verdetto, valida_payload_cervello
-from bot.config import GEMINI_SOGLIA_PREZZO_ALTO, CERVELLO_PROVIDER, DEBUG_CONFRONTO_COMP_TELEGRAM, OCCHIO_OUTPUT_JSON, RAFFREDDAMENTO_SERPER_SECONDI, SERPER_API_KEY, SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO, SOGLIA_MARGINE_ASSOLUTO_NOTIFICA, TELEGRAM_OWNER_CHAT_ID, _serper_fallimenti_consecutivi, _serper_notifica_esaurimento_inviata, _serper_timestamp_ultimo_fallimento
+from bot.config import GEMINI_SOGLIA_PREZZO_ALTO, TELEGRAM_ALERT_CHAT_ID, CERVELLO_PROVIDER, DEBUG_CONFRONTO_COMP_TELEGRAM, OCCHIO_OUTPUT_JSON, RAFFREDDAMENTO_SERPER_SECONDI, SERPER_API_KEY, SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO, SOGLIA_MARGINE_ASSOLUTO_NOTIFICA, TELEGRAM_OWNER_CHAT_ID, _serper_fallimenti_consecutivi, _serper_notifica_esaurimento_inviata, _serper_timestamp_ultimo_fallimento
 from bot.panel import EXTRA_LLM_URL, PANEL_CERVELLO_MODELLI, PANEL_OCCHIO_MODELLI, _bg_task, panel_cervello, panel_occhio
 from bot.fair_value import FAIR_VALUE_FILTRA, check_skip_fair_value, fv_registra_gemini, fv_registra_rapida, stima_fair_value, valuta_preavviso
 from bot.prompts import GEMINI_CERVELLO_SYSTEM_PROMPT, GEMINI_OCCHI_SYSTEM_PROMPT, GEMINI_OCCHI_SYSTEM_PROMPT_JSON
 from bot.schemas import OCCHIO_RESPONSE_SCHEMA_GEMINI
-from bot.tracciamento import SKIP_GIA_VENDUTI, _log_esito, tracc_avvia_serie, tracc_registra_gia_venduto, tracc_registra_valutato
+from bot import db
+from bot.tracciamento import SKIP_GIA_VENDUTI, _log_esito, campi_annuncio, tracc_avvia_serie, tracc_registra_gia_venduto, tracc_registra_valutato
 from bot.comps_filtri import _arricchisci_brand_per_ricerca
 from bot.tempi import _calcola_tempi_pipeline, _formatta_durata, _formatta_tappe_pipeline
 from bot.testo import _escapa_markdown_legacy
@@ -31,6 +32,9 @@ from bot.comps import search_comps_completo, verifica_codici_prodotto_reddit
 from bot.telegram_api import telegram_send_message
 from bot.serper_base import valuta_qualita_comp
 # ---- fine import ----
+_task_preavviso = set()   # riferimenti ai task di invio, perche' non vengano raccolti a meta'
+
+
 async def _campione_target_cervello(chiama, user_text, forza_ricerca):
     """Una valutazione in piu' del Cervello. Ritorna (v|None, problemi, costo): v e' il verdetto validato (il
     chiamante usa quello piu' vicino alla mediana, cosi' testo e numeri restano coerenti)."""
@@ -199,10 +203,24 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             _fv_pre = listing_info.get("fair_value") or {}
             _prezzo_pre = _a_float(listing_info.get("price"), None)
             listing_info["preavviso"], _regola_pre = valuta_preavviso(listing_info.get("fair_value"), _prezzo_pre)
-            log.info("PREAVVISO | item=%s | brand='%s' | prezzo=%s | semaforo=%s | fv=%s | margine=%s | conf=%s | regola=%s",
-                     _estrai_item_id_da_url(url) if url else "n/d", listing_info.get("brand") or "n/d", _prezzo_pre,
-                     _fv_pre.get("semaforo") or "-", _fv_pre.get("fv"), _fv_pre.get("margine"), _fv_pre.get("conf") or "-",
-                     _regola_pre)
+            _item_pre = _estrai_item_id_da_url(url) if url else None
+            _feat = campi_annuncio(listing_info, n_foto=len(scraped.get("photo_urls") or []))
+            _feat.update({"prezzo": _prezzo_pre, "semaforo": _fv_pre.get("semaforo") or "-", "fv": _fv_pre.get("fv"),
+                          "margine": _fv_pre.get("margine"), "conf": _fv_pre.get("conf") or "-", "regola": _regola_pre})
+            log.info("PREAVVISO | item=%s | brand='%s' | prezzo=%s | semaforo=%s | fv=%s | margine=%s | conf=%s | regola=%s%s",
+                     _item_pre or "n/d", listing_info.get("brand") or "n/d", _prezzo_pre,
+                     _feat["semaforo"], _fv_pre.get("fv"), _fv_pre.get("margine"), _feat["conf"], _regola_pre,
+                     "".join(f" | {k}={v}" for k, v in _feat.items()
+                             if k not in ("prezzo", "semaforo", "fv", "margine", "conf", "regola")))
+            if listing_info["preavviso"] and TELEGRAM_ALERT_CHAT_ID:
+                # subito, senza aspettare foto e Occhio: i venduti entro 30 s non lasciano tempo
+                listing_info["preavviso_gruppo"] = True
+                _t_pre = asyncio.create_task(invia_preavviso(dict(listing_info), url))
+                _task_preavviso.add(_t_pre)
+                _t_pre.add_done_callback(_task_preavviso.discard)
+            if _item_pre:
+                db.scrivi_evento("annuncio", _item_pre, listing_info.get("brand"),
+                                 {**_feat, "titolo": listing_info.get("title")})
         except Exception:
             log.warning("Preavviso non valutato:\n%s", traceback.format_exc())
             listing_info["preavviso"] = False

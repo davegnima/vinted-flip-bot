@@ -223,6 +223,41 @@ def tracc_avvia_serie(listing_info, url, t0):
         log.warning("Tracciamento: serie di controlli non avviata:\n%s", traceback.format_exc())
 
 
+_LINGUA_MARCATORI = {
+    "de": re.compile(r"\b(von|und|mit|damen|herren|gr[oö]ss?e|jacke|mantel|kleid|hose|pullover|neu|wie)\b", re.I),
+    "fr": re.compile(r"\b(veste|manteau|robe|pantalon|taille|femme|homme|tr[eè]s|neuf|avec|pull|chemise)\b", re.I),
+    "en": re.compile(r"\b(the|with|size|women|men|jacket|coat|dress|trousers|new|vintage authentic)\b", re.I),
+}
+
+
+def lingua_titolo(titolo):
+    """'de' / 'fr' / 'en' / 'it' dal titolo (euristica a parole chiave): i titoli esteri sono spesso venditori che
+    prezzano male. Pura."""
+    t = titolo or ""
+    for lingua in ("de", "fr", "en"):
+        if _LINGUA_MARCATORI[lingua].search(t):
+            return lingua
+    return "it"
+
+
+def campi_annuncio(listing_info, n_foto=None, adesso=None):
+    """Caratteristiche dell'annuncio per l'apprendimento dalla rotazione (richiesto dall'utente il 2026-10-04),
+    come coppie chiave=valore per la riga PREAVVISO e per l'evento 'annuncio' del DB. Pura (adesso = epoch)."""
+    t = time.gmtime(adesso if adesso is not None else time.time())
+    titolo = listing_info.get("title") or ""
+    campi = {
+        "categoria": estrai_categoria_da_titolo(titolo, listing_info.get("description")),
+        "cond": listing_info.get("condition"), "mat": listing_info.get("material_raw"),
+        "taglia": listing_info.get("size"), "lingua": lingua_titolo(titolo),
+        "n_foto": n_foto, "desc_len": len((listing_info.get("description") or "").strip()),
+        "v_rec": listing_info.get("seller_feedback_count"), "v_rep": listing_info.get("seller_feedback_reputation"),
+        "v_art": listing_info.get("seller_items_count"), "v_paese": listing_info.get("seller_country"),
+        "ora_utc": t.tm_hour, "gs": t.tm_wday,
+    }
+    return {k: (v.strip().replace("|", "/").replace(" ", "_") if isinstance(v, str) else v)
+            for k, v in campi.items() if v not in (None, "")}
+
+
 def tracc_registra_valutato(listing_info, url, esito, target=None, n_comp=None):
     """Registra un annuncio arrivato a un verdetto, una sola volta per item id."""
     if not TRACCIAMENTO_ATTIVO:
@@ -294,6 +329,8 @@ def _log_esito(listing_info, esito, **campi):
         pass
     try:
         extra = "".join(f" | {k}={v}" for k, v in campi.items() if v not in (None, ""))
+        if _id:
+            extra += f" | item={_id}"   # permette di incrociare l'esito con PREAVVISO e RICONTROLLO LAMPO
         log.info("ESITO | brand='%s' | titolo='%s' | esito=%s%s",
                  (listing_info.get("brand") or "n/d"), listing_info.get("title"), esito, extra)
         db.scrivi_evento("esito", _id, listing_info.get("brand"),

@@ -173,6 +173,35 @@ def _testa_prezzo_brand(listing_info):
     return " · ".join(testa) or None
 
 
+def testo_preavviso(listing_info, url=None):
+    """Messaggio breve del PREAVVISO (gruppo COMPRA): prima riga = fulmine, semaforo, margine rapido, prezzo e brand
+    (e' quello che compare nell'anteprima della notifica), poi titolo, dettagli e fair value rapido. Pura."""
+    esc = _escapa_markdown_legacy
+    fv = listing_info.get("fair_value") or {}
+    testa = _testa_prezzo_brand(listing_info) or ""
+    marca = "⚡ " + (f"{fv['semaforo']} ~+{fv['margine']:.0f} € · " if fv.get("margine") is not None and fv.get("semaforo") else "")
+    righe = [marca + "*" + testa + "*", esc(listing_info.get("title") or "Annuncio")]
+    for riga in (_righe_dettagli_annuncio(listing_info), esc(_riga_fair_value_testo(fv) or "")):
+        if riga:
+            righe.append(riga)
+    righe += ["", "_preavviso del semaforo: la valutazione completa arriva dopo_"]
+    return "\n".join(righe)
+
+
+async def invia_preavviso(listing_info, url):
+    """Manda il PREAVVISO nel gruppo COMPRA con suono, appena la stima rapida e' pronta (prima di foto e Occhio).
+    Ritorna True se spedito. Non solleva mai: un problema qui non deve fermare l'analisi."""
+    if not TELEGRAM_ALERT_CHAT_ID or not url:
+        return False
+    try:
+        id_msg = await telegram_send_with_buttons(
+            TELEGRAM_ALERT_CHAT_ID, testo_preavviso(listing_info, url), url, None, disable_notification=False)
+        return id_msg is not None
+    except Exception:
+        log.warning("Preavviso non inviato:\n%s", traceback.format_exc())
+        return False
+
+
 async def _invia_galleria_anticipata(listing_info, url, photo_bytes_list, stato=None):
     """Manda nella chat principale l'ALBUM con tutte le foto e SUBITO DOPO la
     scheda di testo (prezzo, brand, dettagli, descrizione, bottone "Apri su
@@ -208,7 +237,7 @@ async def _invia_galleria_anticipata(listing_info, url, photo_bytes_list, stato=
         scheda = _scheda_annuncio_testo(listing_info, url, n_foto)
         if url:
             id_scheda = await telegram_send_with_buttons(
-                TELEGRAM_OWNER_CHAT_ID, scheda, url, None, disable_notification=not listing_info.get("preavviso"), reply_to=id_album,
+                TELEGRAM_OWNER_CHAT_ID, scheda, url, None, disable_notification=not (listing_info.get("preavviso") and not listing_info.get("preavviso_gruppo")), reply_to=id_album,
             )
             if stato is not None and id_scheda:
                 # Serve a modificare la riga di stato a fine analisi.
@@ -218,7 +247,7 @@ async def _invia_galleria_anticipata(listing_info, url, photo_bytes_list, stato=
                 stato["stato_testo_iniziale"] = _stato_analisi_testo(n_foto)
         else:
             await telegram_send_message(
-                TELEGRAM_OWNER_CHAT_ID, scheda, disable_notification=not listing_info.get("preavviso"), reply_to=id_album,
+                TELEGRAM_OWNER_CHAT_ID, scheda, disable_notification=not (listing_info.get("preavviso") and not listing_info.get("preavviso_gruppo")), reply_to=id_album,
             )
     except Exception:
         log.warning("Scheda annuncio non inviata:\n%s", traceback.format_exc())
