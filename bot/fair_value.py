@@ -186,8 +186,8 @@ FAIR_VALUE_FATTORE_SENZA_CATEGORIA = 1.0   # categoria non rilevabile: capo "med
 # Taratura (2026-10-04): sugli 87 annunci di ieri arrivati al Cervello la stima rapida era mediamente 0,73 volte il target
 # del Cervello (0,68 sui capi venduti in fretta; Missoni 0,62, Cucinelli 0,60). Si applica solo alle voci NON apprese
 # (quelle apprese hanno gia' imparato dai verdetti). Campione piccolo: rivedere col recap mattutino.
-FAIR_VALUE_TARATURA_GLOBALE = _env_float("FAIR_VALUE_TARATURA_GLOBALE", 1.25)
-FAIR_VALUE_TARATURA_BRAND = {"missoni": 1.2, "brunello cucinelli": 1.2}   # in piu' del fattore globale
+FAIR_VALUE_TARATURA_GLOBALE = _env_float("FAIR_VALUE_TARATURA_GLOBALE", 1.20)
+FAIR_VALUE_TARATURA_BRAND = {"missoni": 1.10, "brunello cucinelli": 1.15}   # in piu' del fattore globale (Missoni: solo prima linea)
 # Le stime a confidenza bassa ora hanno un colore (prima ⚪), ma con soglie piu' alte di questo fattore.
 FAIR_VALUE_RIGORE_BASSA = _env_float("FAIR_VALUE_RIGORE_BASSA", 1.5)
 # Borse (watch 5): (minimo, fair value, massimo) per modelli correnti in
@@ -409,7 +409,10 @@ def stima_fair_value(listing_info):
             conf = "bassa"   # stima del brand madre: solo indicativa finche' non impara la sottolinea
     molt = _moltiplicatore_fair_value(listing_info)
     if not da_appreso:
-        molt *= FAIR_VALUE_TARATURA_GLOBALE * FAIR_VALUE_TARATURA_BRAND.get(brand, 1.0)
+        extra = FAIR_VALUE_TARATURA_BRAND.get(brand, 1.0)
+        if sottolinea:
+            extra = 1.0   # M Missoni, Missoni Sport, Weekend...: il fattore in piu' vale per la prima linea
+        molt *= FAIR_VALUE_TARATURA_GLOBALE * extra
     out = {
         "brand": brand, "categoria": categoria, "fonte_categoria": fonte_cat, "conf": conf, "n_comp": n_comp,
         "n_reali": n_reali,

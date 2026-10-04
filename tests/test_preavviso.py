@@ -94,3 +94,15 @@ def test_categoria_dal_catalogo_vinted():
 
 def test_preavviso_non_scatta_con_stima_debole():
     assert valuta_preavviso({**_stima("🟢", 60), "conf": "bassa"}, 10) == (False, "no")
+
+
+def test_taratura_brand_in_piu_della_globale():
+    from bot.fair_value import FAIR_VALUE_TARATURA_GLOBALE, stima_fair_value
+    base = {"title": "Maglia", "price": 10}
+    miss = stima_fair_value({**base, "brand": "Missoni"})
+    m_line = stima_fair_value({**base, "brand": "Missoni", "title": "M Missoni maglia"})
+    cuc = stima_fair_value({**base, "brand": "Brunello Cucinelli"})
+    assert FAIR_VALUE_TARATURA_GLOBALE == 1.20
+    assert miss["moltiplicatore"] == round(1.20 * 1.10, 2)       # prima linea: +10% in piu'
+    assert m_line["moltiplicatore"] == 1.2                       # sottolinea: solo la globale (o apprese)
+    assert cuc["moltiplicatore"] == round(1.20 * 1.15, 2)
