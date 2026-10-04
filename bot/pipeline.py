@@ -621,7 +621,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             # annuncio valutato a meta' e' peggio di uno non valutato.
             log.warning("Cervello fallito per '%s': %s", listing_info.get("title"), errore_cervello)
             listing_info["_motivo_scarto"] = "errore del Cervello: nessun verdetto"
-        _log_esito(listing_info, "ERRORE_CERVELLO")
+            _log_esito(listing_info, "ERRORE_CERVELLO")
             await telegram_send_message(
                 TELEGRAM_OWNER_CHAT_ID,
                 f"⚠️ *Valutazione non completata* — {listing_info.get('title')}\n"
