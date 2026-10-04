@@ -6,9 +6,9 @@ import traceback
 from functools import partial
 
 
-from bot.scheda import ANALISI_GEMINI_ATTIVA, STATO_ANALISI_COMPLETATA, STATO_ANALISI_INTERROTTA, _PermessoAnalisi, _aggiorna_stato_scheda, _invia_galleria_anticipata, _invia_risultato_telegram, componi_testi_verdetto
+from bot.scheda import ANALISI_GEMINI_ATTIVA, STATO_ANALISI_COMPLETATA, STATO_ANALISI_INTERROTTA, _PermessoAnalisi, _aggiorna_stato_scheda, _invia_galleria_anticipata, _invia_risultato_telegram, invia_preavviso, componi_testi_verdetto
 from bot.verdetto import CERVELLO_CAMPIONI_EXTRA, _a_float, _estrai_item_id_da_url, _estrai_prezzi_da_pool_ricerca, _riepilogo_comp_per_fonte, calcola_verdetto, classifica_provenienza_comp, consolida_target_cervello, render_messaggio_verdetto, valida_payload_cervello
-from bot.config import GEMINI_SOGLIA_PREZZO_ALTO, CERVELLO_PROVIDER, DEBUG_CONFRONTO_COMP_TELEGRAM, OCCHIO_OUTPUT_JSON, RAFFREDDAMENTO_SERPER_SECONDI, SERPER_API_KEY, SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO, SOGLIA_MARGINE_ASSOLUTO_NOTIFICA, TELEGRAM_OWNER_CHAT_ID, _serper_fallimenti_consecutivi, _serper_notifica_esaurimento_inviata, _serper_timestamp_ultimo_fallimento
+from bot.config import GEMINI_SOGLIA_PREZZO_ALTO, TELEGRAM_ALERT_CHAT_ID, CERVELLO_PROVIDER, DEBUG_CONFRONTO_COMP_TELEGRAM, OCCHIO_OUTPUT_JSON, RAFFREDDAMENTO_SERPER_SECONDI, SERPER_API_KEY, SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO, SOGLIA_MARGINE_ASSOLUTO_NOTIFICA, TELEGRAM_OWNER_CHAT_ID, _serper_fallimenti_consecutivi, _serper_notifica_esaurimento_inviata, _serper_timestamp_ultimo_fallimento
 from bot.panel import EXTRA_LLM_URL, PANEL_CERVELLO_MODELLI, PANEL_OCCHIO_MODELLI, _bg_task, panel_cervello, panel_occhio
 from bot.fair_value import FAIR_VALUE_FILTRA, check_skip_fair_value, fv_registra_gemini, fv_registra_rapida, stima_fair_value, valuta_preavviso
 from bot.prompts import GEMINI_CERVELLO_SYSTEM_PROMPT, GEMINI_OCCHI_SYSTEM_PROMPT, GEMINI_OCCHI_SYSTEM_PROMPT_JSON
@@ -32,6 +32,9 @@ from bot.comps import search_comps_completo, verifica_codici_prodotto_reddit
 from bot.telegram_api import telegram_send_message
 from bot.serper_base import valuta_qualita_comp
 # ---- fine import ----
+_task_preavviso = set()   # riferimenti ai task di invio, perche' non vengano raccolti a meta'
+
+
 async def _campione_target_cervello(chiama, user_text, forza_ricerca):
     """Una valutazione in piu' del Cervello. Ritorna (v|None, problemi, costo): v e' il verdetto validato (il
     chiamante usa quello piu' vicino alla mediana, cosi' testo e numeri restano coerenti)."""
@@ -209,6 +212,12 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
                      _feat["semaforo"], _fv_pre.get("fv"), _fv_pre.get("margine"), _feat["conf"], _regola_pre,
                      "".join(f" | {k}={v}" for k, v in _feat.items()
                              if k not in ("prezzo", "semaforo", "fv", "margine", "conf", "regola")))
+            if listing_info["preavviso"] and TELEGRAM_ALERT_CHAT_ID:
+                # subito, senza aspettare foto e Occhio: i venduti entro 30 s non lasciano tempo
+                listing_info["preavviso_gruppo"] = True
+                _t_pre = asyncio.create_task(invia_preavviso(dict(listing_info), url))
+                _task_preavviso.add(_t_pre)
+                _t_pre.add_done_callback(_task_preavviso.discard)
             if _item_pre:
                 db.scrivi_evento("annuncio", _item_pre, listing_info.get("brand"),
                                  {**_feat, "titolo": listing_info.get("title")})

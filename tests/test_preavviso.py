@@ -49,3 +49,12 @@ def test_lingua_titolo_e_campi_annuncio():
                         "seller_feedback_count": 12, "description": "ottimo"}, n_foto=5, adesso=0)
     assert c["cond"] == "Molto_buone" and c["taglia"] == "M_/_40" and c["n_foto"] == 5
     assert c["ora_utc"] == 0 and c["gs"] == 3 and c["lingua"] == "it" and c["v_rec"] == 12
+
+
+def test_testo_preavviso_prima_riga_e_dettagli():
+    from bot.scheda import testo_preavviso
+    info = {"price": 15, "brand": "Prada", "title": "Gonna lana", "condition": "Buone", "size": "M",
+            "fair_value": _stima("🟢", 40)}
+    t = testo_preavviso(info, "https://www.vinted.it/items/1-x")
+    assert t.split("\n")[0].startswith("⚡ 🟢 ~+40 €")
+    assert "Gonna lana" in t and "preavviso" in t
