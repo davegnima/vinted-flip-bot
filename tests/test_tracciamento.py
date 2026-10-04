@@ -77,3 +77,14 @@ def test_serie_si_ferma_alla_vendita_e_salta_gli_scartati(monkeypatch):
     asyncio.run(prova())
     per_item = {i: sum(1 for c in chiamate if f"/{i}-" in c) for i in ("10", "20", "30")}
     assert per_item["30"] == 0 and per_item["20"] == 3 and per_item["10"] == 1
+
+
+def test_preferiti_e_visite_dalla_pagina():
+    from bot.tracciamento import _tracc_estrai_segnali
+    html = 'x \\"favourite_count\\":7,\\"view_count\\":132, "is_closed":false'
+    segnali, _ = _tracc_estrai_segnali(html)
+    assert segnali["preferiti"] == 7 and segnali["visite"] == 132
+    segnali2, _ = _tracc_estrai_segnali('"favorite_count": 0 , "viewCount":4')
+    assert segnali2["preferiti"] == 0 and segnali2["visite"] == 4
+    segnali3, _ = _tracc_estrai_segnali("<html></html>")
+    assert "preferiti" not in segnali3

@@ -154,6 +154,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             "catalog_id": scraped.get("catalog_id"), "cover_photo_id": scraped.get("cover_photo_id"),
             "uploaded_text": scraped.get("uploaded_text"), "stato_vendita": scraped.get("stato_vendita"),
             "created_at": scraped.get("created_at"),
+            "preferiti": scraped.get("preferiti"), "visite": scraped.get("visite"),
             "material_raw": scraped.get("material_raw"),
             "material_per_ricerca": scraped.get("material_per_ricerca"),
             "color_raw": scraped.get("color_raw"),

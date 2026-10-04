@@ -46,6 +46,13 @@ _TRACC_SEGNALI_RE = {
     chiave: re.compile(r'\\?"' + chiave + r'\\?"\s*:\s*\\?("?[A-Za-z0-9_.-]{1,30}"?)')
     for chiave in ("is_closed", "is_reserved", "is_hidden", "is_draft", "can_buy", "item_closing_action")
 }
+# Preferiti e visualizzazioni (richiesto dall'utente il 2026-10-04): segnale di domanda da leggere nello scrape e in
+# ogni ricontrollo lampo. Nomi dei campi incorporati nella pagina non verificati su una pagina reale: si provano
+# le varianti piu' comuni; se nessuna c'e' il valore resta assente (lo si vede dai log).
+_TRACC_CONTEGGI_RE = {
+    "preferiti": re.compile(r'\\?"(?:favou?rite_count|favou?rites_count|favou?riteCount)\\?"\s*:\s*(\d{1,7})'),
+    "visite": re.compile(r'\\?"(?:view_count|viewCount|views_count)\\?"\s*:\s*(\d{1,8})'),
+}
 _TRACC_PREZZO_RES = (
     re.compile(r'property="product:price:amount"\s+content="([\d.,]+)"'),
     re.compile(r'\\?"price\\?"\s*:\s*\{[^{}]{0,80}?\\?"amount\\?"\s*:\s*\\?"?([\d.]+)'),
@@ -79,6 +86,10 @@ def _tracc_estrai_segnali(html_pagina):
         m = rx.search(html_pagina)
         if m:
             segnali[chiave] = m.group(1).strip('"')
+    for chiave, rx in _TRACC_CONTEGGI_RE.items():
+        m = rx.search(html_pagina)
+        if m:
+            segnali[chiave] = int(m.group(1))
     m = _TRACC_AVAILABILITY_RE.search(html_pagina)
     if m:
         segnali["availability"] = m.group(1)
@@ -194,9 +205,9 @@ async def _tracc_serie(item_id, url, brand, prezzo, t0):
                 "bucket": bucket, "classe": classe,
             })
             log.info(
-                "RICONTROLLO LAMPO | item=%s | brand='%s' | offset=%ss | da_messaggio=%ss | http=%s | stato=%s | bucket=%s | classe=%s | prezzo_valutato=%s | prezzo_ora=%s | esito=%s | target=%s",
+                "RICONTROLLO LAMPO | item=%s | brand='%s' | offset=%ss | da_messaggio=%ss | http=%s | stato=%s | bucket=%s | classe=%s | prezzo_valutato=%s | prezzo_ora=%s | esito=%s | target=%s | preferiti=%s | visite=%s",
                 item_id, brand or "n/d", s_dopo, reale, http_status, stato, bucket or "-", classe or "-",
-                prezzo, prezzo_ora, esito, target,
+                prezzo, prezzo_ora, esito, target, segnali.get("preferiti", "-"), segnali.get("visite", "-"),
             )
             if stato in ("venduto", "rimosso"):
                 _tracc_stop.add(item_id)
@@ -253,6 +264,7 @@ def campi_annuncio(listing_info, n_foto=None, adesso=None):
         "v_rec": listing_info.get("seller_feedback_count"), "v_rep": listing_info.get("seller_feedback_reputation"),
         "v_art": listing_info.get("seller_items_count"), "v_paese": listing_info.get("seller_country"),
         "ora_utc": t.tm_hour, "gs": t.tm_wday,
+        "pref": listing_info.get("preferiti"), "visite": listing_info.get("visite"),
     }
     return {k: (v.strip().replace("|", "/").replace(" ", "_") if isinstance(v, str) else v)
             for k, v in campi.items() if v not in (None, "")}
