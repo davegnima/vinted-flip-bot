@@ -28,7 +28,7 @@ def test_stato_gemini_sopravvive_al_riavvio_senza_salvare_la_key(monkeypatch):
     monkeypatch.setattr(gs, "GEMINI_API_KEYS", ["chiave-segreta-1", "chiave-2"])
     monkeypatch.setattr(gs, "_gemini_key_quota_esaurita_fino", {})
     monkeypatch.setattr(gs, "_gemini_modello_escluso_fino", {})
-    gs._gemini_segna_key_quota_esaurita("chiave-segreta-1", "modello-x", 3600)
+    gs._gemini_segna_key_quota_esaurita("chiave-segreta-1", "modello-x", 600)
     gs._gemini_segna_modello_non_disponibile("modello-y", 7200, "non disponibile")
     # "riavvio": dizionari vuoti, DB riaperto
     db.chiudi()
