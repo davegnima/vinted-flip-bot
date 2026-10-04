@@ -256,3 +256,10 @@ def test_cascata_esaurita_conta_anche_i_modelli_esclusi(monkeypatch):
     assert g.gemini_cascata_esaurita("cervello")
     monkeypatch.setattr(g, "_gemini_modello_senza_quota", lambda m: False)
     assert not g.gemini_cascata_esaurita("cervello")
+
+
+def test_taratura_brand_da_env():
+    from bot.fair_value import FAIR_VALUE_TARATURA_BRAND, _fattori_da_env
+    assert FAIR_VALUE_TARATURA_BRAND == {"missoni": 1.10, "brunello cucinelli": 1.15}
+    assert _fattori_da_env("Prada=1.3, rotto, x=abc ,=2") == {"prada": 1.3}
+    assert _fattori_da_env("") == {}
