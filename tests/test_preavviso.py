@@ -179,3 +179,15 @@ def test_didascalia_verdetto_taglia_a_paragrafi():
     out = didascalia_verdetto(testo, 1024)
     assert out.endswith("c" * 600) and "d" not in out and len(out) <= 1024
     assert len(didascalia_verdetto("riga\n" * 400, 1024)) <= 1024
+
+
+def test_riga_scarto_con_motivo_e_link(monkeypatch):
+    from bot import scheda
+    monkeypatch.setattr(scheda, "TELEGRAM_OWNER_CHAT_ID", "-1001234567890")
+    r = scheda.riga_scarto_preavviso("[ANNUNCIO FRAUDOLENTO] Segnali sulle immagini: descrizione_incoerente_con_le_foto", 55)
+    assert r.startswith("🚫 scartato prima del verdetto: ")
+    assert "descrizione" in r and "https://t.me/c/1234567890/55" in r
+    assert "analisi interrotta" in scheda.riga_scarto_preavviso(None, None, interrotta=True)
+    monkeypatch.setattr(scheda, "TELEGRAM_OWNER_CHAT_ID", "123456")        # chat privata: niente link
+    assert "t.me" not in scheda.riga_scarto_preavviso("motivo", 55)
+    assert scheda.link_messaggio_chat_principale(None) is None

@@ -6,7 +6,7 @@ import traceback
 from functools import partial
 
 
-from bot.scheda import ANALISI_GEMINI_ATTIVA, STATO_ANALISI_COMPLETATA, STATO_ANALISI_INTERROTTA, _PermessoAnalisi, _aggiorna_stato_scheda, _invia_galleria_anticipata, _invia_risultato_telegram, aggiorna_preavviso, invia_preavviso, componi_testi_verdetto
+from bot.scheda import ANALISI_GEMINI_ATTIVA, STATO_ANALISI_COMPLETATA, STATO_ANALISI_INTERROTTA, _PermessoAnalisi, _aggiorna_stato_scheda, _invia_galleria_anticipata, _invia_risultato_telegram, aggiorna_preavviso, invia_preavviso, riga_scarto_preavviso, componi_testi_verdetto
 from bot.verdetto import CERVELLO_CAMPIONI_EXTRA, _a_float, _estrai_item_id_da_url, _estrai_prezzi_da_pool_ricerca, _riepilogo_comp_per_fonte, calcola_verdetto, classifica_provenienza_comp, consolida_target_cervello, render_messaggio_verdetto, valida_payload_cervello
 from bot.config import GEMINI_SOGLIA_PREZZO_ALTO, TELEGRAM_ALERT_CHAT_ID, CERVELLO_PROVIDER, DEBUG_CONFRONTO_COMP_TELEGRAM, OCCHIO_OUTPUT_JSON, RAFFREDDAMENTO_SERPER_SECONDI, SERPER_API_KEY, SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO, SOGLIA_MARGINE_ASSOLUTO_NOTIFICA, TELEGRAM_OWNER_CHAT_ID, _serper_fallimenti_consecutivi, _serper_notifica_esaurimento_inviata, _serper_timestamp_ultimo_fallimento
 from bot.panel import EXTRA_LLM_URL, PANEL_CERVELLO_MODELLI, PANEL_OCCHIO_MODELLI, _bg_task, panel_cervello, panel_occhio
@@ -71,8 +71,10 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
         # preavviso rimasto senza verdetto (scartato prima del Cervello o analisi interrotta): riga finale
         if stato.get("task_preavviso") is not None and not stato.get("preavviso_aggiornato"):
             await aggiorna_preavviso(
-                stato, url, riga_finale=("⚠️ _analisi interrotta per un errore_" if esito_finale == STATO_ANALISI_INTERROTTA
-                                         else "ℹ️ _scartato prima del verdetto_"))
+                stato, url, riga_finale=riga_scarto_preavviso(
+                    (stato.get("listing_info") or {}).get("_motivo_scarto"),
+                    stato.get("msg_id_scheda") or stato.get("msg_id_galleria"),
+                    interrotta=(esito_finale == STATO_ANALISI_INTERROTTA)))
 
 
 def ruoli_gemini(prezzo, stima_rapida, soglia=None):
@@ -101,6 +103,8 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
                                    permesso=None):
     listing_info = dict(parsed)
     listing_info["url"] = url
+    if stato is not None:
+        stato["listing_info"] = listing_info   # letto a fine analisi (motivo dello scarto per il preavviso)
     t0 = t_ricevuto_bot or time.time()  # arrivo del messaggio del tracker: riferimento dei controlli vendite
     costo_totale = 0.0
 
@@ -140,6 +144,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
                 "FILTRO PRE-SCRAPE ATTIVATO (silenzioso, no notifica, NESSUNA richiesta a Vinted): '%s'. Motivo: %s",
                 listing_info.get("title"), motivo_skip_ante,
             )
+            listing_info["_motivo_scarto"] = motivo_skip_ante   # intero, per il messaggio di preavviso
             _log_esito(listing_info, "SKIP_PRE_SCRAPE", motivo=(motivo_skip_ante or "")[:80])
             return
 
@@ -191,6 +196,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
                      listing_info.get("title"), motivo_skip_pre,
                      f" — Tempi: {' · '.join(pezzi_tempi_skip)}" if pezzi_tempi_skip else "",
                      " · ".join(_formatta_tappe_pipeline(t_tappe)))
+            listing_info["_motivo_scarto"] = motivo_skip_pre   # intero, per il messaggio di preavviso
             _log_esito(listing_info, "SKIP_PRE_GEMINI", motivo=(motivo_skip_pre or "")[:80])
             return
 
@@ -238,6 +244,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             if FAIR_VALUE_FILTRA:
                 log.info("FILTRO FAIR VALUE ATTIVATO (silenzioso, no notifica): '%s'. Motivo: %s",
                          listing_info.get("title"), motivo_skip_fv)
+                listing_info["_motivo_scarto"] = motivo_skip_fv   # intero, per il messaggio di preavviso
                 _log_esito(listing_info, "SKIP_FAIR_VALUE", motivo=(motivo_skip_fv or "")[:80])
                 return
             log.info("FAIR VALUE PROVA (nessuno scarto, FAIR_VALUE_FILTRA=0): avrebbe scartato '%s'. Motivo: %s",
@@ -445,6 +452,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             log.info("FALSO CONCLAMATO -- output occhi grezzo per '%s':\n%s", listing_info.get("title"), output_occhi)
         output_finale = build_skip_report(listing_info, motivo_skip, output_occhi_testo=output_occhi)
         scenario_usato = "SKIP"
+        listing_info["_motivo_scarto"] = motivo_skip   # intero, per il messaggio di preavviso
         _log_esito(listing_info, "SKIP_PRE_CERVELLO", motivo=motivo_skip[:80])
     else:
         titolo_annuncio = listing_info.get("title") or ""
@@ -612,7 +620,8 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             # calcolare. Si avvisa invece di restare in silenzio, perche' un
             # annuncio valutato a meta' e' peggio di uno non valutato.
             log.warning("Cervello fallito per '%s': %s", listing_info.get("title"), errore_cervello)
-            _log_esito(listing_info, "ERRORE_CERVELLO")
+            listing_info["_motivo_scarto"] = "errore del Cervello: nessun verdetto"
+        _log_esito(listing_info, "ERRORE_CERVELLO")
             await telegram_send_message(
                 TELEGRAM_OWNER_CHAT_ID,
                 f"⚠️ *Valutazione non completata* — {listing_info.get('title')}\n"

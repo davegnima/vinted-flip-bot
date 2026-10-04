@@ -195,6 +195,28 @@ def testo_preavviso(listing_info, url=None, riga_finale=RIGA_PREAVVISO_IN_ATTESA
     return "\n".join(righe)
 
 
+def link_messaggio_chat_principale(msg_id):
+    """Link al messaggio della chat principale (album o scheda), se la chat e' un supergruppo (id -100...):
+    https://t.me/c/<id senza -100>/<messaggio>. In una chat privata Telegram non permette link: None. Pura."""
+    chat = str(TELEGRAM_OWNER_CHAT_ID)
+    if not msg_id or not chat.startswith("-100"):
+        return None
+    return f"https://t.me/c/{chat[4:]}/{msg_id}"
+
+
+def riga_scarto_preavviso(motivo, msg_id=None, interrotta=False):
+    """Riga finale del preavviso rimasto senza verdetto: motivo dello scarto (max 220 caratteri) e link al messaggio
+    originale nella chat principale, dove ci sono scheda e foto. Pura."""
+    if interrotta:
+        testa = "⚠️ analisi interrotta per un errore"
+    else:
+        testa = "🚫 scartato prima del verdetto"
+        if motivo:
+            testa += ": " + _escapa_markdown_legacy(_compatta_testo(motivo, 220))
+    link = link_messaggio_chat_principale(msg_id)
+    return testa + (f"\n[messaggio originale nell'altra chat]({link})" if link else "")
+
+
 def didascalia_verdetto(testo, limite=1024):
     """Riduce il messaggio del verdetto alla didascalia di una foto (max 1024): tiene i paragrafi interi dall'alto
     finche' ci stanno; se il primo e' gia' troppo lungo lo tronca all'ultima riga intera. Pura."""
