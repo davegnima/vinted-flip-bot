@@ -55,7 +55,7 @@ I log sono enormi. Regole:
    - esiti per annuncio: `"| ESITO |"`; saltati senza messaggio: `"SKIP non inviato"`
    - errori: `Traceback`, `"Markdown fallita"`, `"FALLITA"`
    - modelli: `"GEMINI_USO"`, `"RISERVA |"`, `"PANEL |"`, `"PANEL HTTP"`
-   - vendite rapide: `"RICONTROLLO LAMPO"`; preavviso push (una riga per annuncio, con semaforo, regola e caratteristiche: categoria, condizione, materiale, taglia, lingua, n. foto, venditore, ora): `"PREAVVISO |"`; le righe `RICONTROLLO LAMPO` e `PREAVVISO` portano `preferiti`/`visite` (letti dalla pagina, nomi dei campi da verificare); le righe `ESITO` portano `item=` per incrociarle con `PREAVVISO` e `RICONTROLLO LAMPO`
+   - vendite rapide: `"RICONTROLLO LAMPO"`; preavviso push (una riga per annuncio, con semaforo, regola e caratteristiche: categoria, condizione, materiale, taglia, lingua, n. foto, venditore, ora): `"PREAVVISO |"`; le righe `RICONTROLLO LAMPO` e `PREAVVISO` portano i `preferiti` letti dalla pagina; `PREAVVISO` ha anche `fonte_cat` (titolo, descrizione, catalogo o nessuna); le righe `ESITO` portano `item=` per incrociarle con `PREAVVISO` e `RICONTROLLO LAMPO`
    - banda proxy: `"RIEPILOGO BANDA"`
 5. Dopo un deploy controllare solo righe successive all'avvio (`"Vinted Oracle avviato"` riporta la versione).
 6. Se non arrivano annunci analizzati (traffico basso, es. sabato sera) dirlo e aspettare, non rileggere in loop.
