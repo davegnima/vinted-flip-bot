@@ -10,7 +10,7 @@ from bot.verdetto import EMOJI_DECISIONE, ETICHETTA_CONFIDENZA, ETICHETTA_RISCHI
 from bot.testo import _escapa_markdown_legacy
 from bot.fair_value import _riga_fair_value_testo, _riga_fair_value_unica
 from bot.logger import log
-from bot.telegram_api import telegram_edit_message, telegram_send_media_group, telegram_send_message, telegram_send_photo, telegram_send_with_buttons
+from bot.telegram_api import telegram_edit_message, telegram_send_media_group, telegram_send_message, telegram_send_photo, telegram_send_photo_con_bottone, telegram_send_with_buttons
 # ---- fine import ----
 # GALLERIA ANTICIPATA (richiesto dall'utente il 2026-09-28): la galleria
 # completa arriva nella chat principale APPENA le foto sono scaricate, prima
@@ -188,14 +188,21 @@ def testo_preavviso(listing_info, url=None):
     return "\n".join(righe)
 
 
-async def invia_preavviso(listing_info, url):
+async def invia_preavviso(listing_info, url, cover_photo_bytes=None):
     """Manda il PREAVVISO nel gruppo COMPRA con suono, appena la stima rapida e' pronta (prima di foto e Occhio).
+    Con la foto di copertina del tracker (se c'e') e il bottone; altrimenti solo testo con bottone.
     Ritorna True se spedito. Non solleva mai: un problema qui non deve fermare l'analisi."""
     if not TELEGRAM_ALERT_CHAT_ID or not url:
         return False
+    testo = testo_preavviso(listing_info, url)
     try:
-        id_msg = await telegram_send_with_buttons(
-            TELEGRAM_ALERT_CHAT_ID, testo_preavviso(listing_info, url), url, None, disable_notification=False)
+        id_msg = None
+        if cover_photo_bytes:
+            id_msg = await telegram_send_photo_con_bottone(
+                TELEGRAM_ALERT_CHAT_ID, cover_photo_bytes, testo, url, disable_notification=False)
+        if id_msg is None:   # niente copertina o foto non partita: almeno il testo
+            id_msg = await telegram_send_with_buttons(
+                TELEGRAM_ALERT_CHAT_ID, testo, url, None, disable_notification=False)
         return id_msg is not None
     except Exception:
         log.warning("Preavviso non inviato:\n%s", traceback.format_exc())

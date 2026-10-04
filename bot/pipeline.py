@@ -221,7 +221,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             if listing_info["preavviso"] and TELEGRAM_ALERT_CHAT_ID:
                 # subito, senza aspettare foto e Occhio: i venduti entro 30 s non lasciano tempo
                 listing_info["preavviso_gruppo"] = True
-                _t_pre = asyncio.create_task(invia_preavviso(dict(listing_info), url))
+                _t_pre = asyncio.create_task(invia_preavviso(dict(listing_info), url, cover_photo_bytes))
                 _task_preavviso.add(_t_pre)
                 _t_pre.add_done_callback(_task_preavviso.discard)
             if _item_pre:

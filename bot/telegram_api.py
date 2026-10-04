@@ -152,6 +152,22 @@ async def telegram_send_photo(chat_id, photo_bytes, caption=None, disable_notifi
     return _primo_message_id(resp)
 
 
+async def telegram_send_photo_con_bottone(chat_id, photo_bytes, caption, url_annuncio, disable_notification=False):
+    """Foto con didascalia Markdown (max 1024) e bottone "Apri su Vinted". Se Telegram rifiuta il Markdown ritenta
+    senza parse_mode. Ritorna il message_id (None se fallita)."""
+    keyboard = json.dumps({"inline_keyboard": [[{"text": "🔗 Apri su Vinted", "url": url_annuncio}]]})
+    data = {"chat_id": chat_id, "disable_notification": disable_notification, "caption": (caption or "")[:1024],
+            "reply_markup": keyboard}
+    resp = await _telegram_post("sendPhoto", data={**data, "parse_mode": "Markdown"},
+                                files={"photo": ("photo.jpg", photo_bytes)}, timeout=30)
+    if resp is not None and not resp.is_success:
+        log.warning("telegram_send_photo_con_bottone: Markdown fallita -- HTTP %d: %s -- ritento senza parse_mode",
+                    resp.status_code, resp.text[:300])
+        resp = await _telegram_post("sendPhoto", data=data, files={"photo": ("photo.jpg", photo_bytes)}, timeout=30)
+    _telegram_esito_ok(resp, "sendPhoto", "con bottone")
+    return _primo_message_id(resp)
+
+
 async def telegram_send_media_group(chat_id, photos_bytes_list, caption=None, disable_notification=False):
     """Ritorna il message_id della prima foto dell'album (None se fallito)."""
     if not photos_bytes_list:
