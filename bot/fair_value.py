@@ -242,6 +242,26 @@ def valuta_preavviso(stima, prezzo):
     return False, "no"
 
 
+# Rosso sicuro (2026-10-04, per ridurre le chiamate Gemini): stima rapida rossa con confidenza alta/media, margine
+# rapido NEGATIVO (fair value sotto il prezzo) e prezzo sotto la soglia della fascia alta -> il Cervello non viene
+# consultato (l'Occhio si': l'autenticita' e' gia' stata letta). Le eccezioni piu' care restano coperte dalla soglia di
+# prezzo. Spento con SALTA_CERVELLO_ROSSO=0. Gli esiti si loggano come SKIP_ROSSO per misurare i falsi negativi.
+SALTA_CERVELLO_ROSSO = os.environ.get("SALTA_CERVELLO_ROSSO", "1").strip() != "0"
+
+
+def check_skip_rosso(listing_info):
+    """(True, motivo) se l'annuncio e' un rosso sicuro (vedi SALTA_CERVELLO_ROSSO). Pura."""
+    from bot.config import GEMINI_SOGLIA_PREZZO_ALTO
+    stima = listing_info.get("fair_value") or {}
+    prezzo = _a_float(listing_info.get("price"), None)
+    if (not SALTA_CERVELLO_ROSSO or stima.get("semaforo") != "🔴" or stima.get("conf") not in ("alta", "media")
+            or stima.get("margine") is None or stima["margine"] >= 0
+            or prezzo is None or prezzo >= GEMINI_SOGLIA_PREZZO_ALTO):
+        return False, None
+    return True, (f"[ROSSO SICURO] Stima rapida {stima.get('brand')} {stima.get('categoria')}: fair value ~{stima.get('fv')} € "
+                  f"sotto il prezzo {prezzo:.0f} € (confidenza {stima.get('conf')}) -- Cervello non consultato.")
+
+
 # Filtro risparmio Gemini: se FAIR_VALUE_FILTRA=1 gli annunci con confidenza
 # alta/media e ROI stimato sotto FAIR_VALUE_FILTRA_ROI_MIN % vengono scartati
 # in silenzio prima di foto e Gemini. Di default e' in modalita' PROVA (0):

@@ -191,3 +191,32 @@ def test_riga_scarto_con_motivo_e_link(monkeypatch):
     monkeypatch.setattr(scheda, "TELEGRAM_OWNER_CHAT_ID", "123456")        # chat privata: niente link
     assert "t.me" not in scheda.riga_scarto_preavviso("motivo", 55)
     assert scheda.link_messaggio_chat_principale(None) is None
+
+
+def test_rosso_sicuro_salta_il_cervello():
+    from bot.fair_value import check_skip_rosso
+    rosso = {"semaforo": "🔴", "conf": "media", "margine": -12, "fv": 30, "brand": "Prada", "categoria": "maglia"}
+    assert check_skip_rosso({"fair_value": rosso, "price": 40})[0]
+    assert not check_skip_rosso({"fair_value": rosso, "price": 60})[0]                            # sopra la soglia di prezzo
+    assert not check_skip_rosso({"fair_value": {**rosso, "conf": "bassa"}, "price": 40})[0]        # stima debole
+    assert not check_skip_rosso({"fair_value": {**rosso, "margine": 5}, "price": 40})[0]           # margine non negativo
+    assert not check_skip_rosso({"fair_value": {**rosso, "semaforo": "🟡"}, "price": 40})[0]
+
+
+def test_fascia_alta_solo_con_stima_solida():
+    from bot.pipeline import ruoli_gemini
+    verde = {"semaforo": "🟢", "conf": "media"}
+    assert ruoli_gemini(20, verde)[0]
+    assert not ruoli_gemini(20, {**verde, "conf": "stima"})[0]    # conoscenza di mercato: dal prezzo
+    assert not ruoli_gemini(20, {**verde, "conf": "bassa"})[0]
+    assert ruoli_gemini(60, {**verde, "conf": "bassa"})[0]
+
+
+def test_fattori_target_riserva_e_campioni():
+    from bot.riserva_llm import fattore_target_riserva
+    from bot.verdetto import CERVELLO_CAMPIONI_EXTRA
+    assert fattore_target_riserva("mistral/ministral-14b-2512@c") == 1.0
+    assert fattore_target_riserva("groq/openai/gpt-oss-120b@c") == 0.95
+    assert fattore_target_riserva("groq/openai/gpt-oss-20b@c") == 0.55
+    assert fattore_target_riserva("altro/modello") == 1.0
+    assert CERVELLO_CAMPIONI_EXTRA == 1
