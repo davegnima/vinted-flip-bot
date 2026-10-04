@@ -11,7 +11,8 @@ import os
 from bot.panel import (EXTRA_LLM_URL, NOTA_SENZA_RICERCA, RISERVA_CERVELLO_MODELLI, RISERVA_OCCHIO_MODELLI, _panel_chiama, _panel_pausa,
                        _panel_segna_errore, estrai_json_da_testo_llm)
 from bot.schemas import CERVELLO_RESPONSE_SCHEMA_OPENAI, OCCHIO_RESPONSE_SCHEMA_GEMINI, _schema_gemini_to_openai
-from bot.gemini_stato import gemini_cascata_esaurita
+from bot.config import GEMINI_API_KEY
+from bot.gemini_stato import GEMINI_API_KEYS, gemini_cascata_esaurita
 from bot.gemini_api import chiama_gemini
 from bot.prompts import GEMINI_OCCHI_SYSTEM_PROMPT_JSON, prompt_cervello_compatto
 from bot.foto import costruisci_parts_foto
@@ -26,13 +27,16 @@ def riserva_attiva(lista):
 
 
 # ULTIMA RISERVA A PAGAMENTO (richiesta esplicita dell'utente il 2026-10-04, in deroga alla regola "niente AI a
-# pagamento"): la chiave Google a pagamento (GEMINI_API_KEY_PAGAMENTO, variabile Railway, mai nel codice) si usa
+# pagamento"): la chiave Google a pagamento (GEMINI_API_KEY, variabile Railway, mai nel codice) si usa
 #  - dopo i modelli gratuiti di riserva, se anche questi falliscono;
 #  - PRIMA di loro se sono troppo lenti (mediana delle ultime 3 risposte > RISERVA_LENTA_MS) per RISERVA_LENTA_PAUSA_S;
 # con un tetto di PAGAMENTO_MAX_RICHIESTE_GIORNO al giorno (UTC). Appena la quota gratuita di Gemini torna (dopo la
 # pausa di 5 minuti si riprova il gratuito per primo) la fase torna sul gratuito da sola.
 PREFISSO_PAGAMENTO = "pagamento/"
-GEMINI_CHIAVE_PAGAMENTO = (os.environ.get("GEMINI_API_KEY_PAGAMENTO") or "").strip()
+# La chiave a pagamento e' GEMINI_API_KEY (decisione dell'utente il 4/10: nessuna variabile nuova); GEMINI_API_KEYS
+# contiene le chiavi gratuite della rotazione. Se GEMINI_API_KEY e' anche nella rotazione non c'e' una chiave distinta:
+# la riserva a pagamento resta spenta.
+GEMINI_CHIAVE_PAGAMENTO = "" if GEMINI_API_KEY in GEMINI_API_KEYS else (GEMINI_API_KEY or "").strip()
 GEMINI_MODELLO_PAGAMENTO = (os.environ.get("GEMINI_MODELLO_PAGAMENTO") or "gemini-3.1-flash-lite").strip()
 GEMINI_URL_COMPAT = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
 PAGAMENTO_MAX_RICHIESTE_GIORNO = int(os.environ.get("PAGAMENTO_MAX_RICHIESTE_GIORNO", "600"))

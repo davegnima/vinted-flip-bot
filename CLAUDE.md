@@ -5,7 +5,7 @@ Userbot Telethon che riceve gli annunci dal tracker (`davegnima/Vinted-Notificat
 **A inizio sessione (o dopo una compattazione) rileggere `STATO.md`**: stato corrente, controlli da fare e punti aperti. Aggiornarlo a ogni tappa chiusa.
 
 ## Regole dell'utente (valgono sempre)
-- Niente AI a pagamento: solo piani gratuiti. Non attivare fatturazione, carte o crediti a pagamento da nessuna parte. UNICA ECCEZIONE, voluta dall'utente il 4/10: la sua chiave Google a pagamento (`GEMINI_API_KEY_PAGAMENTO`, variabile Railway) come ultima riserva, con tetto giornaliero `PAGAMENTO_MAX_RICHIESTE_GIORNO`; nessun'altra spesa e nessuna nuova attivazione di fatturazione.
+- Niente AI a pagamento: solo piani gratuiti. Non attivare fatturazione, carte o crediti a pagamento da nessuna parte. UNICA ECCEZIONE, voluta dall'utente il 4/10: la sua chiave Google a pagamento (`GEMINI_API_KEY`, variabile Railway; le chiavi gratuite sono in `GEMINI_API_KEYS`) come ultima riserva, con tetto giornaliero `PAGAMENTO_MAX_RICHIESTE_GIORNO`; nessun'altra spesa e nessuna nuova attivazione di fatturazione.
 - NIENTE API di Vinted e niente scraping di vinted.it da parte di Claude. Il bot scarica le pagine, Claude no.
 - Non toccare `PROXY_LIST` / `PROXY_ESCLUSI`.
 - Non modificare codice, PR, variabili Railway o ricerche del tracker senza ok esplicito dell'utente (salvo che l'utente lo chieda nel messaggio). Prima di unire una PR controllare che la CI sia verde.
