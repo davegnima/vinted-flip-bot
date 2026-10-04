@@ -114,8 +114,10 @@ def calcola_scarto_occhio(o, solo_cover_photo=False, listing_info=None):
     # scarto automatico a indizio.
     # Stessa scelta per 'foto_di_uno_schermo' (richiesto dall'utente il 2026-10-04): non scarta piu', resta
     # nel testo dell'Occhio come indizio per il Cervello. Gli altri segnali (screenshot di un altro annuncio,
-    # watermark di un altro sito, foto stock, descrizione incoerente) scartano come prima.
-    segnali_non_scartano = ("capi_diversi_tra_le_foto", "foto_di_uno_schermo")
+    # watermark di un altro sito, descrizione incoerente) scartano come prima.
+    # Anche 'foto_stock_non_del_capo' non scarta piu' (richiesto dall'utente il 2026-10-04: i modelli di riserva,
+    # Mistral in testa, lo segnalano a torto su foto vere): resta come indizio per il Cervello.
+    segnali_non_scartano = ("capi_diversi_tra_le_foto", "foto_di_uno_schermo", "foto_stock_non_del_capo")
     segnali_annuncio_affidabili = [
         s for s in (o.get("segnali_rischio_annuncio") or [])
         if _norm(s) not in segnali_non_scartano

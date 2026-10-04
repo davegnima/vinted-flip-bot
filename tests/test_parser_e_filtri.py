@@ -54,5 +54,7 @@ def test_foto_di_uno_schermo_non_scarta_piu():
     scartato, motivo = scarto(["watermark_di_altro_sito"])
     assert scartato and "ANNUNCIO FRAUDOLENTO" in motivo
     # insieme a un segnale che scarta, il motivo non cita quello declassato
-    _, motivo2 = scarto(["foto_di_uno_schermo", "foto_stock_non_del_capo"])
-    assert "foto_stock_non_del_capo" in motivo2 and "foto_di_uno_schermo" not in motivo2
+    assert not scarto(["foto_stock_non_del_capo"])[0]
+    _, motivo2 = scarto(["foto_di_uno_schermo", "foto_stock_non_del_capo", "watermark_di_altro_sito"])
+    assert "watermark_di_altro_sito" in motivo2
+    assert "foto_di_uno_schermo" not in motivo2 and "foto_stock_non_del_capo" not in motivo2
