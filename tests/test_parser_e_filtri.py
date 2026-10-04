@@ -44,10 +44,15 @@ def test_borsa_nei_filtri_non_scarta_un_capo_normale():
 
 def test_foto_di_uno_schermo_non_scarta_piu():
     from bot.occhio import calcola_scarto_occhio
-    assert not calcola_scarto_occhio({"segnali_rischio_annuncio": ["foto_di_uno_schermo"]})[0]
-    assert not calcola_scarto_occhio({"segnali_rischio_annuncio": ["capi_diversi_tra_le_foto"]})[0]
-    scartato, motivo = calcola_scarto_occhio({"segnali_rischio_annuncio": ["watermark_di_altro_sito"]})
+    base = {"etichette": [{"leggibilita": "leggibile"}], "cartellino_interno_leggibile": True}
+
+    def scarto(segnali):
+        return calcola_scarto_occhio({**base, "segnali_rischio_annuncio": segnali})
+
+    assert not scarto(["foto_di_uno_schermo"])[0]
+    assert not scarto(["capi_diversi_tra_le_foto"])[0]
+    scartato, motivo = scarto(["watermark_di_altro_sito"])
     assert scartato and "ANNUNCIO FRAUDOLENTO" in motivo
     # insieme a un segnale che scarta, il motivo non cita quello declassato
-    _, motivo2 = calcola_scarto_occhio({"segnali_rischio_annuncio": ["foto_di_uno_schermo", "foto_stock_non_del_capo"]})
+    _, motivo2 = scarto(["foto_di_uno_schermo", "foto_stock_non_del_capo"])
     assert "foto_stock_non_del_capo" in motivo2 and "foto_di_uno_schermo" not in motivo2
