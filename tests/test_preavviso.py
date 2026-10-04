@@ -256,3 +256,46 @@ def test_cascata_esaurita_conta_anche_i_modelli_esclusi(monkeypatch):
     assert g.gemini_cascata_esaurita("cervello")
     monkeypatch.setattr(g, "_gemini_modello_senza_quota", lambda m: False)
     assert not g.gemini_cascata_esaurita("cervello")
+
+
+def test_pagamento_ultima_riserva_e_tetto(monkeypatch):
+    import asyncio
+    import bot.riserva_llm as rl
+    monkeypatch.setattr(rl, "GEMINI_CHIAVE_PAGAMENTO", "chiave-finta")
+    monkeypatch.setattr(rl, "EXTRA_LLM_URL", "http://gw")
+    monkeypatch.setattr(rl, "PAGAMENTO_MAX_RICHIESTE_GIORNO", 2)
+    rl._pagamento_conteggio.update(giorno=None, n=0)
+    rl._riserva_lenta_fino.clear(); rl._latenze_riserva.clear(); rl._panel_pausa.clear()
+    voce = rl.PREFISSO_PAGAMENTO + rl.GEMINI_MODELLO_PAGAMENTO
+    assert rl.lista_con_pagamento("cervello", ["a/uno"]) == ["a/uno", voce]          # in coda
+    chiamati = []
+
+    async def finta(modello, system, contenuto, max_tokens, uso=None, url=None, chiave=None):
+        chiamati.append((modello, bool(url)))
+        return (None, 5, "http429") if modello == "a/uno" else ('{"prezzo_target_vendita_eur": 80}', 5, None)
+    monkeypatch.setattr(rl, "_panel_chiama", finta)
+    ok = lambda d: d.get("prezzo_target_vendita_eur", 0) > 0
+    d, m = asyncio.run(rl._prova_in_ordine("cervello", ["a/uno"], lambda c: "s", "u", 100, ok))
+    assert m == voce and chiamati[-1] == (rl.GEMINI_MODELLO_PAGAMENTO, True)         # gratuito fallito -> pagamento
+    # tetto giornaliero
+    rl._panel_pausa.clear()
+    asyncio.run(rl._prova_in_ordine("cervello", ["a/uno"], lambda c: "s", "u", 100, ok))
+    rl._panel_pausa.clear()
+    assert not rl.pagamento_disponibile()
+    assert rl.lista_con_pagamento("cervello", ["a/uno"]) == ["a/uno"]
+    rl._pagamento_conteggio.update(giorno=None, n=0); rl._panel_pausa.clear()
+
+
+def test_riserva_lenta_passa_prima_dal_pagamento(monkeypatch):
+    import bot.riserva_llm as rl
+    monkeypatch.setattr(rl, "GEMINI_CHIAVE_PAGAMENTO", "chiave-finta")
+    monkeypatch.setattr(rl, "EXTRA_LLM_URL", "http://gw")
+    rl._pagamento_conteggio.update(giorno=None, n=0)
+    rl._riserva_lenta_fino.clear(); rl._latenze_riserva.clear()
+    voce = rl.PREFISSO_PAGAMENTO + rl.GEMINI_MODELLO_PAGAMENTO
+    assert not rl.registra_latenza_riserva("occhio", 25000, adesso=1000)
+    assert not rl.registra_latenza_riserva("occhio", 30000, adesso=1001)
+    assert rl.registra_latenza_riserva("occhio", 28000, adesso=1002)                 # mediana 28 s > 20 s
+    assert rl.lista_con_pagamento("occhio", ["a/uno"], adesso=1003) == [voce, "a/uno"]
+    assert rl.lista_con_pagamento("occhio", ["a/uno"], adesso=1002 + rl.RISERVA_LENTA_PAUSA_S + 1) == ["a/uno", voce]
+    rl._riserva_lenta_fino.clear()

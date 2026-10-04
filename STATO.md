@@ -22,6 +22,8 @@ Da rileggere all'inizio di ogni sessione nuova, dopo `CLAUDE.md`. Aggiornare a o
 
 - Pausa Gemini dopo 429 (PR cascata-429): la fase (occhio/cervello) salta Gemini per 5 minuti dopo un 429 e usa la riserva; `gemini_cascata_esaurita` conta anche i modelli esclusi. Verificare nei log che spariscano i 429 ripetuti e che `RISERVA |` copra Occhio e Cervello.
 
+- Riserva a pagamento (PR gemini-pagamento): serve la variabile Railway `GEMINI_API_KEY_PAGAMENTO` (la chiave a pagamento dell'utente, da inserire in Railway, mai in chat); `GEMINI_MODELLO_PAGAMENTO` (default gemini-3.1-flash-lite), tetto `PAGAMENTO_MAX_RICHIESTE_GIORNO` (600 al giorno UTC). Log: `RISERVA | fase | pagamento/... | ok | ... PAGAMENTO richieste_oggi=N/M`. Nel recap contare le richieste a pagamento e stimare la spesa.
+
 ## Variabili Railway del worker (non in repo)
 - `PANEL_CERVELLO_MODELLI=mistral/ministral-14b-2512@c,zai/glm-4.7-flash@c,nvidia/nvidia/nemotron-3-super-120b-a12b@c,groq/openai/gpt-oss-120b@c,groq/openai/gpt-oss-20b@c`
 - `PANEL_OCCHIO_MODELLI=mistral/ministral-14b-2512`; `PANEL_MODELLI_PER_ANNUNCIO=8`; `GEMINI_SOGLIA_PREZZO_ALTO=50`; `RESELLBOT_ATTIVO=0`; `RISERVA_OCCHIO_MODELLI` e `RISERVA_CERVELLO_MODELLI` impostate il 4/10.

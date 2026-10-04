@@ -139,19 +139,20 @@ def estrai_target_da_testo_llm(testo):
     return float(t) if isinstance(t, (int, float)) and not isinstance(t, bool) and t > 0 else None
 
 
-async def _panel_chiama(modello, system, user_content, max_tokens, uso=None):
+async def _panel_chiama(modello, system, user_content, max_tokens, uso=None, url=None, chiave=None):
     """Una chiamata al gateway. Ritorna (testo|None, ms, errore|None). Non solleva mai."""
     t0 = time.time()
     async with _panel_sem:
         try:
             headers = {"Content-Type": "application/json"}
-            if EXTRA_LLM_KEY:
-                headers["Authorization"] = f"Bearer {EXTRA_LLM_KEY}"
+            chiave_usata = EXTRA_LLM_KEY if chiave is None else chiave
+            if chiave_usata:
+                headers["Authorization"] = f"Bearer {chiave_usata}"
             payload = {"model": modello, "temperature": 0.2, "max_tokens": max_tokens,
                        "messages": [{"role": "system", "content": system},
                                     {"role": "user", "content": user_content}]}
             resp = await asyncio.wait_for(
-                hc._client_generico.post(EXTRA_LLM_URL, headers=headers, json=payload, timeout=PANEL_TIMEOUT),
+                hc._client_generico.post(url or EXTRA_LLM_URL, headers=headers, json=payload, timeout=PANEL_TIMEOUT),
                 timeout=PANEL_TIMEOUT + 3)
             ms = int((time.time() - t0) * 1000)
             if not resp.is_success:
