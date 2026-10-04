@@ -58,3 +58,39 @@ def test_testo_preavviso_prima_riga_e_dettagli():
     t = testo_preavviso(info, "https://www.vinted.it/items/1-x")
     assert t.split("\n")[0].startswith("⚡ 🟢 ~+40 €")
     assert "Gonna lana" in t and "preavviso" in t
+
+
+def test_ogni_annuncio_con_brand_ha_un_semaforo():
+    from bot.fair_value import stima_fair_value
+    # brand nuovo, titolo senza categoria: stima generica con confidenza bassa ma COLORATA
+    s = stima_fair_value({"brand": "Brand Mai Visto", "title": "Pezzo bellissimo", "price": 10})
+    assert s and s["conf"] == "bassa" and s["semaforo"] in ("🟢", "🟡", "🔴")
+    assert s["categoria"] is None and s["fonte_categoria"] == "nessuna"
+    # Prada senza riga in tabella ora ha una stima
+    s2 = stima_fair_value({"brand": "Prada", "title": "Maglia lana", "price": 20})
+    assert s2 and s2["semaforo"] and s2["categoria"] == "maglia"
+    assert stima_fair_value({"brand": "?", "title": "x", "price": 10}) is None
+
+
+def test_stima_bassa_richiede_soglie_piu_alte():
+    from bot.fair_value import stima_fair_value
+    ec = stima_fair_value({"brand": "Brand Mai Visto", "title": "Pezzo", "price": 1})
+    assert ec["semaforo"] == "🟢"
+    ec2 = stima_fair_value({"brand": "Brand Mai Visto", "title": "Pezzo", "price": 40})
+    assert ec2["semaforo"] == "🔴"
+
+
+def test_categoria_dal_catalogo_vinted():
+    from bot import fair_value as fv
+    assert fv.categoria_annuncio({"title": "Pezzo", "catalog_id": "532"}) == ("giacca", "catalogo")   # seme: blazer donna
+    assert fv.categoria_annuncio({"title": "Cappotto lana"}) == ("cappotto", "titolo")
+    assert fv.categoria_annuncio({"title": "Pezzo", "description": "bella gonna"}) == ("gonna", "descrizione")
+    for _ in range(4):
+        fv.catalogo_impara("99999", "gonna")
+    fv.catalogo_impara("99999", "abito")
+    assert fv.categoria_da_catalogo("99999") == "gonna"   # 4 su 5 = 80% >= 70%
+    assert fv.categoria_da_catalogo("11111") is None
+
+
+def test_preavviso_non_scatta_con_stima_debole():
+    assert valuta_preavviso({**_stima("🟢", 60), "conf": "bassa"}, 10) == (False, "no")

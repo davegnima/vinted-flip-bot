@@ -16,7 +16,8 @@ Userbot Telethon che riceve gli annunci dal tracker (`davegnima/Vinted-Notificat
 ## Pipeline
 tracker (messaggio Telegram) -> `process_listing` (`bot/pipeline.py`) -> scrape pagina e foto -> stima rapida fair value -> Occhio (Gemini, vision) -> filtri pre-Cervello -> Cervello (JSON; mediana di 3 campioni solo per COMPRA/TRATTA) -> `calcola_verdetto` (deterministico: decisione da margine e ROI) -> messaggio Telegram.
 - Il modello non calcola margine/ROI/decisione: lo fa Python (`bot/verdetto.py`).
-- Fascia Gemini scelta prima dell'Occhio da `ruoli_gemini` (stima rapida verde/gialla = alta; rossa = alta solo se prezzo >= `GEMINI_SOGLIA_PREZZO_ALTO`).
+- Fascia Gemini scelta prima dell'Occhio da `ruoli_gemini` (stima rapida verde/gialla = alta; rossa = alta solo se prezzo >= `GEMINI_SOGLIA_PREZZO_ALTO`; stima a confidenza bassa = si sceglie dal prezzo).
+- Stima rapida (`stima_fair_value`): ogni annuncio con brand ha un semaforo. Ordine: tabella dati -> appreso dai verdetti -> livello del brand x fattore categoria -> livello di default. Categoria da titolo, descrizione o catalogo Vinted (mappa che si impara sola: `CATALOGO_CATEGORIE_FILE`). Stime a confidenza bassa: soglie del semaforo x `FAIR_VALUE_RIGORE_BASSA`; voci non apprese x `FAIR_VALUE_TARATURA_GLOBALE`.
 - Cascate Gemini per fase, dal modello migliore al piu' leggero: `bot/gemini_stato.py`. 4 account Google, quote per (key, modello).
 - Riserva a scalata via OmniRoute (`bot/riserva_llm.py`): spenta finche' `RISERVA_OCCHIO_MODELLI` / `RISERVA_CERVELLO_MODELLI` sono vuote.
 - Preavviso (`valuta_preavviso` in `bot/fair_value.py`): un messaggio breve parte subito nel gruppo COMPRA (`TELEGRAM_ALERT_CHAT_ID`, con suono) se la stima rapida e' promettente, prima di foto e Occhio (senza gruppo, la scheda in chat principale diventa push) (soglie `PREAVVISO_*`, spento con `PREAVVISO_ATTIVO=0`); non cambia il semaforo.
@@ -34,7 +35,7 @@ tracker (messaggio Telegram) -> `process_listing` (`bot/pipeline.py`) -> scrape 
 - I client HTTP riassegnati a runtime si leggono come `hc._client_generico`, `hc._client_telegram`, `hc._CLIENT_VINTED_AUTH`: mai importarli per nome.
 
 ## Test e CI
-- `python3 -m pytest -q` (95 test) e `python3 -m pyflakes main_telethon.py bot` (nomi non definiti). La CI (`.github/workflows/ci.yml`) fa lo stesso su Python 3.13.
+- `python3 -m pytest -q` (99 test) e `python3 -m pyflakes main_telethon.py bot` (nomi non definiti). La CI (`.github/workflows/ci.yml`) fa lo stesso su Python 3.13.
 - `tests/test_struttura.py` importa ogni modulo da solo: un import circolare lo rompe.
 - Railway fa il deploy da `main` a ogni merge (circa 1,5 minuti). Branch di lavoro: `claude/...`, PR verso `main`, squash merge.
 

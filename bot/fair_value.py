@@ -169,12 +169,27 @@ FAIR_VALUE_LIVELLO_BRAND = {
     "yohji yamamoto": 90, "visvim": 140, "kapital": 110, "carol christian poell": 150,
     "the row": 160, "alaia": 140, "boris bidjan saberi": 150, "sacai": 110,
     "kiko kostadinov": 90, "thom browne": 120, "thesoloist": 90,
+    # brand del tracker senza riga in tabella (aggiunti il 2026-10-04: ieri meta' degli annunci non aveva semaforo)
+    "prada": 60, "fendi": 80, "jacquemus": 45, "acne studios": 45, "barena venezia": 50,
 }
+FAIR_VALUE_BRAND_NUOVI = {"prada", "fendi", "jacquemus", "acne studios", "barena venezia"}   # livello da conoscenza: confidenza bassa
+FAIR_VALUE_LIVELLO_DEFAULT = _env_float("FAIR_VALUE_LIVELLO_DEFAULT", 45)  # brand mai visto: stima prudente, confidenza bassa
 FAIR_VALUE_FATTORE_CATEGORIA = {
     "camicia": 1.0, "blusa": 0.91, "maglia": 1.07, "t-shirt": 0.88, "canotta": 0.70,
     "polo": 0.88, "felpa": 0.90, "gonna": 0.59, "pantaloni": 0.95, "jeans": 0.96,
     "abito": 1.09, "tuta": 1.31, "giacca": 1.53, "gilet": 0.77, "cappotto": 2.7,
+    # categorie fuori dalla tabella dati (stime di mercato, confidenza bassa)
+    "borsa": 2.5, "scarpe": 1.3, "cintura": 0.5, "sciarpa": 0.6, "cappello": 0.5, "occhiali": 0.7,
+    "costume": 0.5, "intimo": 0.4,
 }
+FAIR_VALUE_FATTORE_SENZA_CATEGORIA = 1.0   # categoria non rilevabile: capo "medio" (come una camicia)
+# Taratura (2026-10-04): sugli 87 annunci di ieri arrivati al Cervello la stima rapida era mediamente 0,73 volte il target
+# del Cervello (0,68 sui capi venduti in fretta; Missoni 0,62, Cucinelli 0,60). Si applica solo alle voci NON apprese
+# (quelle apprese hanno gia' imparato dai verdetti). Campione piccolo: rivedere col recap mattutino.
+FAIR_VALUE_TARATURA_GLOBALE = _env_float("FAIR_VALUE_TARATURA_GLOBALE", 1.25)
+FAIR_VALUE_TARATURA_BRAND = {"missoni": 1.2, "brunello cucinelli": 1.2}   # in piu' del fattore globale
+# Le stime a confidenza bassa ora hanno un colore (prima ⚪), ma con soglie piu' alte di questo fattore.
+FAIR_VALUE_RIGORE_BASSA = _env_float("FAIR_VALUE_RIGORE_BASSA", 1.5)
 # Borse (watch 5): (minimo, fair value, massimo) per modelli correnti in
 # buono stato -- stime da conoscenza di mercato, molto variabili per modello.
 FAIR_VALUE_BORSE = {
@@ -214,11 +229,11 @@ PREAVVISO_MARGINE_BASSO = _env_float("PREAVVISO_MARGINE_BASSO", 20)
 
 
 def valuta_preavviso(stima, prezzo):
-    """(scatta, regola): push immediato sulla scheda anticipata. Pura. Senza stima o con confidenza bassa (⚪) non scatta."""
+    """(scatta, regola): push immediato sulla scheda anticipata. Pura. Senza stima o con confidenza bassa non scatta."""
     if not PREAVVISO_ATTIVO or not stima or prezzo is None or prezzo <= 0:
         return False, "no"
     sem, marg = stima.get("semaforo"), stima.get("margine")
-    if sem not in ("🟢", "🟡") or marg is None:
+    if sem not in ("🟢", "🟡") or marg is None or stima.get("conf") == "bassa":
         return False, "no"
     if sem == "🟢" and marg >= PREAVVISO_MARGINE_MIN:
         return True, "semaforo"
@@ -248,7 +263,81 @@ def _brand_fair_value(listing_info):
     for nome, kws in FAIR_VALUE_BRAND.items():
         if any(re.search(r"\b" + re.escape(k) + r"\b", titolo) for k in kws):
             return nome
+    # brand del tracker non in elenco: lo si usa cosi' com'e', cosi' ogni annuncio ha una stima (e il brand puo'
+    # essere imparato dai verdetti, vedi fv_ricalibra)
+    if brand and brand != "?" and len(brand) <= 40:
+        return " ".join(brand.split())
     return None
+
+
+# Categoria da catalogo Vinted: se il titolo non dice che capo e', la categoria si ricava dall'id del catalogo
+# (catalog_id letto dalla pagina). La mappa si IMPARA da sola (voto di ogni annuncio con categoria nota dal titolo);
+# i semi sono i cataloghi indicati dall'utente (blazer donna 532, blazer uomo 1786). Nessuna richiesta a Vinted.
+CATALOGO_CATEGORIE_FILE = os.environ.get("CATALOGO_CATEGORIE_FILE", "/data/catalogo_categorie.json")
+CATALOGO_VOTI_MIN = 3        # voti minimi prima di fidarsi del catalogo
+CATALOGO_QUOTA_MIN = 0.7     # quota minima della categoria piu' votata
+_CATALOGO_SEME = {"532": "giacca", "1786": "giacca"}
+_catalogo_voti = {}          # catalog_id -> {categoria: voti}
+_catalogo_da_salvare = [0]
+
+
+def catalogo_carica():
+    try:
+        with open(CATALOGO_CATEGORIE_FILE, encoding="utf-8") as f:
+            dati = json.load(f)
+        _catalogo_voti.clear()
+        _catalogo_voti.update(dati)
+    except FileNotFoundError:
+        pass
+    except Exception:
+        log.warning("Mappa catalogo-categoria non letta:\n%s", traceback.format_exc())
+
+
+def catalogo_impara(catalog_id, categoria):
+    """Un voto per (catalogo, categoria letta dal titolo). Salva su disco ogni 20 voti."""
+    if not catalog_id or not categoria:
+        return
+    voti = _catalogo_voti.setdefault(str(catalog_id), {})
+    voti[categoria] = voti.get(categoria, 0) + 1
+    _catalogo_da_salvare[0] += 1
+    if _catalogo_da_salvare[0] >= 20:
+        _catalogo_da_salvare[0] = 0
+        try:
+            cartella = os.path.dirname(CATALOGO_CATEGORIE_FILE)
+            if cartella:
+                os.makedirs(cartella, exist_ok=True)
+            with open(CATALOGO_CATEGORIE_FILE, "w", encoding="utf-8") as f:
+                json.dump(_catalogo_voti, f, ensure_ascii=False)
+        except Exception:
+            log.warning("Mappa catalogo-categoria non salvata:\n%s", traceback.format_exc())
+
+
+def categoria_da_catalogo(catalog_id):
+    """Categoria piu' votata per il catalogo (con voti e quota minimi), altrimenti il seme, altrimenti None. Pura."""
+    if not catalog_id:
+        return None
+    voti = _catalogo_voti.get(str(catalog_id)) or {}
+    totale = sum(voti.values())
+    if totale >= CATALOGO_VOTI_MIN:
+        categoria, n = max(voti.items(), key=lambda kv: kv[1])
+        if n / totale >= CATALOGO_QUOTA_MIN:
+            return categoria
+    return _CATALOGO_SEME.get(str(catalog_id))
+
+
+def categoria_annuncio(listing_info):
+    """(categoria, fonte): titolo -> descrizione -> catalogo Vinted -> (None, 'nessuna'). Pura."""
+    titolo = listing_info.get("title") or ""
+    cat = estrai_categoria_da_titolo(titolo, None)
+    if cat:
+        return cat, "titolo"
+    cat = estrai_categoria_da_titolo("", listing_info.get("description"))
+    if cat:
+        return cat, "descrizione"
+    cat = categoria_da_catalogo(listing_info.get("catalog_id"))
+    if cat:
+        return cat, "catalogo"
+    return None, "nessuna"
 
 
 # Sottolinee/linee secondarie riconoscibili dal TESTO dell'annuncio: valgono
@@ -284,37 +373,46 @@ def _moltiplicatore_fair_value(listing_info):
 
 
 def stima_fair_value(listing_info):
-    """Ritorna None se brand o tipo di capo non sono in tabella, altrimenti
-    dict con minimo/fair value/massimo gia' corretti per condizione e
-    materiale, confidenza, e (se il prezzo e' noto) ROI, margine e semaforo."""
+    """Ritorna None solo se manca anche il brand, altrimenti dict con minimo/fair value/massimo gia' corretti per
+    condizione e materiale, confidenza, e (se il prezzo e' noto) ROI, margine e semaforo. Ogni annuncio con brand ha un
+    semaforo (2026-10-04): tabella dati -> appreso dai verdetti -> livello del brand x fattore della categoria -> livello
+    di default; la categoria viene dal titolo, dalla descrizione o dal catalogo Vinted."""
     brand = _brand_fair_value(listing_info)
     if not brand:
         return None
-    categoria = estrai_categoria_da_titolo(listing_info.get("title") or "", listing_info.get("description"))
+    categoria, fonte_cat = categoria_annuncio(listing_info)
     voce = FAIR_VALUE_TABELLA.get(f"{brand}|{categoria}") if categoria else None
     appreso = FAIR_VALUE_APPRESO.get(f"{brand}|{categoria}") if categoria else None
+    da_appreso = bool(appreso)
     if appreso:
         # la tabella appresa (da Gemini e dalle tue stime) ha la precedenza
         voce = (appreso["lo"], appreso["fv"], appreso["hi"], appreso["conf"], appreso["n"], voce[5] if voce else 0)
     if not voce and categoria == "borsa" and brand in FAIR_VALUE_BORSE:
         minimo, fv, massimo = FAIR_VALUE_BORSE[brand]
         voce = (minimo, fv, massimo, "stima", 0, 0)
-    if not voce and categoria in FAIR_VALUE_FATTORE_CATEGORIA and brand in FAIR_VALUE_LIVELLO_BRAND:
-        fv = FAIR_VALUE_LIVELLO_BRAND[brand] * FAIR_VALUE_FATTORE_CATEGORIA[categoria]
-        voce = (round(fv * 0.6), round(fv), round(fv * 1.7), "stima", 0, 0)
     if not voce:
-        return None
+        # livello del brand x fattore della categoria; sconosciuti -> default con confidenza bassa
+        livello = FAIR_VALUE_LIVELLO_BRAND.get(brand)
+        fattore = FAIR_VALUE_FATTORE_CATEGORIA.get(categoria) if categoria else FAIR_VALUE_FATTORE_SENZA_CATEGORIA
+        conf_gen = ("stima" if (livello and fattore and categoria in FAIR_VALUE_FATTORE_CATEGORIA
+                             and brand not in FAIR_VALUE_BRAND_NUOVI) else "bassa")
+        fv = (livello or FAIR_VALUE_LIVELLO_DEFAULT) * (fattore if fattore is not None else FAIR_VALUE_FATTORE_SENZA_CATEGORIA)
+        voce = (round(fv * 0.6), round(fv), round(fv * 1.7), conf_gen, 0, 0)
     minimo, fv, massimo, conf, n_comp, n_reali = voce
     sottolinea = _sottolinea_da_testo(listing_info, brand)
     if sottolinea:
         appreso_sott = FAIR_VALUE_APPRESO.get(f"{sottolinea}|{categoria}")
         if appreso_sott:
             minimo, fv, massimo, conf, n_comp = appreso_sott["lo"], appreso_sott["fv"], appreso_sott["hi"], appreso_sott["conf"], appreso_sott["n"]
+            da_appreso = True
         else:
             conf = "bassa"   # stima del brand madre: solo indicativa finche' non impara la sottolinea
     molt = _moltiplicatore_fair_value(listing_info)
+    if not da_appreso:
+        molt *= FAIR_VALUE_TARATURA_GLOBALE * FAIR_VALUE_TARATURA_BRAND.get(brand, 1.0)
     out = {
-        "brand": brand, "categoria": categoria, "conf": conf, "n_comp": n_comp, "n_reali": n_reali,
+        "brand": brand, "categoria": categoria, "fonte_categoria": fonte_cat, "conf": conf, "n_comp": n_comp,
+        "n_reali": n_reali,
         "minimo": round(minimo * molt), "fv": round(fv * molt), "massimo": round(massimo * molt),
         "moltiplicatore": round(molt, 2), "roi": None, "margine": None, "semaforo": None,
         "sottolinea": sottolinea,
@@ -323,11 +421,10 @@ def stima_fair_value(listing_info):
     if prezzo is not None and prezzo > 0:
         out["margine"] = round(out["fv"] - prezzo, 2)
         out["roi"] = round((out["fv"] - prezzo) / prezzo * 100)
-        if conf == "bassa":
-            out["semaforo"] = "⚪"
-        elif out["roi"] >= FAIR_VALUE_ROI_VERDE and out["margine"] >= FAIR_VALUE_MARGINE_MIN_VERDE:
+        rigore = FAIR_VALUE_RIGORE_BASSA if conf == "bassa" else 1.0   # stima debole: servono margini piu' netti
+        if out["roi"] >= FAIR_VALUE_ROI_VERDE * rigore and out["margine"] >= FAIR_VALUE_MARGINE_MIN_VERDE * rigore:
             out["semaforo"] = "🟢"
-        elif out["roi"] >= FAIR_VALUE_ROI_GIALLO:
+        elif out["roi"] >= FAIR_VALUE_ROI_GIALLO * rigore:
             out["semaforo"] = "🟡"
         else:
             out["semaforo"] = "🔴"
@@ -461,7 +558,7 @@ def fv_registra_rapida(listing_info, url, scartato=False):
     stima = listing_info.get("fair_value")
     _fv_scrivi({
         "tipo": "rapida", "item_id": str(item_id), "brand": _brand_fair_value(listing_info),
-        "categoria": estrai_categoria_da_titolo(listing_info.get("title") or "", listing_info.get("description")),
+        "categoria": categoria_annuncio(listing_info)[0],
         "titolo": listing_info.get("title"), "prezzo": _a_float(listing_info.get("price"), None),
         "condizione": listing_info.get("condition"), "molt": round(_moltiplicatore_fair_value(listing_info), 3),
         "fv": stima["fv"] if stima else None, "conf": stima["conf"] if stima else None,
@@ -620,6 +717,7 @@ def fv_ricalibra(righe=None):
 
 
 def fv_carica_appreso():
+    catalogo_carica()
     try:
         with open(FAIR_VALUE_APPRESO_FILE, encoding="utf-8") as f:
             dati = json.load(f)

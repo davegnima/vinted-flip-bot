@@ -14,5 +14,6 @@ os.environ.update({
     "FAIR_VALUE_LOG_FILE": os.path.join(_TMP, "fair_value_log.jsonl"),
     "FAIR_VALUE_APPRESO_FILE": os.path.join(_TMP, "fair_value_appreso.json"),
     "DB_FILE": os.path.join(_TMP, "vinted_bot.sqlite3"),
+    "CATALOGO_CATEGORIE_FILE": os.path.join(_TMP, "catalogo_categorie.json"),
 })
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
