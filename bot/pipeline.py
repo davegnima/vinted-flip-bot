@@ -154,7 +154,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             "catalog_id": scraped.get("catalog_id"), "cover_photo_id": scraped.get("cover_photo_id"),
             "uploaded_text": scraped.get("uploaded_text"), "stato_vendita": scraped.get("stato_vendita"),
             "created_at": scraped.get("created_at"),
-            "preferiti": scraped.get("preferiti"), "visite": scraped.get("visite"),
+            "preferiti": scraped.get("preferiti"),
             "material_raw": scraped.get("material_raw"),
             "material_per_ricerca": scraped.get("material_per_ricerca"),
             "color_raw": scraped.get("color_raw"),
@@ -217,6 +217,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             _feat = campi_annuncio(listing_info, n_foto=len(scraped.get("photo_urls") or []))
             if _fv_pre.get("categoria"):
                 _feat["categoria"] = _fv_pre["categoria"]   # include la categoria ricavata dal catalogo Vinted
+            _feat["fonte_cat"] = _fv_pre.get("fonte_categoria") or "-"   # titolo | descrizione | catalogo | nessuna
             _feat.update({"prezzo": _prezzo_pre, "semaforo": _fv_pre.get("semaforo") or "-", "fv": _fv_pre.get("fv"),
                           "margine": _fv_pre.get("margine"), "conf": _fv_pre.get("conf") or "-", "regola": _regola_pre})
             log.info("PREAVVISO | item=%s | brand='%s' | prezzo=%s | semaforo=%s | fv=%s | margine=%s | conf=%s | regola=%s%s",
