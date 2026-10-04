@@ -299,3 +299,27 @@ def test_riserva_lenta_passa_prima_dal_pagamento(monkeypatch):
     assert rl.lista_con_pagamento("occhio", ["a/uno"], adesso=1003) == [voce, "a/uno"]
     assert rl.lista_con_pagamento("occhio", ["a/uno"], adesso=1002 + rl.RISERVA_LENTA_PAUSA_S + 1) == ["a/uno", voce]
     rl._riserva_lenta_fino.clear()
+
+def test_tempi_da_caricato_con_testo_relativo():
+    from datetime import datetime, timezone
+    from bot.tempi import _calcola_tempi_pipeline, parse_caricato_secondi
+    assert parse_caricato_secondi("20 secondi fa") == (20, False)
+    assert parse_caricato_secondi("Caricato: 3 minuti fa, descrizione") == (180, True)
+    assert parse_caricato_secondi("un'ora fa") == (3600, True)
+    assert parse_caricato_secondi("1 ora fa") == (3600, True)
+    assert parse_caricato_secondi("ieri") is None and parse_caricato_secondi(None) is None
+    t_scrape = 1_000_000.0
+    info = {"uploaded_text": "20 secondi fa", "t_scrape": t_scrape}        # caricato a t=999980
+    msg_date = datetime.fromtimestamp(t_scrape - 8, tz=timezone.utc)       # messaggio Telegram a t=999992
+    pezzi, sec = _calcola_tempi_pipeline(info, msg_date, t_scrape - 10, t_riferimento=t_scrape + 3)
+    assert round(sec["pub_telegram"]) == 12 and round(sec["totale"]) == 23
+    assert pezzi[0].startswith("pubblicato→telegram 12s") and "totale 23s" in pezzi[-1]
+    pezzi2, _ = _calcola_tempi_pipeline({"uploaded_text": "2 minuti fa", "t_scrape": t_scrape}, msg_date, None, t_riferimento=t_scrape)
+    assert "~" in pezzi2[0]
+
+
+def test_taratura_brand_da_env():
+    from bot.fair_value import FAIR_VALUE_TARATURA_BRAND, _fattori_da_env
+    assert FAIR_VALUE_TARATURA_BRAND == {"missoni": 1.10, "brunello cucinelli": 1.15}
+    assert _fattori_da_env("Prada=1.3, rotto, x=abc ,=2") == {"prada": 1.3}
+    assert _fattori_da_env("") == {}

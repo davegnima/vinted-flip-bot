@@ -1,4 +1,5 @@
 """Modulo estratto da main_telethon.py (spostamento meccanico)."""
+import re
 import time
 from datetime import datetime, timezone
 
@@ -30,6 +31,29 @@ def _parse_created_at_dt(created_at_raw):
         return None
 
 
+_UNITA_SECONDI = (("second", 1), ("minut", 60), ("or", 3600), ("giorn", 86400), ("settiman", 604800),
+                  ("mese", 2592000), ("mesi", 2592000), ("ann", 31536000))
+_NUMERI_PAROLA = {"un": 1, "uno": 1, "una": 1, "un'": 1}
+
+
+def parse_caricato_secondi(testo):
+    """Secondi trascorsi dal 'Caricato' relativo della pagina ("20 secondi fa", "3 minuti fa", "1 ora fa", "un'ora fa",
+    "Caricato: 2 ore fa, ..."). Ritorna (secondi, grossolano): grossolano=True se l'unita' non e' il secondo (la
+    risoluzione e' di 1 minuto o piu'). None se non interpretabile. Pura."""
+    if not testo:
+        return None
+    t = str(testo).lower().split(",")[0]
+    m = re.search(r"(\d+|un'|uno|una|un)\s*(second\w*|minut\w*|or[ae]|giorn\w*|settiman\w*|mes[ei]|ann\w*)", t)
+    if not m:
+        return None
+    n = int(m.group(1)) if m.group(1).isdigit() else _NUMERI_PAROLA.get(m.group(1), 1)
+    unita = m.group(2)
+    for radice, secondi in _UNITA_SECONDI:
+        if unita.startswith(radice):
+            return n * secondi, radice != "second"
+    return None
+
+
 def _calcola_tempi_pipeline(listing_info, msg_date, t_ricevuto_bot, t_riferimento=None):
     """Le tre tappe del footer '⏱ Tempi' del messaggio Telegram (vedi
     process_listing), come funzione a se' per poterle anche LOGGARE nei
@@ -46,16 +70,25 @@ def _calcola_tempi_pipeline(listing_info, msg_date, t_ricevuto_bot, t_riferiment
     """
     t_riferimento = time.time() if t_riferimento is None else t_riferimento
     created_dt = _parse_created_at_dt(listing_info.get("created_at"))
+    grossolano = False
+    if created_dt is None and listing_info.get("t_scrape"):
+        # data di caricamento non esposta dalla pagina: si ricava dal "Caricato N secondi fa" letto al momento dello
+        # scrape (richiesto dall'utente il 2026-10-04: tempi da caricato). Errore tipico: 1-2 s (durata dello scrape).
+        letto = parse_caricato_secondi(listing_info.get("uploaded_text"))
+        if letto and letto[0] <= 6 * 3600:
+            created_dt = datetime.fromtimestamp(listing_info["t_scrape"] - letto[0], tz=timezone.utc)
+            grossolano = letto[1]
+    pref = "~" if grossolano else ""
     pezzi, secondi = [], {}
     if created_dt and msg_date:
         secondi["pub_telegram"] = (msg_date - created_dt).total_seconds()
-        pezzi.append(f"pubblicato→telegram {_formatta_durata(secondi['pub_telegram']) or '?'}")
+        pezzi.append(f"pubblicato→telegram {pref}{_formatta_durata(secondi['pub_telegram']) or '?'}")
     if t_ricevuto_bot:
         secondi["telegram_notifica"] = t_riferimento - t_ricevuto_bot
         pezzi.append(f"telegram→notifica {_formatta_durata(secondi['telegram_notifica']) or '?'}")
     if created_dt:
         secondi["totale"] = t_riferimento - created_dt.timestamp()
-        pezzi.append(f"totale {_formatta_durata(secondi['totale']) or '?'}")
+        pezzi.append(f"totale {pref}{_formatta_durata(secondi['totale']) or '?'}")
     return pezzi, secondi
 
 
