@@ -362,6 +362,7 @@ async def scrape_vinted_listing(url, includi_guardaroba=True):
         "seller_items_count": None, "seller_country": None,
         "seller_top_items": [],
         "seller_wardrobe_debug": "non tentato", "uploaded_text": None, "stato_vendita": None,
+        "preferiti": None, "visite": None,
     }
     try:
         resp = await _vinted_get_con_retry(url, timeout=15, max_retries=3)
@@ -370,7 +371,10 @@ async def scrape_vinted_listing(url, includi_guardaroba=True):
         html_pagina = resp.text
         _sonda_avvia_se_serve(url, resp, html_pagina)  # in background, non rallenta
         try:
-            result["stato_vendita"] = _tracc_stato(resp.status_code, _tracc_estrai_segnali(html_pagina)[0])
+            _segnali_pagina = _tracc_estrai_segnali(html_pagina)[0]
+            result["stato_vendita"] = _tracc_stato(resp.status_code, _segnali_pagina)
+            result["preferiti"] = _segnali_pagina.get("preferiti")
+            result["visite"] = _segnali_pagina.get("visite")
         except Exception:
             log.warning("Stato vendita non letto per %s:\n%s", url, traceback.format_exc())
 
