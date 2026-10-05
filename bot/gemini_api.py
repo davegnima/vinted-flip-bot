@@ -1,10 +1,13 @@
 """Modulo estratto da main_telethon.py (spostamento meccanico)."""
 import json
 import asyncio
+import time
+
+import httpx
 
 
 from bot.schemas import CERVELLO_RESPONSE_SCHEMA
-from bot.gemini_stato import GEMINI_API_KEYS, cascata_per, MAX_RETRIES_GEMINI_IN_BLACKOUT, _gemini_e_errore_key_non_valida, _gemini_e_errore_quota_giornaliera, _gemini_gestisci_modello_non_disponibile, _gemini_in_blackout, _gemini_key_attuale, _gemini_modello_da_url, _gemini_prossima_key, _gemini_registra_esito, _gemini_secondi_retry, _gemini_segna_key_non_valida, _gemini_segna_key_quota_esaurita, _gemini_url_effettivo
+from bot.gemini_stato import GEMINI_API_KEYS, GEMINI_BACKOFF_MAX_S, GEMINI_BUDGET_CHIAMATA_S, gemini_in_pausa_timeout, gemini_segna_timeout, gemini_timeout_azzera, cascata_per, MAX_RETRIES_GEMINI_IN_BLACKOUT, _gemini_e_errore_key_non_valida, _gemini_e_errore_quota_giornaliera, _gemini_gestisci_modello_non_disponibile, _gemini_in_blackout, _gemini_key_attuale, _gemini_modello_da_url, _gemini_prossima_key, _gemini_registra_esito, _gemini_secondi_retry, _gemini_segna_key_non_valida, _gemini_segna_key_quota_esaurita, _gemini_url_effettivo
 from bot.config import GEMINI_API_URL_CERVELLO, GEMINI_API_URL_OCCHIO, PREZZO_CERVELLO_INPUT, PREZZO_CERVELLO_OUTPUT, PREZZO_GROUNDING_PER_QUERY, PREZZO_OCCHIO_INPUT, PREZZO_OCCHIO_OUTPUT
 from bot.serper_base import cerca_serper_mirata
 from bot.foto import costruisci_parts_foto
@@ -67,7 +70,11 @@ async def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, groundi
         max_retries_effettivi += len(GEMINI_API_KEYS)   # i 429 di quota esaurita sono rapidi: non bruciano il budget
 
     backoff_seconds = 2
+    t_inizio = time.time()
+    modello_usato = None
     for attempt in range(1, max_retries_effettivi + 1):
+        if (attempt > 1 and time.time() - t_inizio >= GEMINI_BUDGET_CHIAMATA_S) or gemini_in_pausa_timeout(ruolo):
+            break   # budget di tempo finito o fase in pausa per timeout: errore subito, a valle decide la riserva
         try:
             # Timeout abbassato da 90 a 30s (richiesto dall'utente il
             # 2026-09-22): 90s era pensato per una risposta lenta ma valida,
@@ -105,6 +112,7 @@ async def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, groundi
                     continue
             if resp.is_success:
                 _gemini_registra_esito(True)
+                gemini_timeout_azzera(ruolo)
                 log.info("GEMINI_USO | %s | %s", ruolo, modello_usato)
                 data = resp.json()
                 candidates = data.get("candidates", [])
@@ -147,7 +155,7 @@ async def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, groundi
                 if _gemini_prossima_key(modello_usato):
                     continue
                 await asyncio.sleep(backoff_seconds)
-                backoff_seconds *= 2
+                backoff_seconds = min(backoff_seconds * 2, GEMINI_BACKOFF_MAX_S)
                 continue
             if _gemini_e_errore_key_non_valida(resp.status_code, resp.text):
                 _gemini_segna_key_non_valida(key_usata)
@@ -155,9 +163,13 @@ async def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, groundi
                     continue   # un'altra key valida: si ritenta subito
             resp.raise_for_status()
         except Exception as e:
+            if isinstance(e, httpx.TimeoutException):
+                log.warning("Gemini TIMEOUT | %s | %s | dopo %ds dall'inizio (tentativo %d/%d)", ruolo, modello_usato,
+                            time.time() - t_inizio, attempt, max_retries_effettivi)
+                gemini_segna_timeout(ruolo)
             if attempt < max_retries_effettivi:
                 await asyncio.sleep(backoff_seconds)
-                backoff_seconds *= 2
+                backoff_seconds = min(backoff_seconds * 2, GEMINI_BACKOFF_MAX_S)
                 continue
             _gemini_registra_esito(False)
             return f"[ERRORE: chiamata Gemini fallita dopo {max_retries_effettivi} tentativi. Eccezione: {e}]", 0.0, 0
@@ -308,7 +320,11 @@ async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca
             tentativi_effettivi += len(GEMINI_API_KEYS)
 
         backoff_seconds = 2
+        t_inizio = time.time()
+        modello_usato = None
         for attempt in range(1, tentativi_effettivi + 1):
+            if (attempt > 1 and time.time() - t_inizio >= GEMINI_BUDGET_CHIAMATA_S) or gemini_in_pausa_timeout(ruolo):
+                break   # budget di tempo finito o fase in pausa per timeout (vedi chiama_gemini)
             try:
                 # Timeout abbassato da 90 a 30s (richiesto dall'utente il
                 # 2026-09-22, stesso motivo di chiama_gemini).
@@ -346,7 +362,7 @@ async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca
                         if _gemini_prossima_key(modello_usato):
                             continue
                         await asyncio.sleep(backoff_seconds)
-                        backoff_seconds *= 2
+                        backoff_seconds = min(backoff_seconds * 2, GEMINI_BACKOFF_MAX_S)
                         continue
                     if _gemini_e_errore_key_non_valida(resp.status_code, resp.text):
                         _gemini_segna_key_non_valida(key_usata)
@@ -354,12 +370,17 @@ async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca
                             continue   # un'altra key valida: si ritenta subito
                     resp.raise_for_status()
                 _gemini_registra_esito(True)
+                gemini_timeout_azzera(ruolo)
                 log.info("GEMINI_USO | %s | %s", ruolo, modello_usato)
                 return resp.json()
-            except Exception:
+            except Exception as e:
+                if isinstance(e, httpx.TimeoutException):
+                    log.warning("Gemini TIMEOUT | %s | %s | dopo %ds dall'inizio (tentativo %d/%d)", ruolo, modello_usato,
+                                time.time() - t_inizio, attempt, tentativi_effettivi)
+                    gemini_segna_timeout(ruolo)
                 if attempt < tentativi_effettivi:
                     await asyncio.sleep(backoff_seconds)
-                    backoff_seconds *= 2
+                    backoff_seconds = min(backoff_seconds * 2, GEMINI_BACKOFF_MAX_S)
                     continue
                 _gemini_registra_esito(False)
                 raise
