@@ -28,7 +28,8 @@ from bot.logger import log
 # t0 = arrivo del messaggio del tracker (il momento piu' vicino alla pubblicazione che il bot conosce).
 #  - al primo scrape (~2-3s da t0) lo stato e' gia' letto -> "istantaneo" (GIA_VENDUTO);
 #  - serie di controlli a 15s, 30s, 1min, 5min, 15min, 60min da t0, fermata alla prima vendita;
-#  - nessun controllo per gli annunci scartati prima del verdetto (SKIP_*, errore del Cervello).
+#  - nessun controllo per gli scartati prima del verdetto (SKIP_*), tranne i 'falso'/'fraudolento' (solo 15 s - 5 min)
+#    e l'errore del Cervello (serie completa); stato 'rimosso?' = 200 senza dati (cancellato o in revisione).
 # Solo raccolta: nessuna decisione cambia (SKIP_GIA_VENDUTI=1 interrompe l'analisi dei gia' venduti).
 TRACCIAMENTO_ATTIVO = os.environ.get("TRACCIAMENTO_ATTIVO", "1").strip() == "1"
 TRACCIAMENTO_FILE = os.environ.get("TRACCIAMENTO_FILE", "/data/tracciamento_esiti.jsonl")
@@ -37,6 +38,11 @@ TRACCIAMENTO_SERIE_SECONDI = (15, 30, 60, 300, 900, 3600)
 _TRACC_FASCE = ((15, "<=15s"), (30, "<=30s"), (60, "<=1min"), (300, "<=5min"), (900, "<=15min"), (3600, "<=60min"))
 _tracc_item_visti = set()  # annunci gia' registrati (caricato all'avvio da main)
 _tracc_stop = set()  # annunci venduti, rimossi o scartati prima del verdetto: la serie si ferma
+# Scartati per "falso"/"fraudolento" (5/10): si seguono lo stesso, ma solo fino a TRACCIAMENTO_SERIE_RIDOTTA_MAX_S
+# (60 s e 5 min), per misurare i falsi negativi dell'Occhio spendendo poca banda. ERRORE_CERVELLO: serie completa.
+_tracc_ridotti = set()
+TRACCIAMENTO_SERIE_RIDOTTA_MAX_S = 300
+_SCARTI_DA_SEGUIRE = ("[FALSO CONCLAMATO", "[ANNUNCIO FRAUDOLENTO")
 _tracc_esiti = {}  # item_id -> (esito, target): lo valorizza _log_esito, lo legge la serie nei log
 _tracc_sem = asyncio.Semaphore(8)
 
@@ -105,7 +111,7 @@ def _tracc_estrai_segnali(html_pagina):
 
 
 def _tracc_stato(http_status, segnali):
-    """Unico classificatore dello stato: venduto / rimosso / prenotato / attivo / n.d. Verificato il
+    """Unico classificatore dello stato: venduto / rimosso / rimosso? / prenotato / attivo / n.d. Verificato il
     2026-10-03 con /venduto su un annuncio venduto e uno attivo: venduto = HTTP 200 + barra "Venduto" +
     can_buy=false; attivo = can_buy=true. Con can_buy=true la barra non conta (potrebbe essere il badge di
     un altro articolo in pagina)."""
@@ -121,9 +127,11 @@ def _tracc_stato(http_status, segnali):
         return "prenotato"
     if can_buy == "true":
         return "attivo"
-    if http_status is None or http_status == 200:
-        return "attivo?"
-    return "n.d."
+    if http_status == 200:
+        # 5/10: pagina che risponde 200 ma senza prezzo ne' segnali di vendita = di solito annuncio cancellato dal
+        # venditore o in revisione (l'utente vede "errore"): NON e' un invenduto ne' un venduto
+        return "rimosso?"
+    return "n.d."   # nessuna risposta (errore di rete o codice strano): sconosciuto
 
 
 def _tracc_bucket(offset_s):
@@ -139,7 +147,7 @@ def _tracc_classe(offset_s, stato):
     NORMALE entro 1h, NON AFFARE se al controllo dell'ora e' ancora invenduto. Pura."""
     if stato == "venduto":
         return "AFFARE" if offset_s <= 300 else "MEDIO AFFARE" if offset_s <= 900 else "NORMALE"
-    if offset_s >= 3600 and stato in ("attivo", "attivo?", "prenotato"):
+    if offset_s >= 3600 and stato in ("attivo", "prenotato"):   # rimosso?/n.d. non sono invenduti: restano senza classe
         return "NON AFFARE"
     return None
 
@@ -180,9 +188,12 @@ async def _tracc_serie(item_id, url, brand, prezzo, t0):
     """Serie di controlli ancorati a t0: attende ciascun offset, rilegge la pagina e si ferma alla prima
     vendita (o se l'annuncio e' scartato). Registra i secondi reali da t0, la fascia e la classe."""
     item_id = str(item_id)
+    rimossi_di_fila = 0
     for s_dopo in TRACCIAMENTO_SERIE_SECONDI:
         try:
             if item_id in _tracc_stop:
+                return
+            if item_id in _tracc_ridotti and s_dopo > TRACCIAMENTO_SERIE_RIDOTTA_MAX_S:
                 return
             attesa = t0 + s_dopo - time.time()
             if attesa > 0:
@@ -208,6 +219,10 @@ async def _tracc_serie(item_id, url, brand, prezzo, t0):
                 prezzo, prezzo_ora, esito, target, segnali.get("preferiti", "-"),
             )
             if stato in ("venduto", "rimosso"):
+                _tracc_stop.add(item_id)
+                return
+            rimossi_di_fila = rimossi_di_fila + 1 if stato == "rimosso?" else 0
+            if rimossi_di_fila >= 2:   # due controlli di fila senza dati: pagina sparita, inutile continuare
                 _tracc_stop.add(item_id)
                 return
         except Exception:
@@ -330,7 +345,9 @@ def _log_esito(listing_info, esito, **campi):
         _id = _estrai_item_id_da_url(listing_info.get("url")) if listing_info.get("url") else None
         if _id:
             _tracc_esiti[str(_id)] = (esito, campi.get("target"))
-            if str(esito).startswith("SKIP_") or esito == "ERRORE_CERVELLO":
+            if esito == "SKIP_PRE_CERVELLO" and str(campi.get("motivo") or "").startswith(_SCARTI_DA_SEGUIRE):
+                _tracc_ridotti.add(str(_id))
+            elif str(esito).startswith("SKIP_"):
                 _tracc_stop.add(str(_id))
             if len(_tracc_esiti) > 5000:
                 for _k in list(_tracc_esiti)[:1000]:

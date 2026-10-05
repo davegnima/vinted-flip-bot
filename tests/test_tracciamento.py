@@ -17,7 +17,8 @@ VENDUTO = {"can_buy": "false", "barra_venduto": True}
     (200, {"is_reserved": "true", "can_buy": "false"}, "prenotato"),
     (404, {}, "rimosso"),
     (410, {}, "rimosso"),
-    (None, {}, "attivo?"),
+    (None, {}, "n.d."),                      # nessuna risposta: sconosciuto
+    (200, {}, "rimosso?"),                  # 200 senza dati: cancellato o in revisione, non un invenduto
     (200, {"can_buy": "true", "barra_venduto": True}, "attivo"),  # la barra di un altro articolo non conta
     (200, {"is_closed": "true"}, "venduto"),
     (500, {}, "n.d."),
@@ -33,6 +34,8 @@ def test_fasce_e_classi():
         "AFFARE", "AFFARE", "MEDIO AFFARE", "MEDIO AFFARE", "NORMALE"]
     assert m._tracc_classe(3600, "attivo") == "NON AFFARE"
     assert m._tracc_classe(300, "attivo") is None
+    # senza dati o senza risposta a 60 minuti NON e' un invenduto
+    assert m._tracc_classe(3600, "rimosso?") is None and m._tracc_classe(3600, "n.d.") is None
 
 
 def test_segnali_sul_formato_reale_con_virgolette_escapate():
@@ -88,3 +91,15 @@ def test_preferiti_dalla_pagina():
     assert segnali2["preferiti"] == 0
     segnali3, _ = _tracc_estrai_segnali("<html></html>")
     assert "preferiti" not in segnali3
+
+
+def test_scartati_falsi_si_seguono_ridotti_gli_altri_si_fermano():
+    li = {"url": "https://www.vinted.it/items/10250000001-prada", "brand": "Prada"}
+    li2 = {"url": "https://www.vinted.it/items/10250000002-prada", "brand": "Prada"}
+    li3 = {"url": "https://www.vinted.it/items/10250000003-prada", "brand": "Prada"}
+    tr._log_esito(li, "SKIP_PRE_CERVELLO", motivo="[FALSO CONCLAMATO] etichetta")
+    tr._log_esito(li2, "SKIP_PRE_CERVELLO", motivo="[NESSUNA ETICHETTA VISIBILE] x")
+    tr._log_esito(li3, "ERRORE_CERVELLO")
+    assert "10250000001" in tr._tracc_ridotti and "10250000001" not in tr._tracc_stop
+    assert "10250000002" in tr._tracc_stop
+    assert "10250000003" not in tr._tracc_stop and "10250000003" not in tr._tracc_ridotti
