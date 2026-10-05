@@ -416,15 +416,45 @@ def gemini_cascata_esaurita(ruolo=None):
 
 def _gemini_key_in_quota_esaurita(key, modello=None):
     """True se `key` e' attualmente in cooldown per quota giornaliera
-    esaurita (vedi _gemini_segna_key_quota_esaurita)."""
-    chiave = (key, modello or "")
-    scadenza = _gemini_key_quota_esaurita_fino.get(chiave)
-    if scadenza is None:
+    esaurita (vedi _gemini_segna_key_quota_esaurita) o e' stata segnata non valida per ogni modello
+    (vedi _gemini_segna_key_non_valida: voce con modello "")."""
+    for chiave in ((key, modello or ""), (key, "")):
+        scadenza = _gemini_key_quota_esaurita_fino.get(chiave)
+        if scadenza is None:
+            continue
+        if time.time() >= scadenza:
+            del _gemini_key_quota_esaurita_fino[chiave]
+            continue
+        return True
+    return False
+
+
+# Key non valida (5/10: una chiave Google cancellata dava 401 "bound service account is deleted or disabled" e il bot
+# ritentava sempre quella, perche' ruotava solo su 429/5xx): si esclude per ogni modello e si passa alla successiva.
+RAFFREDDAMENTO_KEY_NON_VALIDA_SECONDI = 6 * 3600
+
+
+def _gemini_e_errore_key_non_valida(status_code, corpo_testo):
+    """True per 401/403 che dicono che la KEY (non il modello o la quota) e' rifiutata. Pura."""
+    if status_code not in (401, 403):
         return False
-    if time.time() >= scadenza:
-        del _gemini_key_quota_esaurita_fino[chiave]
-        return False
-    return True
+    t = (corpo_testo or "").lower()
+    return any(m in t for m in ("unauthenticated", "api key", "api_key", "service account", "permission_denied",
+                                "permission denied"))
+
+
+def _gemini_segna_key_non_valida(key):
+    """Esclude `key` per ogni modello per RAFFREDDAMENTO_KEY_NON_VALIDA_SECONDI e logga quante key valide restano."""
+    gia = _gemini_key_in_quota_esaurita(key, None)
+    _gemini_key_quota_esaurita_fino[(key, "")] = time.time() + RAFFREDDAMENTO_KEY_NON_VALIDA_SECONDI
+    db.salva_quota_gemini(key, "", _gemini_key_quota_esaurita_fino[(key, "")])
+    if gia:
+        return
+    n = GEMINI_API_KEYS.index(key) + 1 if key in GEMINI_API_KEYS else 0
+    valide = sum(1 for k in GEMINI_API_KEYS if not _gemini_key_in_quota_esaurita(k, None))
+    log.warning("Gemini: key #%d NON VALIDA (401/403, cancellata o disabilitata) -- esclusa per %d ore. "
+                "Key valide rimaste: %d su %d.%s", n, RAFFREDDAMENTO_KEY_NON_VALIDA_SECONDI // 3600, valide,
+                len(GEMINI_API_KEYS), "" if valide else " NESSUNA: aggiornare GEMINI_API_KEYS su Railway.")
 
 
 def ripristina_stato_gemini():
