@@ -78,3 +78,40 @@ def test_chiama_gemini_passa_alla_key_valida_dopo_un_401(monkeypatch):
     testo, _, _ = asyncio.run(ga.chiama_gemini("s", "u", max_retries=3))
     assert testo == "ok"
     assert chiavi_usate == ["morta", "viva"]
+
+
+def test_timeout_di_fila_mettono_la_fase_in_pausa(monkeypatch):
+    monkeypatch.setattr(gs, "_gemini_timeout_di_fila", {})
+    monkeypatch.setattr(gs, "_gemini_pausa_timeout_fino", {})
+    assert not gs.gemini_segna_timeout("cervello")          # il primo non basta
+    assert not gs.gemini_in_pausa_timeout("cervello")
+    assert gs.gemini_segna_timeout("cervello")              # il secondo di fila: pausa
+    assert gs.gemini_in_pausa_timeout("cervello") and not gs.gemini_in_pausa_timeout("occhio")
+    gs.gemini_timeout_azzera("occhio")
+    from bot import riserva_llm
+    assert riserva_llm.gemini_in_pausa("cervello")
+
+
+def test_chiama_gemini_dopo_due_timeout_smette_di_ritentare(monkeypatch):
+    import asyncio
+    import httpx
+    from bot import gemini_api as ga
+    from bot import http_clients as hc
+
+    monkeypatch.setattr(gs, "GEMINI_API_KEYS", ["k1", "k2"])
+    monkeypatch.setattr(ga, "GEMINI_API_KEYS", ["k1", "k2"])
+    monkeypatch.setattr(gs, "_gemini_key_quota_esaurita_fino", {})
+    monkeypatch.setattr(gs, "_gemini_timeout_di_fila", {})
+    monkeypatch.setattr(gs, "_gemini_pausa_timeout_fino", {})
+    monkeypatch.setattr(ga, "GEMINI_BACKOFF_MAX_S", 0.01)
+    chiamate = []
+
+    class Finto:
+        async def post(self, url, headers=None, json=None, timeout=None):
+            chiamate.append(1)
+            raise httpx.ReadTimeout("lento")
+
+    monkeypatch.setattr(hc, "_client_generico", Finto())
+    testo, _, _ = asyncio.run(ga.chiama_gemini("s", "u", max_retries=6))
+    assert testo.startswith("[ERRORE")
+    assert len(chiamate) == 2          # dopo 2 timeout di fila la fase e' in pausa: niente altri tentativi

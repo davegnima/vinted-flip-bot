@@ -414,6 +414,39 @@ def gemini_cascata_esaurita(ruolo=None):
     return bool(modelli) and all(_gemini_modello_escluso(m) or _gemini_modello_senza_quota(m) for m in modelli)
 
 
+# STALLO DI GEMINI (5/10 14:01-14:09 UTC: ~10 annunci fermi 5-8 minuti): ogni chiamata ha un timeout di 30 s e il backoff
+# raddoppiava senza tetto (fino a 9 tentativi: 13 minuti nel caso peggiore) senza passare alla riserva e senza una riga di log.
+# Ora: tetto al backoff, budget di tempo per chiamata, log dei timeout e pausa della fase dopo timeout consecutivi.
+GEMINI_BACKOFF_MAX_S = float(os.environ.get("GEMINI_BACKOFF_MAX_S", "6"))
+GEMINI_BUDGET_CHIAMATA_S = float(os.environ.get("GEMINI_BUDGET_CHIAMATA_S", "60"))
+GEMINI_TIMEOUT_PER_PAUSA = int(os.environ.get("GEMINI_TIMEOUT_PER_PAUSA", "2"))
+GEMINI_PAUSA_TIMEOUT_SECONDI = float(os.environ.get("GEMINI_PAUSA_TIMEOUT_SECONDI", "120"))
+_gemini_timeout_di_fila = {}
+_gemini_pausa_timeout_fino = {}
+
+
+def gemini_segna_timeout(ruolo):
+    """Registra un timeout della fase `ruolo`; dopo GEMINI_TIMEOUT_PER_PAUSA di fila la fase salta Gemini per
+    GEMINI_PAUSA_TIMEOUT_SECONDI (va alla riserva). Ritorna True se ha messo la pausa."""
+    n = _gemini_timeout_di_fila.get(ruolo, 0) + 1
+    _gemini_timeout_di_fila[ruolo] = n
+    if n >= GEMINI_TIMEOUT_PER_PAUSA:
+        _gemini_pausa_timeout_fino[ruolo] = time.time() + GEMINI_PAUSA_TIMEOUT_SECONDI
+        _gemini_timeout_di_fila[ruolo] = 0
+        log.warning("Gemini TIMEOUT | %s | %d timeout di fila: fase in pausa per %d s, si passa alla riserva.",
+                    ruolo, n, GEMINI_PAUSA_TIMEOUT_SECONDI)
+        return True
+    return False
+
+
+def gemini_timeout_azzera(ruolo):
+    _gemini_timeout_di_fila[ruolo] = 0
+
+
+def gemini_in_pausa_timeout(ruolo):
+    return time.time() < _gemini_pausa_timeout_fino.get(ruolo, 0)
+
+
 def _gemini_key_in_quota_esaurita(key, modello=None):
     """True se `key` e' attualmente in cooldown per quota giornaliera
     esaurita (vedi _gemini_segna_key_quota_esaurita) o e' stata segnata non valida per ogni modello

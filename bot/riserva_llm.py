@@ -12,7 +12,7 @@ from bot.panel import (EXTRA_LLM_URL, NOTA_SENZA_RICERCA, RISERVA_CERVELLO_MODEL
                        _panel_segna_errore, estrai_json_da_testo_llm)
 from bot.schemas import CERVELLO_RESPONSE_SCHEMA_OPENAI, OCCHIO_RESPONSE_SCHEMA_GEMINI, _schema_gemini_to_openai
 from bot.config import GEMINI_API_KEY
-from bot.gemini_stato import GEMINI_API_KEYS, gemini_cascata_esaurita
+from bot.gemini_stato import GEMINI_API_KEYS, gemini_cascata_esaurita, gemini_in_pausa_timeout
 from bot.gemini_api import chiama_gemini
 from bot.prompts import GEMINI_OCCHI_SYSTEM_PROMPT_JSON, prompt_cervello_compatto
 from bot.foto import costruisci_parts_foto
@@ -104,7 +104,7 @@ _gemini_pausa_fino = {}
 
 
 def gemini_in_pausa(ruolo):
-    return time.time() < _gemini_pausa_fino.get(ruolo, 0)
+    return time.time() < _gemini_pausa_fino.get(ruolo, 0) or gemini_in_pausa_timeout(ruolo)
 
 
 def segna_gemini_in_pausa_se_429(ruolo, errore):
