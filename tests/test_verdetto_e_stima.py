@@ -134,6 +134,7 @@ def test_secondi_retry_gemini_minuto_vs_giorno(monkeypatch):
     assert m._gemini_secondi_retry('"retryDelay": "37046s"') == 37046
     assert m._gemini_secondi_retry("niente") is None
     monkeypatch.setattr(gs, "_gemini_key_quota_esaurita_fino", {})
+    monkeypatch.setattr(gs, "prossimo_reset_quota_gemini", lambda adesso=None: __import__("time").time() + 20 * 3600)
     m._gemini_segna_key_quota_esaurita("k", "x", 46.8)                 # al minuto: ~49 s, non 6 ore
     scad = gs._gemini_key_quota_esaurita_fino[("k", "x")] - __import__("time").time()
     assert 40 < scad < 60

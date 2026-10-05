@@ -257,7 +257,7 @@ def _preavviso_inviato(listing_info, id_msg, tipo, riga_tempi, secondi, t_inizio
 
 
 async def invia_preavviso(listing_info, url, photo_bytes_list=None, riga_tempi=None, secondi=None):
-    """Manda il PREAVVISO nel gruppo COMPRA con suono: ALBUM con tutte le foto (una sola foto: foto con bottone),
+    """Manda il PREAVVISO nel gruppo COMPRA (con suono se listing_info["preavviso_suono"]): ALBUM con tutte le foto (una sola foto: foto con bottone),
     didascalia = testo_preavviso. Senza foto: solo testo con bottone. A fine analisi lo stesso messaggio viene
     AGGIORNATO col verdetto (vedi aggiorna_preavviso): un solo messaggio per annuncio nel gruppo.
     Ritorna {"msg_id", "tipo": album|foto|testo, "base"} oppure None. Non solleva mai."""
@@ -266,19 +266,20 @@ async def invia_preavviso(listing_info, url, photo_bytes_list=None, riga_tempi=N
     testo = testo_preavviso(listing_info, url, riga_tempi=riga_tempi)
     foto = list(photo_bytes_list or [])
     t_inizio = time.time()
+    silenzioso = not listing_info.get("preavviso_suono", True)   # suono solo per i migliori (PREAVVISO_SUONO_RAPPORTO_MIN)
     try:
         if len(foto) > 1:
             id_msg = await telegram_send_media_group(
-                TELEGRAM_ALERT_CHAT_ID, foto, caption=testo, disable_notification=False, parse_mode="Markdown")
+                TELEGRAM_ALERT_CHAT_ID, foto, caption=testo, disable_notification=silenzioso, parse_mode="Markdown")
             if id_msg is not None:
                 return _preavviso_inviato(listing_info, id_msg, "album", riga_tempi, secondi, t_inizio)
         elif len(foto) == 1:
             id_msg = await telegram_send_photo_con_bottone(
-                TELEGRAM_ALERT_CHAT_ID, foto[0], testo, url, disable_notification=False)
+                TELEGRAM_ALERT_CHAT_ID, foto[0], testo, url, disable_notification=silenzioso)
             if id_msg is not None:
                 return _preavviso_inviato(listing_info, id_msg, "foto", riga_tempi, secondi, t_inizio)
         id_msg = await telegram_send_with_buttons(
-            TELEGRAM_ALERT_CHAT_ID, testo, url, None, disable_notification=False)
+            TELEGRAM_ALERT_CHAT_ID, testo, url, None, disable_notification=silenzioso)
         if id_msg is not None:
             return _preavviso_inviato(listing_info, id_msg, "testo", riga_tempi, secondi, t_inizio)
     except Exception:

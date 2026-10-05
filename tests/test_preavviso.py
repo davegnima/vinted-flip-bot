@@ -323,3 +323,21 @@ def test_taratura_brand_da_env():
     assert FAIR_VALUE_TARATURA_BRAND == {"missoni": 1.10, "brunello cucinelli": 1.15}
     assert _fattori_da_env("Prada=1.3, rotto, x=abc ,=2") == {"prada": 1.3}
     assert _fattori_da_env("") == {}
+
+
+def test_preavviso_brand_e_suono():
+    from bot.fair_value import preavviso_con_suono, valuta_preavviso
+    verde = {"semaforo": "🟢", "margine": 60, "conf": "media", "fv": 90, "brand": "prada"}
+    assert valuta_preavviso(verde, 30) == (True, "semaforo")
+    assert valuta_preavviso({**verde, "brand": "acne studios"}, 30) == (False, "no")
+    assert valuta_preavviso({**verde, "brand": "marni"}, 30) == (False, "no")
+    # brand facile: soglia di margine piu' bassa, anche con semaforo giallo
+    assert valuta_preavviso({"semaforo": "🟡", "margine": 12, "conf": "media", "fv": 50, "brand": "jean paul gaultier"}, 30) == (True, "brand_facile")
+    # prezzo basso ora <= 20
+    giallo = {"semaforo": "🟡", "margine": 22, "conf": "media", "fv": 40, "brand": "prada"}
+    assert valuta_preavviso(giallo, 18) == (True, "prezzo_basso")
+    assert valuta_preavviso(giallo, 24) == (False, "no")
+    # suono: solo con fv/prezzo >= 4 o brand facile
+    assert preavviso_con_suono({**verde, "fv": 130}, 30)
+    assert not preavviso_con_suono({**verde, "fv": 90}, 30)
+    assert preavviso_con_suono({**verde, "brand": "jean paul gaultier", "fv": 50}, 30)

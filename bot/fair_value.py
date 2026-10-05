@@ -239,8 +239,15 @@ FAIR_VALUE_MARGINE_MIN_VERDE = _env_float("FAIR_VALUE_MARGINE_MIN_VERDE", 15)
 #    (i venduti entro 30 s dell'analisi del 2026-10-03 costavano quasi tutti <= 30 EUR).
 PREAVVISO_ATTIVO = os.environ.get("PREAVVISO_ATTIVO", "1").strip() != "0"
 PREAVVISO_MARGINE_MIN = _env_float("PREAVVISO_MARGINE_MIN", 25)
-PREAVVISO_PREZZO_BASSO = _env_float("PREAVVISO_PREZZO_BASSO", 25)
+PREAVVISO_PREZZO_BASSO = _env_float("PREAVVISO_PREZZO_BASSO", 20)   # 5/10: 52% di venduti rapidi a <=20 EUR, 22% a 20-40
 PREAVVISO_MARGINE_BASSO = _env_float("PREAVVISO_MARGINE_BASSO", 20)
+# Per brand (recap 5/10, venduti rapidi su 334 annunci): Acne Studios e Marni 6%, Jean Paul Gaultier 62% (base 25%).
+PREAVVISO_BRAND_ESCLUSI = [b.strip().lower() for b in os.environ.get("PREAVVISO_BRAND_ESCLUSI", "acne studios,marni").split(",") if b.strip()]
+PREAVVISO_BRAND_FACILI = [b.strip().lower() for b in os.environ.get("PREAVVISO_BRAND_FACILI", "jean paul gaultier").split(",") if b.strip()]
+PREAVVISO_MARGINE_FACILI = _env_float("PREAVVISO_MARGINE_FACILI", 10)
+# Suono solo per i migliori: fair value rapido / prezzo >= soglia (63% di venduti rapidi con >=4) o brand facile. Gli
+# altri preavvisi arrivano in silenzio. 0 = suono sempre.
+PREAVVISO_SUONO_RAPPORTO_MIN = _env_float("PREAVVISO_SUONO_RAPPORTO_MIN", 4)
 
 
 def valuta_preavviso(stima, prezzo):
@@ -250,11 +257,27 @@ def valuta_preavviso(stima, prezzo):
     sem, marg = stima.get("semaforo"), stima.get("margine")
     if sem not in ("🟢", "🟡") or marg is None or stima.get("conf") == "bassa":
         return False, "no"
+    brand = (stima.get("brand") or "").lower()
+    if brand in PREAVVISO_BRAND_ESCLUSI:
+        return False, "no"
+    if brand in PREAVVISO_BRAND_FACILI and marg >= PREAVVISO_MARGINE_FACILI:
+        return True, "brand_facile"
     if sem == "🟢" and marg >= PREAVVISO_MARGINE_MIN:
         return True, "semaforo"
     if prezzo <= PREAVVISO_PREZZO_BASSO and marg >= PREAVVISO_MARGINE_BASSO:
         return True, "prezzo_basso"
     return False, "no"
+
+
+def preavviso_con_suono(stima, prezzo):
+    """True se il preavviso deve suonare (vedi PREAVVISO_SUONO_RAPPORTO_MIN). Pura."""
+    if PREAVVISO_SUONO_RAPPORTO_MIN <= 0:
+        return True
+    stima = stima or {}
+    if (stima.get("brand") or "").lower() in PREAVVISO_BRAND_FACILI:
+        return True
+    fv = stima.get("fv")
+    return bool(fv and prezzo and prezzo > 0 and fv / prezzo >= PREAVVISO_SUONO_RAPPORTO_MIN)
 
 
 # Rosso sicuro (2026-10-04, per ridurre le chiamate Gemini): stima rapida rossa con confidenza alta/media, margine

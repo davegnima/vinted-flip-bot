@@ -10,7 +10,7 @@ from bot.scheda import ANALISI_GEMINI_ATTIVA, STATO_ANALISI_COMPLETATA, STATO_AN
 from bot.verdetto import CERVELLO_CAMPIONI_EXTRA, _a_float, _estrai_item_id_da_url, _estrai_prezzi_da_pool_ricerca, _riepilogo_comp_per_fonte, calcola_verdetto, classifica_provenienza_comp, consolida_target_cervello, render_messaggio_verdetto, valida_payload_cervello
 from bot.config import GEMINI_SOGLIA_PREZZO_ALTO, TELEGRAM_ALERT_CHAT_ID, CERVELLO_PROVIDER, DEBUG_CONFRONTO_COMP_TELEGRAM, OCCHIO_OUTPUT_JSON, RAFFREDDAMENTO_SERPER_SECONDI, SERPER_API_KEY, SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO, SOGLIA_MARGINE_ASSOLUTO_NOTIFICA, TELEGRAM_OWNER_CHAT_ID, _serper_fallimenti_consecutivi, _serper_notifica_esaurimento_inviata, _serper_timestamp_ultimo_fallimento
 from bot.panel import EXTRA_LLM_URL, PANEL_CERVELLO_MODELLI, PANEL_OCCHIO_MODELLI, _bg_task, panel_cervello, panel_occhio
-from bot.fair_value import FAIR_VALUE_FILTRA, check_skip_rosso, catalogo_impara, check_skip_fair_value, fv_registra_gemini, fv_registra_rapida, stima_fair_value, valuta_preavviso
+from bot.fair_value import FAIR_VALUE_FILTRA, check_skip_rosso, catalogo_impara, check_skip_fair_value, fv_registra_gemini, fv_registra_rapida, stima_fair_value, valuta_preavviso, preavviso_con_suono
 from bot.prompts import GEMINI_CERVELLO_SYSTEM_PROMPT, GEMINI_OCCHI_SYSTEM_PROMPT, GEMINI_OCCHI_SYSTEM_PROMPT_JSON
 from bot.schemas import OCCHIO_RESPONSE_SCHEMA_GEMINI
 from bot import db
@@ -220,13 +220,15 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             _fv_pre = listing_info.get("fair_value") or {}
             _prezzo_pre = _a_float(listing_info.get("price"), None)
             listing_info["preavviso"], _regola_pre = valuta_preavviso(listing_info.get("fair_value"), _prezzo_pre)
+            listing_info["preavviso_suono"] = preavviso_con_suono(listing_info.get("fair_value"), _prezzo_pre)
             _item_pre = _estrai_item_id_da_url(url) if url else None
             _feat = campi_annuncio(listing_info, n_foto=len(scraped.get("photo_urls") or []))
             if _fv_pre.get("categoria"):
                 _feat["categoria"] = _fv_pre["categoria"]   # include la categoria ricavata dal catalogo Vinted
             _feat["fonte_cat"] = _fv_pre.get("fonte_categoria") or "-"   # titolo | descrizione | catalogo | nessuna
             _feat.update({"prezzo": _prezzo_pre, "semaforo": _fv_pre.get("semaforo") or "-", "fv": _fv_pre.get("fv"),
-                          "margine": _fv_pre.get("margine"), "conf": _fv_pre.get("conf") or "-", "regola": _regola_pre})
+                          "margine": _fv_pre.get("margine"), "conf": _fv_pre.get("conf") or "-", "regola": _regola_pre,
+                          "suono": "si" if listing_info["preavviso_suono"] else "no"})
             log.info("PREAVVISO | item=%s | brand='%s' | prezzo=%s | semaforo=%s | fv=%s | margine=%s | conf=%s | regola=%s%s",
                      _item_pre or "n/d", listing_info.get("brand") or "n/d", _prezzo_pre,
                      _feat["semaforo"], _fv_pre.get("fv"), _fv_pre.get("margine"), _feat["conf"], _regola_pre,
