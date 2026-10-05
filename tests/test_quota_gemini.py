@@ -30,3 +30,51 @@ def test_quota_giornaliera_segnata_fino_al_reset(monkeypatch):
     fino = gs._gemini_key_quota_esaurita_fino[("chiave-x", "gemini-3.5-flash")]
     assert abs(fino - (_ts(5, 7) + 60)) <= 5
     gs._gemini_key_quota_esaurita_fino.clear()
+
+
+def test_errore_key_non_valida_riconosciuto():
+    corpo = '{"error": {"code": 401, "message": "The bound service account is deleted or disabled.", "status": "UNAUTHENTICATED"}}'
+    assert gs._gemini_e_errore_key_non_valida(401, corpo)
+    assert gs._gemini_e_errore_key_non_valida(403, '{"error": {"status": "PERMISSION_DENIED"}}')
+    assert not gs._gemini_e_errore_key_non_valida(429, corpo)
+    assert not gs._gemini_e_errore_key_non_valida(401, "")
+
+
+def test_key_non_valida_vale_per_ogni_modello_e_la_rotazione_la_salta(monkeypatch):
+    monkeypatch.setattr(gs, "GEMINI_API_KEYS", ["morta", "viva"])
+    monkeypatch.setattr(gs, "_gemini_key_quota_esaurita_fino", {})
+    monkeypatch.setattr(gs, "_gemini_key_index", [0])
+    monkeypatch.setattr(gs.db, "salva_quota_gemini", lambda *a, **k: None)
+    gs._gemini_segna_key_non_valida("morta")
+    assert gs._gemini_key_in_quota_esaurita("morta", "gemini-3.5-flash")
+    assert gs._gemini_key_in_quota_esaurita("morta", "gemini-3.1-flash-lite")
+    assert not gs._gemini_key_in_quota_esaurita("viva", "gemini-3.5-flash")
+    assert gs._gemini_key_attuale("gemini-3.5-flash") == "viva"
+
+
+def test_chiama_gemini_passa_alla_key_valida_dopo_un_401(monkeypatch):
+    import asyncio
+    import httpx
+    from bot import gemini_api as ga
+    from bot import http_clients as hc
+
+    monkeypatch.setattr(gs, "GEMINI_API_KEYS", ["morta", "viva"])
+    monkeypatch.setattr(ga, "GEMINI_API_KEYS", ["morta", "viva"])
+    monkeypatch.setattr(gs, "_gemini_key_quota_esaurita_fino", {})
+    monkeypatch.setattr(gs, "_gemini_key_index", [0])
+    monkeypatch.setattr(gs.db, "salva_quota_gemini", lambda *a, **k: None)
+    chiavi_usate = []
+
+    class Finto:
+        async def post(self, url, headers=None, json=None, timeout=None):
+            k = headers["x-goog-api-key"]
+            chiavi_usate.append(k)
+            req = httpx.Request("POST", url)
+            if k == "morta":
+                return httpx.Response(401, request=req, text='{"error":{"status":"UNAUTHENTICATED","message":"service account deleted"}}')
+            return httpx.Response(200, request=req, json={"candidates": [{"content": {"parts": [{"text": "ok"}]}}]})
+
+    monkeypatch.setattr(hc, "_client_generico", Finto())
+    testo, _, _ = asyncio.run(ga.chiama_gemini("s", "u", max_retries=3))
+    assert testo == "ok"
+    assert chiavi_usate == ["morta", "viva"]
