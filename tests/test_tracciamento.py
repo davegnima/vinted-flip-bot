@@ -103,3 +103,24 @@ def test_scartati_falsi_si_seguono_ridotti_gli_altri_si_fermano():
     assert "10250000001" in tr._tracc_ridotti and "10250000001" not in tr._tracc_stop
     assert "10250000002" in tr._tracc_stop
     assert "10250000003" not in tr._tracc_stop and "10250000003" not in tr._tracc_ridotti
+
+
+def test_annuncio_sparito_si_segue_e_se_riappare_si_logga(monkeypatch, caplog):
+    import logging
+    import time
+    risposte = iter([(200, "<html></html>"), (404, ""), (200, "\\\"can_buy\\\":true \\\"price\\\":{\\\"amount\\\":\\\"25\\\"}")])
+
+    async def finta(url, max_retries=1):
+        return next(risposte)
+
+    monkeypatch.setattr(tr, "_tracc_leggi_pagina", finta)
+    monkeypatch.setattr(tr, "TRACCIAMENTO_SERIE_SECONDI", (0, 0, 0))
+    monkeypatch.setattr(tr, "_tracc_scrivi", lambda r: None)
+    tr._tracc_stop.discard("10259999999")
+    with caplog.at_level(logging.INFO):
+        asyncio.run(tr._tracc_serie("10259999999", "https://www.vinted.it/items/10259999999-x", "Prada", 25.0, time.time()))
+    testo = caplog.text
+    assert "stato=rimosso? |" in testo and "stato=rimosso |" in testo
+    assert "RICONTROLLO RIAPPARSO" in testo
+    assert "RICONTROLLO STORIA" in testo and "rimosso?" in testo
+    assert "10259999999" not in tr._tracc_stop   # mai venduto: la serie e' arrivata in fondo

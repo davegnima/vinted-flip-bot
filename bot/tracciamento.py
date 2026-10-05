@@ -29,7 +29,8 @@ from bot.logger import log
 #  - al primo scrape (~2-3s da t0) lo stato e' gia' letto -> "istantaneo" (GIA_VENDUTO);
 #  - serie di controlli a 15s, 30s, 1min, 5min, 15min, 60min da t0, fermata alla prima vendita;
 #  - nessun controllo per gli scartati prima del verdetto (SKIP_*), tranne i 'falso'/'fraudolento' (solo 15 s - 5 min)
-#    e l'errore del Cervello (serie completa); stato 'rimosso?' = 200 senza dati (cancellato o in revisione).
+#    e l'errore del Cervello (serie completa); stato 'rimosso?' = 200 senza dati (cancellato o in revisione);
+#    gli annunci 'spariti' (rimosso, rimosso?, n.d.) si seguono fino a 1 h (righe RICONTROLLO STORIA / RIAPPARSO).
 # Solo raccolta: nessuna decisione cambia (SKIP_GIA_VENDUTI=1 interrompe l'analisi dei gia' venduti).
 TRACCIAMENTO_ATTIVO = os.environ.get("TRACCIAMENTO_ATTIVO", "1").strip() == "1"
 TRACCIAMENTO_FILE = os.environ.get("TRACCIAMENTO_FILE", "/data/tracciamento_esiti.jsonl")
@@ -41,6 +42,7 @@ _tracc_stop = set()  # annunci venduti, rimossi o scartati prima del verdetto: l
 # Scartati per "falso"/"fraudolento" (5/10): si seguono lo stesso, ma solo fino a TRACCIAMENTO_SERIE_RIDOTTA_MAX_S
 # (60 s e 5 min), per misurare i falsi negativi dell'Occhio spendendo poca banda. ERRORE_CERVELLO: serie completa.
 _tracc_ridotti = set()
+_STATI_SPARITO = ('rimosso', 'rimosso?', 'n.d.')
 TRACCIAMENTO_SERIE_RIDOTTA_MAX_S = 300
 _SCARTI_DA_SEGUIRE = ("[FALSO CONCLAMATO", "[ANNUNCIO FRAUDOLENTO")
 _tracc_esiti = {}  # item_id -> (esito, target): lo valorizza _log_esito, lo legge la serie nei log
@@ -188,7 +190,16 @@ async def _tracc_serie(item_id, url, brand, prezzo, t0):
     """Serie di controlli ancorati a t0: attende ciascun offset, rilegge la pagina e si ferma alla prima
     vendita (o se l'annuncio e' scartato). Registra i secondi reali da t0, la fascia e la classe."""
     item_id = str(item_id)
-    rimossi_di_fila = 0
+    storia = []   # (offset, stato): serve a capire se uno "sparito" torna online (legit check) o resta sparito (ban)
+    try:
+        await _tracc_serie_interna(item_id, url, brand, prezzo, t0, storia)
+    finally:
+        if any(st in _STATI_SPARITO for _, st in storia):
+            log.info("RICONTROLLO STORIA | item=%s | brand='%s' | stati=%s", item_id, brand or "n/d",
+                     " ".join(f"{o}s:{st}" for o, st in storia))
+
+
+async def _tracc_serie_interna(item_id, url, brand, prezzo, t0, storia):
     for s_dopo in TRACCIAMENTO_SERIE_SECONDI:
         try:
             if item_id in _tracc_stop:
@@ -218,13 +229,15 @@ async def _tracc_serie(item_id, url, brand, prezzo, t0):
                 item_id, brand or "n/d", s_dopo, reale, http_status, stato, bucket or "-", classe or "-",
                 prezzo, prezzo_ora, esito, target, segnali.get("preferiti", "-"),
             )
-            if stato in ("venduto", "rimosso"):
+            if any(st in _STATI_SPARITO for _, st in storia) and stato in ("attivo", "prenotato", "venduto"):
+                log.info("RICONTROLLO RIAPPARSO | item=%s | brand='%s' | dopo=%ss | stato=%s | prima=%s", item_id,
+                         brand or "n/d", reale, stato, storia[-1][1])
+            storia.append((s_dopo, stato))
+            if stato == "venduto":
                 _tracc_stop.add(item_id)
                 return
-            rimossi_di_fila = rimossi_di_fila + 1 if stato == "rimosso?" else 0
-            if rimossi_di_fila >= 2:   # due controlli di fila senza dati: pagina sparita, inutile continuare
-                _tracc_stop.add(item_id)
-                return
+            # sparito (404, 200 senza dati o nessuna risposta): si continua fino a 1 h per capire se e' un legit
+            # check di Vinted che poi torna online o un annuncio bannato/cancellato (richiesto dall'utente il 5/10)
         except Exception:
             log.warning("Ricontrollo lampo fallito:\n%s", traceback.format_exc())
             return
