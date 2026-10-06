@@ -47,6 +47,15 @@ _latenze_riserva = {}          # fase -> ultime latenze (ms) dei modelli gratuit
 _riserva_lenta_fino = {}       # fase -> epoch fino a cui si passa prima dal pagamento
 
 
+def stato_pagamento():
+    """(attiva, motivo): la riserva a pagamento e' accesa solo con una GEMINI_API_KEY distinta dalle chiavi gratuite. Pura."""
+    if GEMINI_CHIAVE_PAGAMENTO:
+        return True, f"modello {GEMINI_MODELLO_PAGAMENTO}, tetto {PAGAMENTO_MAX_RICHIESTE_GIORNO} richieste al giorno"
+    if not (GEMINI_API_KEY or "").strip():
+        return False, "GEMINI_API_KEY e' vuota"
+    return False, "GEMINI_API_KEY e' anche in GEMINI_API_KEYS (serve una chiave Google distinta, quella a pagamento)"
+
+
 def pagamento_configurato():
     return bool(GEMINI_CHIAVE_PAGAMENTO)
 
@@ -59,6 +68,13 @@ def pagamento_disponibile(adesso=None):
     if _pagamento_conteggio["giorno"] != giorno:
         _pagamento_conteggio.update(giorno=giorno, n=0)
     return _pagamento_conteggio["n"] < PAGAMENTO_MAX_RICHIESTE_GIORNO
+
+
+_attiva_pag, _motivo_pag = stato_pagamento()
+if _attiva_pag:
+    log.info("Riserva a pagamento ATTIVA: %s.", _motivo_pag)
+else:
+    log.warning("Riserva a pagamento SPENTA: %s.", _motivo_pag)
 
 
 def riserva_lenta(fase, adesso=None):
