@@ -58,3 +58,12 @@ def test_foto_di_uno_schermo_non_scarta_piu():
     _, motivo2 = scarto(["foto_di_uno_schermo", "foto_stock_non_del_capo", "watermark_di_altro_sito"])
     assert "watermark_di_altro_sito" in motivo2
     assert "foto_di_uno_schermo" not in motivo2 and "foto_stock_non_del_capo" not in motivo2
+
+
+def test_descrivi_pagina_leggera_riporta_titolo_e_parole_di_blocco():
+    from bot.vinted_scrape import descrivi_pagina_leggera
+    h = ("<!DOCTYPE html><html lang=\"en\"><head><title>Access denied</title><script>var x=1;</script></head>"
+         "<body><div>Please verify you are human</div></body></html>")
+    d = descrivi_pagina_leggera(h)
+    assert "Access denied" in d and "verify" in d and "denied" in d and "var x" not in d
+    assert "nessuna" in descrivi_pagina_leggera("<html><body><p>ciao</p></body></html>")

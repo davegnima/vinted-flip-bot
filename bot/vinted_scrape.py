@@ -352,6 +352,25 @@ def _diagnostica_attributi_mancanti(html_pagina, result, attributi, url):
     )
 
 
+# Pagina "leggera" (6/10 dalle 14:17 UTC): Vinted serve ai bot una pagina di ~20 KB (lang="en", nessuna foto) invece dei
+# ~1,7 MB veri, da tutti i proxy. Si riprova (altro proxy, piccola pausa) e si logga cos'e' la pagina.
+PAGINA_LEGGERA_MAX_CARATTERI = int(os.environ.get("PAGINA_LEGGERA_MAX_CARATTERI", "60000"))
+PAGINA_LEGGERA_RETRY = int(os.environ.get("PAGINA_LEGGERA_RETRY", "2"))
+_PAROLE_BLOCCO = ("captcha", "datadome", "challenge", "robot", "denied", "blocked", "verify", "consent",
+                  "enable javascript", "unusual", "access")
+
+
+def descrivi_pagina_leggera(html_pagina):
+    """Riassunto per il log di una pagina leggera: <title>, parole tipiche di un blocco/sfida e i primi testi visibili. Pura."""
+    t = (html_pagina or "")
+    titolo = re.search(r"<title[^>]*>(.*?)</title>", t, re.DOTALL | re.IGNORECASE)
+    senza_script = re.sub(r"<(script|style)\b.*?</\1>", " ", t, flags=re.DOTALL | re.IGNORECASE)
+    visibili = " | ".join(_testi_visibili(senza_script))[:500]
+    basso = senza_script.lower()
+    return (f"title={html.unescape(titolo.group(1)).strip()[:120] if titolo else None!r} "
+            f"parole={[p for p in _PAROLE_BLOCCO if p in basso] or 'nessuna'} testi={visibili!r}")
+
+
 async def scrape_vinted_listing(url, includi_guardaroba=True):
     result = {
         "photo_urls": [], "cover_photo_id": None, "size": None, "condition": None, "description": None,
@@ -369,6 +388,17 @@ async def scrape_vinted_listing(url, includi_guardaroba=True):
         if resp is None:
             return result
         html_pagina = resp.text
+        for _ritenta in range(PAGINA_LEGGERA_RETRY):
+            if resp.status_code != 200 or len(html_pagina) >= PAGINA_LEGGERA_MAX_CARATTERI:
+                break
+            log.warning("Pagina annuncio leggera (%d caratteri) per %s: riprovo con un altro proxy (%d/%d). %s",
+                        len(html_pagina), url, _ritenta + 1, PAGINA_LEGGERA_RETRY, descrivi_pagina_leggera(html_pagina))
+            await asyncio.sleep(1.5)
+            _resp2 = await _vinted_get_con_retry(url, timeout=15, max_retries=1)
+            if _resp2 is not None:
+                resp, html_pagina = _resp2, _resp2.text
+                if len(html_pagina) >= PAGINA_LEGGERA_MAX_CARATTERI:
+                    log.info("Pagina annuncio completa al tentativo %d per %s.", _ritenta + 2, url)
         _sonda_avvia_se_serve(url, resp, html_pagina)  # in background, non rallenta
         try:
             _segnali_pagina = _tracc_estrai_segnali(html_pagina)[0]
