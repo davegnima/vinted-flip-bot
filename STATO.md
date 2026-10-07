@@ -5,7 +5,7 @@ Da rileggere all'inizio di ogni sessione nuova, dopo `CLAUDE.md`. Aggiornare a o
 ## Fatto e in produzione
 Cronologia completa in `docs/storico.md`. Sintesi: pipeline moda con semaforo, preavviso, riserva OmniRoute (+ chiave a pagamento, oggi 401 da rigenerare), tracciamento vendite fino a 1 h, radar fuori moda fase 0 con secondo tracker `vinted-radar`.
 
-- 7/10 riordino documenti: `CLAUDE.md` snello (48 righe), dettagli in `docs/pipeline.md` e `docs/log.md`, cronologia in `docs/storico.md`, `.env.example` aggiornato (solo nomi), `DEPLOY_RAILWAY.md` (obsoleto, guida alla prima installazione) archiviato in `_archive/2026-10-07/`.
+- 7/10 riordino documenti: `CLAUDE.md` snello (48 righe), dettagli in `docs/pipeline.md` e `docs/log.md`, cronologia in `docs/storico.md`, `docs/recap.md` (istruzioni del recap, lette dalla routine delle 05:47), `.env.example` aggiornato (solo nomi), `DEPLOY_RAILWAY.md` (obsoleto, guida alla prima installazione) archiviato in `_archive/2026-10-07/`.
 
 ## Variabili Railway del worker (non in repo)
 - `PANEL_CERVELLO_MODELLI=mistral/ministral-14b-2512@c,zai/glm-4.7-flash@c,nvidia/nvidia/nemotron-3-super-120b-a12b@c,groq/openai/gpt-oss-120b@c,groq/openai/gpt-oss-20b@c`
