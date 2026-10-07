@@ -139,6 +139,14 @@ _RIGHE = [
     {"id": "alessi_plisse", "modello": "Plisse", "chiavi": ["plisse", "plissé"], "sotto_soglia": True},
     {"id": "lego_75192", "modello": "Millennium Falcon", "chiavi": ["75192"],
      "rivendita_veloce_eur": 300, "affidabilita": "bassa", "spedizione_eur": 9},
+    {"id": "lego_75313_usato", "chiavi": ["75313"], "rivendita_veloce_eur": 775, "affidabilita": "alta",
+     "spedizione_eur": 15},
+    {"id": "lego_75313_sigillato", "chiavi": ["75313"], "parole_variante": ["sigillato", "misb"],
+     "rivendita_veloce_eur": 940, "affidabilita": "alta", "spedizione_eur": 15},
+    {"id": "gb_sola", "chiavi": ["game boy"], "rivendita_veloce_eur": 48, "affidabilita": "alta", "sotto_soglia": True},
+    {"id": "gb_scatola", "chiavi": ["game boy scatola"], "rivendita_veloce_eur": 179, "affidabilita": "alta",
+     "spedizione_eur": 5},
+    {"id": "cassina_lc2", "chiavi": ["lc2"], "brand_chiavi": ["cassina"], "escluso": "non_spedibile"},
 ]
 
 
@@ -161,6 +169,10 @@ def test_trova_modello_chiave_e_brand():
     assert rm.trova_modello("Lampada Arco", "Flos", m)["id"] == "flos_arco"
     assert rm.trova_modello("Bollitore Alessi Plissé", None, m)["id"] == "alessi_plisse"
     assert rm.trova_modello("LEGO Star Wars 751920", None, m) is None
+    assert rm.trova_modello("LEGO 75313 AT-AT", None, m)["id"] == "lego_75313_usato"
+    assert rm.trova_modello("LEGO 75313 nuovo sigillato", None, m)["id"] == "lego_75313_sigillato"
+    assert rm.trova_modello("Game Boy classico", None, m)["id"] == "gb_sola"
+    assert rm.trova_modello("Game Boy in scatola originale", None, m)["id"] == "gb_scatola"
 
 
 def test_livello1_usa_il_buy_max_del_modello():
@@ -173,6 +185,8 @@ def test_livello1_usa_il_buy_max_del_modello():
     # affidabilita' bassa: niente buy_max, decide il tetto del modulo
     assert radar.filtro_livello1("LEGO 75192", 60, "lego", matrice=m) == (True, "ok")
     assert radar.filtro_livello1("Lampada Artemide", 40, "illuminazione_design", matrice=m) == (True, "ok")
+    assert radar.filtro_livello1("Cassina LC2 poltrona", 200, "illuminazione_design", matrice=m)[1] == \
+        "modello_escluso:non_spedibile"
 
 
 def test_matrice_del_repo_valida():

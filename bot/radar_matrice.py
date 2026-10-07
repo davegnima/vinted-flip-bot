@@ -13,8 +13,10 @@ La riserva di rischio e' una quota della rivendita per ogni punto di rischio fal
 valore di partenza, da tarare con gli esiti reali.
 """
 import json
+import math
 import os
 import re
+import unicodedata
 from pathlib import Path
 
 from bot.config import COMMISSIONE_PROTEZIONE_FISSA, COMMISSIONE_PROTEZIONE_PCT, SCONTO_TIPICO_TRATTATIVA_VENDITA
@@ -58,52 +60,83 @@ def buy_max(rivendita, spedizione_eur, rischio_falsi=1, rischio_guasti=1):
     return int(prezzo) if prezzo > 0 else 0
 
 
+_SINONIMI = (("gba", "game boy advance"), ("gbc", "game boy color"), ("n64", "nintendo 64"))
+
+
 def _normalizza(testo):
-    return re.sub(r"\s+", " ", re.sub(r"[^\w&]+", " ", (testo or "").lower())).strip()
+    testo = unicodedata.normalize("NFKD", testo or "").encode("ascii", "ignore").decode()  # plissé -> plisse
+    testo = " " + re.sub(r"[^\w&]+", " ", testo.lower()).replace("gameboy", "game boy") + " "
+    for corto, lungo in _SINONIMI:
+        testo = testo.replace(f" {corto} ", f" {lungo} ")
+    return re.sub(r"\s+", " ", testo).strip()
 
 
-def _contiene(chiave, testo_norm):
-    return re.search(r"(?<!\w)" + re.escape(chiave) + r"(?!\w)", testo_norm) is not None
+def _parole(testo):
+    return frozenset(_normalizza(testo).split())
 
 
 def prepara(righe):
-    """Aggiunge a ogni riga le chiavi normalizzate e il buy_max calcolato. Pura."""
+    """Aggiunge a ogni riga le chiavi come insiemi di parole e il buy_max calcolato. Pura."""
     pronte = []
     for r in righe:
-        chiavi = sorted({_normalizza(c) for c in r.get("chiavi") or () if _normalizza(c)}, key=len, reverse=True)
+        chiavi = [k for k in {_parole(c) for c in r.get("chiavi") or ()} if k]
         if not chiavi:
             continue
         usabile = (r.get("rivendita_veloce_eur") and r.get("affidabilita") in _AFFIDABILITA_USABILI
-                   and not r.get("sotto_soglia"))
+                   and not r.get("sotto_soglia") and not r.get("escluso"))
         bm = buy_max(r["rivendita_veloce_eur"], r.get("spedizione_eur"), r.get("rischio_falsi"),
                      r.get("rischio_guasti")) if usabile else None
-        pronte.append({**r, "_chiavi": chiavi, "_brand": [_normalizza(b) for b in r.get("brand_chiavi") or ()],
+        pronte.append({**r, "_chiavi": chiavi, "_brand": [k for k in (_parole(b) for b in r.get("brand_chiavi") or ()) if k],
+                       "_variante": [k for k in (_parole(v) for v in r.get("parole_variante") or ()) if k],
                        "buy_max": bm})
+    # Peso di una chiave = rarita' (idf) della sua parola piu' rara, piu' un centesimo della somma per gli spareggi:
+    # "pokemon cristallo" batte "game boy color pokemon" perche' "cristallo" e' rara e le altre sono ovunque.
+    df = {}
+    for r in pronte:
+        for w in set().union(*r["_chiavi"]):
+            df[w] = df.get(w, 0) + 1
+    n = len(pronte) + 1
+    for r in pronte:
+        r["_pesi"] = {k: round(max(idf := [math.log(n / df[w]) for w in k]) + 0.01 * sum(idf), 6)
+                      for k in r["_chiavi"]}
     return pronte
 
 
 def trova_modello(titolo, brand, matrice):
-    """Riga della matrice citata dal titolo (chiave piu' lunga vince), None se nessuna. Se la riga ha `brand_chiavi`
-    serve anche il brand nel titolo o nel campo brand dell'annuncio (chiavi generiche come "arco"). Pura."""
-    t = _normalizza(" ".join(p for p in (brand or "", titolo or "") if p))
-    migliore, lung = None, 0
+    """Riga della matrice citata dal titolo, None se nessuna. Una chiave e' citata se tutte le sue parole sono nel
+    titolo (in qualsiasi ordine); vince la chiave con le parole piu' rare (peso idf, vedi `prepara`). Se la riga ha `brand_chiavi` serve anche il brand
+    nel titolo o nel campo brand dell'annuncio. A parita' (es. stesso set LEGO usato e sigillato) vince la riga le cui
+    `parole_variante` sono nel titolo, altrimenti quella senza varianti, altrimenti la rivendita piu' bassa. Pura."""
+    t = _parole(" ".join(p for p in (brand or "", titolo or "") if p))
+    candidati, migliore = [], 0
     for r in matrice:
-        for c in r["_chiavi"]:
-            if len(c) <= lung or not _contiene(c, t):
-                continue
-            if r["_brand"] and not any(_contiene(b, t) for b in r["_brand"]):
-                continue
-            migliore, lung = r, len(c)
-            break
-    return migliore
+        n = max((r["_pesi"][k] for k in r["_chiavi"] if k <= t), default=0)
+        if not n or (r["_brand"] and not any(b <= t for b in r["_brand"])):
+            continue
+        if r["_variante"] and not any(v <= t for v in r["_variante"]):
+            n = n / 2  # "in scatola"/"sigillato" senza le sue parole nel titolo: vince la riga base se c'e'
+        n = round(n, 6)
+        if n > migliore:
+            candidati, migliore = [r], n
+        elif n == migliore:
+            candidati.append(r)
+    if not candidati:
+        return None
+    if len(candidati) > 1:
+        con_variante = [r for r in candidati if any(v <= t for v in r["_variante"])]
+        candidati = con_variante or [r for r in candidati if not r["_variante"]] or candidati
+        candidati.sort(key=lambda r: r.get("rivendita_veloce_eur") or 0)
+    return candidati[0]
 
 
 def valuta_modello(titolo, brand, prezzo, matrice):
-    """(esito, riga) per il livello 1: 'nessuno' (si usa il tetto del modulo), 'sotto_soglia', 'sopra_buy_max',
-    'senza_dati' (modello noto ma prezzi insufficienti: tetto del modulo), 'ok'. Pura."""
+    """(esito, riga) per il livello 1: 'nessuno' (si usa il tetto del modulo), 'sotto_soglia', 'escluso' (es. non
+    spedibile), 'sopra_buy_max', 'senza_dati' (modello noto ma prezzi poco affidabili: tetto del modulo), 'ok'. Pura."""
     r = trova_modello(titolo, brand, matrice)
     if r is None:
         return "nessuno", None
+    if r.get("escluso"):
+        return "escluso", r
     if r.get("sotto_soglia"):
         return "sotto_soglia", r
     if r["buy_max"] is None:

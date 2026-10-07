@@ -229,6 +229,8 @@ def filtro_livello1(titolo, prezzo, modulo, brand=None, matrice=None):
     if prezzo < RADAR_PREZZO_MIN:
         return False, f"prezzo_sotto_minimo:{RADAR_PREZZO_MIN:g}"
     esito, riga = rm.valuta_modello(titolo, brand, prezzo, rm.MATRICE if matrice is None else matrice)
+    if esito == "escluso":
+        return False, f"modello_escluso:{_v(riga.get('escluso'))}"
     if esito == "sotto_soglia":
         return False, "modello_sotto_soglia:" + _v(riga.get("id") or riga.get("modello"))
     if esito == "sopra_buy_max":
