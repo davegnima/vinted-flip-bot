@@ -56,40 +56,54 @@ _radar_visti = set()
 # Moduli categoria. Brand e parole sono confrontati sul titolo in minuscolo, a parola intera.
 # spedizione_eur, rischio_falsi, rischio_guasti e prezzo_max_l1 sono valori di partenza (da tarare con la fase 0):
 # prezzo_max_l1 = oltre questo prezzo raggiungere ROI 100% e margine 50 EUR e' improbabile per la categoria.
-# I brand sono i 30 radar scelti dall'utente il 2026-10-07.
+# Brand: lista dell'utente del 7/10 (92 segmenti, fasce S e A; la fascia B e' in RADAR_BRAND_ESCLUSI).
 # ---------------------------------------------------------------------------
 RADAR_MODULI = {
     "illuminazione_design": {
         "brand": ("artemide", "flos", "fontanaarte", "fontana arte", "oluce", "kartell", "vitra", "cassina",
-                  "zanotta", "alessi"),
+                  "zanotta", "alessi", "b&b italia", "b & b italia", "magis", "luceplan", "foscarini", "seletti"),
         "parole": ("lampada", "lampade", "applique", "plafoniera", "lampadario", "abat-jour", "abat jour",
                    "piantana", "sedia", "sgabello", "poltrona", "tavolino"),
-        "spedizione_eur": 15.0, "rischio_falsi": "basso", "rischio_guasti": "medio", "prezzo_max_l1": 250,
+        "spedizione_eur": 15.0, "rischio_falsi": "basso", "rischio_guasti": "medio", "prezzo_max_l1": 300,
     },
     "ceramiche_oggetti": {
-        "brand": ("bitossi", "fornasetti"),
+        "brand": ("bitossi", "fornasetti", "richard ginori", "ginori", "iittala", "marimekko", "rosenthal"),
         "parole": ("ceramica", "vaso", "piatto", "piatti", "posacenere", "centrotavola"),
-        "spedizione_eur": 10.0, "rischio_falsi": "medio", "rischio_guasti": "basso", "prezzo_max_l1": 150,
+        "spedizione_eur": 10.0, "rischio_falsi": "medio", "rischio_guasti": "basso", "prezzo_max_l1": 200,
     },
     "argento_gioielli": {
-        "brand": ("georg jensen",),
+        "brand": ("georg jensen", "giovanni raspini", "raspini", "swarovski", "pandora"),
         "parole": ("argento 925", "sterling", "spilla", "bracciale argento"),
         "spedizione_eur": 6.0, "rischio_falsi": "medio", "rischio_guasti": "basso", "prezzo_max_l1": 150,
     },
+    "bijoux_vintage": {
+        "brand": ("christian dior", "dior", "yves saint laurent", "saint laurent", "ysl", "givenchy",
+                  "christian lacroix", "lacroix", "trifari", "monet", "coro", "vivienne westwood"),
+        "parole": ("bijoux", "bigiotteria", "orecchini clip", "collana vintage", "spilla vintage"),
+        "spedizione_eur": 6.0, "rischio_falsi": "alto", "rischio_guasti": "basso", "prezzo_max_l1": 150,
+    },
     "occhiali": {
-        "brand": ("persol", "oliver peoples", "matsuda"),
+        "brand": ("persol", "oliver peoples", "matsuda", "jacques marie mage", "cazal", "linda farrow",
+                  "cutler and gross", "cutler & gross"),
         "parole": ("occhiali", "montatura", "occhiale"),
-        "spedizione_eur": 5.0, "rischio_falsi": "medio", "rischio_guasti": "basso", "prezzo_max_l1": 120,
+        "spedizione_eur": 5.0, "rischio_falsi": "medio", "rischio_guasti": "basso", "prezzo_max_l1": 200,
     },
     "borse_vintage": {
-        "brand": ("mulberry", "roberta di camerino", "coach"),
+        "brand": ("mulberry", "roberta di camerino", "coach", "furla", "coccinelle", "lancel", "bally", "fendi",
+                  "salvatore ferragamo", "ferragamo"),
         "parole": ("borsa", "borsetta", "pochette", "tracolla"),
-        "spedizione_eur": 6.0, "rischio_falsi": "alto", "rischio_guasti": "basso", "prezzo_max_l1": 150,
+        "spedizione_eur": 6.0, "rischio_falsi": "alto", "rischio_guasti": "basso", "prezzo_max_l1": 200,
     },
     "lego": {
         "brand": ("lego",),
         "parole": ("set lego", "minifigure", "minifig", "technic", "star wars", "ideas"),
         "spedizione_eur": 9.0, "rischio_falsi": "basso", "rischio_guasti": "medio", "prezzo_max_l1": 200,
+    },
+    "collezionismo": {
+        "brand": ("hot toys", "sideshow", "bearbrick", "be@rbrick", "kenner", "transformers", "gundam", "bandai",
+                  "tamagotchi"),
+        "parole": ("action figure", "statua", "modellino", "vintage toy"),
+        "spedizione_eur": 9.0, "rischio_falsi": "medio", "rischio_guasti": "basso", "prezzo_max_l1": 250,
     },
     "console_retro": {
         "brand": ("nintendo", "game boy", "gameboy"),
@@ -98,26 +112,34 @@ RADAR_MODULI = {
         "spedizione_eur": 7.0, "rischio_falsi": "medio", "rischio_guasti": "alto", "prezzo_max_l1": 150,
     },
     "fotografia": {
-        "brand": ("contax",),
+        "brand": ("contax", "leica", "hasselblad", "fujifilm", "olympus", "minolta"),
         "parole": ("fotocamera", "macchina fotografica", "obiettivo", "reflex", "analogica", "compatta 35mm"),
-        "spedizione_eur": 8.0, "rischio_falsi": "basso", "rischio_guasti": "alto", "prezzo_max_l1": 300,
+        "spedizione_eur": 8.0, "rischio_falsi": "basso", "rischio_guasti": "alto", "prezzo_max_l1": 400,
     },
     "audio": {
-        "brand": ("bang & olufsen", "bang olufsen", "b&o", "beoplay", "beosound", "audeze"),
+        "brand": ("bang & olufsen", "bang olufsen", "b&o", "beoplay", "beosound", "audeze", "focal", "sennheiser",
+                  "beyerdynamic"),
         "parole": ("cuffie", "speaker", "cassa", "diffusore", "giradischi"),
-        "spedizione_eur": 9.0, "rischio_falsi": "medio", "rischio_guasti": "alto", "prezzo_max_l1": 300,
+        "spedizione_eur": 9.0, "rischio_falsi": "medio", "rischio_guasti": "alto", "prezzo_max_l1": 400,
     },
     "golf": {
-        "brand": ("scotty cameron",),
+        "brand": ("scotty cameron", "titleist"),
         "parole": ("putter",),
         "spedizione_eur": 15.0, "rischio_falsi": "alto", "rischio_guasti": "basso", "prezzo_max_l1": 200,
     },
+    "sport": {
+        "brand": ("garmin", "wahoo", "rapha"),
+        "parole": ("ciclocomputer", "smartwatch sport"),
+        "spedizione_eur": 7.0, "rischio_falsi": "medio", "rischio_guasti": "alto", "prezzo_max_l1": 200,
+    },
     "libri": {
-        "brand": ("taschen", "assouline", "steidl"),
+        "brand": ("taschen", "assouline", "steidl", "aperture"),
         "parole": ("libro", "volume", "monografia"),
         "spedizione_eur": 8.0, "rischio_falsi": "basso", "rischio_guasti": "basso", "prezzo_max_l1": 100,
     },
 }
+# Fascia B della lista dell'utente (7/10): falsi troppo frequenti o margine troppo basso. Scartati al livello 1.
+RADAR_BRAND_ESCLUSI = ("tiffany", "cartier", "bulgari", "bvlgari", "castelli", "phaidon", "rizzoli")
 
 # Il venditore dichiara che e' rotto/incompleto o che non e' l'originale: l'utente non ripara e non compra repliche.
 _PAROLE_VIETATE_RE = re.compile(
@@ -194,6 +216,9 @@ def filtro_livello1(titolo, prezzo, modulo):
     """(passa, motivo) sul solo messaggio del tracker. Pura."""
     if modulo is None:
         return False, "fuori_radar"
+    escluso = next((b for b in RADAR_BRAND_ESCLUSI if _cerca(b, (titolo or "").lower())), None)
+    if escluso:
+        return False, "brand_escluso:" + escluso
     vietata = parola_vietata(titolo)
     if vietata:
         return False, "parola_vietata:" + vietata.replace(" ", "_")
