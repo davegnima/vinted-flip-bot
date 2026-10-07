@@ -19,6 +19,8 @@ import re
 import time
 import asyncio
 import traceback
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from bot.verdetto import _a_float, _estrai_item_id_da_url
 from bot import db
@@ -43,6 +45,11 @@ RADAR_PREZZO_MIN = float(os.environ.get("RADAR_PREZZO_MIN", "10") or 0)
 RADAR_RICONTROLLI_SECONDI = tuple(
     int(x) for x in os.environ.get("RADAR_RICONTROLLI_SECONDI", "60,900,3600").split(",") if x.strip())
 _radar_sem = asyncio.Semaphore(RADAR_MAX_PARALLELO)
+# Pausa notturna (richiesta dall'utente il 7/10): dalle RADAR_PAUSA_DA alle RADAR_PAUSA_A, ora italiana, i messaggi radar
+# si ignorano (niente visite ne' ricontrolli: risparmio di banda proxy). Vuoto = nessuna pausa.
+RADAR_PAUSA_DA = os.environ.get("RADAR_PAUSA_DA", "23").strip()
+RADAR_PAUSA_A = os.environ.get("RADAR_PAUSA_A", "6").strip()
+_radar_pausa_saltati = 0
 _radar_visti = set()
 
 # ---------------------------------------------------------------------------
@@ -214,8 +221,27 @@ def _v(valore):
     return (str(valore).replace("|", "/").replace(" ", "_")[:40]) if valore not in (None, "") else "-"
 
 
+def radar_in_pausa(adesso=None):
+    """True se l'ora italiana cade nella finestra [RADAR_PAUSA_DA, RADAR_PAUSA_A) (anche a cavallo della mezzanotte). Pura."""
+    if not RADAR_PAUSA_DA or not RADAR_PAUSA_A:
+        return False
+    try:
+        da, a = int(RADAR_PAUSA_DA), int(RADAR_PAUSA_A)
+    except ValueError:
+        return False
+    ora = (adesso or datetime.now(ZoneInfo("Europe/Rome"))).hour
+    return (da <= ora < a) if da < a else (ora >= da or ora < a)
+
+
 async def gestisci_annuncio_radar(parsed, url, t0=None):
     """Fase 0: classifica, filtra, visita la pagina se serve, registra. Mai messaggi, mai AI."""
+    global _radar_pausa_saltati
+    if radar_in_pausa():
+        _radar_pausa_saltati += 1
+        if _radar_pausa_saltati % 100 == 1:
+            log.info("RADAR PAUSA | notte %s-%s ora italiana: messaggi radar ignorati (%d dall'ultimo avvio)",
+                     RADAR_PAUSA_DA, RADAR_PAUSA_A, _radar_pausa_saltati)
+        return
     t0 = t0 or time.time()
     item_id = _estrai_item_id_da_url(url)
     if not item_id or item_id in _radar_visti:
