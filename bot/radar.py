@@ -33,6 +33,11 @@ RADAR_GROUP_ID = int(os.environ["RADAR_GROUP_ID"]) if os.environ.get("RADAR_GROU
 # quanti affari il filtro butta. 0 = nessuno.
 RADAR_CAMPIONE_SCARTI_OGNI = int(os.environ.get("RADAR_CAMPIONE_SCARTI_OGNI", "10") or 0)
 RADAR_MAX_PARALLELO = int(os.environ.get("RADAR_MAX_PARALLELO", "4") or 4)
+# Banda (7/10: ~290 annunci promossi l'ora x 7 letture da ~300 KB = ~20 GB al giorno): sotto questo prezzo un margine
+# di 50 EUR e' quasi impossibile, e la serie di ricontrolli del radar e' ridotta (1 min, 15 min, 1 h invece di 6).
+RADAR_PREZZO_MIN = float(os.environ.get("RADAR_PREZZO_MIN", "10") or 0)
+RADAR_RICONTROLLI_SECONDI = tuple(
+    int(x) for x in os.environ.get("RADAR_RICONTROLLI_SECONDI", "60,900,3600").split(",") if x.strip())
 _radar_sem = asyncio.Semaphore(RADAR_MAX_PARALLELO)
 _radar_visti = set()
 
@@ -166,6 +171,8 @@ def filtro_livello1(titolo, prezzo, modulo):
         return False, "parola_vietata:" + vietata.replace(" ", "_")
     if prezzo is None or prezzo <= 0:
         return False, "prezzo_mancante"
+    if prezzo < RADAR_PREZZO_MIN:
+        return False, f"prezzo_sotto_minimo:{RADAR_PREZZO_MIN:g}"
     tetto = RADAR_MODULI[modulo]["prezzo_max_l1"]
     if prezzo > tetto:
         return False, f"prezzo_sopra_tetto:{tetto:g}"
@@ -199,7 +206,7 @@ async def gestisci_annuncio_radar(parsed, url, t0=None):
     prezzo = _a_float(parsed.get("price"), None)
     modulo, brand_radar, tipo = classifica_radar(titolo, parsed.get("brand"))
     passa, motivo = filtro_livello1(titolo, prezzo, modulo)
-    campione = (not passa) and modulo is not None and nel_campione_scarti(item_id)
+    campione = (not passa) and modulo is not None and not motivo.startswith("prezzo_sotto") and nel_campione_scarti(item_id)
     base = {"titolo": titolo[:120], "prezzo": prezzo, "modulo": modulo, "brand_radar": brand_radar,
             "tipo": tipo, "l1": "passa" if passa else "scarto", "motivo": motivo, "campione": campione}
     if not (passa or campione):
@@ -235,6 +242,6 @@ async def gestisci_annuncio_radar(parsed, url, t0=None):
         # Ricontrolli di vendita come per la moda: l'esito RADAR_* li tiene separati nel recap.
         tr._tracc_esiti[str(item_id)] = (esito, None)
         tr.tracc_registra_valutato(info, url, esito)
-        tr.tracc_avvia_serie(info, url, t0)
+        tr.tracc_avvia_serie(info, url, t0, offsets=RADAR_RICONTROLLI_SECONDI)
     except Exception:
         log.warning("Radar: annuncio %s non registrato:\n%s", item_id, traceback.format_exc())
