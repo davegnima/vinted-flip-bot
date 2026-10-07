@@ -148,9 +148,13 @@ async def _panel_chiama(modello, system, user_content, max_tokens, uso=None, url
             chiave_usata = EXTRA_LLM_KEY if chiave is None else chiave
             if chiave_usata:
                 headers["Authorization"] = f"Bearer {chiave_usata}"
-            payload = {"model": modello, "temperature": 0.2, "max_tokens": max_tokens,
+            payload = {"model": modello, "max_tokens": max_tokens,
                        "messages": [{"role": "system", "content": system},
                                     {"role": "user", "content": user_content}]}
+            # Google (riserva a pagamento, endpoint compatibile OpenAI) rifiutera' temperature/top_p/top_k nei
+            # prossimi modelli e dai Gemini 3.6 li ignora gia': si mandano solo ai modelli del gateway.
+            if "generativelanguage.googleapis.com" not in (url or ""):
+                payload["temperature"] = 0.2
             resp = await asyncio.wait_for(
                 hc._client_generico.post(url or EXTRA_LLM_URL, headers=headers, json=payload, timeout=PANEL_TIMEOUT),
                 timeout=PANEL_TIMEOUT + 3)

@@ -30,8 +30,9 @@ async def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, groundi
     photo_bytes_list = photo_bytes_list or []
     parts = [{"text": user_text}] + await costruisci_parts_foto(photo_bytes_list)
 
+    # Niente temperature/top_p/top_k (avviso Google 10/2026: ignorati dai Gemini 3.6+, errore nei prossimi modelli)
     generation_config = {
-        "temperature": 0.2, "maxOutputTokens": 3000,
+        "maxOutputTokens": 3000,
         "thinkingConfig": {"thinkingLevel": "low"},
     }
     payload = {
@@ -276,7 +277,6 @@ async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca
 
     async def _chiama_gemini_raw(tool_mode=None, json_mode=False, tentativi_rimasti=max_retries):
         generation_config = {
-            "temperature": 0.2,
             "maxOutputTokens": 10000,
             "thinkingConfig": {"thinkingLevel": "low"},
         }
