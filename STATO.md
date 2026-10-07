@@ -11,6 +11,7 @@ Cronologia completa in `docs/storico.md`. Sintesi: pipeline moda con semaforo, p
 - 7/10 sera: pausa notturna del radar nel worker (23-6 ora italiana, `RADAR_PAUSA_DA/A`): niente visite ne' ricontrolli, ma il tracker `vinted-radar` continua a leggere Vinted e a consumare proxy di notte (il suo `/control/telegram/stop` ferma solo l'invio, non lo scraper; fermarlo del tutto richiede di fermare il servizio su Railway o cambiare `query_refresh_delay`, che sta nel form di `/config` insieme al token).
 - 7/10 pomeriggio: l'utente ha rigenerato la chiave Google a pagamento (non risponde piu' 401). Log: `Riserva a pagamento ATTIVA` all'avvio e righe `RISERVA | occhio | pagamento/gemini-3.1-flash-lite | ok` (16 richieste fino alle 15:10 UTC, tetto 600). Nel recap contare le richieste `PAGAMENTO` e stimare la spesa.
 - 7/10 sera: modelli dei lavori ripetuti in `docs/modelli/` (PR+CI+merge, analisi log, variabili Railway, aggiornamento STATO) insieme a `docs/recap.md`.
+- 7/10 sera: `docs/preferenze.md` scritto con l'intervista all'utente (11 regole); la prima regola da rivedere se si accorcia `CLAUDE.md` e' che le righe 9-11 duplicano 'Regole dell'utente'.
 
 ## Variabili Railway del worker (non in repo)
 - `PANEL_CERVELLO_MODELLI=mistral/ministral-14b-2512@c,zai/glm-4.7-flash@c,nvidia/nvidia/nemotron-3-super-120b-a12b@c,groq/openai/gpt-oss-120b@c,groq/openai/gpt-oss-20b@c`
