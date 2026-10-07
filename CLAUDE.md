@@ -42,6 +42,9 @@ tracker (messaggio Telegram) -> `process_listing` (`bot/pipeline.py`) -> scrape 
 - Filtrare SEMPRE con `filter` e finestre strette, `limit` 20-40 per controlli puntuali; per analisi su ore `limit` 500 (finisce in file solo oltre ~80.000 caratteri: allargare il filtro) ed elaborare con `python3`, mai incollare righe a mano.
 - Filtri base: `"| ESITO |"`, `"SKIP non inviato"`, `Traceback`, `"GEMINI_USO"`, `"RISERVA |"`, `"PREAVVISO |"`, `"RICONTROLLO LAMPO"`, `"RADAR |"`. Dopo un deploy solo righe successive a `"Vinted Oracle avviato"`. Con traffico basso dirlo e aspettare.
 
+## Modelli dei lavori ripetuti
+- `docs/modelli/` (PR e merge, analisi dei log, variabili Railway, aggiornamento di `STATO.md`) e `docs/recap.md` (recap mattutino): seguirli quando il lavoro e' quello.
+
 ## Convenzioni
 - Codice e commenti in italiano, stile come quello vicino. Niente modifiche a `prompts.py` senza motivo: le calibrazioni per brand sono frutto di dati reali.
 - Il pannello e la riserva usano `@c` in coda al modello per il prompt compatto; il suffisso non va mai al gateway.
