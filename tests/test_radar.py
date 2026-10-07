@@ -97,3 +97,19 @@ def test_risolvi_gruppo_per_nome(monkeypatch):
     monkeypatch.setattr(radar, "RADAR_CHAT_IDS", set())
     assert asyncio.run(radar.risolvi_gruppo_radar(Client())) == -300
     assert radar.e_messaggio_radar("🆕 Lampada", chat_id=-300)
+
+
+def test_radar_in_pausa_di_notte_ora_italiana(monkeypatch):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from bot import radar
+    monkeypatch.setattr(radar, "RADAR_PAUSA_DA", "23")
+    monkeypatch.setattr(radar, "RADAR_PAUSA_A", "6")
+
+    def alle(h):
+        return datetime(2026, 10, 7, h, 30, tzinfo=ZoneInfo("Europe/Rome"))
+
+    assert radar.radar_in_pausa(alle(23)) and radar.radar_in_pausa(alle(0)) and radar.radar_in_pausa(alle(5))
+    assert not radar.radar_in_pausa(alle(6)) and not radar.radar_in_pausa(alle(22)) and not radar.radar_in_pausa(alle(12))
+    monkeypatch.setattr(radar, "RADAR_PAUSA_DA", "")
+    assert not radar.radar_in_pausa(alle(2))
