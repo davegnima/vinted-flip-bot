@@ -37,7 +37,7 @@ tracker (messaggio Telegram) -> `process_listing` (`bot/pipeline.py`) -> scrape 
 - Dati e logica pura: `schemas`, `prompts`, `occhio`, `verdetto`, `categorie`, `fair_value`, `filtri`, `comps_filtri`, `skip_report`.
 - Stato e rete: `gemini_stato`, `proxy`, `http_clients`, `telegram_api`, `vinted_http`, `db`, `tracciamento`.
 - Chiamate esterne: `gemini_api`, `openai_api`, `vinted_scrape`, `vinted_search`, `foto`, `serper_base`, `serper_fonti`, `comps`.
-- Flusso: `pipeline`, `scheda` (messaggi Telegram), `panel`, `riserva_llm`, `radar`.
+- Flusso: `pipeline`, `scheda` (messaggi Telegram), `panel`, `riserva_llm`, `radar` (+ `radar_matrice`: modelli e buy max).
 - `main_telethon.py`: client Telethon, comandi, `main()` e un blocco di re-export (i test usano `m.NOME`).
 - Direzione degli import: config/logger -> logica pura -> stato/client -> pipeline -> main. Niente import circolari.
 - I client HTTP riassegnati a runtime si leggono come `hc._client_generico`, `hc._client_telegram`, `hc._CLIENT_VINTED_AUTH`: mai importarli per nome.

@@ -1,7 +1,16 @@
 """Radar fase 0: smistamento, classificazione per modulo e filtro di livello 1 (logica pura)."""
 import asyncio
 
+import pytest
+
 from bot import radar
+from bot import radar_matrice as rm
+
+
+@pytest.fixture(autouse=True)
+def _senza_matrice(monkeypatch):
+    # i test del livello 1 per modulo non dipendono dai dati reali della matrice
+    monkeypatch.setattr(rm, "MATRICE", [])
 
 
 def test_messaggio_radar_dal_marcatore():
@@ -120,3 +129,68 @@ def test_radar_in_pausa_di_notte_ora_italiana(monkeypatch):
     assert not radar.radar_in_pausa(alle(6)) and not radar.radar_in_pausa(alle(22)) and not radar.radar_in_pausa(alle(12))
     monkeypatch.setattr(radar, "RADAR_PAUSA_DA", "")
     assert not radar.radar_in_pausa(alle(2))
+
+
+_RIGHE = [
+    {"id": "artemide_tolomeo", "modello": "Tolomeo", "chiavi": ["artemide tolomeo", "tolomeo"],
+     "rivendita_veloce_eur": 200, "affidabilita": "alta", "spedizione_eur": 9, "rischio_falsi": 2, "rischio_guasti": 2},
+    {"id": "flos_arco", "modello": "Arco", "chiavi": ["arco"], "brand_chiavi": ["flos"],
+     "rivendita_veloce_eur": 900, "affidabilita": "media", "spedizione_eur": None, "rischio_falsi": 2},
+    {"id": "alessi_plisse", "modello": "Plisse", "chiavi": ["plisse", "plissé"], "sotto_soglia": True},
+    {"id": "lego_75192", "modello": "Millennium Falcon", "chiavi": ["75192"],
+     "rivendita_veloce_eur": 300, "affidabilita": "bassa", "spedizione_eur": 9},
+    {"id": "lego_75313_usato", "chiavi": ["75313"], "rivendita_veloce_eur": 775, "affidabilita": "alta",
+     "spedizione_eur": 15},
+    {"id": "lego_75313_sigillato", "chiavi": ["75313"], "parole_variante": ["sigillato", "misb"],
+     "rivendita_veloce_eur": 940, "affidabilita": "alta", "spedizione_eur": 15},
+    {"id": "gb_sola", "chiavi": ["game boy"], "rivendita_veloce_eur": 48, "affidabilita": "alta", "sotto_soglia": True},
+    {"id": "gb_scatola", "chiavi": ["game boy scatola"], "rivendita_veloce_eur": 179, "affidabilita": "alta",
+     "spedizione_eur": 5},
+    {"id": "cassina_lc2", "chiavi": ["lc2"], "brand_chiavi": ["cassina"], "escluso": "non_spedibile"},
+]
+
+
+def test_buy_max_rispetta_margine_e_roi():
+    bm = rm.buy_max(200, 9, 2, 2)
+    assert bm == 76
+    margine, roi = rm.margine_roi(bm, 200, 9, 2, 2)
+    assert margine >= 50 and roi >= 100
+    margine, roi = rm.margine_roi(bm + 3, 200, 9, 2, 2)
+    assert roi < 100
+    assert rm.buy_max(80, 6) == 14  # a 14 EUR il margine resta >= 50
+    assert rm.buy_max(60, 6) == 0
+    assert rm.buy_max(200, 9, 4, 4) < bm  # piu' rischio, meno spazio
+
+
+def test_trova_modello_chiave_e_brand():
+    m = rm.prepara(_RIGHE)
+    assert rm.trova_modello("Lampada Tolomeo da tavolo", None, m)["id"] == "artemide_tolomeo"
+    assert rm.trova_modello("Arco in legno", None, m) is None
+    assert rm.trova_modello("Lampada Arco", "Flos", m)["id"] == "flos_arco"
+    assert rm.trova_modello("Bollitore Alessi Plissé", None, m)["id"] == "alessi_plisse"
+    assert rm.trova_modello("LEGO Star Wars 751920", None, m) is None
+    assert rm.trova_modello("LEGO 75313 AT-AT", None, m)["id"] == "lego_75313_usato"
+    assert rm.trova_modello("LEGO 75313 nuovo sigillato", None, m)["id"] == "lego_75313_sigillato"
+    assert rm.trova_modello("Game Boy classico", None, m)["id"] == "gb_sola"
+    assert rm.trova_modello("Game Boy in scatola originale", None, m)["id"] == "gb_scatola"
+
+
+def test_livello1_usa_il_buy_max_del_modello():
+    m = rm.prepara(_RIGHE)
+    assert radar.filtro_livello1("Artemide Tolomeo", 70, "illuminazione_design", matrice=m) == (True, "ok")
+    assert radar.filtro_livello1("Artemide Tolomeo", 120, "illuminazione_design", matrice=m) == (False, "sopra_buy_max:76")
+    assert radar.filtro_livello1("Alessi Plissé", 30, "ceramiche_oggetti", matrice=m)[1] == "modello_sotto_soglia:alessi_plisse"
+    # spedizione assente (ingombrante) -> buy_max calcolato senza spedizione, oltre il tetto del modulo
+    assert radar.filtro_livello1("Flos Arco", 350, "illuminazione_design", matrice=m) == (True, "ok")
+    # affidabilita' bassa: niente buy_max, decide il tetto del modulo
+    assert radar.filtro_livello1("LEGO 75192", 60, "lego", matrice=m) == (True, "ok")
+    assert radar.filtro_livello1("Lampada Artemide", 40, "illuminazione_design", matrice=m) == (True, "ok")
+    assert radar.filtro_livello1("Cassina LC2 poltrona", 200, "illuminazione_design", matrice=m)[1] == \
+        "modello_escluso:non_spedibile"
+
+
+def test_matrice_del_repo_valida():
+    m = rm.carica_matrice()
+    for r in m:
+        assert r["_chiavi"] and r.get("id")
+        assert r["buy_max"] is None or r["buy_max"] >= 0

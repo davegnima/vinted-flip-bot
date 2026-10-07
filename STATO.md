@@ -1,4 +1,4 @@
-# Stato del progetto (aggiornato 2026-10-07)
+# Stato del progetto (aggiornato 2026-10-08)
 
 Da rileggere all'inizio di ogni sessione nuova, dopo `CLAUDE.md`. Aggiornare a ogni tappa chiusa.
 
@@ -38,3 +38,4 @@ Cronologia completa in `docs/storico.md`. Sintesi: pipeline moda con semaforo, p
 - Il recap mattutino (routine 05:47 Europe/Rome) arriva in questa sessione.
 
 - 7/10 sera: lista dell'utente di 92 brand nei moduli del radar (#96; nuovi moduli bijoux_vintage, collezionismo, sport; fascia B Tiffany/Cartier/Bulgari/Castelli/Phaidon/Rizzoli scartata). Tracker radar: 32 ricerche, intervallo 20 s; aggiunte matsuda, cazal, jacques marie mage (cataloghi occhiali 98, 26), mulberry, roberta di camerino, coach vintage, hot toys, scotty cameron, b&b italia, dior collana, ysl orecchini, lacroix (cataloghi 1957, 1952). I cataloghi 1957/1952 con "dior vintage"/"ysl vintage" davano 0-3 annunci vecchi: tolti. Banda dopo #88: ~4,4 GB/giorno (stima su 28 min, per difetto). Da verificare l'8/10 con le nuove ricerche.
+- 8/10: matrice modelli del radar (brief "Vinted Arbitrage Bot", deliverable A e B): 303 modelli in `data/radar_matrice.json` (fonti di ogni prezzo in `data/radar_matrice_fonti.json`, tabella `docs/radar-matrice.md`), da venduti reali (aste Auctionet/UK/IT, PriceCharting, BrickLink/brick'em, Tradera, ScottyIndex, CameraWorth; eBay venduti/Catawiki/Subito rispondono 403). Affidabilita': 147 alta, 62 media, 67 bassa, 27 insufficiente; 159 con buy max, 72 sotto soglia, 12 non spedibili. Il livello 1 del radar usa il buy max del modello citato nel titolo (`bot/radar_matrice.py`). Prova sui 501 promossi del 7/10 16:22-19:16: 149 (30%) sarebbero scartati (giochi GB/GameCube sciolti 10-30 EUR, LEGO 21321/21313), nessuno gia' venduto alla prima lettura. Limiti: prezzi spesso nordeuropei o USA, non italiani; scale di rischio stimate. Da fare: confrontare i buy max con le vendite reali del radar (righe `RADAR |` con `modello=`), poi le ricerche del tracker per modello (deliverable C).
