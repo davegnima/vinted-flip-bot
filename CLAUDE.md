@@ -7,8 +7,8 @@ Userbot Telethon che riceve gli annunci dal tracker (`davegnima/Vinted-Notificat
 ## Regole dell'utente (valgono sempre)
 - Niente AI a pagamento: solo piani gratuiti. Non attivare fatturazione, carte o crediti a pagamento da nessuna parte. UNICA ECCEZIONE, voluta dall'utente il 4/10: la sua chiave Google a pagamento (`GEMINI_API_KEY`, variabile Railway; le chiavi gratuite sono in `GEMINI_API_KEYS`) come ultima riserva, con tetto giornaliero `PAGAMENTO_MAX_RICHIESTE_GIORNO`; nessun'altra spesa e nessuna nuova attivazione di fatturazione.
 - NIENTE API di Vinted e niente scraping di vinted.it da parte di Claude. Il bot scarica le pagine, Claude no.
-- Non toccare `PROXY_LIST` / `PROXY_ESCLUSI`.
-- Non modificare codice, PR, variabili Railway o ricerche del tracker senza ok esplicito dell'utente (salvo che l'utente lo chieda nel messaggio). Prima di unire una PR controllare che la CI sia verde.
+- Non toccare `PROXY_LIST` / `PROXY_ESCLUSI` del worker. I proxy dei tracker (lista nella pagina /config) si copiano tra le istanze col consenso dato dall'utente il 7/10.
+- Dal 7/10 l'utente NON vuole piu' che gli si chiedano gli ok: fare e avvisare a cose fatte (codice, PR, merge, variabili Railway, servizi, ricerche e configurazione dei tracker). Chiedere solo per spese, chiavi/segreti e azioni irreversibili. Prima di unire una PR controllare la CI: se e' rossa per colpa della PR, sistemarla; se e' rossa anche su main (es. `ruff` del tracker), unire e dirlo.
 - Mai scrivere chiavi, password o token in file, commit o PR. Se l'utente incolla una chiave in chat, consigliare di ruotarla.
 - Brand: Celine escluso, Missoni resta. Il banword `weekend` nel tracker esclude Weekend Max Mara di proposito.
 - Risposte in italiano, brevi, senza domande superflue.
