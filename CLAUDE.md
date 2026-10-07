@@ -20,14 +20,17 @@ Userbot Telethon che riceve gli annunci dal tracker (`davegnima/Vinted-Notificat
 13. Dopo ogni deploy verificare che moda e radar ricevano messaggi (`docs/procedure/controllo-deploy.md`).
 14. Unire una PR solo con CI verde; se e' rossa anche su `main` (es. `ruff` del tracker), unire e dirlo.
 15. Aggiornare `STATO.md` a ogni tappa chiusa.
-16. Brand: Celine escluso, Missoni resta. Il banword `weekend` nel tracker esclude Weekend Max Mara di proposito.
+16. Mai inventare dati: un numero che non si misura davvero non si stima e non si corregge; se un numero e' incerto, dire quanto e' sicuro (mai solo "dipende").
+17. Prima di toccare qualcosa: pianificare e ragionare, niente tentativi improvvisati.
+18. Termini tecnici con il nome vero e, tra parentesi, una spiegazione semplice.
+19. Misurare sempre i tre obiettivi: semaforo vicino al Cervello e alla velocita' di vendita, falsi individuati, affari notificati in fretta.
+20. Brand: Celine escluso, Missoni resta. Il banword `weekend` nel tracker esclude Weekend Max Mara di proposito.
 
-Procedure fisse per i lavori ricorrenti (analisi log, controllo deploy, ricerche tracker, ciclo modifica, consumi): `docs/procedure/`.
+Procedure fisse per i lavori ricorrenti (analisi log, ciclo modifica e merge, controllo deploy, variabili Railway, ricerche tracker, consumi, aggiornamento di `STATO.md`): `docs/procedure/`; recap mattutino: `docs/recap.md`.
 
 ## Pipeline
 tracker (messaggio Telegram) -> `process_listing` (`bot/pipeline.py`) -> scrape pagina e foto -> stima rapida fair value (semaforo) -> Occhio (Gemini, vision) -> filtri pre-Cervello -> Cervello (JSON) -> `calcola_verdetto` (`bot/verdetto.py`, deterministico: il modello non calcola margine/ROI/decisione) -> messaggio Telegram.
 - Meccanismi con soglie e variabili (fascia Gemini, semaforo, cascate e quote Gemini, riserva OmniRoute e a pagamento, risparmio, preavviso, scrape pagina leggera, pannello, tracciamento vendite, radar): **`docs/pipeline.md`**. Leggere la sezione che serve prima di toccare quel pezzo.
-- Cascate Gemini: `bot/gemini_stato.py`. La quota giornaliera free si azzera a mezzanotte di Pacific (07:00 UTC con l'ora legale). Riserva a scalata: `bot/riserva_llm.py`.
 
 ## Mappa dei moduli (`bot/`)
 - Config e utilita': `config`, `logger`, `costanti`, `testo`, `parsing`, `tempi`.
@@ -41,7 +44,7 @@ tracker (messaggio Telegram) -> `process_listing` (`bot/pipeline.py`) -> scrape 
 
 ## Test e CI
 - `python3 -m pytest -q` e `python3 -m pyflakes main_telethon.py bot`; la CI (`.github/workflows/ci.yml`) fa lo stesso su Python 3.13. `tests/test_struttura.py` importa ogni modulo da solo: un import circolare lo rompe.
-- Branch di lavoro `claude/...`, PR verso `main`, squash merge.
+- Branch di lavoro `claude/...`, PR verso `main`, squash merge (`docs/procedure/ciclo-modifica.md`).
 
 ## Railway e dove guardare
 - Progetto "Vinted Flip Oracle" `cd06f689-76ef-4b17-aee8-0c04dc03a4d9`, ambiente `6f828acc-20fc-4858-a48b-3f63f57a5a03`. Servizi: `worker` `7f856e1e-dad7-4798-90de-ac6ca77e5756`, `omniroute` `091a30ad-e994-4486-ab56-6f99b2b18521`.
@@ -49,14 +52,9 @@ tracker (messaggio Telegram) -> `process_listing` (`bot/pipeline.py`) -> scrape 
 - OmniRoute: dashboard con login; la password sta nelle variabili del servizio `omniroute`, non in questo file.
 - Railway fa il deploy da `main` a ogni merge (circa 1,5 minuti). Variabili: `.env.example` (solo i nomi).
 
-## Log (dettaglio e filtri in `docs/log.md`)
-- Filtrare SEMPRE con `filter` e finestre strette, `limit` 20-40 per controlli puntuali; per analisi su ore `limit` 500 (finisce in file solo oltre ~80.000 caratteri: allargare il filtro) ed elaborare con `python3`, mai incollare righe a mano.
-- Filtri base: `"| ESITO |"`, `"SKIP non inviato"`, `Traceback`, `"GEMINI_USO"`, `"RISERVA |"`, `"PREAVVISO |"`, `"RICONTROLLO LAMPO"`, `"RADAR |"`. Dopo un deploy solo righe successive a `"Vinted Oracle avviato"`. Con traffico basso dirlo e aspettare.
-
-## Modelli dei lavori ripetuti
-- `docs/modelli/` (PR e merge, analisi dei log, variabili Railway, aggiornamento di `STATO.md`) e `docs/recap.md` (recap mattutino): seguirli quando il lavoro e' quello.
+## Log
+- Regole e filtri: `docs/log.md` e `docs/procedure/analisi-log.md`. In breve: filtri stretti e `limit` 20-40 per i controlli, `limit` 500 su file e `python3` per le analisi, mai righe incollate a mano.
 
 ## Convenzioni
 - Codice e commenti in italiano, stile come quello vicino. Niente modifiche a `prompts.py` senza motivo: le calibrazioni per brand sono frutto di dati reali.
-- Il pannello e la riserva usano `@c` in coda al modello per il prompt compatto; il suffisso non va mai al gateway.
-- Verificare la CI prima di ogni merge; non fare push forzati su branch altrui.
+- Il pannello e la riserva usano `@c` in coda al modello per il prompt compatto; il suffisso non va mai al gateway. Niente push forzati su branch altrui.

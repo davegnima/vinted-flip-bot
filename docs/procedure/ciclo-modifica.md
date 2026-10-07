@@ -1,24 +1,25 @@
-# Ciclo di una modifica
+# Ciclo di una modifica (dal codice al merge e alla verifica)
 
-**Scopo**: portare una modifica dal codice alla produzione verificata, senza chiedere ok (regola del 7/10).
+**Scopo**: portare una modifica in produzione verificata, senza chiedere ok (Railway fa il deploy da `main` a ogni merge, ~1,5 min).
 
-**Input**: cosa cambiare e perche' (dato o richiesta dell'utente).
+**Input**: cosa cambiare e perche' (dato o richiesta dell'utente), file toccati.
 
 **Passi**
-1. `git fetch origin main` e branch `claude/...` ripartito da `origin/main` (main cambia spesso: rileggere i file toccati).
-2. Modifica minima, stile del codice vicino, commenti in italiano; nuova variabile = valore di default sensato + riga in `.env.example`.
-3. Test: `python3 -m pytest -q` e `python3 -m pyflakes main_telethon.py bot` (venv se mancano le dipendenze). Un test nuovo per ogni regola nuova.
-4. Aggiornare `docs/` o `CLAUDE.md` se cambia un meccanismo; `STATO.md` a tappa chiusa.
-5. Commit con perche' e numeri, push, PR (descrizione: problema, modifiche, test).
-6. CI verde -> squash merge. Rossa per colpa della PR -> sistemare. Rossa anche su main -> unire e dirlo.
-7. `controllo-deploy.md`.
+1. `git fetch origin main` e `git checkout -B claude/<branch> origin/main` (main cambia spesso, anche per altre sessioni: rileggere i file toccati).
+2. Modifica minima, stile del codice vicino, commenti in italiano; variabile nuova = default sensato + nome in `.env.example` + riga in `docs/pipeline.md`.
+3. Test: `python3 -m pytest -q` e `python3 -m pyflakes main_telethon.py bot` (0 nomi non definiti; venv se mancano le dipendenze). Un test per ogni regola nuova.
+4. Rileggere il proprio diff cercando cosa farebbe rifiutare la CI; nessun segreto.
+5. `STATO.md` nella stessa PR se la tappa cambia lo stato (`aggiorna-stato.md`).
+6. Commit con perche' e numeri e le righe di attribuzione; `git push --force-with-lease -u origin <branch>`; PR verso `main` (problema, modifiche, test).
+7. CI (workflow `CI`, job `test`, ~25 s): leggere `conclusion` sull'ultimo commit. Rossa per colpa della PR -> sistemare; rossa anche su main -> unire e dirlo. Conflitto (`dirty`): unire `origin/main`, risolvere, ripetere 3-7.
+8. Squash merge, poi `controllo-deploy.md` se tocca il runtime.
 
-**Formato**: cosa e' cambiato (1-3 righe), link alla PR come owner/repo#N, verifica in produzione.
+**Formato**: una frase: PR come owner/repo#N, esito CI, cosa cambia in produzione, verifica fatta, cosa resta all'utente.
 
-**Esempio reale**: davegnima/vinted-flip-bot#88 (radar: prezzo minimo e ricontrolli ridotti) - test 143 ok, CI verde, unita, deploy verificato.
+**Esempi reali**: davegnima/vinted-flip-bot#88 (radar: prezzo minimo e ricontrolli ridotti) - test ok, CI verde, unita, banda verificata. davegnima/vinted-flip-bot#90 (riordino documenti): conflitto con main dopo #89 e #91, risolto con merge di `origin/main`, CI verde, squash.
 
 **Controllo finale**
-- [ ] Branch ripartito da main aggiornato?
-- [ ] Test e pyflakes puliti?
-- [ ] CI verificata prima del merge?
+- [ ] Branch ripartito da main aggiornato e senza conflitti?
+- [ ] Test, pyflakes e CI verdi sull'ultimo commit?
+- [ ] Nessun segreto nel diff?
 - [ ] Produzione verificata dopo il deploy?
