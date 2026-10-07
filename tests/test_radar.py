@@ -25,6 +25,13 @@ def test_classifica_brand_vince_sulla_parola():
     assert radar.classifica_radar("Putter Scotty Cameron Newport")[0] == "golf"
 
 
+def test_brand_lista_completa_ed_esclusi():
+    assert radar.classifica_radar("Collana Christian Dior vintage")[0:2] == ("bijoux_vintage", "christian dior")
+    assert radar.classifica_radar("Hot Toys Iron Man 1/6")[0] == "collezionismo"
+    assert radar.classifica_radar("Leica M6")[0] == "fotografia"
+    assert radar.filtro_livello1("Bracciale Tiffany argento", 60, "argento_gioielli")[1] == "brand_escluso:tiffany"
+
+
 def test_classifica_generico_e_fuori_radar():
     assert radar.classifica_radar("Vecchia lampada da tavolo") == ("illuminazione_design", None, "generico")
     assert radar.classifica_radar("Giacca in lana") == (None, None, "fuori_radar")
