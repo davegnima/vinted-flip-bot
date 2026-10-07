@@ -115,3 +115,15 @@ def test_chiama_gemini_dopo_due_timeout_smette_di_ritentare(monkeypatch):
     testo, _, _ = asyncio.run(ga.chiama_gemini("s", "u", max_retries=6))
     assert testo.startswith("[ERRORE")
     assert len(chiamate) == 2          # dopo 2 timeout di fila la fase e' in pausa: niente altri tentativi
+
+
+def test_stato_riserva_a_pagamento_spiega_perche_e_spenta(monkeypatch):
+    from bot import riserva_llm as r
+    monkeypatch.setattr(r, "GEMINI_CHIAVE_PAGAMENTO", "chiave-a-pagamento")
+    assert r.stato_pagamento()[0]
+    monkeypatch.setattr(r, "GEMINI_CHIAVE_PAGAMENTO", "")
+    monkeypatch.setattr(r, "GEMINI_API_KEY", "")
+    assert r.stato_pagamento() == (False, "GEMINI_API_KEY e' vuota")
+    monkeypatch.setattr(r, "GEMINI_API_KEY", "k1")
+    ok, motivo = r.stato_pagamento()
+    assert not ok and "anche in GEMINI_API_KEYS" in motivo
