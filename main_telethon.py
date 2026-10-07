@@ -42,6 +42,7 @@ from bot import http_clients as hc
 from bot.db import DB_FILE
 from bot.gemini_stato import ripristina_stato_gemini
 from bot.tracciamento import importa_tracciamento_jsonl
+from bot.radar import RADAR_GROUP_ID, e_messaggio_radar, gestisci_annuncio_radar, togli_marcatore
 from bot.costanti import (
     BRAND_BLOCKLIST,
     CATEGORIA_KEYWORDS,
@@ -1407,7 +1408,7 @@ async def on_comando_test_proxy(event):
             pass
 
 
-@client.on(events.NewMessage(chats=TELEGRAM_GROUP_ID))
+@client.on(events.NewMessage(chats=[TELEGRAM_GROUP_ID] + ([RADAR_GROUP_ID] if RADAR_GROUP_ID is not None else [])))
 async def on_new_message(event):
     # Catturati il piu' presto possibile nell'handler (richiesto dall'utente
     # il 2026-09-21, "monitorare il delay tra ogni step"): t_ricevuto_bot e'
@@ -1437,6 +1438,16 @@ async def on_new_message(event):
             return
 
         text = event.message.message or ""
+        # Radar (fase 0, solo osservazione): ricerche fuori dall'abbigliamento, smistate prima della pipeline moda.
+        if e_messaggio_radar(text, event.chat_id):
+            url_radar = extract_url_from_text(text)
+            if not url_radar and event.message.buttons:
+                url_radar = next((b.url for riga in event.message.buttons for b in riga
+                                  if "vinted." in (getattr(b, "url", None) or "")), None)
+            log.info("MESSAGGIO RADAR | msg_id=%s | item=%s", msg_id, _estrai_item_id_da_url(url_radar))
+            await gestisci_annuncio_radar(parse_vinted_tracker_message(togli_marcatore(text)), url_radar,
+                                          t0=t_ricevuto_bot)
+            return
         parsed = parse_vinted_tracker_message(text)
 
         # URL estratto PRIMA del dedup (fix 2026-09-27): l'item id e' la
