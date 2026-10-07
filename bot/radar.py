@@ -29,6 +29,10 @@ from bot.logger import log
 
 RADAR_MARCATORE = os.environ.get("RADAR_MARCATORE", "📡").strip()
 RADAR_GROUP_ID = int(os.environ["RADAR_GROUP_ID"]) if os.environ.get("RADAR_GROUP_ID", "").strip() else None
+# Gruppo dedicato (7/10: "Radar grezzo", da silenziare): se RADAR_GROUP_ID non c'e', all'avvio lo si cerca per nome tra
+# le chat dell'account (risolvi_gruppo_radar). RADAR_CHAT_IDS e' l'insieme delle chat radar ascoltate.
+RADAR_GROUP_TITOLO = os.environ.get("RADAR_GROUP_TITOLO", "Radar grezzo").strip()
+RADAR_CHAT_IDS = {RADAR_GROUP_ID} if RADAR_GROUP_ID is not None else set()
 # Scartati dal livello 1 che si visitano lo stesso (1 su N, scelto dall'item id: deterministico), per misurare
 # quanti affari il filtro butta. 0 = nessuno.
 RADAR_CAMPIONE_SCARTI_OGNI = int(os.environ.get("RADAR_CAMPIONE_SCARTI_OGNI", "10") or 0)
@@ -135,6 +139,23 @@ def _cerca(frase, testo):
     return re.search(r"(?<!\w)" + re.escape(frase) + r"(?!\w)", testo) is not None
 
 
+async def risolvi_gruppo_radar(client):
+    """Cerca tra le chat dell'account il gruppo RADAR_GROUP_TITOLO e lo aggiunge a RADAR_CHAT_IDS; logga l'id (serve
+    anche come chat id nella configurazione del tracker radar). Non solleva mai."""
+    if not RADAR_GROUP_TITOLO:
+        return None
+    try:
+        async for dialogo in client.iter_dialogs():
+            if (dialogo.name or "").strip().lower() == RADAR_GROUP_TITOLO.lower():
+                RADAR_CHAT_IDS.add(dialogo.id)
+                log.info("RADAR GRUPPO | titolo='%s' | id=%s", dialogo.name, dialogo.id)
+                return dialogo.id
+        log.info("RADAR GRUPPO | titolo='%s' non trovato tra le chat", RADAR_GROUP_TITOLO)
+    except Exception:
+        log.warning("Radar: gruppo non risolto:\n%s", traceback.format_exc())
+    return None
+
+
 def togli_marcatore(testo):
     """Il testo del messaggio senza il marcatore radar in testa (il parser cerca il titolo nella prima riga). Pura."""
     t = (testo or "").lstrip()
@@ -143,7 +164,7 @@ def togli_marcatore(testo):
 
 def e_messaggio_radar(testo, chat_id=None):
     """True se il messaggio arriva da una ricerca radar: chat dedicata o marcatore in testa. Pura."""
-    if RADAR_GROUP_ID is not None and chat_id == RADAR_GROUP_ID:
+    if chat_id is not None and (chat_id == RADAR_GROUP_ID or chat_id in RADAR_CHAT_IDS):
         return True
     return bool(RADAR_MARCATORE) and (testo or "").lstrip().startswith(RADAR_MARCATORE)
 

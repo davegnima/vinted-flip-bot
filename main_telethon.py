@@ -42,7 +42,7 @@ from bot import http_clients as hc
 from bot.db import DB_FILE
 from bot.gemini_stato import ripristina_stato_gemini
 from bot.tracciamento import importa_tracciamento_jsonl
-from bot.radar import RADAR_GROUP_ID, e_messaggio_radar, gestisci_annuncio_radar, togli_marcatore
+from bot.radar import RADAR_CHAT_IDS, e_messaggio_radar, gestisci_annuncio_radar, risolvi_gruppo_radar, togli_marcatore
 from bot.costanti import (
     BRAND_BLOCKLIST,
     CATEGORIA_KEYWORDS,
@@ -1408,7 +1408,8 @@ async def on_comando_test_proxy(event):
             pass
 
 
-@client.on(events.NewMessage(chats=[TELEGRAM_GROUP_ID] + ([RADAR_GROUP_ID] if RADAR_GROUP_ID is not None else [])))
+@client.on(events.NewMessage(chats=TELEGRAM_GROUP_ID))
+@client.on(events.NewMessage(func=lambda e: e.chat_id in RADAR_CHAT_IDS and e.chat_id != TELEGRAM_GROUP_ID))
 async def on_new_message(event):
     # Catturati il piu' presto possibile nell'handler (richiesto dall'utente
     # il 2026-09-21, "monitorare il delay tra ogni step"): t_ricevuto_bot e'
@@ -1547,6 +1548,7 @@ async def main():
             pass
     try:
         await client.start()
+        await risolvi_gruppo_radar(client)
         await client.run_until_disconnected()
     finally:
         await chiudi_client_http()
