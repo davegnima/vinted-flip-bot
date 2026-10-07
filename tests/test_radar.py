@@ -38,6 +38,7 @@ def test_filtro_livello1():
     assert radar.filtro_livello1("Lampada Artemide", 900, "illuminazione_design")[1].startswith("prezzo_sopra_tetto")
     assert radar.filtro_livello1("Lampada Artemide", None, "illuminazione_design") == (False, "prezzo_mancante")
     assert radar.filtro_livello1("Giacca", 10, None) == (False, "fuori_radar")
+    assert radar.filtro_livello1("Minifigure LEGO", 5, "lego")[1].startswith("prezzo_sotto_minimo")
 
 
 def test_negazione_annulla_parola_vietata():

@@ -186,21 +186,21 @@ def tracc_registra_gia_venduto(listing_info, url, t0):
         log.warning("Tracciamento: gia' venduto non registrato:\n%s", traceback.format_exc())
 
 
-async def _tracc_serie(item_id, url, brand, prezzo, t0):
+async def _tracc_serie(item_id, url, brand, prezzo, t0, offsets=None):
     """Serie di controlli ancorati a t0: attende ciascun offset, rilegge la pagina e si ferma alla prima
     vendita (o se l'annuncio e' scartato). Registra i secondi reali da t0, la fascia e la classe."""
     item_id = str(item_id)
     storia = []   # (offset, stato): serve a capire se uno "sparito" torna online (legit check) o resta sparito (ban)
     try:
-        await _tracc_serie_interna(item_id, url, brand, prezzo, t0, storia)
+        await _tracc_serie_interna(item_id, url, brand, prezzo, t0, storia, offsets)
     finally:
         if any(st in _STATI_SPARITO for _, st in storia):
             log.info("RICONTROLLO STORIA | item=%s | brand='%s' | stati=%s", item_id, brand or "n/d",
                      " ".join(f"{o}s:{st}" for o, st in storia))
 
 
-async def _tracc_serie_interna(item_id, url, brand, prezzo, t0, storia):
-    for s_dopo in TRACCIAMENTO_SERIE_SECONDI:
+async def _tracc_serie_interna(item_id, url, brand, prezzo, t0, storia, offsets=None):
+    for s_dopo in (offsets or TRACCIAMENTO_SERIE_SECONDI):
         try:
             if item_id in _tracc_stop:
                 return
@@ -243,8 +243,9 @@ async def _tracc_serie_interna(item_id, url, brand, prezzo, t0, storia):
             return
 
 
-def tracc_avvia_serie(listing_info, url, t0):
-    """Subito dopo il primo scrape: avvia la serie di controlli per l'annuncio (se non gia' venduto)."""
+def tracc_avvia_serie(listing_info, url, t0, offsets=None):
+    """Subito dopo il primo scrape: avvia la serie di controlli per l'annuncio (se non gia' venduto). offsets: istanti
+    (secondi da t0) diversi da TRACCIAMENTO_SERIE_SECONDI, es. la serie ridotta del radar."""
     if not TRACCIAMENTO_ATTIVO:
         return
     try:
@@ -255,7 +256,7 @@ def tracc_avvia_serie(listing_info, url, t0):
             _tracc_stop.add(str(item_id))
             return
         asyncio.get_running_loop().create_task(_tracc_serie(
-            item_id, url, listing_info.get("brand"), _a_float(listing_info.get("price"), None), t0))
+            item_id, url, listing_info.get("brand"), _a_float(listing_info.get("price"), None), t0, offsets))
     except Exception:
         log.warning("Tracciamento: serie di controlli non avviata:\n%s", traceback.format_exc())
 
