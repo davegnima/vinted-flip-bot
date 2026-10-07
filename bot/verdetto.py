@@ -3,7 +3,7 @@ import re
 import statistics
 
 
-from bot.config import COMMISSIONE_PROTEZIONE_FISSA, COMMISSIONE_PROTEZIONE_PCT, COMP_DA_MEMORIA_AMMESSI, SCONTO_MAX_TRATTATIVA, SCONTO_TIPICO_TRATTATIVA_VENDITA, SOGLIA_GIORNI_VENDITA_LAMPO, SOGLIA_MARGINE_COMPRA, SOGLIA_MARGINE_COMPRA_ALTA, SOGLIA_MARGINE_TAGLIA_ESTREMA_ECCEZIONE, SOGLIA_MARGINE_URGENZA, SOGLIA_PREZZO_FURTO_ISTANTANEO, SOGLIA_ROI_COMPRA, SOGLIA_ROI_COMPRA_RIDOTTA, SOGLIA_ROI_FURTO_ISTANTANEO, SOGLIA_ROI_TAGLIA_ESTREMA_ECCEZIONE, SOGLIA_ROI_URGENZA, SPEDIZIONE_STIMATA_EUR, TOLLERANZA_COMP_EUR, _env_float
+from bot.config import COMMISSIONE_PROTEZIONE_FISSA, COMMISSIONE_PROTEZIONE_PCT, COMP_DA_MEMORIA_AMMESSI, SCONTO_MAX_TRATTATIVA, SCONTO_TIPICO_TRATTATIVA_VENDITA, SOGLIA_GIORNI_VENDITA_LAMPO, SOGLIA_MARGINE_COMPRA, SOGLIA_MARGINE_COMPRA_SOSPETTO, SOGLIA_MARGINE_PREZZO_BASSO, SOGLIA_MARGINE_RAPPORTO, SOGLIA_PREZZO_BASSO_COMPRA, SOGLIA_RAPPORTO_TARGET_COMPRA, SOGLIA_MARGINE_COMPRA_ALTA, SOGLIA_MARGINE_TAGLIA_ESTREMA_ECCEZIONE, SOGLIA_MARGINE_URGENZA, SOGLIA_PREZZO_FURTO_ISTANTANEO, SOGLIA_ROI_COMPRA, SOGLIA_ROI_COMPRA_RIDOTTA, SOGLIA_ROI_FURTO_ISTANTANEO, SOGLIA_ROI_TAGLIA_ESTREMA_ECCEZIONE, SOGLIA_ROI_URGENZA, SPEDIZIONE_STIMATA_EUR, TOLLERANZA_COMP_EUR, _env_float
 from bot.testo import _escapa_markdown_legacy, _etichetta_piattaforma_da_url, _normalizza_titolo_per_link
 from bot.logger import log
 # ---- fine import ----
@@ -753,6 +753,14 @@ def calcola_verdetto(v, prezzo_prodotto):
         and v["segnali_domanda"]
     )
 
+    # --- capo molto sottoprezzato (richiesto dall'utente il 2026-10-07, dati 4-7/10): un prezzo basso con margine
+    # appena sotto soglia, o un target almeno N volte il prezzo, vende in fretta quanto un COMPRA standard. Passa
+    # dallo stesso ramo del COMPRA: autenticita', difetto grave e taglia estrema restano controllati come sempre.
+    sottoprezzato = margine > 0 and (
+        (prezzo_prodotto <= SOGLIA_PREZZO_BASSO_COMPRA and margine >= SOGLIA_MARGINE_PREZZO_BASSO)
+        or (target >= SOGLIA_RAPPORTO_TARGET_COMPRA * prezzo_prodotto and margine >= SOGLIA_MARGINE_RAPPORTO)
+    )
+
     if v["corrispondenza_brand"] == "brand_estraneo":
         decisione = "NON COMPRARE"
         limiti_applicati.append("brand reale estraneo al segmento monitorato")
@@ -781,7 +789,7 @@ def calcola_verdetto(v, prezzo_prodotto):
             f"difetto strutturale grave ({v.get('descrizione_difetto') or 'non specificato'}): "
             "capo invendibile, decisione forzata a NON COMPRARE"
         )
-    elif supera_soglia or vendita_lampo:
+    elif supera_soglia or vendita_lampo or sottoprezzato:
         # "non_verificabile" NON puo' cadere nel ramo COMPRA. Significa che
         # non c'e' stata nessuna prova di autenticita' da esaminare (nessuna
         # etichetta leggibile), quindi il margine alto e' calcolato su un capo
@@ -796,13 +804,31 @@ def calcola_verdetto(v, prezzo_prodotto):
         #    "non_verificabile" come default prudente quando l'enum non e'
         #    riconosciuto -- prima di questa correzione un JSON sformato del
         #    Cervello si trasformava in un COMPRA.
-        if not supera_soglia:
+        if not supera_soglia and vendita_lampo:
             limiti_applicati.append(
                 f"margine €{margine:.2f} sotto la soglia standard €{SOGLIA_MARGINE_COMPRA:.0f}, ma COMPRA "
                 f"confermato per eccezione 'vendita lampo' (~{v['giorni_stimati_vendita']}gg stimati, "
                 "domanda alta con segnali concreti)"
             )
-        if v["legit_verdetto"] in ("sospetto_servono_altre_foto", "non_verificabile"):
+        elif not supera_soglia:
+            limiti_applicati.append(
+                f"capo molto sottoprezzato: prezzo €{prezzo_prodotto:.2f}, target €{target:.2f} "
+                f"(x{target / prezzo_prodotto:.1f}), margine €{margine:.2f} -- COMPRA anche sotto la soglia standard"
+            )
+        # "sospetto" con margine molto alto (richiesto dall'utente il 2026-10-07): si compra subito e si
+        # verifica l'etichetta dopo, invece di perdere il capo aspettando le foto. Mai con "non_verificabile".
+        sospetto_compra = (
+            v["legit_verdetto"] == "sospetto_servono_altre_foto"
+            and SOGLIA_MARGINE_COMPRA_SOSPETTO > 0
+            and margine >= SOGLIA_MARGINE_COMPRA_SOSPETTO
+        )
+        if sospetto_compra:
+            decisione = "COMPRA"
+            limiti_applicati.append(
+                f"autenticita' sospetta ma margine €{margine:.2f} oltre €{SOGLIA_MARGINE_COMPRA_SOSPETTO:.0f}: "
+                "COMPRA subito, verificare etichette all'arrivo (protezione acquisti per capo non conforme)"
+            )
+        elif v["legit_verdetto"] in ("sospetto_servono_altre_foto", "non_verificabile"):
             decisione = "CHIEDI ALTRE FOTO"
         else:
             decisione = "COMPRA"

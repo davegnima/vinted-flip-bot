@@ -341,3 +341,13 @@ def test_preavviso_brand_e_suono():
     assert preavviso_con_suono({**verde, "fv": 130}, 30)
     assert not preavviso_con_suono({**verde, "fv": 90}, 30)
     assert preavviso_con_suono({**verde, "brand": "jean paul gaultier", "fv": 50}, 30)
+
+
+def test_soglie_semaforo_ritarate():
+    # Soglie del 2026-10-07: 🟢 da fair value x3 (ROI 200%) con margine >= 20, 🟡 da x2, sotto 🔴.
+    from bot.fair_value import stima_fair_value
+    fv = stima_fair_value({"brand": "Prada", "title": "Maglia lana", "price": 1000})["fv"]
+    colore = lambda prezzo: stima_fair_value({"brand": "Prada", "title": "Maglia lana", "price": prezzo})["semaforo"]
+    assert colore(fv / 3.2) == "🟢"
+    assert colore(fv / 2.5) == "🟡"
+    assert colore(fv / 1.6) == "🔴"
