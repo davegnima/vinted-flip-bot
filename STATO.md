@@ -35,3 +35,5 @@ Cronologia completa in `docs/storico.md`. Sintesi: pipeline moda con semaforo, p
 - Niente AI a pagamento; niente API/scraping Vinted da parte di Claude; non toccare `PROXY_LIST` / `PROXY_ESCLUSI`.
 - Log: sempre filtri stretti e `limit` basso; per analisi su ore salvare su file e usare Python.
 - Il recap mattutino (routine 05:47 Europe/Rome) arriva in questa sessione.
+
+- 7/10 sera: lista dell'utente di 92 brand nei moduli del radar (#96; nuovi moduli bijoux_vintage, collezionismo, sport; fascia B Tiffany/Cartier/Bulgari/Castelli/Phaidon/Rizzoli scartata). Tracker radar: 32 ricerche, intervallo 20 s; aggiunte matsuda, cazal, jacques marie mage (cataloghi occhiali 98, 26), mulberry, roberta di camerino, coach vintage, hot toys, scotty cameron, b&b italia, dior collana, ysl orecchini, lacroix (cataloghi 1957, 1952). I cataloghi 1957/1952 con "dior vintage"/"ysl vintage" davano 0-3 annunci vecchi: tolti. Banda dopo #88: ~4,4 GB/giorno (stima su 28 min, per difetto). Da verificare l'8/10 con le nuove ricerche.
