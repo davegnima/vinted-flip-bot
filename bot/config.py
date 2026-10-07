@@ -319,6 +319,10 @@ SOGLIA_MARGINE_ALERT_CHIEDI_FOTO = 30.0
 # nell'annuncio (case-insensitive), stessa logica gia' usata altrove nel
 # file per i controlli sul brand.
 BRAND_ESCLUSI_ALERT_CHIEDI_FOTO = ("miu miu", "loewe", "arc'teryx", "arcteryx", "prada")
+# Dal 7/10 (dati reali delle 24 h precedenti, solo CHIEDI ALTRE FOTO con vendita tracciata): i brand esclusi qui sopra con
+# margine >= 50 EUR (Prada 78 e 76, Miu Miu 79 e 65) sono venduti in fretta 3 volte su 4 (campione piccolo: 4 annunci).
+# Per questi brand l'alert parte solo se il margine raggiunge l'obiettivo dell'utente (50 EUR); sotto resta escluso.
+SOGLIA_MARGINE_ALERT_CHIEDI_FOTO_BRAND_ESCLUSI = 50.0
 
 VINTED_TRACKER_NAME_HINTS = ("vinted", "tracker")
 

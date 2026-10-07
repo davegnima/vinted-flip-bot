@@ -283,6 +283,7 @@ def test_pagamento_ultima_riserva_e_tetto(monkeypatch):
     rl._panel_pausa.clear()
     assert not rl.pagamento_disponibile()
     assert rl.lista_con_pagamento("cervello", ["a/uno"]) == ["a/uno"]
+    rl.db.salva_pagamento(rl._pagamento_conteggio["giorno"], 0)   # il contatore e' nel DB di test condiviso
     rl._pagamento_conteggio.update(giorno=None, n=0); rl._panel_pausa.clear()
 
 
@@ -351,3 +352,9 @@ def test_soglie_semaforo_ritarate():
     assert colore(fv / 3.2) == "🟢"
     assert colore(fv / 2.5) == "🟡"
     assert colore(fv / 1.6) == "🔴"
+
+
+def test_chiedi_foto_brand_esclusi_solo_con_margine_alto():
+    from bot.scheda import chiedi_foto_da_notificare as n
+    assert n("Max Mara", 31) and not n("Max Mara", 30) and not n("Max Mara", None)
+    assert not n("Prada", 49) and n("Prada", 50) and n("Miu Miu", 79) and not n("Loewe", 41)

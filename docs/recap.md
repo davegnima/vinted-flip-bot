@@ -26,6 +26,10 @@ Riferimento 5/10: base veloci 26,6%, 🟢 46%, 🟡 29%, 🔴 9%, COMPRA 55%, TR
 ## Monitoraggi aperti
 Quelli in "Da controllare" di `STATO.md`, piu': `PREAVVISO |` (push al giorno, `suono=si|no`, precisione e recall sui venduti entro 30 s e 5 min), `Preavviso non inviato`, `Markdown fallita`, `Gemini TIMEOUT`, `key #N NON VALIDA`, `RISERVA |` (anche `PAGAMENTO`), `Pagina annuncio leggera`, `RIEPILOGO BANDA`, `RICONTROLLO RIAPPARSO`.
 
+## Dati da scaricare ogni mattina (metodo, dal 7/10)
+Il limite di 500 righe per chiamata taglia le finestre lunghe (parte dalle piu' recenti): controllare sempre `min`/`max` dei timestamp di ogni file e riscaricare i buchi. Finestre da 6 h per `ESITO` + `classe=`; finestre da 3 h per `PREAVVISO |` (una riga per annuncio, serve a calibrare il semaforo con `RICONTROLLO LAMPO` via `item=`) e per `RICONTROLLO STORIA` / `RICONTROLLO RIAPPARSO` (spariti seguiti 1 h). Un annuncio conta solo se ha `ESITO` e `classe=` nei dati scaricati: dichiarare quanti ne restano fuori.
+Timeout di Gemini: tasso per modello e fase = `Gemini TIMEOUT` / (`GEMINI_USO` + `Gemini TIMEOUT`); dal 7/10 `GEMINI_USO` riporta anche `Nms` (durata della chiamata riuscita) e `tentativo N`: calcolare mediana e p90 per modello e proporre il timeout di conseguenza (oggi 30 s al primo tentativo, 2 timeout di fila = pausa 120 s). Riserva a pagamento: `PAGAMENTO richieste_oggi=N/600` (il contatore ora sta nel DB: sopravvive ai riavvii). `CHIEDI ALTRE FOTO`: quota di veloci per brand e fascia di margine, per tarare l'alert (`SOGLIA_MARGINE_ALERT_CHIEDI_FOTO` 30 EUR; brand esclusi dal margine 50 EUR).
+
 ## Vista per brand
 Una riga per brand con >= 3 annunci: analizzati, esiti, margine e ROI medi dei COMPRA/TRATTA, quanti qualificano (margine >= 50 EUR e ROI >= 100%), classi con recall e precisione, spariti a parte, preavvisi, falsi/sospetti. Chiudere con 3-5 brand su cui agire. Campioni < 5 annunci vanno segnalati. Se `PANEL |` ha dati, indicare chi diverge dal PRIMARIO.
 

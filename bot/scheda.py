@@ -7,7 +7,8 @@ import difflib
 import traceback
 
 
-from bot.config import BRAND_ESCLUSI_ALERT_CHIEDI_FOTO, MAX_ANALISI_PARALLELE, SOGLIA_MARGINE_ALERT_CHIEDI_FOTO, TELEGRAM_ALERT_CHAT_ID, TELEGRAM_OWNER_CHAT_ID
+from bot.config import (BRAND_ESCLUSI_ALERT_CHIEDI_FOTO, MAX_ANALISI_PARALLELE, SOGLIA_MARGINE_ALERT_CHIEDI_FOTO,
+                        SOGLIA_MARGINE_ALERT_CHIEDI_FOTO_BRAND_ESCLUSI, TELEGRAM_ALERT_CHAT_ID, TELEGRAM_OWNER_CHAT_ID)
 from bot.verdetto import EMOJI_DECISIONE, ETICHETTA_CONFIDENZA, ETICHETTA_RISCHIO, _a_float, _estrai_item_id_da_url
 from bot.testo import _escapa_markdown_legacy
 from bot.fair_value import _riga_fair_value_testo, _riga_fair_value_unica
@@ -256,6 +257,17 @@ def _preavviso_inviato(listing_info, id_msg, tipo, riga_tempi, secondi, t_inizio
     return {"msg_id": id_msg, "tipo": tipo, "base": listing_info, "riga_tempi": riga_tempi}
 
 
+
+def chiedi_foto_da_notificare(brand, margine):
+    """True se un CHIEDI ALTRE FOTO merita l'alert nel gruppo: margine sopra SOGLIA_MARGINE_ALERT_CHIEDI_FOTO; per i brand
+    in BRAND_ESCLUSI_ALERT_CHIEDI_FOTO solo dal margine SOGLIA_MARGINE_ALERT_CHIEDI_FOTO_BRAND_ESCLUSI (50 EUR). Pura."""
+    if margine is None or margine <= SOGLIA_MARGINE_ALERT_CHIEDI_FOTO:
+        return False
+    nome = (brand or "").strip().lower()
+    if any(b in nome for b in BRAND_ESCLUSI_ALERT_CHIEDI_FOTO):
+        return margine >= SOGLIA_MARGINE_ALERT_CHIEDI_FOTO_BRAND_ESCLUSI
+    return True
+
 async def invia_preavviso(listing_info, url, photo_bytes_list=None, riga_tempi=None, secondi=None):
     """Manda il PREAVVISO nel gruppo COMPRA (con suono se listing_info["preavviso_suono"]): ALBUM con tutte le foto (una sola foto: foto con bottone),
     didascalia = testo_preavviso. Senza foto: solo testo con bottone. A fine analisi lo stesso messaggio viene
@@ -470,14 +482,7 @@ async def _invia_risultato_telegram(listing_info, url, photo_bytes_list, header,
     # stesso messaggio: su questi brand l'autenticita' ancora "sospetta"
     # pesa piu' del margine, meglio aspettare le foto aggiuntive prima del
     # push.
-    brand_annuncio_alert = (listing_info.get("brand") or "").strip().lower()
-    e_brand_escluso_alert = any(b in brand_annuncio_alert for b in BRAND_ESCLUSI_ALERT_CHIEDI_FOTO)
-    e_chiedi_foto_di_valore = (
-        decisione == "CHIEDI ALTRE FOTO"
-        and margine is not None
-        and margine > SOGLIA_MARGINE_ALERT_CHIEDI_FOTO
-        and not e_brand_escluso_alert
-    )
+    e_chiedi_foto_di_valore = decisione == "CHIEDI ALTRE FOTO" and chiedi_foto_da_notificare(listing_info.get("brand"), margine)
     # Preavviso gia' nel gruppo (album con tutte le foto): lo si AGGIORNA col verdetto invece di mandare altri
     # messaggi (richiesto dall'utente il 2026-10-04). Vale per ogni esito; se la modifica non riesce, per i soli
     # esiti da notificare si ricade sul testo in risposta all'album.

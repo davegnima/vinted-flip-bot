@@ -76,6 +76,7 @@ async def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, groundi
     for attempt in range(1, max_retries_effettivi + 1):
         if (attempt > 1 and time.time() - t_inizio >= GEMINI_BUDGET_CHIAMATA_S) or gemini_in_pausa_timeout(ruolo):
             break   # budget di tempo finito o fase in pausa per timeout: errore subito, a valle decide la riserva
+        t_tentativo = time.time()
         try:
             # Timeout abbassato da 90 a 30s (richiesto dall'utente il
             # 2026-09-22): 90s era pensato per una risposta lenta ma valida,
@@ -114,7 +115,7 @@ async def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, groundi
             if resp.is_success:
                 _gemini_registra_esito(True)
                 gemini_timeout_azzera(ruolo)
-                log.info("GEMINI_USO | %s | %s", ruolo, modello_usato)
+                log.info("GEMINI_USO | %s | %s | %dms | tentativo %d", ruolo, modello_usato, (time.time() - t_tentativo) * 1000, attempt)
                 data = resp.json()
                 candidates = data.get("candidates", [])
                 if candidates:
@@ -325,6 +326,7 @@ async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca
         for attempt in range(1, tentativi_effettivi + 1):
             if (attempt > 1 and time.time() - t_inizio >= GEMINI_BUDGET_CHIAMATA_S) or gemini_in_pausa_timeout(ruolo):
                 break   # budget di tempo finito o fase in pausa per timeout (vedi chiama_gemini)
+            t_tentativo = time.time()
             try:
                 # Timeout abbassato da 90 a 30s (richiesto dall'utente il
                 # 2026-09-22, stesso motivo di chiama_gemini).
@@ -371,7 +373,7 @@ async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca
                     resp.raise_for_status()
                 _gemini_registra_esito(True)
                 gemini_timeout_azzera(ruolo)
-                log.info("GEMINI_USO | %s | %s", ruolo, modello_usato)
+                log.info("GEMINI_USO | %s | %s | %dms | tentativo %d", ruolo, modello_usato, (time.time() - t_tentativo) * 1000, attempt)
                 return resp.json()
             except Exception as e:
                 if isinstance(e, httpx.TimeoutException):
