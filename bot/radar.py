@@ -25,6 +25,7 @@ from zoneinfo import ZoneInfo
 from bot.verdetto import _a_float, _estrai_item_id_da_url
 from bot import db
 from bot import tracciamento as tr
+from bot import radar_matrice as rm
 from bot.vinted_scrape import scrape_vinted_listing
 from bot.logger import log
 # ---- fine import ----
@@ -212,8 +213,9 @@ def classifica_radar(titolo, brand=None):
     return None, None, "fuori_radar"
 
 
-def filtro_livello1(titolo, prezzo, modulo):
-    """(passa, motivo) sul solo messaggio del tracker. Pura."""
+def filtro_livello1(titolo, prezzo, modulo, brand=None, matrice=None):
+    """(passa, motivo) sul solo messaggio del tracker. Se il titolo cita un modello della matrice (`radar_matrice`)
+    decide il suo buy_max invece del tetto del modulo. Pura (matrice None = quella caricata all'avvio)."""
     if modulo is None:
         return False, "fuori_radar"
     escluso = next((b for b in RADAR_BRAND_ESCLUSI if _cerca(b, (titolo or "").lower())), None)
@@ -226,6 +228,13 @@ def filtro_livello1(titolo, prezzo, modulo):
         return False, "prezzo_mancante"
     if prezzo < RADAR_PREZZO_MIN:
         return False, f"prezzo_sotto_minimo:{RADAR_PREZZO_MIN:g}"
+    esito, riga = rm.valuta_modello(titolo, brand, prezzo, rm.MATRICE if matrice is None else matrice)
+    if esito == "sotto_soglia":
+        return False, "modello_sotto_soglia:" + _v(riga.get("id") or riga.get("modello"))
+    if esito == "sopra_buy_max":
+        return False, f"sopra_buy_max:{riga['buy_max']:g}"
+    if esito == "ok":
+        return True, "ok"
     tetto = RADAR_MODULI[modulo]["prezzo_max_l1"]
     if prezzo > tetto:
         return False, f"prezzo_sopra_tetto:{tetto:g}"
@@ -277,13 +286,17 @@ async def gestisci_annuncio_radar(parsed, url, t0=None):
     titolo = parsed.get("title") or ""
     prezzo = _a_float(parsed.get("price"), None)
     modulo, brand_radar, tipo = classifica_radar(titolo, parsed.get("brand"))
-    passa, motivo = filtro_livello1(titolo, prezzo, modulo)
+    passa, motivo = filtro_livello1(titolo, prezzo, modulo, parsed.get("brand"))
+    riga = rm.trova_modello(titolo, parsed.get("brand"), rm.MATRICE) if modulo else None
+    modello = (riga.get("id") or riga.get("modello")) if riga else None
+    bm = riga.get("buy_max") if riga else None
     campione = (not passa) and modulo is not None and not motivo.startswith("prezzo_sotto") and nel_campione_scarti(item_id)
     base = {"titolo": titolo[:120], "prezzo": prezzo, "modulo": modulo, "brand_radar": brand_radar,
-            "tipo": tipo, "l1": "passa" if passa else "scarto", "motivo": motivo, "campione": campione}
+            "tipo": tipo, "l1": "passa" if passa else "scarto", "motivo": motivo, "campione": campione,
+            "modello": modello, "buy_max": bm}
     if not (passa or campione):
-        log.info("RADAR SCARTO | item=%s | modulo=%s | tipo=%s | motivo=%s | prezzo=%s | titolo=%s", item_id,
-                 modulo or "-", tipo, motivo, prezzo, titolo[:60])
+        log.info("RADAR SCARTO | item=%s | modulo=%s | tipo=%s | motivo=%s | prezzo=%s | modello=%s | titolo=%s",
+                 item_id, modulo or "-", tipo, motivo, prezzo, _v(modello), titolo[:60])
         db.scrivi_evento("radar", item_id, brand_radar, base)
         return
     try:
@@ -303,10 +316,12 @@ async def gestisci_annuncio_radar(parsed, url, t0=None):
                 "v_rec": pagina.get("seller_feedback_count"), "v_art": pagina.get("seller_items_count"),
                 "v_paese": pagina.get("seller_country"), "eta_s": round(time.time() - t0, 1)}
         log.info(
-            "RADAR | item=%s | esito=%s | modulo=%s | brand=%s | tipo=%s | prezzo=%s | catalogo=%s | cond=%s | "
+            "RADAR | item=%s | esito=%s | modulo=%s | brand=%s | tipo=%s | prezzo=%s | modello=%s | buy_max=%s | "
+            "catalogo=%s | cond=%s | "
             "n_foto=%s | desc_len=%s | vietata_desc=%s | stato=%s | pref=%s | v_rec=%s | v_art=%s | v_paese=%s | "
             "titolo=%s",
-            item_id, esito, modulo, _v(brand_radar), tipo, prezzo, _v(dati["catalog_id"]), _v(dati["cond"]),
+            item_id, esito, modulo, _v(brand_radar), tipo, prezzo, _v(modello), _v(bm), _v(dati["catalog_id"]),
+            _v(dati["cond"]),
             n_foto, len(desc), _v(dati["vietata_desc"]), _v(dati["stato"]), _v(dati["pref"]), _v(dati["v_rec"]),
             _v(dati["v_art"]), _v(dati["v_paese"]), titolo[:60],
         )
