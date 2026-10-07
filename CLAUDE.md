@@ -4,14 +4,25 @@ Userbot Telethon che riceve gli annunci dal tracker (`davegnima/Vinted-Notificat
 
 **A inizio sessione (o dopo una compattazione) rileggere `STATO.md`**: stato corrente, controlli da fare e punti aperti. Aggiornarlo a ogni tappa chiusa.
 
-## Regole dell'utente (valgono sempre)
-- Niente AI a pagamento: solo piani gratuiti. Non attivare fatturazione, carte o crediti a pagamento da nessuna parte. UNICA ECCEZIONE, voluta dall'utente il 4/10: la sua chiave Google a pagamento (`GEMINI_API_KEY`, variabile Railway; le chiavi gratuite sono in `GEMINI_API_KEYS`) come ultima riserva, con tetto giornaliero `PAGAMENTO_MAX_RICHIESTE_GIORNO`; nessun'altra spesa e nessuna nuova attivazione di fatturazione.
-- NIENTE API di Vinted e niente scraping di vinted.it da parte di Claude. Il bot scarica le pagine, Claude no.
-- Non toccare `PROXY_LIST` / `PROXY_ESCLUSI` del worker. I proxy dei tracker (lista nella pagina /config) si copiano tra le istanze col consenso dato dall'utente il 7/10.
-- Dal 7/10 l'utente NON vuole piu' che gli si chiedano gli ok: fare e avvisare a cose fatte (codice, PR, merge, variabili Railway, servizi, ricerche e configurazione dei tracker). Chiedere solo per spese, chiavi/segreti e azioni irreversibili. Prima di unire una PR controllare la CI: se e' rossa per colpa della PR, sistemarla; se e' rossa anche su main (es. `ruff` del tracker), unire e dirlo.
-- Mai scrivere chiavi, password o token in file, commit o PR. Se l'utente incolla una chiave in chat, consigliare di ruotarla.
-- Brand: Celine escluso, Missoni resta. Il banword `weekend` nel tracker esclude Weekend Max Mara di proposito.
-- Risposte in italiano, brevi, senza domande superflue.
+## Regole dell'utente (valgono sempre; le prime 3 contano di piu')
+1. Non chiedere ok: fare e avvisare a cose fatte (codice, PR, merge, variabili Railway, servizi, ricerche e configurazione dei tracker). Chiedere solo per spese, segreti e azioni irreversibili.
+2. Se una cosa la puoi fare tu (Railway, tracker, URL, config), falla: non dare all'utente istruzioni da eseguire.
+3. Ogni avviso deve poter dare margine >= 50 EUR e ROI >= 100%: pochi avvisi buoni, niente rumore (nemmeno nei gruppi Telegram).
+4. Risposte in italiano: il risultato in una frase, poi dettagli brevi. Niente domande superflue.
+5. Quando l'utente deve fare qualcosa: passi numerati, cosa cliccare e dove.
+6. Niente AI o servizi a pagamento. Unica eccezione (4/10): la chiave Google dell'utente `GEMINI_API_KEY` come ultima riserva, distinta da `GEMINI_API_KEYS`, con tetto `PAGAMENTO_MAX_RICHIESTE_GIORNO`.
+7. Niente API ne' scraping di vinted.it da parte di Claude: le pagine le scarica il bot (Claude puo' costruire URL, non visitarli).
+8. Mai chiavi, password o token in file, commit, PR o chat; se compaiono nei log non riportarli; se l'utente ne incolla una, consigliare di ruotarla.
+9. Non toccare `PROXY_LIST` / `PROXY_ESCLUSI` del worker. I proxy dei tracker (pagina /config) si copiano tra le istanze (consenso del 7/10).
+10. Ricerche: `price_to` circa meta' della rivendita veloce; sotto 15 EUR (LEGO 25) niente.
+11. Stime dichiarate come stime; i prezzi di rivendita si ricavano dai dati, non si inventano.
+12. Banda proxy 250 GB al mese: dopo ogni cambio di volume controllare `RIEPILOGO BANDA` (`docs/procedure/consumi.md`).
+13. Dopo ogni deploy verificare che moda e radar ricevano messaggi (`docs/procedure/controllo-deploy.md`).
+14. Unire una PR solo con CI verde; se e' rossa anche su `main` (es. `ruff` del tracker), unire e dirlo.
+15. Aggiornare `STATO.md` a ogni tappa chiusa.
+16. Brand: Celine escluso, Missoni resta. Il banword `weekend` nel tracker esclude Weekend Max Mara di proposito.
+
+Procedure fisse per i lavori ricorrenti (analisi log, controllo deploy, ricerche tracker, ciclo modifica, consumi): `docs/procedure/`.
 
 ## Pipeline
 tracker (messaggio Telegram) -> `process_listing` (`bot/pipeline.py`) -> scrape pagina e foto -> stima rapida fair value (semaforo) -> Occhio (Gemini, vision) -> filtri pre-Cervello -> Cervello (JSON) -> `calcola_verdetto` (`bot/verdetto.py`, deterministico: il modello non calcola margine/ROI/decisione) -> messaggio Telegram.
