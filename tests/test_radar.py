@@ -13,7 +13,7 @@ def test_messaggio_radar_dal_marcatore():
 
 
 def test_messaggio_radar_dalla_chat(monkeypatch):
-    monkeypatch.setattr(radar, "RADAR_GROUP_ID", -200)
+    monkeypatch.setattr(radar, "RADAR_CHAT_IDS", {-200})
     assert radar.e_messaggio_radar("🆕 Lampada", chat_id=-200)
     assert not radar.e_messaggio_radar("🆕 Lampada", chat_id=-100)
 
@@ -82,3 +82,18 @@ def test_promosso_visita_la_pagina_una_volta(monkeypatch):
     asyncio.run(radar.gestisci_annuncio_radar(parsed, url))
     asyncio.run(radar.gestisci_annuncio_radar(parsed, url))
     assert visitate == [(url, False)]
+
+
+def test_risolvi_gruppo_per_nome(monkeypatch):
+    class Dialogo:
+        def __init__(self, name, id):
+            self.name, self.id = name, id
+
+    class Client:
+        async def iter_dialogs(self):
+            for d in (Dialogo("Moda", -100), Dialogo("Radar grezzo", -300)):
+                yield d
+
+    monkeypatch.setattr(radar, "RADAR_CHAT_IDS", set())
+    assert asyncio.run(radar.risolvi_gruppo_radar(Client())) == -300
+    assert radar.e_messaggio_radar("🆕 Lampada", chat_id=-300)
