@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS eventi (
     item_id TEXT, brand TEXT, dati TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS eventi_tipo_ts ON eventi (tipo, ts);
 CREATE INDEX IF NOT EXISTS eventi_item ON eventi (item_id);
+CREATE TABLE IF NOT EXISTS pagamento_giorno (giorno TEXT PRIMARY KEY, n INTEGER NOT NULL);
 """
 
 _conn = None
@@ -113,6 +114,16 @@ def leggi_eventi(tipo, dal_ts=0.0, limite=100000):
 def conta_eventi(tipo):
     r = _leggi("SELECT COUNT(*) FROM eventi WHERE tipo = ?", (tipo,))
     return r[0][0] if r else 0
+
+
+# ---- riserva a pagamento: richieste del giorno (UTC), cosi' il tetto regge ai riavvii -----------------------
+def salva_pagamento(giorno, n):
+    return _esegui("INSERT OR REPLACE INTO pagamento_giorno (giorno, n) VALUES (?, ?)", (giorno, int(n)))
+
+
+def carica_pagamento(giorno):
+    r = _leggi("SELECT n FROM pagamento_giorno WHERE giorno = ?", (giorno,))
+    return int(r[0][0]) if r else 0
 
 
 # ---- stato Gemini ----------------------------------------------------------------------------------------

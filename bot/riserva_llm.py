@@ -19,6 +19,8 @@ from bot.foto import costruisci_parts_foto
 from bot.logger import log
 import time
 
+from bot import db
+
 ISTRUZIONE_SOLO_JSON = "\n\nRispondi SOLO con un oggetto JSON valido conforme a questo schema, senza altro testo:\n"
 
 
@@ -66,7 +68,8 @@ def pagamento_disponibile(adesso=None):
         return False
     giorno = time.strftime("%Y-%m-%d", time.gmtime(adesso if adesso is not None else time.time()))
     if _pagamento_conteggio["giorno"] != giorno:
-        _pagamento_conteggio.update(giorno=giorno, n=0)
+        # il contatore sta anche nel DB: un riavvio (deploy) non lo azzera
+        _pagamento_conteggio.update(giorno=giorno, n=db.carica_pagamento(giorno))
     return _pagamento_conteggio["n"] < PAGAMENTO_MAX_RICHIESTE_GIORNO
 
 
@@ -164,6 +167,7 @@ async def _prova_in_ordine(fase, lista, sistema_per, contenuto, max_tokens, vali
             if not pagamento_disponibile():
                 continue
             _pagamento_conteggio["n"] += 1
+            db.salva_pagamento(_pagamento_conteggio["giorno"], _pagamento_conteggio["n"])
             testo, ms, err = await _panel_chiama(GEMINI_MODELLO_PAGAMENTO, sistema_per(False), contenuto, max_tokens,
                                                  url=GEMINI_URL_COMPAT, chiave=GEMINI_CHIAVE_PAGAMENTO)
         else:

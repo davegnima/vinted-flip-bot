@@ -60,3 +60,16 @@ def test_esito_e_panel_scrivono_anche_nel_db(monkeypatch, caplog):
     pn = db.leggi_eventi("panel")
     assert es and es[0]["item_id"] == "123" and es[0]["esito"] == "COMPRA" and es[0]["target"] == "120"
     assert pn and pn[0]["modello"] == "modello-z" and pn[0]["tipo"] == "cervello"
+
+
+def test_contatore_pagamento_sopravvive_al_riavvio(db_pulito, monkeypatch):
+    import time
+    import bot.riserva_llm as rl
+    giorno = time.strftime("%Y-%m-%d", time.gmtime())
+    monkeypatch.setattr(rl, "GEMINI_CHIAVE_PAGAMENTO", "chiave-finta")
+    db.salva_pagamento(giorno, 7)
+    rl._pagamento_conteggio.update(giorno=None, n=0)         # come dopo un riavvio: memoria vuota
+    assert rl.pagamento_disponibile() and rl._pagamento_conteggio["n"] == 7
+    monkeypatch.setattr(rl, "PAGAMENTO_MAX_RICHIESTE_GIORNO", 7)
+    assert not rl.pagamento_disponibile()                      # il tetto vale anche dopo il riavvio
+    rl._pagamento_conteggio.update(giorno=None, n=0)
