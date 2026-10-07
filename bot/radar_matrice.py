@@ -95,10 +95,14 @@ def prepara(righe):
     for r in pronte:
         for w in set().union(*r["_chiavi"]):
             df[w] = df.get(w, 0) + 1
+    # Le parole del brand ("scotty", "cameron") non contano: sono rare tra le righe ma non distinguono il modello.
+    parole_brand = set().union(*(b for r in pronte for b in r["_brand"])) if pronte else set()
     n = len(pronte) + 1
     for r in pronte:
-        r["_pesi"] = {k: round(max(idf := [math.log(n / df[w]) for w in k]) + 0.01 * sum(idf), 6)
-                      for k in r["_chiavi"]}
+        r["_pesi"] = {}
+        for k in r["_chiavi"]:
+            idf = [math.log(n / df[w]) for w in k if w not in parole_brand] or [0.1]
+            r["_pesi"][k] = round(max(idf) + 0.01 * sum(idf), 6)
     return pronte
 
 
