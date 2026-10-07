@@ -259,3 +259,29 @@ def test_reset_del_provider_vale_anche_per_i_modelli_con_suffisso_compatto():
     pn._panel_reset_s["x/9"] = 3
     pn._panel_segna_errore("x/9@c", "http429", adesso=500)
     assert pn._panel_pausa["x/9@c"] == 500 + 10
+
+
+def test_compra_capo_sottoprezzato():
+    # 10 EUR con target 30 (x3, dopo lo sconto ASK di default del 25%): margine sotto i 25 EUR standard, ma COMPRA
+    # per la via "sottoprezzato".
+    r = m.calcola_verdetto(m.valida_payload_cervello(_v(40))[0], 10.0)
+    assert 15 <= r["margine"] < 25 and r["decisione"] == "COMPRA"
+    assert any("sottoprezzato" in x for x in r["limiti_applicati"])
+    # Stesso margine ma prezzo alto e rapporto basso: niente via sottoprezzato.
+    r = m.calcola_verdetto(m.valida_payload_cervello(_v(90))[0], 60.0)
+    assert r["decisione"] != "COMPRA"
+    # Il falso resta NON COMPRARE anche se sottoprezzato.
+    r = m.calcola_verdetto(m.valida_payload_cervello(_v(40, legit_verdetto="probabilmente_falso"))[0], 10.0)
+    assert r["decisione"] == "NON COMPRARE"
+
+
+def test_sospetto_con_margine_alto_diventa_compra():
+    sospetto = _v(160, legit_verdetto="sospetto_servono_altre_foto")
+    r = m.calcola_verdetto(m.valida_payload_cervello(sospetto)[0], 30.0)
+    assert r["margine"] >= 80 and r["decisione"] == "COMPRA"
+    # Margine sotto 80: resta CHIEDI ALTRE FOTO.
+    r = m.calcola_verdetto(m.valida_payload_cervello(_v(140, legit_verdetto="sospetto_servono_altre_foto"))[0], 30.0)
+    assert r["margine"] < 80 and r["decisione"] == "CHIEDI ALTRE FOTO"
+    # "non_verificabile" non compra mai.
+    r = m.calcola_verdetto(m.valida_payload_cervello(_v(160, legit_verdetto="non_verificabile"))[0], 30.0)
+    assert r["decisione"] == "CHIEDI ALTRE FOTO"

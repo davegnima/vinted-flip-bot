@@ -203,8 +203,10 @@ def _fattori_da_env(testo):
 # In piu' del fattore globale (Missoni: solo prima linea). Modificabile da Railway: FAIR_VALUE_TARATURA_BRAND.
 FAIR_VALUE_TARATURA_BRAND = _fattori_da_env(os.environ.get(
     "FAIR_VALUE_TARATURA_BRAND", "missoni=1.10,brunello cucinelli=1.15"))
-# Le stime a confidenza bassa ora hanno un colore (prima ⚪), ma con soglie piu' alte di questo fattore.
-FAIR_VALUE_RIGORE_BASSA = _env_float("FAIR_VALUE_RIGORE_BASSA", 1.5)
+# Le stime a confidenza bassa ora hanno un colore (prima ⚪), con soglie moltiplicate per questo fattore. Dal
+# 2026-10-07 vale 1 (era 1,5): nei dati 4-7/10 un 🟢 a confidenza bassa vendeva veloce quanto uno ad alta (33% vs 36%)
+# e con le nuove soglie del semaforo il fattore 1,5 scartava proprio la fascia x3-4, la piu' redditizia.
+FAIR_VALUE_RIGORE_BASSA = _env_float("FAIR_VALUE_RIGORE_BASSA", 1.0)
 # Borse (watch 5): (minimo, fair value, massimo) per modelli correnti in
 # buono stato -- stime da conoscenza di mercato, molto variabili per modello.
 FAIR_VALUE_BORSE = {
@@ -228,9 +230,12 @@ FAIR_VALUE_SCONTO_COMP = 0.70  # solo documentazione: gia' applicato nella tabel
 
 
 # Semaforo: ROI = (fair value - prezzo) / prezzo.
-FAIR_VALUE_ROI_VERDE = _env_float("FAIR_VALUE_ROI_VERDE", 100)
-FAIR_VALUE_ROI_GIALLO = _env_float("FAIR_VALUE_ROI_GIALLO", 40)
-FAIR_VALUE_MARGINE_MIN_VERDE = _env_float("FAIR_VALUE_MARGINE_MIN_VERDE", 15)
+# Ritarato il 2026-10-07 (richiesta dell'utente) sui 337 annunci 4-7/10 con semaforo e vendita tracciata. Venduti
+# entro 15 min per fair value/prezzo: <1 9%, 1-1,5 13%, 1,5-2 14%, 2-3 21%, 3-4 41%, 4+ 48%: il salto vero e' a x3.
+# Prima (ROI 100/40, margine 15): 🟢 36%, 🟡 17%, 🔴 11%. Ora (ROI 200/100, margine 20): 🟢 44%, 🟡 21%, 🔴 12%.
+FAIR_VALUE_ROI_VERDE = _env_float("FAIR_VALUE_ROI_VERDE", 200)
+FAIR_VALUE_ROI_GIALLO = _env_float("FAIR_VALUE_ROI_GIALLO", 100)
+FAIR_VALUE_MARGINE_MIN_VERDE = _env_float("FAIR_VALUE_MARGINE_MIN_VERDE", 20)
 # PREAVVISO (richiesto dall'utente il 2026-10-04): il 37% degli affari e' venduto prima del verdetto (mediana ~30 s),
 # quindi la scheda con il semaforo (che parte ~4 s dopo il messaggio) diventa un push con suono quando la stima
 # rapida e' promettente. NON cambia il semaforo (usato da ruoli_gemini e dal filtro): e' una regola a parte.

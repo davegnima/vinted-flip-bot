@@ -338,6 +338,18 @@ def _env_float(nome, default):
 
 MAX_ANALISI_PARALLELE = max(1, int(os.environ.get("MAX_ANALISI_PARALLELE", "4")))
 
+# Due vie in piu' per il COMPRA (richieste dall'utente il 2026-10-07 dopo l'analisi 4-7/10: 1031 annunci con vendita
+# tracciata). Venduti entro 15 min per rapporto target/prezzo: <1,5 9%, 2-3 24%, 3-5 53%, >5 65%; i TRATTA a <=20 EUR
+# con margine >=20 EUR vendevano veloci il 60% (15 casi), come i COMPRA (54%). Vedi l'uso in calcola_verdetto.
+SOGLIA_PREZZO_BASSO_COMPRA = _env_float("SOGLIA_PREZZO_BASSO_COMPRA", 20)      # prezzo pagato massimo...
+SOGLIA_MARGINE_PREZZO_BASSO = _env_float("SOGLIA_MARGINE_PREZZO_BASSO", 20)    # ...e margine minimo
+SOGLIA_RAPPORTO_TARGET_COMPRA = _env_float("SOGLIA_RAPPORTO_TARGET_COMPRA", 3)  # target >= N volte il prezzo...
+SOGLIA_MARGINE_RAPPORTO = _env_float("SOGLIA_MARGINE_RAPPORTO", 15)            # ...e margine minimo
+# Legit "sospetto, servono altre foto" con margine molto alto: COMPRA invece di CHIEDI ALTRE FOTO (i CHIEDI ALTRE
+# FOTO con margine >=80 EUR vendevano veloci il 53%, 19 casi: si perdevano prima della risposta del venditore).
+# "non_verificabile" resta sempre CHIEDI ALTRE FOTO. 0 = regola spenta.
+SOGLIA_MARGINE_COMPRA_SOSPETTO = _env_float("SOGLIA_MARGINE_COMPRA_SOSPETTO", 80)
+
 
 # Resellbot (venduti eBay/Poshmark): DISATTIVATO il 2026-10-03 su richiesta dell'utente -- rispondeva 429/bloccato su
 # praticamente ogni ricerca e il bot ripiegava comunque su Google. Con RESELLBOT_ATTIVO=1 torna la fonte primaria.
