@@ -25,6 +25,7 @@ tracker (messaggio Telegram) -> `process_listing` (`bot/pipeline.py`) -> scrape 
 - Scrape pagina annuncio (`bot/vinted_scrape.py`): se la risposta e' 200 ma leggera (< `PAGINA_LEGGERA_MAX_CARATTERI`, 60000: dal 6/10 14:17 UTC Vinted serve ai bot una pagina di ~20 KB senza foto) si riprova `PAGINA_LEGGERA_RETRY` (2) volte con un altro proxy e il log `Pagina annuncio leggera` riporta title, parole di blocco e testi visibili.
 - Pannello in ombra (`bot/panel.py`): modelli extra via OmniRoute, solo log `PANEL | ...`, mai nel verdetto.
 - Tracciamento vendite (`bot/tracciamento.py`): ricontrolli a 15 s, 30 s, 1 min, 5 min, 15 min, 1 h. `stato=rimosso?` = pagina 200 senza dati (cancellata o in revisione: non e' un invenduto, nessuna classe); `n.d.` = nessuna risposta. Gli annunci spariti (rimosso, rimosso?, n.d.) si seguono comunque fino a 1 h: righe `RICONTROLLO STORIA` (serie degli stati) e `RICONTROLLO RIAPPARSO` (tornati online: legit check, non ban). Dal 5/10 si seguono (solo fino a 5 min) anche gli scartati `FALSO CONCLAMATO` / `ANNUNCIO FRAUDOLENTO`, e `ERRORE_CERVELLO` con la serie completa.
+- Radar fuori moda (`bot/radar.py`, fase 0 dal 7/10, SOLO osservazione: niente messaggi, niente AI): messaggi del tracker con `RADAR_MARCATORE` (📡) in testa o dalla chat `RADAR_GROUP_ID` saltano la pipeline moda. Modulo categoria da brand/parole (`RADAR_MODULI`, i 30 brand dell'utente), filtro di livello 1 su titolo e prezzo (parole vietate tipo rotto/per pezzi/stile, tetto `prezzo_max_l1`); chi passa (piu' 1 scartato su `RADAR_CAMPIONE_SCARTI_OGNI`) fa la visita della pagina senza guardaroba e la serie di ricontrolli con esito `RADAR_L1_PASSA`/`RADAR_L1_CAMPIONE`. Log `RADAR |`, `RADAR SCARTO |`, `MESSAGGIO RADAR |`; evento `radar` nel DB.
 - SQLite (`bot/db.py`, `/data/vinted_bot.sqlite3`): quote Gemini e eventi. I log restano la fonte del recap.
 
 ## Mappa dei moduli (`bot/`)
@@ -32,13 +33,13 @@ tracker (messaggio Telegram) -> `process_listing` (`bot/pipeline.py`) -> scrape 
 - Dati e logica pura: `schemas`, `prompts`, `occhio`, `verdetto`, `categorie`, `fair_value`, `filtri`, `comps_filtri`, `skip_report`.
 - Stato e rete: `gemini_stato`, `proxy`, `http_clients`, `telegram_api`, `vinted_http`, `db`, `tracciamento`.
 - Chiamate esterne: `gemini_api`, `openai_api`, `vinted_scrape`, `vinted_search`, `foto`, `serper_base`, `serper_fonti`, `comps`.
-- Flusso: `pipeline`, `scheda` (messaggi Telegram), `panel`, `riserva_llm`.
+- Flusso: `pipeline`, `scheda` (messaggi Telegram), `panel`, `riserva_llm`, `radar`.
 - `main_telethon.py`: client Telethon, comandi, `main()` e un blocco di re-export (i test usano `m.NOME`).
 - Direzione degli import: config/logger -> logica pura -> stato/client -> pipeline -> main. Niente import circolari.
 - I client HTTP riassegnati a runtime si leggono come `hc._client_generico`, `hc._client_telegram`, `hc._CLIENT_VINTED_AUTH`: mai importarli per nome.
 
 ## Test e CI
-- `python3 -m pytest -q` (130 test) e `python3 -m pyflakes main_telethon.py bot` (nomi non definiti). La CI (`.github/workflows/ci.yml`) fa lo stesso su Python 3.13.
+- `python3 -m pytest -q` (143 test) e `python3 -m pyflakes main_telethon.py bot` (nomi non definiti). La CI (`.github/workflows/ci.yml`) fa lo stesso su Python 3.13.
 - `tests/test_struttura.py` importa ogni modulo da solo: un import circolare lo rompe.
 - Railway fa il deploy da `main` a ogni merge (circa 1,5 minuti). Branch di lavoro: `claude/...`, PR verso `main`, squash merge.
 
@@ -60,6 +61,7 @@ I log sono enormi. Regole:
    - modelli: `"GEMINI_USO"`, `"RISERVA |"`, `"PANEL |"`, `"PANEL HTTP"`
    - vendite rapide: `"RICONTROLLO LAMPO"`; preavviso push (una riga per annuncio, con semaforo, regola e caratteristiche: categoria, condizione, materiale, taglia, lingua, n. foto, venditore, ora): `"PREAVVISO |"`; tempi del preavviso (pubblicazione -> telegram -> preavviso, secondi di invio): `"PREAVVISO_INVIATO |"`; le righe `RICONTROLLO LAMPO` e `PREAVVISO` portano i `preferiti` letti dalla pagina; `PREAVVISO` ha anche `fonte_cat` (titolo, descrizione, catalogo o nessuna); le righe `ESITO` portano `item=` per incrociarle con `PREAVVISO` e `RICONTROLLO LAMPO`
    - banda proxy: `"RIEPILOGO BANDA"`
+   - radar fase 0: `"RADAR |"` (visitati), `"RADAR SCARTO |"` (scartati al livello 1), `"MESSAGGIO RADAR"`; i ricontrolli radar hanno `esito=RADAR_L1_*` nelle righe `RICONTROLLO LAMPO` (da tenere fuori dal recap moda)
 5. Dopo un deploy controllare solo righe successive all'avvio (`"Vinted Oracle avviato"` riporta la versione).
 6. Se non arrivano annunci analizzati (traffico basso, es. sabato sera) dirlo e aspettare, non rileggere in loop.
 
