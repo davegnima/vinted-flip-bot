@@ -4,40 +4,62 @@ import re
 
 # ---- fine import ----
 # PAESE DI PRODUZIONE incoerente col brand (richiesto dall'utente l'8/10: un maglione Prada con etichetta perfetta ma
-# "Made in China" era stato giudicato originale). Per questi brand l'abbigliamento e' prodotto in Italia: un paese tra
-# quelli elencati e' un segnale forte di falso, anche se l'etichetta sembra identica a una vera. Tabella volutamente
-# corta: si estende solo con brand di cui si e' CERTI della produzione (mai dedurre un falso da un paese dubbio).
-PAESI_INCOERENTI_PER_BRAND = {
-    ("prada", "miu miu"): (
-        "china", "cina", "chine", "prc", "bangladesh", "vietnam", "viet nam", "india", "inde", "cambodia", "cambogia",
-        "cambodge", "pakistan", "indonesia", "indonesie", "myanmar", "sri lanka",
-    ),
+# "Made in China" era stato giudicato originale; poi esteso a tutti i brand). Due livelli, perche' la conoscenza dei luoghi
+# di produzione non e' uguale per tutti i brand:
+#  - "forte": il brand produce l'abbigliamento in Italia (o in Europa): un paese lontano (Cina, Bangladesh, Vietnam, India...)
+#    e' un falso -> scarto come FALSO CONCLAMATO;
+#  - "medio": il brand ha anche linee o periodi con produzione altrove: il paese lontano non scarta, ma l'annuncio non puo'
+#    risultare "probabilmente autentico" (il verdetto scende a "sospetto, servono altre foto").
+# Gli altri brand (Acne, Jacquemus, Dries Van Noten, Courreges...) producono anche in Asia o in Paesi vari: nessuna regola
+# nel codice, ci pensa il giudizio del modello (vedi il prompt: epoca, linea e paese). La tabella e' una stima di chi
+# scrive: si corregge o si estende qui, mai dedurre un falso da un paese dubbio.
+PRODUZIONE_BRAND = {
+    "prada": "forte", "miu miu": "forte", "loro piana": "forte", "brunello cucinelli": "forte",
+    "bottega veneta": "forte", "fendi": "forte",
+    "max mara": "medio", "zegna": "medio", "loewe": "medio", "missoni": "medio", "marni": "medio",
 }
+PAESI_LONTANI = (
+    "china", "cina", "chine", "prc", "hong kong", "bangladesh", "vietnam", "viet nam", "india", "inde", "cambodia",
+    "cambogia", "cambodge", "pakistan", "indonesia", "indonesie", "myanmar", "sri lanka", "thailand", "thailandia",
+    "taiwan", "philippines", "filippine",
+)
 _RE_MADE_IN = re.compile(
     r"(?:made\s+in|fabriqu[eé]e?\s+en|hergestellt\s+in|prodotto\s+in|fabricado\s+en|hecho\s+en|gemaakt\s+in)\s+"
     r"([a-zà-ÿ.' ]{2,28})", re.IGNORECASE)
 
 
 def paese_incoerente(o, listing_info=None):
-    """(paese letto, brand) se sull'etichetta c'e' un paese di produzione incoerente col brand dichiarato o letto, altrimenti
-    None. Cerca "Made in ..." nei testi delle etichette, nella composizione e nel campo paese_produzione_letto. Pura."""
+    """(paese letto, brand, forza) se sull'etichetta c'e' un paese di produzione lontano per un brand della tabella
+    PRODUZIONE_BRAND, altrimenti None. Cerca "Made in ..." nei testi delle etichette, nella composizione e nel campo
+    paese_produzione_letto. Pura."""
     li = listing_info or {}
     contesto = " ".join(str(x or "") for x in (li.get("brand"), li.get("title"), o.get("brand_letto_etichetta"))).lower()
+    marca = next((m for m in PRODUZIONE_BRAND if m in contesto), None)
+    if not marca:
+        return None
     testi = [str(e.get("testo_verbatim") or "") for e in (o.get("etichette") or []) if isinstance(e, dict)]
     testi += [str(o.get("composizione_da_etichetta") or "")]
     candidati = [m.group(1) for t in testi for m in _RE_MADE_IN.finditer(t)]
     if o.get("paese_produzione_letto"):
         candidati.append(str(o["paese_produzione_letto"]))
-    for marche, paesi in PAESI_INCOERENTI_PER_BRAND.items():
-        marca = next((m for m in marche if m in contesto), None)
-        if not marca:
-            continue
-        for c in candidati:
-            parole = re.findall(r"[a-zà-ÿ]+", c.lower().replace(".", "").replace("é", "e"))
-            coppie = {" ".join(parole[i:i + 2]) for i in range(len(parole))}
-            if any(p in paesi for p in parole) or any(p in paesi for p in coppie):
-                return c.strip().rstrip(".").title(), marca.title()
+    for c in candidati:
+        parole = re.findall(r"[a-zà-ÿ]+", c.lower().replace(".", "").replace("é", "e"))
+        coppie = {" ".join(parole[i:i + 2]) for i in range(len(parole))}
+        if any(p in PAESI_LONTANI for p in parole) or any(p in PAESI_LONTANI for p in coppie):
+            return c.strip().rstrip(".").title(), marca.title(), PRODUZIONE_BRAND[marca]
     return None
+
+
+def applica_paese_al_verdetto(v, o, listing_info=None):
+    """Brand di livello "medio" con paese lontano: il verdetto legit non puo' restare "probabilmente autentico". Modifica v
+    in place e ritorna il motivo (o None)."""
+    inc = paese_incoerente(o or {}, listing_info)
+    if not inc or inc[2] != "medio" or v.get("legit_verdetto") != "probabilmente_autentico":
+        return None
+    motivo = f"Made in {inc[0]} insolito per {inc[1]}: servono altre foto prima di fidarsi."
+    v["legit_verdetto"] = "sospetto_servono_altre_foto"
+    v["legit_motivo_specifico"] = motivo + " " + str(v.get("legit_motivo_specifico") or "")
+    return motivo
 
 
 def calcola_scarto_occhio(o, solo_cover_photo=False, listing_info=None):
@@ -133,7 +155,7 @@ def calcola_scarto_occhio(o, solo_cover_photo=False, listing_info=None):
     # Paese di produzione incoerente col brand (8/10): scarto indipendente dal giudizio del modello, che davanti a
     # un'etichetta dall'aspetto perfetto puo' dichiarare "autentico" ignorando il "Made in".
     incoerente = paese_incoerente(o, listing_info)
-    if incoerente:
+    if incoerente and incoerente[2] == "forte":
         return True, (
             f"[FALSO CONCLAMATO] Made in {incoerente[0]} su {incoerente[1]}: produzione incoerente col brand "
             "(abbigliamento prodotto in Italia), anche con etichetta dall'aspetto corretto."
