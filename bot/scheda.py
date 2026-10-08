@@ -732,3 +732,64 @@ def componi_testi_verdetto(listing_info, verdetto_calcolato, output_finale, info
     if url:
         unificato += f"\n\n🔗 [Apri su Vinted]({url})"
     return header, resto_output, unificato
+
+
+# RICHIESTA ETICHETTA INTERNA per Prada e Miu Miu (richiesta dell'utente l'8/10): l'etichetta interna e' l'unico modo per
+# verificare l'autenticita' di questi due brand. Se l'Occhio non la vede lo scarto era silenzioso (nessun messaggio, solo
+# il log); ora, se la stima rapida e' promettente (semaforo 🟢/🟡 dopo la correzione dalla velocita'), arriva un messaggio
+# "chiedi l'etichetta" con il testo da incollare al venditore, nella sua lingua. Non si compra mai senza etichetta.
+BRAND_ETICHETTA_OBBLIGATORIA = ("prada", "miu miu")
+RICHIESTA_ETICHETTA_VENDITORE = {
+    "it": "Ciao! Potresti mandarmi una foto dell'etichetta interna (marca e composizione) e del cartellino con codice e Made in? Grazie!",
+    "fr": "Bonjour ! Pourriez-vous m'envoyer une photo de l'étiquette intérieure (marque et composition) et de l'étiquette avec le code et le Made in ? Merci !",
+    "de": "Hallo! Könnten Sie mir bitte ein Foto vom Innenetikett (Marke und Zusammensetzung) und vom Etikett mit Code und Made in schicken? Danke!",
+    "en": "Hi! Could you please send a photo of the inside label (brand and composition) and the tag with the code and Made in? Thanks!",
+}
+
+
+def richiede_etichetta(listing_info, motivo_skip):
+    """True se lo scarto e' per etichetta mancante, il brand e' Prada o Miu Miu e la stima rapida e' promettente. Pura."""
+    if not str(motivo_skip or "").startswith("[NESSUNA ETICHETTA"):
+        return False
+    nome = f"{listing_info.get('brand') or ''} {listing_info.get('title') or ''}".lower()
+    if not any(b in nome for b in BRAND_ETICHETTA_OBBLIGATORIA):
+        return False
+    return (listing_info.get("fair_value") or {}).get("semaforo") in ("🟢", "🟡")
+
+
+def testo_richiesta_etichetta(listing_info, url):
+    """Messaggio Telegram (Markdown) con il testo da incollare al venditore. Pura."""
+    from bot.tracciamento import lingua_titolo
+    esc = _escapa_markdown_legacy
+    fv = listing_info.get("fair_value") or {}
+    lingua = lingua_titolo(listing_info.get("title"))
+    testo_venditore = RICHIESTA_ETICHETTA_VENDITORE.get(lingua, RICHIESTA_ETICHETTA_VENDITORE["en"])
+    prezzo = _a_float(listing_info.get("price"), None)
+    righe = [f"🔎 *CHIEDI L'ETICHETTA INTERNA*{f' · [vedi su Vinted]({url})' if url else ''}",
+             f"🏷️ {esc((listing_info.get('brand') or '').strip())} · {esc(listing_info.get('title') or 'Annuncio')}"]
+    if prezzo is not None and fv.get("fv"):
+        righe.append(f"💶 {prezzo:.0f} € → stima rapida ~{fv['fv']:.0f} € · {fv.get('semaforo', '')}")
+    righe += ["❗ Senza etichetta interna leggibile non si compra: rischio fake troppo alto.",
+              "", f"📝 Da incollare al venditore ({lingua}):", f"`{testo_venditore}`"]
+    return "\n".join(righe)
+
+
+async def invia_richiesta_etichetta(listing_info, url, reply_to=None):
+    """Manda la richiesta nella chat principale (silenziosa) e, se il margine rapido supera la soglia dell'alert CHIEDI FOTO,
+    anche nel gruppo con suono. Ritorna True se almeno un messaggio e' partito."""
+    testo = testo_richiesta_etichetta(listing_info, url)
+    inviato = False
+    try:
+        await telegram_send_with_buttons(TELEGRAM_OWNER_CHAT_ID, testo, url, None, disable_notification=True, reply_to=reply_to)
+        inviato = True
+    except Exception:
+        log.warning("Richiesta etichetta non inviata in chat:\n%s", traceback.format_exc())
+    margine_rapido = (listing_info.get("fair_value") or {}).get("margine")
+    if TELEGRAM_ALERT_CHAT_ID and chiedi_foto_da_notificare(listing_info.get("brand"), margine_rapido):
+        try:
+            await telegram_send_with_buttons(TELEGRAM_ALERT_CHAT_ID, testo, url, None)
+            inviato = True
+        except Exception:
+            log.warning("Richiesta etichetta non inviata nel gruppo:\n%s", traceback.format_exc())
+    return inviato
+

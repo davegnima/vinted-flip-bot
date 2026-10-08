@@ -358,3 +358,17 @@ def test_chiedi_foto_brand_esclusi_stessa_soglia_degli_altri():
     from bot.scheda import chiedi_foto_da_notificare as n
     assert n("Max Mara", 31) and not n("Max Mara", 30) and not n("Max Mara", None)
     assert not n("Prada", 30) and n("Prada", 31) and n("Miu Miu", 79) and n("Loewe", 41)
+
+
+def test_richiesta_etichetta_solo_prada_miumiu_con_stima_promettente():
+    from bot.scheda import richiede_etichetta, testo_richiesta_etichetta
+    motivo = "[NESSUNA ETICHETTA VISIBILE] Nessuna etichetta leggibile"
+    li = {"brand": "Prada", "title": "Cappotto Prada", "price": "60", "fair_value": {"semaforo": "🟡", "fv": 150, "margine": 90}}
+    assert richiede_etichetta(li, motivo)
+    assert richiede_etichetta({**li, "brand": "Miu Miu", "title": "Gonna"}, "[NESSUNA ETICHETTA INTERNA - PRADA/MIU MIU BORSA] x")
+    assert not richiede_etichetta({**li, "fair_value": {"semaforo": "🔴"}}, motivo)        # stima non promettente: niente rumore
+    assert not richiede_etichetta({**li, "brand": "Max Mara", "title": "Blazer"}, motivo)   # altri brand: scarto silenzioso
+    assert not richiede_etichetta(li, "[FALSO CONCLAMATO] etichetta falsa")                  # i falsi restano scartati
+    testo = testo_richiesta_etichetta(li, "https://www.vinted.it/items/1-x")
+    assert "CHIEDI L'ETICHETTA INTERNA" in testo and "Potresti mandarmi" in testo and "150" in testo
+    assert "Bonjour" in testo_richiesta_etichetta({**li, "title": "Manteau Prada pour femme"}, None)
