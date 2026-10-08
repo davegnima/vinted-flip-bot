@@ -188,6 +188,10 @@ def test_livello1_usa_il_buy_max_del_modello():
     assert radar.filtro_livello1("Lampada Artemide", 40, "illuminazione_design", matrice=m) == (True, "ok")
     assert radar.filtro_livello1("Cassina LC2 poltrona", 200, "illuminazione_design", matrice=m)[1] == \
         "modello_escluso:non_spedibile"
+    # sotto il minimo passa solo un modello noto con buy max: l'errore di prezzo e' l'affare
+    assert radar.filtro_livello1("Artemide Tolomeo", 5, "illuminazione_design", matrice=m) == (True, "ok")
+    assert radar.filtro_livello1("Lampada Artemide", 5, "illuminazione_design", matrice=m)[1].startswith("prezzo_sotto_minimo")
+    assert radar.filtro_livello1("Game Boy classico", 5, "console_retro", matrice=m)[1].startswith("prezzo_sotto_minimo")
 
 
 def test_matrice_del_repo_valida():
