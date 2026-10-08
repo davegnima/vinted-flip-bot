@@ -100,9 +100,13 @@ def test_scartati_falsi_si_seguono_ridotti_gli_altri_si_fermano():
     tr._log_esito(li, "SKIP_PRE_CERVELLO", motivo="[FALSO CONCLAMATO] etichetta")
     tr._log_esito(li2, "SKIP_PRE_CERVELLO", motivo="[NESSUNA ETICHETTA VISIBILE] x")
     tr._log_esito(li3, "ERRORE_CERVELLO")
+    li4 = {"url": "https://www.vinted.it/items/10250000004-jacquemus", "brand": "Jacquemus"}
+    tr._log_esito(li4, "SKIP_PRE_SCRAPE", motivo="[LINEA ESCLUSA] t-shirt")
     assert "10250000001" in tr._tracc_ridotti and "10250000001" not in tr._tracc_stop
-    assert "10250000002" in tr._tracc_stop
+    # dall'8/10 tutti gli scartati dopo lo scrape si seguono con la serie ridotta (5 min, 15 min, 1 h)
+    assert "10250000002" in tr._tracc_ridotti and "10250000002" not in tr._tracc_stop
     assert "10250000003" not in tr._tracc_stop and "10250000003" not in tr._tracc_ridotti
+    assert "10250000004" in tr._tracc_stop and "10250000004" not in tr._tracc_ridotti   # esclusione dell'utente: nessuna serie
 
 
 def test_annuncio_sparito_si_segue_e_se_riappare_si_logga(monkeypatch, caplog):

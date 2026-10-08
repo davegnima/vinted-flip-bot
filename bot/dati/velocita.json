@@ -1,0 +1,129 @@
+{
+ "aggiornato": "2026-10-08T02:23:48.710004744Z",
+ "base": 0.251,
+ "brand": {
+  "acne studios": {
+   "n": 22,
+   "veloci": 4
+  },
+  "ann demeulemeester": {
+   "n": 1,
+   "veloci": 0
+  },
+  "barena venezia": {
+   "n": 2,
+   "veloci": 0
+  },
+  "bottega veneta": {
+   "n": 1,
+   "veloci": 0
+  },
+  "brunello cucinelli": {
+   "n": 17,
+   "veloci": 2
+  },
+  "courreges": {
+   "n": 15,
+   "veloci": 2
+  },
+  "dries van noten": {
+   "n": 3,
+   "veloci": 1
+  },
+  "fendi": {
+   "n": 12,
+   "veloci": 1
+  },
+  "helmut lang": {
+   "n": 3,
+   "veloci": 1
+  },
+  "issey miyake": {
+   "n": 1,
+   "veloci": 1
+  },
+  "jacquemus": {
+   "n": 15,
+   "veloci": 4
+  },
+  "jean paul gaultier": {
+   "n": 12,
+   "veloci": 3
+  },
+  "junya watanabe": {
+   "n": 1,
+   "veloci": 0
+  },
+  "lemaire": {
+   "n": 1,
+   "veloci": 0
+  },
+  "loewe": {
+   "n": 2,
+   "veloci": 1
+  },
+  "loro piana": {
+   "n": 10,
+   "veloci": 8
+  },
+  "marni": {
+   "n": 7,
+   "veloci": 2
+  },
+  "max mara": {
+   "n": 45,
+   "veloci": 5
+  },
+  "missoni": {
+   "n": 23,
+   "veloci": 4
+  },
+  "miu miu": {
+   "n": 9,
+   "veloci": 6
+  },
+  "mugler": {
+   "n": 1,
+   "veloci": 0
+  },
+  "prada": {
+   "n": 39,
+   "veloci": 16
+  },
+  "sacai": {
+   "n": 1,
+   "veloci": 0
+  },
+  "the row": {
+   "n": 1,
+   "veloci": 0
+  },
+  "totême": {
+   "n": 7,
+   "veloci": 0
+  },
+  "vivienne westwood": {
+   "n": 6,
+   "veloci": 5
+  },
+  "zegna": {
+   "n": 6,
+   "veloci": 0
+  }
+ },
+ "fino_ts": "2026-10-07T23:07:47.688065916Z",
+ "semaforo": {
+  "🔴": {
+   "n": 152,
+   "veloci": 21
+  },
+  "🟡": {
+   "n": 49,
+   "veloci": 14
+  },
+  "🟢": {
+   "n": 62,
+   "veloci": 31
+  }
+ }
+}
