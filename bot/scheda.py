@@ -741,8 +741,8 @@ def componi_testi_verdetto(listing_info, verdetto_calcolato, output_finale, info
 BRAND_ETICHETTA_OBBLIGATORIA = ("prada", "miu miu")
 # sempre in italiano (richiesta dell'utente l'8/10): cortese e dritto al punto
 RICHIESTA_ETICHETTA_VENDITORE = (
-    "Buongiorno, sono interessato al capo. Potrebbe cortesemente inviarmi una foto dell'etichetta interna "
-    "(marca e composizione) e di quella con il codice? Grazie mille."
+    "Buongiorno, potrebbe cortesemente inviarmi una foto dell'etichetta interna (marca e composizione) "
+    "e di quella con il codice? Grazie mille."
 )
 
 
