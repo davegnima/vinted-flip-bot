@@ -370,5 +370,6 @@ def test_richiesta_etichetta_solo_prada_miumiu_con_stima_promettente():
     assert not richiede_etichetta({**li, "brand": "Max Mara", "title": "Blazer"}, motivo)   # altri brand: scarto silenzioso
     assert not richiede_etichetta(li, "[FALSO CONCLAMATO] etichetta falsa")                  # i falsi restano scartati
     testo = testo_richiesta_etichetta(li, "https://www.vinted.it/items/1-x")
-    assert "CHIEDI L'ETICHETTA INTERNA" in testo and "Potresti mandarmi" in testo and "150" in testo
-    assert "Bonjour" in testo_richiesta_etichetta({**li, "title": "Manteau Prada pour femme"}, None)
+    assert "CHIEDI L'ETICHETTA INTERNA" in testo and "Potrebbe cortesemente inviarmi" in testo and "150" in testo
+    # sempre in italiano, anche per un annuncio in francese
+    assert "Buongiorno" in testo_richiesta_etichetta({**li, "title": "Manteau Prada pour femme"}, None)
