@@ -62,6 +62,18 @@ def applica_paese_al_verdetto(v, o, listing_info=None):
     return motivo
 
 
+_ETICHETTE_PROVA = {"main_label", "wash_care_tag", "etichetta_composizione", "codice_prodotto", "ologramma_autenticita"}
+
+
+def applica_prove_al_verdetto(v, o):
+    """Segna in v se l'Occhio ha visto almeno un'etichetta NITIDA (marchio, wash tag, composizione, codice, ologramma).
+    Senza, un "sospetto" non puo' diventare COMPRA anche con margine alto (caso Loewe 8/10: una foto da lontano, etichetta
+    parziale, 14 EUR): `calcola_verdetto` lo manda a CHIEDI ALTRE FOTO. Modifica v in place."""
+    v["_etichetta_nitida"] = any(
+        isinstance(e, dict) and e.get("tipo") in _ETICHETTE_PROVA and e.get("leggibilita") == "nitida"
+        for e in ((o or {}).get("etichette") or []))
+
+
 def calcola_scarto_occhio(o, solo_cover_photo=False, listing_info=None):
     """Ritorna (scarta: bool, motivo: str|None) dai soli campi osservativi.
 

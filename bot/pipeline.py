@@ -27,7 +27,7 @@ from bot.openai_api import chiama_openai_cervello_forzato
 from bot.foto import download_image_bytes
 from bot.categorie import estrai_categoria_da_titolo
 from bot.logger import log
-from bot.occhio import render_occhio_da_json, valida_payload_occhio, applica_paese_al_verdetto
+from bot.occhio import render_occhio_da_json, valida_payload_occhio, applica_paese_al_verdetto, applica_prove_al_verdetto
 from bot.comps import search_comps_completo, verifica_codici_prodotto_reddit
 from bot.telegram_api import telegram_send_message
 from bot.serper_base import valuta_qualita_comp
@@ -647,6 +647,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
         v, problemi = valida_payload_cervello(verdetto_json)
         stats_comp = classifica_provenienza_comp(v, pool_ricerca_grezzo)
         applica_paese_al_verdetto(v, occhio_json, listing_info)   # Made in insolito (brand "medio"): non puo' restare autentico
+        applica_prove_al_verdetto(v, occhio_json)
         legit_cervello = v.get("legit_verdetto")
         verdetto_calcolato = calcola_verdetto(v, prezzo_prodotto)
         campioni_target = None
@@ -669,6 +670,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
                 v["prezzo_target_vendita_eur"] = valore_c
                 stats_comp = classifica_provenienza_comp(v, pool_ricerca_grezzo)
                 applica_paese_al_verdetto(v, occhio_json, listing_info)
+                applica_prove_al_verdetto(v, occhio_json)
                 legit_cervello = v.get("legit_verdetto")
                 verdetto_calcolato = calcola_verdetto(v, prezzo_prodotto)
             t_tappe.append(("campioni_target", time.time()))
