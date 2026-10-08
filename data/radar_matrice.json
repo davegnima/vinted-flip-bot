@@ -5,7 +5,10 @@
   "brand": "Vitra",
   "modello": "Eames House Bird",
   "chiavi": [
-   "eames house bird"
+   "eames house bird",
+   "house bird",
+   "vitra bird",
+   "vitra design museum bird"
   ],
   "brand_chiavi": [
    "vitr",
@@ -95,7 +98,8 @@
   "modello": "Ball Clock (George Nelson)",
   "chiavi": [
    "ball clock",
-   "ball clock vitra"
+   "ball clock vitra",
+   "george nelson clock"
   ],
   "brand_chiavi": [
    "ballclock",
@@ -124,6 +128,8 @@
   "brand": "Vitra",
   "modello": "Sunburst Clock (George Nelson)",
   "chiavi": [
+   "george nelson sunburst",
+   "orologio sunburst",
    "sunburst clock"
   ],
   "brand_chiavi": [
@@ -185,7 +191,9 @@
   "brand": "Vitra",
   "modello": "Eames Elephant (grande, plastica)",
   "chiavi": [
-   "eames elephant"
+   "eames elephant",
+   "elefante eames",
+   "vitra elephant"
   ],
   "brand_chiavi": [
    "vitra"
@@ -213,7 +221,10 @@
   "brand": "Vitra",
   "modello": "Panton Chair (Vitra, produzione attuale)",
   "chiavi": [
-   "panton chair"
+   "panton chair",
+   "panton vitra",
+   "sedia panton",
+   "verner panton sedia"
   ],
   "brand_chiavi": [
    "vitra"
@@ -272,7 +283,8 @@
   "brand": "Vitra",
   "modello": "Wooden Dolls (Alexander Girard)",
   "chiavi": [
-   "vitra wooden dolls"
+   "vitra wooden dolls",
+   "wooden doll vitra"
   ],
   "brand_chiavi": [
    "girad",
@@ -364,8 +376,6 @@
   "modello": "LC2 poltrona (Le Corbusier)",
   "chiavi": [
    "cassina le corbusier poltrona",
-   "lc2",
-   "lc2 cassina",
    "poltrona cubo pelle cromata",
    "poltrona le corbusier"
   ],
@@ -397,7 +407,6 @@
   "brand": "Cassina",
   "modello": "LC4 chaise longue",
   "chiavi": [
-   "chaise longue le corbusier",
    "lc4",
    "lc4 cassina"
   ],
@@ -428,7 +437,9 @@
   "brand": "Cassina",
   "modello": "Cab 412 sedia (Mario Bellini)",
   "chiavi": [
-   "cab 412"
+   "cab 412",
+   "cassina cab",
+   "sedia cab bellini"
   ],
   "brand_chiavi": [
    "cassina"
@@ -487,7 +498,6 @@
   "brand": "Cassina",
   "modello": "Utrecht poltrona (Rietveld)",
   "chiavi": [
-   "poltrona rietveld",
    "utrecht cassina",
    "utrecht rietveld"
   ],
@@ -580,7 +590,10 @@
   "brand": "Zanotta",
   "modello": "Servomuto tavolino (Castiglioni)",
   "chiavi": [
-   "tavolino servomuto"
+   "servomuto",
+   "servomuto castiglioni",
+   "tavolino servomuto",
+   "zanotta servomuto"
   ],
   "brand_chiavi": [
    "servomutto",
@@ -609,7 +622,10 @@
   "brand": "Zanotta",
   "modello": "Sacco poltrona (Gatti Paolini Teodoro)",
   "chiavi": [
-   "poltrona sacco"
+   "poltrona sacco",
+   "pouf sacco zanotta",
+   "sacco gatti paolini teodoro",
+   "sacco zanotta"
   ],
   "brand_chiavi": [
    "zanotta"
@@ -670,6 +686,8 @@
   "brand": "B&B Italia",
   "modello": "Le Bambole (Mario Bellini)",
   "chiavi": [
+   "bambole b&b",
+   "bellini bambole",
    "divano le bambole",
    "le bambole"
   ],
@@ -966,7 +984,6 @@
   "brand": "Alessi",
   "modello": "Bollitore 9093 (Michael Graves)",
   "chiavi": [
-   "alessi 9093",
    "bollitore alessi",
    "bollitore uccellino",
    "michael graves bollitore"
@@ -997,7 +1014,6 @@
   "brand": "Alessi",
   "modello": "Bollitore 9091 (Richard Sapper)",
   "chiavi": [
-   "alessi 9091",
    "bollitore fischio melodico",
    "bollitore sapper"
   ],
@@ -1055,7 +1071,8 @@
   "brand": "Alessi",
   "modello": "Pulcina caffettiera (Michele De Lucchi)",
   "chiavi": [
-   "caffettiera pulcina"
+   "caffettiera pulcina",
+   "pulcina alessi"
   ],
   "brand_chiavi": [
    "alessi"
@@ -1115,8 +1132,6 @@
   "chiavi": [
    "bombe alessi",
    "caffettiera bombe",
-   "servizio caffe alessi",
-   "servizio te alessi vintage",
    "teiera alessi bombe"
   ],
   "brand_chiavi": [
@@ -1145,7 +1160,6 @@
   "brand": "Alessi",
   "modello": "La Conica caffettiera (Aldo Rossi)",
   "chiavi": [
-   "caffettiera aldo rossi",
    "conica alessi",
    "la conica alessi",
    "moka conica"
@@ -1611,6 +1625,8 @@
   "brand": "Coach",
   "modello": "Rambler's Legacy",
   "chiavi": [
+   "coach legacy tracolla",
+   "coach rambler",
    "rambler legacy"
   ],
   "brand_chiavi": [
@@ -1678,6 +1694,7 @@
   "brand": "Coach",
   "modello": "Court Bag",
   "chiavi": [
+   "coach court",
    "court bag"
   ],
   "brand_chiavi": [
@@ -1740,6 +1757,9 @@
   "brand": "Persol",
   "modello": "Ratti 649 vintage (Meflecto)",
   "chiavi": [
+   "persol 649 anni 80",
+   "persol 649 vintage",
+   "persol ratti",
    "persol ratti 649"
   ],
   "brand_chiavi": [
@@ -1771,10 +1791,8 @@
   "brand": "Persol",
   "modello": "Ratti 69218 'Miami Vice'",
   "chiavi": [
-   "occhiali miami vice",
    "persol 69218",
    "persol meflecto 69218",
-   "persol miami vice",
    "persol ratti 69218"
   ],
   "brand_chiavi": [
@@ -2151,8 +2169,7 @@
   "modello": "616 vintage West Germany",
   "chiavi": [
    "cazal 616",
-   "cazal vintage 616",
-   "cazal west germany"
+   "cazal vintage 616"
   ],
   "brand_chiavi": [
    "casal",
@@ -2283,6 +2300,8 @@
   "modello": "Vaso Rimini Blu (Aldo Londi, vintage)",
   "chiavi": [
    "bitossi rimini blu",
+   "ceramica montelupo blu",
+   "vaso ceramica blu anni 60",
    "vaso rimini blu"
   ],
   "brand_chiavi": [
@@ -2315,10 +2334,7 @@
   "brand": "Bitossi",
   "modello": "Posacenere / ciotola Rimini Blu",
   "chiavi": [
-   "ciotola bitossi",
-   "posacenere bitossi",
-   "posacenere ceramica blu anni 60",
-   "svuotatasche rimini blu"
+   "posacenere ceramica blu anni 60"
   ],
   "brand_chiavi": [
    "bitosi",
@@ -2350,7 +2366,10 @@
   "brand": "Bitossi",
   "modello": "Gatto Aldo Londi vintage (grande, anni '60)",
   "chiavi": [
-   "gatto aldo londi"
+   "gatto aldo londi",
+   "gatto bitossi",
+   "gatto ceramica anni 60",
+   "gatto ceramica rimini blu"
   ],
   "brand_chiavi": [
    "bitosi",
@@ -2617,11 +2636,9 @@
   "brand": "Georg Jensen",
   "modello": "Orologio Vivianna (Torun)",
   "chiavi": [
-   "georg jensen vivianna",
    "orologio bracciale georg jensen",
    "orologio georg jensen",
-   "orologio torun",
-   "vivianna torun"
+   "orologio torun"
   ],
   "brand_chiavi": [
    "georg jensen"
@@ -2707,7 +2724,6 @@
   "brand": "Nintendo",
   "modello": "Game Boy DMG-01 classico (console sola)",
   "chiavi": [
-   "dmg 01",
    "game boy",
    "game boy 1989",
    "game boy classic",
@@ -2920,7 +2936,6 @@
   "brand": "Nintendo",
   "modello": "Game Boy Advance SP AGS-001 (console sola)",
   "chiavi": [
-   "ags 001",
    "game boy advance sp",
    "game boy sp"
   ],
@@ -2948,6 +2963,7 @@
   "brand": "Nintendo",
   "modello": "Game Boy Advance SP AGS-101 (retroilluminato, console sola)",
   "chiavi": [
+   "game boy advance sp 101",
    "game boy advance sp ags 101"
   ],
   "brand_chiavi": [],
@@ -3175,8 +3191,6 @@
   "brand": "Nintendo",
   "modello": "New Nintendo 3DS XL edizioni limitate (Hyrule, Samus, SNES)",
   "chiavi": [
-   "3ds edizione limitata",
-   "3ds xl edizione zelda",
    "new 3ds xl hyrule",
    "new 3ds xl samus",
    "new 3ds xl snes"
@@ -3593,86 +3607,16 @@
   ]
  },
  {
-  "id": "nintendo_pokemon_rosso_fuoco_verde_foglia_completo_in_scatol",
-  "radar": "console_retro",
-  "brand": "Nintendo",
-  "modello": "Pokémon Rosso Fuoco / Verde Foglia completo in scatola (CIB, PAL)",
-  "chiavi": [
-   "pokemon rosso fuoco",
-   "pokemon rosso fuoco scatola",
-   "pokemon verde foglia",
-   "pokemon verde foglia completo"
-  ],
-  "brand_chiavi": [],
-  "rivendita_veloce_eur": 210,
-  "rivendita_normale_eur": 248,
-  "affidabilita": "alta",
-  "sotto_soglia": false,
-  "spedizione_eur": 5,
-  "fragile": true,
-  "ingombrante": false,
-  "rischio_falsi": 5,
-  "rischio_guasti": 2,
-  "riconoscibile_da_foto": 4,
-  "domanda": 4,
-  "n_venduti": 47,
-  "n_comp": 47,
-  "metodo": "30° percentile e mediana di 47 venduti eBay (2025-10 - 2026-10) raccolti da PriceCharting [https://www.pricecharting.com/game/pal-gameboy-advance/pokemon-firered, https://www.pricecharting.com/game/pal-gameboy-advance/pokemon-leafgreen], sezione cib; esclusi lotti, repro, mod, pezzi rotti/nuovi sigillati; USD->EUR 0,8947 (BCE/frankfurter 07/10/2026). ",
-  "segni_autenticita": "Originale GBA: retro con 'Nintendo' in rilievo e codice AGB-xxxx-ITA/EUR stampato, vite tri-wing, etichetta opaca con codice stampato e sigillo; scheda con chip marcati Nintendo e data stampata. Falsi (molto diffusi per Smeraldo/Rosso Fuoco/Rubino/Zaffiro): etichetta lucida o leggermente storta, retro senza rilievo o con stampa 'MADE IN CHINA', vite a croce, scheda con 'blob' di resina nera, salvataggio che non regge (flash economica), etichetta con codice 'AGB-BPEP' su copia ITA, plastica troppo trasparente. Chiedere foto retro/interno e della schermata di avvio. Scatole: le repro di scatola sono comuni (cartone troppo lucido, colori saturi, assenza dell'ologramma/sigillo argentato Nintendo sul lembo, inserto in cartone nuovo di zecca). Distinguere CIB (cartuccia+scatola+manuale) da loose (solo cartuccia).",
-  "note": "Prezzi venduti PAL.",
-  "parole_variante": [
-   "scatola",
-   "box",
-   "cib",
-   "completo",
-   "imballo",
-   "manuale"
-  ]
- },
- {
-  "id": "nintendo_pokemon_rubino_zaffiro_completo_in_scatola_cib_pal",
-  "radar": "console_retro",
-  "brand": "Nintendo",
-  "modello": "Pokémon Rubino / Zaffiro completo in scatola (CIB, PAL)",
-  "chiavi": [
-   "pokemon rubino",
-   "pokemon rubino scatola",
-   "pokemon zaffiro",
-   "pokemon zaffiro completo"
-  ],
-  "brand_chiavi": [],
-  "rivendita_veloce_eur": 127,
-  "rivendita_normale_eur": 188,
-  "affidabilita": "alta",
-  "sotto_soglia": false,
-  "spedizione_eur": 5,
-  "fragile": true,
-  "ingombrante": false,
-  "rischio_falsi": 5,
-  "rischio_guasti": 2,
-  "riconoscibile_da_foto": 4,
-  "domanda": 4,
-  "n_venduti": 42,
-  "n_comp": 42,
-  "metodo": "30° percentile e mediana di 42 venduti eBay (2025-10 - 2026-10) raccolti da PriceCharting [https://www.pricecharting.com/game/pal-gameboy-advance/pokemon-ruby, https://www.pricecharting.com/game/pal-gameboy-advance/pokemon-sapphire], sezione cib; esclusi lotti, repro, mod, pezzi rotti/nuovi sigillati; USD->EUR 0,8947 (BCE/frankfurter 07/10/2026). ",
-  "segni_autenticita": "Originale GBA: retro con 'Nintendo' in rilievo e codice AGB-xxxx-ITA/EUR stampato, vite tri-wing, etichetta opaca con codice stampato e sigillo; scheda con chip marcati Nintendo e data stampata. Falsi (molto diffusi per Smeraldo/Rosso Fuoco/Rubino/Zaffiro): etichetta lucida o leggermente storta, retro senza rilievo o con stampa 'MADE IN CHINA', vite a croce, scheda con 'blob' di resina nera, salvataggio che non regge (flash economica), etichetta con codice 'AGB-BPEP' su copia ITA, plastica troppo trasparente. Chiedere foto retro/interno e della schermata di avvio. Scatole: le repro di scatola sono comuni (cartone troppo lucido, colori saturi, assenza dell'ologramma/sigillo argentato Nintendo sul lembo, inserto in cartone nuovo di zecca). Distinguere CIB (cartuccia+scatola+manuale) da loose (solo cartuccia).",
-  "note": "Prezzi venduti PAL.",
-  "parole_variante": [
-   "scatola",
-   "box",
-   "cib",
-   "completo",
-   "imballo",
-   "manuale"
-  ]
- },
- {
   "id": "nintendo_zelda_game_boy_game_boy_color_completo_in_scatola_l",
   "radar": "console_retro",
   "brand": "Nintendo",
   "modello": "Zelda Game Boy/GBC completo in scatola (Link's Awakening DX, Oracle of Ages/Seasons)",
   "chiavi": [
-   "zelda game boy color"
+   "zelda game boy color",
+   "zelda game boy scatola",
+   "zelda link s awakening",
+   "zelda oracle of ages",
+   "zelda oracle of seasons"
   ],
   "brand_chiavi": [],
   "rivendita_veloce_eur": 107,
@@ -3706,7 +3650,6 @@
   "brand": "Nintendo",
   "modello": "Pokémon XD: Gale of Darkness (GameCube, PAL)",
   "chiavi": [
-   "pokemon gamecube",
    "pokemon xd",
    "pokemon xd gamecube",
    "pokemon xd tempesta oscura"
@@ -3735,6 +3678,8 @@
   "brand": "Nintendo",
   "modello": "Fire Emblem: Path of Radiance (GameCube, PAL)",
   "chiavi": [
+   "fire emblem",
+   "fire emblem gamecube",
    "fire emblem path of radiance"
   ],
   "brand_chiavi": [],
@@ -3816,8 +3761,7 @@
    "pokemon argento soulsilver",
    "pokemon heartgold",
    "pokemon oro heartgold",
-   "pokemon soulsilver",
-   "pokewalker"
+   "pokemon soulsilver"
   ],
   "brand_chiavi": [],
   "rivendita_veloce_eur": 194,
@@ -3924,7 +3868,8 @@
   "brand": "Nintendo",
   "modello": "Pokémon Stadium 2 (N64, PAL, CIB)",
   "chiavi": [
-   "pokemon stadium 2"
+   "pokemon stadium 2",
+   "pokemon stadium nintendo 64"
   ],
   "brand_chiavi": [],
   "rivendita_veloce_eur": 143,
@@ -3958,7 +3903,9 @@
   "brand": "Nintendo",
   "modello": "Zelda A Link to the Past (SNES, PAL, CIB)",
   "chiavi": [
-   "zelda a link to the past"
+   "zelda a link to the past",
+   "zelda snes",
+   "zelda super nintendo"
   ],
   "brand_chiavi": [],
   "rivendita_veloce_eur": 95,
@@ -4588,6 +4535,8 @@
   "brand": "Bang & Olufsen",
   "modello": "Beoplay H95",
   "chiavi": [
+   "b&o h95",
+   "bang olufsen h95",
    "beoplay h95"
   ],
   "brand_chiavi": [
@@ -4658,6 +4607,7 @@
   "brand": "Bang & Olufsen",
   "modello": "Beoplay H6",
   "chiavi": [
+   "b&o h6",
    "beoplay h6"
   ],
   "brand_chiavi": [
@@ -4727,6 +4677,7 @@
   "brand": "Bang & Olufsen",
   "modello": "Beolit 20",
   "chiavi": [
+   "bang olufsen beolit",
    "beolit 20"
   ],
   "brand_chiavi": [
@@ -5035,7 +4986,9 @@
   "brand": "Scotty Cameron",
   "modello": "Newport 2 (tutte le linee)",
   "chiavi": [
-   "newport 2"
+   "newport 2",
+   "newport two",
+   "scotty newport"
   ],
   "brand_chiavi": [
    "scotty cameron"
@@ -5063,6 +5016,7 @@
   "brand": "Scotty Cameron",
   "modello": "Select Newport 2",
   "chiavi": [
+   "scotty select",
    "select newport 2"
   ],
   "brand_chiavi": [
@@ -5091,6 +5045,7 @@
   "brand": "Scotty Cameron",
   "modello": "Special Select Newport 2",
   "chiavi": [
+   "special select",
    "special select newport 2"
   ],
   "brand_chiavi": [
@@ -5119,6 +5074,7 @@
   "brand": "Scotty Cameron",
   "modello": "Super Select Newport 2 / 2+",
   "chiavi": [
+   "super select",
    "super select newport 2"
   ],
   "brand_chiavi": [
@@ -5147,6 +5103,7 @@
   "brand": "Scotty Cameron",
   "modello": "Studio Select Newport 2",
   "chiavi": [
+   "studio select",
    "studio select newport 2"
   ],
   "brand_chiavi": [
@@ -5233,7 +5190,9 @@
   "brand": "Scotty Cameron",
   "modello": "Phantom X 5 / 5.5",
   "chiavi": [
-   "phantom x 5"
+   "phantom x 5",
+   "phantom x5",
+   "scotty phantom"
   ],
   "brand_chiavi": [
    "scotty cameron"
@@ -5443,8 +5402,7 @@
   "modello": "Helmut Newton SUMO 2009 / 20th Anniversary (formato normale)",
   "chiavi": [
    "helmut newton sumo",
-   "newton sumo 20th",
-   "sumo taschen"
+   "newton sumo 20th"
   ],
   "brand_chiavi": [
    "tachen",
@@ -5643,7 +5601,9 @@
   "brand": "Assouline",
   "modello": "Chanel set di 3 (Memoire, cofanetto)",
   "chiavi": [
-   "chanel cofanetto 3 libri"
+   "assouline chanel",
+   "chanel cofanetto 3 libri",
+   "libri chanel assouline"
   ],
   "brand_chiavi": [
    "asouline",
@@ -5704,6 +5664,8 @@
   "brand": "Steidl",
   "modello": "Saul Leiter Early Black and White (2 vol.)",
   "chiavi": [
+   "libro saul leiter",
+   "saul leiter",
    "saul leiter early black and white"
   ],
   "brand_chiavi": [
@@ -5734,9 +5696,7 @@
   "brand": "Steidl",
   "modello": "William Eggleston Los Alamos Revisited (3 vol.)",
   "chiavi": [
-   "eggleston los alamos",
-   "los alamos revisited",
-   "william eggleston"
+   "eggleston los alamos"
   ],
   "brand_chiavi": [
    "egleston",
@@ -5904,7 +5864,11 @@
   "brand": "Artemide",
   "modello": "Tolomeo Terra / Lettura",
   "chiavi": [
-   "tolomeo lettura"
+   "artemide tolomeo da terra",
+   "lampada da terra tolomeo",
+   "piantana artemide tolomeo",
+   "tolomeo lettura",
+   "tolomeo terra"
   ],
   "brand_chiavi": [
    "artemid",
@@ -6411,7 +6375,9 @@
   "brand": "Flos",
   "modello": "Bon Jour / Bon Jour Unplugged",
   "chiavi": [
-   "bon jour unplugged"
+   "bon jour starck",
+   "bon jour unplugged",
+   "flos bon jour"
   ],
   "brand_chiavi": [
    "bonjour",
@@ -6441,6 +6407,8 @@
   "brand": "Flos",
   "modello": "IC Lights",
   "chiavi": [
+   "flos ic",
+   "ic light flos",
    "ic lights"
   ],
   "brand_chiavi": [
