@@ -228,7 +228,9 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             _feat["fonte_cat"] = _fv_pre.get("fonte_categoria") or "-"   # titolo | descrizione | catalogo | nessuna
             _feat.update({"prezzo": _prezzo_pre, "semaforo": _fv_pre.get("semaforo") or "-", "fv": _fv_pre.get("fv"),
                           "margine": _fv_pre.get("margine"), "conf": _fv_pre.get("conf") or "-", "regola": _regola_pre,
-                          "suono": "si" if listing_info["preavviso_suono"] else "no"})
+                          "suono": "si" if listing_info["preavviso_suono"] else "no",
+                          "sem_base": _fv_pre.get("semaforo_base") or "-", "lift": _fv_pre.get("lift_velocita", "-"),
+                          "brand_n": _fv_pre.get("brand") or "-"})
             log.info("PREAVVISO | item=%s | brand='%s' | prezzo=%s | semaforo=%s | fv=%s | margine=%s | conf=%s | regola=%s%s",
                      _item_pre or "n/d", listing_info.get("brand") or "n/d", _prezzo_pre,
                      _feat["semaforo"], _fv_pre.get("fv"), _fv_pre.get("margine"), _feat["conf"], _regola_pre,

@@ -42,6 +42,12 @@ _tracc_stop = set()  # annunci venduti, rimossi o scartati prima del verdetto: l
 # Scartati per "falso"/"fraudolento" (5/10): si seguono lo stesso, ma solo fino a TRACCIAMENTO_SERIE_RIDOTTA_MAX_S
 # (60 s e 5 min), per misurare i falsi negativi dell'Occhio spendendo poca banda. ERRORE_CERVELLO: serie completa.
 _tracc_ridotti = set()
+# Dall'8/10 anche gli altri scartati dopo lo scrape (SKIP_PRE_GEMINI, SKIP_PRE_CERVELLO, SKIP_ROSSO) si seguono con la
+# serie ridotta (5 min, 15 min, 1 h): l'utente vuole ragionare su TUTTI gli annunci, e solo cosi' si misurano i falsi
+# negativi dei filtri e dell'Occhio. SKIP_PRE_SCRAPE (esclusioni dell'utente su titolo/brand) resta senza serie.
+TRACCIAMENTO_SERIE_SKIP_S = (300, 900, 3600)
+_SKIP_DA_SEGUIRE = ("SKIP_PRE_GEMINI", "SKIP_PRE_CERVELLO", "SKIP_ROSSO")
+_tracc_ctx = {}   # item_id -> contesto dell'annuncio (esito, margine, semaforo, categoria...) per la riga TRACCIATO
 _STATI_SPARITO = ('rimosso', 'rimosso?', 'n.d.')
 TRACCIAMENTO_SERIE_RIDOTTA_MAX_S = 300
 _SCARTI_DA_SEGUIRE = ("[FALSO CONCLAMATO", "[ANNUNCIO FRAUDOLENTO")
@@ -186,28 +192,82 @@ def tracc_registra_gia_venduto(listing_info, url, t0):
         log.warning("Tracciamento: gia' venduto non registrato:\n%s", traceback.format_exc())
 
 
-async def _tracc_serie(item_id, url, brand, prezzo, t0, offsets=None):
+def _prossima_fascia(secondi):
+    """Fascia (offset nominale) che contiene `secondi`: per un controllo fatto in ritardo (dopo un riavvio) la classe
+    si attribuisce alla fascia reale, mai a una piu' veloce. Pura."""
+    for limite, _ in _TRACC_FASCE:
+        if secondi <= limite:
+            return limite
+    return 3600
+
+
+def _tracc_esito_finale(storia):
+    """(stato finale, classe, secondi di vendita) dalla storia [(offset, stato)]. Classe None se la serie non e' arrivata in
+    fondo o l'annuncio e' sparito. Pura."""
+    for off, st in storia:
+        if st == "venduto":
+            return "venduto", _tracc_classe(off, "venduto"), off
+    if storia:
+        off, st = storia[-1]
+        return st, _tracc_classe(off, st), None
+    return "-", None, None
+
+
+def _riga_tracciato(item_id, brand, prezzo, storia, ctx, incompleto=False, prefisso="TRACCIATO"):
+    """Una riga per annuncio con TUTTO (esito del bot, semaforo, caratteristiche, esito di vendita): e' il dataset
+    dell'apprendimento (un solo filtro nei log, niente join fra righe sparse)."""
+    stato, classe, venduto_s = _tracc_esito_finale(storia)
+    campi = {"item": item_id, "brand": f"'{brand or 'n/d'}'", "prezzo": prezzo, **{k: v for k, v in (ctx or {}).items()},
+             "stato": stato, "classe": classe or "-", "venduto_s": venduto_s if venduto_s is not None else "-",
+             "controlli": len(storia), "incompleto": "si" if incompleto else "no",
+             "storia": ",".join(f"{o}:{st}" for o, st in storia) or "-"}
+    return f"{prefisso} | " + " | ".join(f"{k}={v}" for k, v in campi.items() if v not in (None, ""))
+
+
+async def _tracc_serie(item_id, url, brand, prezzo, t0, offsets=None, storia=None, radar=False):
     """Serie di controlli ancorati a t0: attende ciascun offset, rilegge la pagina e si ferma alla prima
-    vendita (o se l'annuncio e' scartato). Registra i secondi reali da t0, la fascia e la classe."""
+    vendita (o se l'annuncio e' scartato). Registra i secondi reali da t0, la fascia e la classe. La serie e' salvata nel
+    DB e riprende dopo un riavvio (`tracc_riprendi_serie`); `storia` = controlli gia' fatti prima del riavvio."""
     item_id = str(item_id)
-    storia = []   # (offset, stato): serve a capire se uno "sparito" torna online (legit check) o resta sparito (ban)
+    storia = list(storia or [])   # (offset, stato): serve a capire se uno "sparito" torna online (legit check) o resta sparito (ban)
+    finita = False
     try:
         await _tracc_serie_interna(item_id, url, brand, prezzo, t0, storia, offsets)
+        finita = True
+    except asyncio.CancelledError:
+        raise
     finally:
+        if finita:
+            try:
+                ctx = _tracc_ctx.get(item_id, {})
+                log.info(_riga_tracciato(item_id, brand, prezzo, storia, ctx, prefisso="TRACCIATO_RADAR" if radar else "TRACCIATO"))
+                if not radar:
+                    db.scrivi_evento("tracciato", item_id, brand, {"prezzo": prezzo, **ctx, "storia": storia})
+                db.elimina_serie(item_id)
+                _tracc_ctx.pop(item_id, None)
+            except Exception:
+                log.warning("TRACCIATO non scritto:\n%s", traceback.format_exc())
         if any(st in _STATI_SPARITO for _, st in storia):
             log.info("RICONTROLLO STORIA | item=%s | brand='%s' | stati=%s", item_id, brand or "n/d",
                      " ".join(f"{o}s:{st}" for o, st in storia))
 
 
 async def _tracc_serie_interna(item_id, url, brand, prezzo, t0, storia, offsets=None):
+    fatto_in_ritardo = False
     for s_dopo in (offsets or TRACCIAMENTO_SERIE_SECONDI):
         try:
             if item_id in _tracc_stop:
                 return
-            if item_id in _tracc_ridotti and s_dopo > TRACCIAMENTO_SERIE_RIDOTTA_MAX_S:
-                return
+            if item_id in _tracc_ridotti and s_dopo not in TRACCIAMENTO_SERIE_SKIP_S:
+                continue   # serie ridotta: solo 5 min, 15 min e 1 h
             attesa = t0 + s_dopo - time.time()
-            if attesa > 0:
+            if attesa < -90:
+                # dopo un riavvio: un solo controllo subito per tutti gli offset scaduti, con la fascia reale
+                if fatto_in_ritardo:
+                    continue
+                fatto_in_ritardo = True
+                s_dopo = _prossima_fascia(time.time() - t0)
+            elif attesa > 0:
                 await asyncio.sleep(attesa)
                 if item_id in _tracc_stop:
                     return
@@ -233,6 +293,7 @@ async def _tracc_serie_interna(item_id, url, brand, prezzo, t0, storia, offsets=
                 log.info("RICONTROLLO RIAPPARSO | item=%s | brand='%s' | dopo=%ss | stato=%s | prima=%s", item_id,
                          brand or "n/d", reale, stato, storia[-1][1])
             storia.append((s_dopo, stato))
+            db.aggiorna_serie(item_id, storia=storia)
             if stato == "venduto":
                 _tracc_stop.add(item_id)
                 return
@@ -255,10 +316,40 @@ def tracc_avvia_serie(listing_info, url, t0, offsets=None):
         if listing_info.get("stato_vendita") == "venduto":
             _tracc_stop.add(str(item_id))
             return
-        asyncio.get_running_loop().create_task(_tracc_serie(
-            item_id, url, listing_info.get("brand"), _a_float(listing_info.get("price"), None), t0, offsets))
+        prezzo = _a_float(listing_info.get("price"), None)
+        db.salva_serie(item_id, url, listing_info.get("brand"), prezzo, t0, list(offsets or TRACCIAMENTO_SERIE_SECONDI))
+        asyncio.get_running_loop().create_task(_tracc_serie(item_id, url, listing_info.get("brand"), prezzo, t0, offsets, radar=bool(offsets)))
     except Exception:
         log.warning("Tracciamento: serie di controlli non avviata:\n%s", traceback.format_exc())
+
+
+def tracc_riprendi_serie(adesso=None):
+    """All'avvio: riprende le serie lasciate a meta' dal riavvio precedente (il deploy le uccideva: nei dati del 7/10 mancava
+    l'esito di vendita di meta' degli annunci). Ritorna quante ne ha riprese. Va chiamata con il loop in esecuzione."""
+    if not TRACCIAMENTO_ATTIVO:
+        return 0
+    adesso = adesso if adesso is not None else time.time()
+    n = 0
+    try:
+        for r in db.carica_serie(adesso - 3700):
+            item_id = r["item_id"]
+            fatti = {o for o, _ in r["storia"]}
+            restanti = [o for o in r["offsets"] if o not in fatti]
+            if not restanti:
+                continue
+            ctx = r.get("ctx") or {}
+            _tracc_ctx[item_id] = ctx
+            if ctx.get("esito"):
+                _tracc_esiti[item_id] = (ctx["esito"], ctx.get("target"))
+                if str(ctx["esito"]).startswith(_SKIP_DA_SEGUIRE):
+                    _tracc_ridotti.add(item_id)
+            asyncio.get_running_loop().create_task(_tracc_serie(
+                item_id, r["url"], r["brand"], r["prezzo"], r["t0"], restanti, storia=r["storia"],
+                radar=list(r["offsets"]) != list(TRACCIAMENTO_SERIE_SECONDI)))
+            n += 1
+    except Exception:
+        log.warning("Tracciamento: serie non riprese:\n%s", traceback.format_exc())
+    return n
 
 
 _LINGUA_MARCATORI = {
@@ -351,6 +442,21 @@ def trova_timestamp_candidati(html_pagina, giorni=45, max_voci=40):
     return trovati
 
 
+def _contesto_tracciato(listing_info, esito, campi):
+    """Campi dell'annuncio da riportare nella riga TRACCIATO: esito del bot e stima rapida (semaforo, lift del brand)."""
+    fv = listing_info.get("fair_value") or {}
+    ctx = {
+        "esito": esito, "margine": campi.get("margine"), "roi": campi.get("roi"), "target": campi.get("target"),
+        "legit": campi.get("legit"), "n_comp": campi.get("n_comp"),
+        "sem": fv.get("semaforo"), "sem_base": fv.get("semaforo_base"), "lift": fv.get("lift_velocita"),
+        "fv": fv.get("fv"), "conf": fv.get("conf"), "brand_n": fv.get("brand"),
+        "categoria": fv.get("categoria") or estrai_categoria_da_titolo(listing_info.get("title") or "", listing_info.get("description")),
+        "cond": listing_info.get("condition"), "preavviso": "si" if listing_info.get("preavviso") else "no",
+        "motivo": (str(campi.get("motivo") or "")[:60].replace("|", "/") or None),
+    }
+    return {k: (v.replace("|", "/") if isinstance(v, str) else v) for k, v in ctx.items() if v not in (None, "")}
+
+
 def _log_esito(listing_info, esito, **campi):
     """Una riga greppable per annuncio con il brand del tracker (richiesto
     dall'utente il 2026-10-01) per l'analisi giornaliera per brand dai log."""
@@ -359,10 +465,12 @@ def _log_esito(listing_info, esito, **campi):
         _id = _estrai_item_id_da_url(listing_info.get("url")) if listing_info.get("url") else None
         if _id:
             _tracc_esiti[str(_id)] = (esito, campi.get("target"))
-            if esito == "SKIP_PRE_CERVELLO" and str(campi.get("motivo") or "").startswith(_SCARTI_DA_SEGUIRE):
-                _tracc_ridotti.add(str(_id))
+            if str(esito) in _SKIP_DA_SEGUIRE:
+                _tracc_ridotti.add(str(_id))     # scartato dopo lo scrape: serie ridotta (5 min, 15 min, 1 h)
             elif str(esito).startswith("SKIP_"):
                 _tracc_stop.add(str(_id))
+            _tracc_ctx[str(_id)] = _contesto_tracciato(listing_info, esito, campi)
+            db.aggiorna_serie(_id, ctx=_tracc_ctx[str(_id)])
             if len(_tracc_esiti) > 5000:
                 for _k in list(_tracc_esiti)[:1000]:
                     _tracc_esiti.pop(_k, None)

@@ -10,12 +10,13 @@ from bot.verdetto import _a_float
 # nei log sono tutti capi a prezzo basso con rischio fake altissimo e nessun
 # margine reale, quindi si scartano a monte, prima di Occhio e Cervello,
 # come gli occhiali. Il tetto di prezzo e' configurabile da Railway con
-# MIUMIU_TOP_PREZZO_MAX (default 20 euro; 0 = scarta a qualunque prezzo).
+# MIUMIU_TOP_PREZZO_MAX (0 = scarta a qualunque prezzo). Dall'8/10 default 0: l'utente conferma che le canotte/top Miu Miu
+# sono quasi sempre false, a qualunque prezzo (prima il tetto era 20 euro).
 # Solo titolo (non descrizione) per non catturare "top condition" ecc.
 try:
-    MIUMIU_TOP_PREZZO_MAX = float(os.environ.get("MIUMIU_TOP_PREZZO_MAX", "20").replace(",", "."))
+    MIUMIU_TOP_PREZZO_MAX = float(os.environ.get("MIUMIU_TOP_PREZZO_MAX", "0").replace(",", "."))
 except ValueError:
-    MIUMIU_TOP_PREZZO_MAX = 20.0
+    MIUMIU_TOP_PREZZO_MAX = 0.0
 _RE_MIUMIU = re.compile(r"\bmiu\s*-?\s*miu\b")
 _RE_TOP_LEGGERO = re.compile(
     r"\b(tops?|hauts?|d[eé]bardeurs?|tank|tanks|canotta|canottiera|camisole|"
@@ -47,7 +48,7 @@ def check_skip_pre_gemini(listing_info):
     testo_completo = f"{titolo} {descrizione}"
 
     if _miumiu_top_economico(listing_info):
-        return True, "[CATEGORIA GENERICA NON FLIPPABILE] Miu Miu top/haut/debardeur a prezzo basso (rischio fake, nessun margine)"
+        return True, "[CATEGORIA GENERICA NON FLIPPABILE] Miu Miu top/haut/debardeur/canotta (quasi sempre falsi)"
 
     # 1. Blocklist venditori
     if seller and seller in VENDITORI_BLOCKLIST:

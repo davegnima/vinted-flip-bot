@@ -41,7 +41,7 @@ from PIL import Image
 from bot import http_clients as hc
 from bot.db import DB_FILE
 from bot.gemini_stato import ripristina_stato_gemini
-from bot.tracciamento import importa_tracciamento_jsonl
+from bot.tracciamento import importa_tracciamento_jsonl, tracc_riprendi_serie
 from bot.radar import RADAR_CHAT_IDS, e_messaggio_radar, gestisci_annuncio_radar, risolvi_gruppo_radar, togli_marcatore
 from bot.costanti import (
     BRAND_BLOCKLIST,
@@ -1525,6 +1525,9 @@ async def main():
         importati = importa_tracciamento_jsonl() if TRACCIAMENTO_ATTIVO else 0
         log.info("DB %s: ripristinati %d cooldown di quota Gemini e %d modelli esclusi; tracciamento importato: %d righe.",
                  DB_FILE, n_quote, n_esclusi, importati)
+        riprese = tracc_riprendi_serie()
+        if riprese:
+            log.info("Tracciamento: riprese %d serie di ricontrolli lasciate a meta' dal riavvio.", riprese)
     except Exception:
         log.warning("DB non inizializzato (il bot prosegue senza persistenza):\n%s", traceback.format_exc())
     if TRACCIAMENTO_ATTIVO:

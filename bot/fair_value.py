@@ -8,6 +8,7 @@ import traceback
 
 
 from bot.verdetto import _a_float, _estrai_item_id_da_url
+from bot.velocita import semaforo_corretto
 from bot.config import _env_float
 from bot.categorie import estrai_categoria_da_titolo, scegli_materiale_per_ricerca
 from bot.logger import log
@@ -494,6 +495,9 @@ def stima_fair_value(listing_info):
             out["semaforo"] = "🟡"
         else:
             out["semaforo"] = "🔴"
+        # correzione dalla velocita' di vendita del brand (bot/velocita.py): il semaforo d'origine resta in semaforo_base
+        out["semaforo_base"] = out["semaforo"]
+        out["semaforo"], out["lift_velocita"] = semaforo_corretto(out["semaforo"], brand)
     return out
 
 

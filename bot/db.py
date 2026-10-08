@@ -32,6 +32,9 @@ CREATE TABLE IF NOT EXISTS eventi (
 CREATE INDEX IF NOT EXISTS eventi_tipo_ts ON eventi (tipo, ts);
 CREATE INDEX IF NOT EXISTS eventi_item ON eventi (item_id);
 CREATE TABLE IF NOT EXISTS pagamento_giorno (giorno TEXT PRIMARY KEY, n INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS serie_pendenti (
+    item_id TEXT PRIMARY KEY, url TEXT NOT NULL, brand TEXT, prezzo REAL, t0 REAL NOT NULL,
+    offsets TEXT NOT NULL, storia TEXT NOT NULL DEFAULT '[]', ctx TEXT NOT NULL DEFAULT '{}');
 """
 
 _conn = None
@@ -124,6 +127,39 @@ def salva_pagamento(giorno, n):
 def carica_pagamento(giorno):
     r = _leggi("SELECT n FROM pagamento_giorno WHERE giorno = ?", (giorno,))
     return int(r[0][0]) if r else 0
+
+
+# ---- serie di ricontrolli in corso: sopravvivono ai riavvii (ogni deploy ne uccideva meta') ---------------------
+def salva_serie(item_id, url, brand, prezzo, t0, offsets):
+    return _esegui("INSERT OR REPLACE INTO serie_pendenti (item_id, url, brand, prezzo, t0, offsets) VALUES (?, ?, ?, ?, ?, ?)",
+                   (str(item_id), url, brand, prezzo, float(t0), json.dumps(list(offsets))))
+
+
+def aggiorna_serie(item_id, storia=None, ctx=None):
+    if storia is not None:
+        _esegui("UPDATE serie_pendenti SET storia = ? WHERE item_id = ?", (json.dumps(storia), str(item_id)))
+    if ctx is not None:
+        _esegui("UPDATE serie_pendenti SET ctx = ? WHERE item_id = ?",
+                (json.dumps(ctx, ensure_ascii=False, default=str), str(item_id)))
+
+
+def elimina_serie(item_id):
+    return _esegui("DELETE FROM serie_pendenti WHERE item_id = ?", (str(item_id),))
+
+
+def carica_serie(dal_t0):
+    """Serie non finite con t0 >= dal_t0: [{item_id, url, brand, prezzo, t0, offsets, storia, ctx}]."""
+    out = []
+    for item_id, url, brand, prezzo, t0, offsets, storia, ctx in _leggi(
+            "SELECT item_id, url, brand, prezzo, t0, offsets, storia, ctx FROM serie_pendenti WHERE t0 >= ?", (dal_t0,)):
+        try:
+            out.append({"item_id": item_id, "url": url, "brand": brand, "prezzo": prezzo, "t0": t0,
+                        "offsets": json.loads(offsets), "storia": [tuple(x) for x in json.loads(storia)],
+                        "ctx": json.loads(ctx)})
+        except ValueError:
+            continue
+    _esegui("DELETE FROM serie_pendenti WHERE t0 < ?", (dal_t0,))   # vecchie: la serie dura al massimo 1 h
+    return out
 
 
 # ---- stato Gemini ----------------------------------------------------------------------------------------

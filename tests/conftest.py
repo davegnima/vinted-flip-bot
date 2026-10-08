@@ -10,6 +10,7 @@ os.environ.update({
     "TELEGRAM_API_ID": "1", "TELEGRAM_API_HASH": "x", "TELEGRAM_SESSION_STRING": "",
     "TELEGRAM_GROUP_ID": "-100", "TELEGRAM_BOT_TOKEN": "1:x", "TELEGRAM_OWNER_CHAT_ID": "1",
     "GEMINI_API_KEY": "k",
+    "VELOCITA_ATTIVA": "0",   # la correzione del semaforo dalla velocita' si prova a parte, con una tabella finta
     "RADAR_PAUSA_DA": "",   # niente pausa notturna nei test (altrimenti falliscono se girano di notte)
     "TRACCIAMENTO_FILE": os.path.join(_TMP, "tracciamento.jsonl"),
     "FAIR_VALUE_LOG_FILE": os.path.join(_TMP, "fair_value_log.jsonl"),

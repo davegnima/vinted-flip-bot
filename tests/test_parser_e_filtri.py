@@ -67,3 +67,9 @@ def test_descrivi_pagina_leggera_riporta_titolo_e_parole_di_blocco():
     d = descrivi_pagina_leggera(h)
     assert "Access denied" in d and "verify" in d and "denied" in d and "var x" not in d
     assert "nessuna" in descrivi_pagina_leggera("<html><body><p>ciao</p></body></html>")
+
+
+def test_miumiu_top_e_canotte_si_scartano_a_qualunque_prezzo():
+    assert m.check_skip_pre_gemini(_li("Canotta Miu Miu nera", "Miu Miu", "", price="150"))[0]
+    assert m.check_skip_pre_gemini(_li("Top Miu Miu in raso", "Miu Miu", "", price="80"))[0]
+    assert not m.check_skip_pre_gemini(_li("Cappotto Miu Miu", "Miu Miu", "ottime condizioni", price="150"))[0]
