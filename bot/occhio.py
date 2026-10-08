@@ -3,6 +3,43 @@ import re
 
 
 # ---- fine import ----
+# PAESE DI PRODUZIONE incoerente col brand (richiesto dall'utente l'8/10: un maglione Prada con etichetta perfetta ma
+# "Made in China" era stato giudicato originale). Per questi brand l'abbigliamento e' prodotto in Italia: un paese tra
+# quelli elencati e' un segnale forte di falso, anche se l'etichetta sembra identica a una vera. Tabella volutamente
+# corta: si estende solo con brand di cui si e' CERTI della produzione (mai dedurre un falso da un paese dubbio).
+PAESI_INCOERENTI_PER_BRAND = {
+    ("prada", "miu miu"): (
+        "china", "cina", "chine", "prc", "bangladesh", "vietnam", "viet nam", "india", "inde", "cambodia", "cambogia",
+        "cambodge", "pakistan", "indonesia", "indonesie", "myanmar", "sri lanka",
+    ),
+}
+_RE_MADE_IN = re.compile(
+    r"(?:made\s+in|fabriqu[eé]e?\s+en|hergestellt\s+in|prodotto\s+in|fabricado\s+en|hecho\s+en|gemaakt\s+in)\s+"
+    r"([a-zà-ÿ.' ]{2,28})", re.IGNORECASE)
+
+
+def paese_incoerente(o, listing_info=None):
+    """(paese letto, brand) se sull'etichetta c'e' un paese di produzione incoerente col brand dichiarato o letto, altrimenti
+    None. Cerca "Made in ..." nei testi delle etichette, nella composizione e nel campo paese_produzione_letto. Pura."""
+    li = listing_info or {}
+    contesto = " ".join(str(x or "") for x in (li.get("brand"), li.get("title"), o.get("brand_letto_etichetta"))).lower()
+    testi = [str(e.get("testo_verbatim") or "") for e in (o.get("etichette") or []) if isinstance(e, dict)]
+    testi += [str(o.get("composizione_da_etichetta") or "")]
+    candidati = [m.group(1) for t in testi for m in _RE_MADE_IN.finditer(t)]
+    if o.get("paese_produzione_letto"):
+        candidati.append(str(o["paese_produzione_letto"]))
+    for marche, paesi in PAESI_INCOERENTI_PER_BRAND.items():
+        marca = next((m for m in marche if m in contesto), None)
+        if not marca:
+            continue
+        for c in candidati:
+            parole = re.findall(r"[a-zà-ÿ]+", c.lower().replace(".", "").replace("é", "e"))
+            coppie = {" ".join(parole[i:i + 2]) for i in range(len(parole))}
+            if any(p in paesi for p in parole) or any(p in paesi for p in coppie):
+                return c.strip().rstrip(".").title(), marca.title()
+    return None
+
+
 def calcola_scarto_occhio(o, solo_cover_photo=False, listing_info=None):
     """Ritorna (scarta: bool, motivo: str|None) dai soli campi osservativi.
 
@@ -92,6 +129,15 @@ def calcola_scarto_occhio(o, solo_cover_photo=False, listing_info=None):
             and _norm(o.get("confidenza_legit")) == "alta"
             and o.get("controprova_prezzo_eseguita") is True):
         return True, f"[FALSO CONCLAMATO] {o.get('motivo_sintetico') or 'rilevato dall analisi visiva.'}"
+
+    # Paese di produzione incoerente col brand (8/10): scarto indipendente dal giudizio del modello, che davanti a
+    # un'etichetta dall'aspetto perfetto puo' dichiarare "autentico" ignorando il "Made in".
+    incoerente = paese_incoerente(o, listing_info)
+    if incoerente:
+        return True, (
+            f"[FALSO CONCLAMATO] Made in {incoerente[0]} su {incoerente[1]}: produzione incoerente col brand "
+            "(abbigliamento prodotto in Italia), anche con etichetta dall'aspetto corretto."
+        )
 
     # 'capi_diversi_tra_le_foto' RIMOSSO dallo scarto automatico (richiesto
     # dall'utente il 2026-09-21, dopo ripetuti falsi positivi su annunci
@@ -397,6 +443,8 @@ def render_occhio_da_json(occhio, problemi=None):
                      f"(coerenza con l'etichetta: {o.get('coerenza_materiale', 'non_valutabile')})")
     if o.get("taglia_etichetta"):
         righe.append(f"Taglia da etichetta: {o['taglia_etichetta']}")
+    if o.get("paese_produzione_letto"):
+        righe.append(f"Paese di produzione da etichetta: {o['paese_produzione_letto']}")
     if o.get("linea_o_era"):
         evidenze = "; ".join(o.get("evidenze_datazione") or []) or "nessuna evidenza dichiarata"
         righe.append(f"Linea/era: {o['linea_o_era']} (evidenze: {evidenze})")

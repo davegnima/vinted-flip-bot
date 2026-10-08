@@ -15,6 +15,7 @@ OCCHIO_RESPONSE_SCHEMA = {
         "brand_letto_etichetta",
         "composizione_da_etichetta",
         "taglia_etichetta",
+        "paese_produzione_letto",
 
         # 3. IDENTIFICAZIONE: cosa deduco dalle trascrizioni
         "relazione_brand",
@@ -156,6 +157,15 @@ OCCHIO_RESPONSE_SCHEMA = {
             "type": "STRING",
             "nullable": True,
             "description": "Taglia come stampata sull'etichetta (es. 'IT 48', 'M', 'US 10').",
+        },
+        "paese_produzione_letto": {
+            "type": "STRING",
+            "nullable": True,
+            "description": (
+                "Il paese scritto dopo 'Made in' / 'Fabriqué en' / 'Hergestellt in' / 'Prodotto in' sul wash tag o "
+                "sull'etichetta di composizione, ESATTAMENTE come stampato (es. 'Italy', 'China'). null se non e' "
+                "visibile o non e' leggibile: non dedurlo dal brand."
+            ),
         },
 
         # =================================================================
