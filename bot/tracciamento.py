@@ -155,10 +155,9 @@ def _tracc_classe(offset_s, stato):
     """Classe di mercato (criterio dell'utente): AFFARE se venduto entro 5 min, MEDIO AFFARE entro 15 min,
     NORMALE entro 1h, NON AFFARE se al controllo dell'ora e' ancora invenduto, PRENOTATO se nella prima ora e' stato prenotato (domanda alta,
     conta come veloce nella tabella velocita'). Pura."""
-    if stato == "venduto":
+    if stato == "venduto" or (stato == "prenotato" and offset_s <= 3600):
+        # prenotato = venduto (utente, 8/10): la vendita e' bloccata da un compratore, conta il momento della prenotazione
         return "AFFARE" if offset_s <= 300 else "MEDIO AFFARE" if offset_s <= 900 else "NORMALE"
-    if stato == "prenotato" and offset_s <= 3600:
-        return "PRENOTATO"   # offerta/prenotazione nella prima ora: domanda alta (richiesta dell'utente l'8/10)
     if offset_s >= 3600 and stato == "attivo":   # rimosso?/n.d. non sono invenduti: restano senza classe
         return "NON AFFARE"
     return None
@@ -205,16 +204,23 @@ def _prossima_fascia(secondi):
     return 3600
 
 
+def _tracc_prenotato_s(storia):
+    """Offset del primo controllo 'prenotato' entro 1 h, None se non c'e'. Pura."""
+    return next((o for o, s in storia if s == "prenotato" and o <= 3600), None)
+
+
 def _tracc_esito_finale(storia):
     """(stato finale, classe, secondi di vendita) dalla storia [(offset, stato)]. Classe None se la serie non e' arrivata in
     fondo o l'annuncio e' sparito. Pura."""
-    for off, st in storia:
-        if st == "venduto":
-            return "venduto", _tracc_classe(off, "venduto"), off
+    venduto = next((o for o, s in storia if s == "venduto"), None)
+    primo = _tracc_prenotato_s(storia)
+    if venduto is not None and (primo is None or venduto < primo):
+        primo = venduto
+    if primo is not None:
+        # la classe e' quella del primo evento (prenotazione o vendita): prenotato a 1 min e venduto a 30 min = AFFARE
+        return ("venduto" if venduto is not None else storia[-1][1]), _tracc_classe(primo, "venduto"), venduto
     if storia:
         off, st = storia[-1]
-        if any(s_ == "prenotato" and o_ <= 3600 for o_, s_ in storia):
-            return st, "PRENOTATO", None   # prenotato e poi tornato attivo (il compratore si e' ritirato): la domanda c'era
         return st, _tracc_classe(off, st), None
     return "-", None, None
 
@@ -224,7 +230,9 @@ def _riga_tracciato(item_id, brand, prezzo, storia, ctx, incompleto=False, prefi
     dell'apprendimento (un solo filtro nei log, niente join fra righe sparse)."""
     stato, classe, venduto_s = _tracc_esito_finale(storia)
     pref = _tracc_pref.get(str(item_id)) or []
-    campi = {"item": item_id, "brand": f"'{brand or 'n/d'}'", "prezzo": prezzo, **{k: v for k, v in (ctx or {}).items()},
+    campi = {"item": item_id, "brand": f"'{brand or 'n/d'}'", "prezzo": prezzo,
+             **{k: v for k, v in (ctx or {}).items() if not k.startswith("_")},
+             "prenotato_s": _tracc_prenotato_s(storia),
              "pref_max": max((p for _, p in pref), default=None),
              "pref_serie": ",".join(f"{o}:{p}" for o, p in pref) or None,
              "stato": stato, "classe": classe or "-", "venduto_s": venduto_s if venduto_s is not None else "-",
@@ -306,6 +314,8 @@ async def _tracc_serie_interna(item_id, url, brand, prezzo, t0, storia, offsets=
             if isinstance(segnali.get("preferiti"), int):
                 _tracc_pref.setdefault(item_id, []).append((s_dopo, segnali["preferiti"]))
             db.aggiorna_serie(item_id, storia=storia)
+            if _tracc_pref.get(item_id):   # i preferiti restano nel DB con il contesto: un riavvio non li perde
+                db.aggiorna_serie(item_id, ctx={**_tracc_ctx.get(item_id, {}), "_pref": _tracc_pref[item_id]})
             if stato == "venduto":
                 _tracc_stop.add(item_id)
                 return
@@ -349,7 +359,10 @@ def tracc_riprendi_serie(adesso=None):
             restanti = [o for o in r["offsets"] if o not in fatti]
             if not restanti:
                 continue
-            ctx = r.get("ctx") or {}
+            ctx = dict(r.get("ctx") or {})
+            pref = ctx.pop("_pref", None)
+            if pref:
+                _tracc_pref[item_id] = [tuple(x) for x in pref]
             _tracc_ctx[item_id] = ctx
             if ctx.get("esito"):
                 _tracc_esiti[item_id] = (ctx["esito"], ctx.get("target"))

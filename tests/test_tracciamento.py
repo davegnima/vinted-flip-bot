@@ -34,10 +34,13 @@ def test_fasce_e_classi():
         "AFFARE", "AFFARE", "MEDIO AFFARE", "MEDIO AFFARE", "NORMALE"]
     assert m._tracc_classe(3600, "attivo") == "NON AFFARE"
     assert m._tracc_classe(300, "attivo") is None
-    # prenotato nella prima ora = domanda alta; ritirato (torna attivo) resta PRENOTATO, venduto dopo prevale
-    assert m._tracc_classe(300, "prenotato") == "PRENOTATO" and m._tracc_classe(3600, "prenotato") == "PRENOTATO"
-    assert tr._tracc_esito_finale([(300, "prenotato"), (3600, "attivo")]) == ("attivo", "PRENOTATO", None)
-    assert tr._tracc_esito_finale([(300, "prenotato"), (900, "venduto")]) == ("venduto", "MEDIO AFFARE", 900)
+    # prenotato = venduto (8/10): conta il momento della prenotazione, anche se poi si ritira o vende piu' tardi
+    assert [m._tracc_classe(s, "prenotato") for s in (60, 300, 900, 3600)] == ["AFFARE", "AFFARE", "MEDIO AFFARE", "NORMALE"]
+    assert tr._tracc_esito_finale([(300, "prenotato"), (3600, "attivo")]) == ("attivo", "AFFARE", None)
+    assert tr._tracc_esito_finale([(60, "prenotato"), (1800, "venduto")]) == ("venduto", "AFFARE", 1800)
+    assert tr._tracc_esito_finale([(900, "prenotato"), (3600, "venduto")]) == ("venduto", "MEDIO AFFARE", 3600)
+    assert tr._tracc_esito_finale([(60, "attivo"), (300, "venduto")]) == ("venduto", "AFFARE", 300)
+    assert "prenotato_s=300" in tr._riga_tracciato("x2", "b", 20, [(60, "attivo"), (300, "prenotato")], {})
     assert "pref_serie=15:0,300:3" in (tr._tracc_pref.update({"x1": [(15, 0), (300, 3)]}) or tr._riga_tracciato("x1", "b", 20, [(300, "attivo")], {}))
     tr._tracc_pref.pop("x1", None)
     # senza dati o senza risposta a 60 minuti NON e' un invenduto
