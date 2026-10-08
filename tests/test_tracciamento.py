@@ -34,6 +34,12 @@ def test_fasce_e_classi():
         "AFFARE", "AFFARE", "MEDIO AFFARE", "MEDIO AFFARE", "NORMALE"]
     assert m._tracc_classe(3600, "attivo") == "NON AFFARE"
     assert m._tracc_classe(300, "attivo") is None
+    # prenotato nella prima ora = domanda alta; ritirato (torna attivo) resta PRENOTATO, venduto dopo prevale
+    assert m._tracc_classe(300, "prenotato") == "PRENOTATO" and m._tracc_classe(3600, "prenotato") == "PRENOTATO"
+    assert tr._tracc_esito_finale([(300, "prenotato"), (3600, "attivo")]) == ("attivo", "PRENOTATO", None)
+    assert tr._tracc_esito_finale([(300, "prenotato"), (900, "venduto")]) == ("venduto", "MEDIO AFFARE", 900)
+    assert "pref_serie=15:0,300:3" in (tr._tracc_pref.update({"x1": [(15, 0), (300, 3)]}) or tr._riga_tracciato("x1", "b", 20, [(300, "attivo")], {}))
+    tr._tracc_pref.pop("x1", None)
     # senza dati o senza risposta a 60 minuti NON e' un invenduto
     assert m._tracc_classe(3600, "rimosso?") is None and m._tracc_classe(3600, "n.d.") is None
 

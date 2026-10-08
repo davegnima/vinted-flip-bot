@@ -24,7 +24,8 @@ os.environ.setdefault("DB_FILE", "/tmp/aggiorna_velocita.sqlite3")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from bot.fair_value import _brand_fair_value  # noqa: E402
 
-VELOCI = ("AFFARE", "MEDIO AFFARE")
+VELOCI = ("AFFARE", "MEDIO AFFARE", "PRENOTATO")   # prenotato nella prima ora = domanda alta
+_RANGO = {"NON AFFARE": 0, "PRENOTATO": 1, "NORMALE": 2, "MEDIO AFFARE": 3, "AFFARE": 3}
 
 
 def _kv(riga):
@@ -62,12 +63,14 @@ def costruisci_annunci(righe):
             sem = d.get("sem_base") if d.get("sem_base") not in (None, "-") else d.get("semaforo")
             if sem in ("🟢", "🟡", "🔴"):
                 prev.setdefault(d["item"], {"ts": ts, "brand": d.get("brand_n") if d.get("brand_n") not in (None, "-") else (b.group(1) if b else ""), "sem": sem})
-        elif "RICONTROLLO LAMPO" in m and ("stato=venduto" in m or "offset=3600s" in m):
+        elif "RICONTROLLO LAMPO" in m and ("stato=venduto" in m or "stato=prenotato" in m or "offset=3600s" in m):
             d = _kv(m)
             if d.get("esito", "").startswith("RADAR"):
                 continue
-            if d.get("stato") == "venduto" or (d.get("stato") in ("attivo", "prenotato") and d.get("classe") == "NON AFFARE"):
-                esiti.setdefault(d["item"], d["classe"])
+            if d.get("stato") in ("venduto", "prenotato") or (d.get("stato") == "attivo" and d.get("classe") == "NON AFFARE"):
+                # vendita > prenotazione > invenduto, qualunque sia l'ordine delle righe
+                if _RANGO.get(d["classe"], -1) > _RANGO.get(esiti.get(d["item"]), -1):
+                    esiti[d["item"]] = d["classe"]
     out = {}
     for item, p in prev.items():
         if item in esiti:
