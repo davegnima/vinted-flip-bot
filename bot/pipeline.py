@@ -6,7 +6,7 @@ import traceback
 from functools import partial
 
 
-from bot.scheda import ANALISI_GEMINI_ATTIVA, STATO_ANALISI_COMPLETATA, STATO_ANALISI_INTERROTTA, _PermessoAnalisi, _aggiorna_stato_scheda, _invia_galleria_anticipata, _invia_risultato_telegram, aggiorna_preavviso, invia_preavviso, riga_scarto_preavviso, componi_testi_verdetto
+from bot.scheda import richiede_etichetta, invia_richiesta_etichetta, ANALISI_GEMINI_ATTIVA, STATO_ANALISI_COMPLETATA, STATO_ANALISI_INTERROTTA, _PermessoAnalisi, _aggiorna_stato_scheda, _invia_galleria_anticipata, _invia_risultato_telegram, aggiorna_preavviso, invia_preavviso, riga_scarto_preavviso, componi_testi_verdetto
 from bot.verdetto import CERVELLO_CAMPIONI_EXTRA, _a_float, _estrai_item_id_da_url, _estrai_prezzi_da_pool_ricerca, _riepilogo_comp_per_fonte, calcola_verdetto, classifica_provenienza_comp, consolida_target_cervello, render_messaggio_verdetto, valida_payload_cervello
 from bot.config import GEMINI_SOGLIA_PREZZO_ALTO, TELEGRAM_ALERT_CHAT_ID, CERVELLO_PROVIDER, DEBUG_CONFRONTO_COMP_TELEGRAM, OCCHIO_OUTPUT_JSON, RAFFREDDAMENTO_SERPER_SECONDI, SERPER_API_KEY, SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO, SOGLIA_MARGINE_ASSOLUTO_NOTIFICA, TELEGRAM_OWNER_CHAT_ID, _serper_fallimenti_consecutivi, _serper_notifica_esaurimento_inviata, _serper_timestamp_ultimo_fallimento
 from bot.panel import EXTRA_LLM_URL, PANEL_CERVELLO_MODELLI, PANEL_OCCHIO_MODELLI, _bg_task, panel_cervello, panel_occhio
@@ -878,9 +878,17 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
     if scenario_usato == "SKIP":
         # Richiesto dall'utente il 2026-10-03: lo SKIP non manda messaggi, resta solo nei log (SKIP_PRE_CERVELLO
         # nell'ESITO). Se la scheda e' gia' in chat, la sua riga di stato dice solo che e' stato scartato.
-        log.info("SKIP non inviato su Telegram per '%s': %s", listing_info.get("title"), motivo_skip)
+        richiesta_etichetta = False
+        if richiede_etichetta(listing_info, motivo_skip):
+            richiesta_etichetta = await invia_richiesta_etichetta(listing_info, url, reply_to=msg_id_galleria)
+            log.info("RICHIESTA ETICHETTA | item=%s | brand='%s' | inviata=%s",
+                     _estrai_item_id_da_url(url) if url else "n/d", listing_info.get("brand"), richiesta_etichetta)
+        if not richiesta_etichetta:
+            log.info("SKIP non inviato su Telegram per '%s': %s", listing_info.get("title"), motivo_skip)
         if stato is not None and stato.get("msg_id_scheda"):
-            stato["stato_finale_override"] = f"🚫 Scartato: {(motivo_skip or '')[:120]}"
+            stato["stato_finale_override"] = (
+                "🔎 Etichetta interna non visibile: richiesta al venditore" if richiesta_etichetta
+                else f"🚫 Scartato: {(motivo_skip or '')[:120]}")
         return
     await _invia_risultato_telegram(
         listing_info, url, photo_bytes_list,
