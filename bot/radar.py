@@ -43,6 +43,9 @@ RADAR_MAX_PARALLELO = int(os.environ.get("RADAR_MAX_PARALLELO", "4") or 4)
 # Banda (7/10: ~290 annunci promossi l'ora x 7 letture da ~300 KB = ~20 GB al giorno): sotto questo prezzo un margine
 # di 50 EUR e' quasi impossibile, e la serie di ricontrolli del radar e' ridotta (1 min, 15 min, 1 h invece di 6).
 RADAR_PREZZO_MIN = float(os.environ.get("RADAR_PREZZO_MIN", "10") or 0)
+# Spesa massima per pezzo decisa dall'utente l'8/10 ("spendo massimo 50 EUR per pezzo"): sopra si scarta sempre,
+# anche se il buy max del modello sarebbe piu' alto. 0 = nessun tetto.
+RADAR_SPESA_MAX = float(os.environ.get("RADAR_SPESA_MAX", "50") or 0)
 RADAR_RICONTROLLI_SECONDI = tuple(
     int(x) for x in os.environ.get("RADAR_RICONTROLLI_SECONDI", "60,900,3600").split(",") if x.strip())
 _radar_sem = asyncio.Semaphore(RADAR_MAX_PARALLELO)
@@ -228,6 +231,8 @@ def filtro_livello1(titolo, prezzo, modulo, brand=None, matrice=None):
         return False, "prezzo_mancante"
     if prezzo < RADAR_PREZZO_MIN:
         return False, f"prezzo_sotto_minimo:{RADAR_PREZZO_MIN:g}"
+    if RADAR_SPESA_MAX and prezzo > RADAR_SPESA_MAX:
+        return False, f"sopra_spesa_max:{RADAR_SPESA_MAX:g}"
     esito, riga = rm.valuta_modello(titolo, brand, prezzo, rm.MATRICE if matrice is None else matrice)
     if esito == "escluso":
         return False, f"modello_escluso:{_v(riga.get('escluso'))}"
