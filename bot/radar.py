@@ -229,11 +229,13 @@ def filtro_livello1(titolo, prezzo, modulo, brand=None, matrice=None):
         return False, "parola_vietata:" + vietata.replace(" ", "_")
     if prezzo is None or prezzo <= 0:
         return False, "prezzo_mancante"
-    if prezzo < RADAR_PREZZO_MIN:
-        return False, f"prezzo_sotto_minimo:{RADAR_PREZZO_MIN:g}"
     if RADAR_SPESA_MAX and prezzo > RADAR_SPESA_MAX:
         return False, f"sopra_spesa_max:{RADAR_SPESA_MAX:g}"
     esito, riga = rm.valuta_modello(titolo, brand, prezzo, rm.MATRICE if matrice is None else matrice)
+    # Sotto il minimo passa solo un modello noto con buy max (8/10, l'utente: "se uno lo vende a 5 EUR per sbaglio"):
+    # l'errore di prezzo su un modello che vale e' proprio l'affare; il resto sotto il minimo e' rumore (minifigure, cover).
+    if prezzo < RADAR_PREZZO_MIN and esito != "ok":
+        return False, f"prezzo_sotto_minimo:{RADAR_PREZZO_MIN:g}"
     if esito == "escluso":
         return False, f"modello_escluso:{_v(riga.get('escluso'))}"
     if esito == "sotto_soglia":
