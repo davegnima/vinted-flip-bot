@@ -47,6 +47,7 @@ _tracc_ridotti = set()
 # negativi dei filtri e dell'Occhio. SKIP_PRE_SCRAPE (esclusioni dell'utente su titolo/brand) resta senza serie.
 TRACCIAMENTO_SERIE_SKIP_S = (300, 900, 3600)
 _SKIP_DA_SEGUIRE = ("SKIP_PRE_GEMINI", "SKIP_PRE_CERVELLO", "SKIP_ROSSO")
+_tracc_pref = {}   # item_id -> [(offset, preferiti)] letti a ogni controllo: la crescita e' un segnale di domanda
 _tracc_ctx = {}   # item_id -> contesto dell'annuncio (esito, margine, semaforo, categoria...) per la riga TRACCIATO
 _STATI_SPARITO = ('rimosso', 'rimosso?', 'n.d.')
 TRACCIAMENTO_SERIE_RIDOTTA_MAX_S = 300
@@ -152,10 +153,13 @@ def _tracc_bucket(offset_s):
 
 def _tracc_classe(offset_s, stato):
     """Classe di mercato (criterio dell'utente): AFFARE se venduto entro 5 min, MEDIO AFFARE entro 15 min,
-    NORMALE entro 1h, NON AFFARE se al controllo dell'ora e' ancora invenduto. Pura."""
+    NORMALE entro 1h, NON AFFARE se al controllo dell'ora e' ancora invenduto, PRENOTATO se nella prima ora e' stato prenotato (domanda alta,
+    conta come veloce nella tabella velocita'). Pura."""
     if stato == "venduto":
         return "AFFARE" if offset_s <= 300 else "MEDIO AFFARE" if offset_s <= 900 else "NORMALE"
-    if offset_s >= 3600 and stato in ("attivo", "prenotato"):   # rimosso?/n.d. non sono invenduti: restano senza classe
+    if stato == "prenotato" and offset_s <= 3600:
+        return "PRENOTATO"   # offerta/prenotazione nella prima ora: domanda alta (richiesta dell'utente l'8/10)
+    if offset_s >= 3600 and stato == "attivo":   # rimosso?/n.d. non sono invenduti: restano senza classe
         return "NON AFFARE"
     return None
 
@@ -209,6 +213,8 @@ def _tracc_esito_finale(storia):
             return "venduto", _tracc_classe(off, "venduto"), off
     if storia:
         off, st = storia[-1]
+        if any(s_ == "prenotato" and o_ <= 3600 for o_, s_ in storia):
+            return st, "PRENOTATO", None   # prenotato e poi tornato attivo (il compratore si e' ritirato): la domanda c'era
         return st, _tracc_classe(off, st), None
     return "-", None, None
 
@@ -217,7 +223,10 @@ def _riga_tracciato(item_id, brand, prezzo, storia, ctx, incompleto=False, prefi
     """Una riga per annuncio con TUTTO (esito del bot, semaforo, caratteristiche, esito di vendita): e' il dataset
     dell'apprendimento (un solo filtro nei log, niente join fra righe sparse)."""
     stato, classe, venduto_s = _tracc_esito_finale(storia)
+    pref = _tracc_pref.get(str(item_id)) or []
     campi = {"item": item_id, "brand": f"'{brand or 'n/d'}'", "prezzo": prezzo, **{k: v for k, v in (ctx or {}).items()},
+             "pref_max": max((p for _, p in pref), default=None),
+             "pref_serie": ",".join(f"{o}:{p}" for o, p in pref) or None,
              "stato": stato, "classe": classe or "-", "venduto_s": venduto_s if venduto_s is not None else "-",
              "controlli": len(storia), "incompleto": "si" if incompleto else "no",
              "storia": ",".join(f"{o}:{st}" for o, st in storia) or "-"}
@@ -245,6 +254,7 @@ async def _tracc_serie(item_id, url, brand, prezzo, t0, offsets=None, storia=Non
                     db.scrivi_evento("tracciato", item_id, brand, {"prezzo": prezzo, **ctx, "storia": storia})
                 db.elimina_serie(item_id)
                 _tracc_ctx.pop(item_id, None)
+                _tracc_pref.pop(item_id, None)
             except Exception:
                 log.warning("TRACCIATO non scritto:\n%s", traceback.format_exc())
         if any(st in _STATI_SPARITO for _, st in storia):
@@ -293,6 +303,8 @@ async def _tracc_serie_interna(item_id, url, brand, prezzo, t0, storia, offsets=
                 log.info("RICONTROLLO RIAPPARSO | item=%s | brand='%s' | dopo=%ss | stato=%s | prima=%s", item_id,
                          brand or "n/d", reale, stato, storia[-1][1])
             storia.append((s_dopo, stato))
+            if isinstance(segnali.get("preferiti"), int):
+                _tracc_pref.setdefault(item_id, []).append((s_dopo, segnali["preferiti"]))
             db.aggiorna_serie(item_id, storia=storia)
             if stato == "venduto":
                 _tracc_stop.add(item_id)
