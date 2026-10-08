@@ -285,3 +285,12 @@ def test_sospetto_con_margine_alto_diventa_compra():
     # "non_verificabile" non compra mai.
     r = m.calcola_verdetto(m.valida_payload_cervello(_v(160, legit_verdetto="non_verificabile"))[0], 30.0)
     assert r["decisione"] == "CHIEDI ALTRE FOTO"
+    # Senza un'etichetta NITIDA (caso Loewe 8/10: una foto da lontano, etichetta parziale) il sospetto non compra mai.
+    from bot.occhio import applica_prove_al_verdetto
+    v_s = m.valida_payload_cervello(sospetto)[0]
+    applica_prove_al_verdetto(v_s, {"etichette": [{"tipo": "main_label", "leggibilita": "parziale"}]})
+    assert v_s["_etichetta_nitida"] is False and m.calcola_verdetto(v_s, 30.0)["decisione"] == "CHIEDI ALTRE FOTO"
+    applica_prove_al_verdetto(v_s, None)
+    assert v_s["_etichetta_nitida"] is False
+    applica_prove_al_verdetto(v_s, {"etichette": [{"tipo": "wash_care_tag", "leggibilita": "nitida"}]})
+    assert v_s["_etichetta_nitida"] is True and m.calcola_verdetto(v_s, 30.0)["decisione"] == "COMPRA"

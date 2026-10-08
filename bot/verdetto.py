@@ -820,6 +820,7 @@ def calcola_verdetto(v, prezzo_prodotto):
         sospetto_compra = (
             v["legit_verdetto"] == "sospetto_servono_altre_foto"
             and SOGLIA_MARGINE_COMPRA_SOSPETTO > 0
+            and v.get("_etichetta_nitida", True)   # senza un'etichetta nitida non c'e' nulla da "verificare all'arrivo"
             and margine >= SOGLIA_MARGINE_COMPRA_SOSPETTO
         )
         if sospetto_compra:

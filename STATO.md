@@ -25,6 +25,7 @@ Cronologia completa in `docs/storico.md`. Sintesi: pipeline moda con semaforo, p
 - Tracker: `items_per_query=1` (deciso dall'utente, non cambiare).
 
 ## Da controllare (prossima sessione)
+0b. Sospetto -> COMPRA solo con etichetta nitida (8/10, caso Loewe 14 EUR con una foto): controllare nei log `autenticita' sospetta ma margine` (devono esserci solo casi con etichetta nitida) e quanti CHIEDI ALTRE FOTO in piu' escono per i brand ad alto rischio falsi.
 0. PRENOTATO + preferiti (8/10): dopo il deploy cercare `prenotato_s=` e `pref_serie=` nelle righe `TRACCIATO` (la classe PRENOTATO non esiste piu': prenotato vale come venduto, conta il primo evento); contare quanti prenotati entro 1 h, se poi vengono venduti o si ritirano, e quanti invenduti a 1 h hanno molti preferiti (es. Prada con 45 il 8/10: ipotesi vendita bloccata da un bot, da misurare), e se `pref_max` cresce prima della vendita. Campione piccolo finora: non tarare il semaforo sui preferiti finche' non ci sono almeno ~30 casi.
 1. Dopo il deploy: righe `PREAVVISO |` e `MESSAGGIO TRACKER`; contare quanti push al giorno farebbe `regola=semaforo|prezzo_basso` e incrociarli con `RICONTROLLO LAMPO` (precisione sui venduti entro 30 s). Tarare `PREAVVISO_*`.
 2. Errori `PANEL HTTP` di Groq (400 dovrebbe sparire), GLM-4.7-flash (429 a 1 richiesta/s), Nemotron-3-super; togliere dal pannello chi non e' recuperabile.
