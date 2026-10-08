@@ -66,7 +66,7 @@ def test_serie_salvata_e_ripresa_dopo_il_riavvio(monkeypatch, caplog):
     t0 = time.time() - 400   # il processo e' morto 400 s dopo l'arrivo del messaggio
     db.salva_serie("77", "https://www.vinted.it/items/77-x", "Prada", 30.0, t0, [15, 30, 60, 300, 900, 3600])
     db.aggiorna_serie("77", storia=[(15, "attivo"), (30, "attivo"), (60, "attivo")],
-                      ctx={"esito": "TRATTA", "target": 90, "sem": "🟢", "sem_base": "🟢"})
+                      ctx={"esito": "TRATTA", "target": 90, "sem": "🟢", "sem_base": "🟢", "_pref": [[15, 0], [60, 2]]})
     chiamate = []
 
     async def pagina(url, max_retries=1):
@@ -87,6 +87,7 @@ def test_serie_salvata_e_ripresa_dopo_il_riavvio(monkeypatch, caplog):
     assert len(chiamate) == 1    # un solo controllo per gli offset scaduti (300), poi venduto e fine
     assert "RICONTROLLO LAMPO | item=77" in caplog.text and "offset=900s" in caplog.text   # fascia reale (400 s -> 900)
     assert "TRACCIATO | item=77" in caplog.text and "esito=TRATTA" in caplog.text and "classe=MEDIO AFFARE" in caplog.text
+    assert "pref_serie=15:0,60:2" in caplog.text and "pref_max=2" in caplog.text   # preferiti ripresi dal DB
     assert db.carica_serie(0) == []    # serie conclusa: tolta dal DB
 
 
