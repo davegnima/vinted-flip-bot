@@ -354,7 +354,7 @@ def test_soglie_semaforo_ritarate():
     assert colore(fv / 1.6) == "🔴"
 
 
-def test_chiedi_foto_brand_esclusi_solo_con_margine_alto():
+def test_chiedi_foto_brand_esclusi_stessa_soglia_degli_altri():
     from bot.scheda import chiedi_foto_da_notificare as n
     assert n("Max Mara", 31) and not n("Max Mara", 30) and not n("Max Mara", None)
-    assert not n("Prada", 49) and n("Prada", 50) and n("Miu Miu", 79) and not n("Loewe", 41)
+    assert not n("Prada", 30) and n("Prada", 31) and n("Miu Miu", 79) and n("Loewe", 41)

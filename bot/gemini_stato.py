@@ -419,6 +419,9 @@ def gemini_cascata_esaurita(ruolo=None):
 # Ora: tetto al backoff, budget di tempo per chiamata, log dei timeout e pausa della fase dopo timeout consecutivi.
 GEMINI_BACKOFF_MAX_S = float(os.environ.get("GEMINI_BACKOFF_MAX_S", "6"))
 GEMINI_BUDGET_CHIAMATA_S = float(os.environ.get("GEMINI_BUDGET_CHIAMATA_S", "60"))
+# Timeout di una singola richiesta (era 30 s fisso). 8/10, 351 chiamate riuscite: mediana 3-10 s a seconda del modello, p90 5-16 s, solo 6 oltre
+# i 20 s (1,7%) e 3 oltre i 25 s: oltre 20 s di solito Google e' in stallo e conviene ritentare/passare alla riserva.
+GEMINI_TIMEOUT_S = float(os.environ.get("GEMINI_TIMEOUT_S", "20"))
 GEMINI_TIMEOUT_PER_PAUSA = int(os.environ.get("GEMINI_TIMEOUT_PER_PAUSA", "2"))
 GEMINI_PAUSA_TIMEOUT_SECONDI = float(os.environ.get("GEMINI_PAUSA_TIMEOUT_SECONDI", "120"))
 _gemini_timeout_di_fila = {}
