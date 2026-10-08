@@ -2,4 +2,14 @@ __pycache__/
 .pytest_cache/
 .venv/
 *.pyc
+# segreti e dati locali: mai nel repo
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+*.session
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.jsonl
