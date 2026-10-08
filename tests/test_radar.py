@@ -9,8 +9,9 @@ from bot import radar_matrice as rm
 
 @pytest.fixture(autouse=True)
 def _senza_matrice(monkeypatch):
-    # i test del livello 1 per modulo non dipendono dai dati reali della matrice
+    # i test del livello 1 per modulo non dipendono dai dati reali della matrice ne' dal tetto di spesa
     monkeypatch.setattr(rm, "MATRICE", [])
+    monkeypatch.setattr(radar, "RADAR_SPESA_MAX", 0)
 
 
 def test_messaggio_radar_dal_marcatore():
@@ -203,3 +204,10 @@ def test_matrice_del_repo_casi_reali():
     assert r is None or "gale_of_darkness" not in r["id"]
     assert rm.trova_modello("Olympus mju II zoom", None, m)["sotto_soglia"]
     assert rm.trova_modello("LEGO 75313 AT-AT", None, m)["id"].startswith("lego_75313")
+
+
+def test_spesa_massima_per_pezzo(monkeypatch):
+    monkeypatch.setattr(radar, "RADAR_SPESA_MAX", 50)
+    m = rm.prepara(_RIGHE)
+    assert radar.filtro_livello1("Flos Arco", 350, "illuminazione_design", matrice=m) == (False, "sopra_spesa_max:50")
+    assert radar.filtro_livello1("Artemide Tolomeo", 50, "illuminazione_design", matrice=m) == (True, "ok")
