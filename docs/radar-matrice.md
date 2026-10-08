@@ -9,7 +9,7 @@ Generata da `data/radar_matrice.json` (fonti di ogni prezzo in `data/radar_matri
 - **Sotto soglia**: valgono troppo poco usati per un margine di 50 EUR: il radar li scarta. **Non spedibile**: ingombrante senza pacco normale, l'utente non fa ritiri: scartato.
 - Limiti noti: molti venduti sono aste nordeuropee (prezzo di martello, senza diritti) o eBay USA/mondo; i prezzi italiani possono essere diversi e non e' stato misurato di quanto. Le scale 1-5 sono stime.
 
-Totale 303 righe: alta 147, bassa 67, media 62, insufficiente 27; 159 con buy max, 72 sotto soglia, 12 non spedibili.
+Totale 301 righe: alta 145, bassa 67, media 62, insufficiente 27; 157 con buy max, 72 sotto soglia, 12 non spedibili.
 
 ## argento_gioielli (4)
 
@@ -118,7 +118,7 @@ Totale 303 righe: alta 147, bassa 67, media 62, insufficiente 27; 159 con buy ma
 | Fornasetti | Cuscino | 95 | bassa | - | 4 | 1/6 | sotto soglia |
 | Fornasetti | Gettacarte / portaombrelli in metallo | - | insufficiente | - | 3 | 0/1 | senza dati |
 
-## console_retro (42)
+## console_retro (40)
 
 | Brand | Modello | Rivendita veloce | Affid. | Buy max | Falsi | Venduti/confronti | Stato |
 |---|---|---|---|---|---|---|---|
@@ -128,7 +128,6 @@ Totale 303 righe: alta 147, bassa 67, media 62, insufficiente 27; 159 con buy ma
 | Nintendo | Pokémon Smeraldo completo in scatola (CIB, PAL) | 357 | alta | 132 | 5 | 22/22 | attivo |
 | Nintendo | New Nintendo 3DS XL (standard) | 237 | alta | 91 | 1 | 31/31 | attivo |
 | Nintendo | Super Metroid (SNES, PAL, CIB) | 229 | alta | 88 | 3 | 19/19 | attivo |
-| Nintendo | Pokémon Rosso Fuoco / Verde Foglia completo in scatola (CIB, PAL) | 210 | alta | 75 | 5 | 47/47 | attivo |
 | Nintendo | Pokémon HeartGold / SoulSilver con Pokéwalker (DS, PAL, CIB) | 194 | alta | 69 | 5 | 20/20 | attivo |
 | Nintendo | Pokémon XD: Gale of Darkness (GameCube, PAL) | 186 | alta | 68 | 4 | 23/23 | attivo |
 | Nintendo | Game Boy DMG-01 classico in scatola (CIB) | 179 | alta | 63 | 2 | 22/22 | attivo |
@@ -142,7 +141,6 @@ Totale 303 righe: alta 147, bassa 67, media 62, insufficiente 27; 159 con buy ma
 | Nintendo | Pokémon Giallo completo in scatola (CIB, PAL) | 136 | alta | 48 | 4 | 27/27 | attivo |
 | Nintendo | Pokémon Blu completo in scatola (CIB, PAL) | 134 | alta | 48 | 4 | 28/28 | attivo |
 | Nintendo | Pokémon Oro completo in scatola (CIB, PAL) | 129 | alta | 46 | 4 | 27/27 | attivo |
-| Nintendo | Pokémon Rubino / Zaffiro completo in scatola (CIB, PAL) | 127 | alta | 43 | 5 | 42/42 | attivo |
 | Nintendo | Pokémon Smeraldo (cartuccia sola, PAL) | 122 | alta | 42 | 5 | 29/29 | attivo |
 | Nintendo | Game Boy Advance SP AGS-101 (retroilluminato, console sola) | 116 | alta | 36 | 4 | 47/47 | attivo |
 | Nintendo | Game Boy Color edizione Pokémon (Pikachu) | 108 | alta | 30 | 4 | 25/25 | attivo |

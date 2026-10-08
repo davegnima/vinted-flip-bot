@@ -194,3 +194,12 @@ def test_matrice_del_repo_valida():
     for r in m:
         assert r["_chiavi"] and r.get("id")
         assert r["buy_max"] is None or r["buy_max"] >= 0
+
+
+def test_matrice_del_repo_casi_reali():
+    # titoli veri dei log del 7-8/10 che la prima versione agganciava al modello sbagliato
+    m = rm.carica_matrice()
+    r = rm.trova_modello("Pokemon colloseum GameCube", None, m)
+    assert r is None or "gale_of_darkness" not in r["id"]
+    assert rm.trova_modello("Olympus mju II zoom", None, m)["sotto_soglia"]
+    assert rm.trova_modello("LEGO 75313 AT-AT", None, m)["id"].startswith("lego_75313")
