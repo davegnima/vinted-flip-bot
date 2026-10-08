@@ -73,3 +73,26 @@ def test_miumiu_top_e_canotte_si_scartano_a_qualunque_prezzo():
     assert m.check_skip_pre_gemini(_li("Canotta Miu Miu nera", "Miu Miu", "", price="150"))[0]
     assert m.check_skip_pre_gemini(_li("Top Miu Miu in raso", "Miu Miu", "", price="80"))[0]
     assert not m.check_skip_pre_gemini(_li("Cappotto Miu Miu", "Miu Miu", "ottime condizioni", price="150"))[0]
+
+
+def test_paese_di_produzione_incoerente_col_brand_scarta_come_falso():
+    from bot.occhio import calcola_scarto_occhio, paese_incoerente
+
+    def occhio(testo, brand_letto="Prada", **extra):
+        o = {"etichette": [{"tipo": "wash_care_tag", "testo_verbatim": testo, "leggibilita": "nitida"}],
+             "brand_letto_etichetta": brand_letto, "relazione_brand": "corrisponde", "verdetto_legit": "probabilmente_autentico",
+             "confidenza_legit": "alta", "segnali_rischio_annuncio": [], "difetti": []}
+        o.update(extra)
+        return o
+
+    li = {"brand": "Prada", "title": "Maglione Prada"}
+    assert paese_incoerente(occhio("PRADA MADE IN CHINA 100% WOOL"), li) == ("China", "Prada")
+    assert paese_incoerente(occhio("Fabriqué en Chine"), li)[0] == "Chine"
+    assert paese_incoerente(occhio("Made in P.R.C."), li) is not None
+    assert paese_incoerente(occhio("MADE IN ITALY 100% LANA"), li) is None
+    assert paese_incoerente(occhio("x", paese_produzione_letto="Vietnam"), li)[0] == "Vietnam"
+    # brand fuori tabella: nessuna deduzione dal solo paese
+    assert paese_incoerente(occhio("MADE IN CHINA", brand_letto="Max Mara"), {"brand": "Max Mara", "title": "Cappotto"}) is None
+    scartato, motivo = calcola_scarto_occhio(occhio("PRADA MADE IN CHINA"), listing_info=li)
+    assert scartato and motivo.startswith("[FALSO CONCLAMATO] Made in China su Prada")
+    assert not calcola_scarto_occhio(occhio("PRADA MADE IN ITALY"), listing_info=li)[0]
