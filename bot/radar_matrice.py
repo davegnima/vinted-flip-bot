@@ -121,7 +121,7 @@ def trova_modello(titolo, brand, matrice):
         if any(e <= t for e in r.get("_escluse") or ()):
             continue  # es. console: "giochi", "custodia", "schermo" nel titolo = non e' la console
         if r["_variante"] and not any(v <= t for v in r["_variante"]):
-            n = n / 2  # "in scatola"/"sigillato" senza le sue parole nel titolo: vince la riga base se c'e'
+            n = n * 0.9  # "in scatola"/"sigillato" senza le sue parole nel titolo: a pari chiave vince la riga base
         n = round(n, 6)
         if n > migliore:
             candidati, migliore = [r], n

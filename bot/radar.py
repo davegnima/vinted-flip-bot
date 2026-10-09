@@ -61,22 +61,25 @@ _radar_visti = set()
 # spedizione_eur, rischio_falsi, rischio_guasti e prezzo_max_l1 sono valori di partenza (da tarare con la fase 0):
 # prezzo_max_l1 = oltre questo prezzo raggiungere ROI 100% e margine 50 EUR e' improbabile per la categoria.
 # Brand: lista dell'utente del 7/10 (92 segmenti, fasce S e A; la fascia B e' in RADAR_BRAND_ESCLUSI).
+# 9/10: aggiunti i brand dei modelli della matrice per il tetto di 50 EUR (compatte e obiettivi, walkman, Game & Watch,
+# Montblanc, Seiko 6139, Torun, Louis Poulsen, Loewe/Bottega Veneta vintage...).
 # ---------------------------------------------------------------------------
 RADAR_MODULI = {
     "illuminazione_design": {
         "brand": ("artemide", "flos", "fontanaarte", "fontana arte", "oluce", "kartell", "vitra", "cassina",
-                  "zanotta", "alessi", "b&b italia", "b & b italia", "magis", "luceplan", "foscarini", "seletti"),
+                  "zanotta", "alessi", "b&b italia", "b & b italia", "magis", "luceplan", "foscarini", "seletti", "louis poulsen"),
         "parole": ("lampada", "lampade", "applique", "plafoniera", "lampadario", "abat-jour", "abat jour",
                    "piantana", "sedia", "sgabello", "poltrona", "tavolino"),
         "spedizione_eur": 15.0, "rischio_falsi": "basso", "rischio_guasti": "medio", "prezzo_max_l1": 300,
     },
     "ceramiche_oggetti": {
-        "brand": ("bitossi", "fornasetti", "richard ginori", "ginori", "iittala", "marimekko", "rosenthal"),
+        "brand": ("bitossi", "fornasetti", "richard ginori", "ginori", "iittala", "marimekko", "rosenthal", "kay bojesen",
+                  "olivetti"),
         "parole": ("ceramica", "vaso", "piatto", "piatti", "posacenere", "centrotavola"),
         "spedizione_eur": 10.0, "rischio_falsi": "medio", "rischio_guasti": "basso", "prezzo_max_l1": 200,
     },
     "argento_gioielli": {
-        "brand": ("georg jensen", "giovanni raspini", "raspini", "swarovski", "pandora"),
+        "brand": ("georg jensen", "torun", "giovanni raspini", "raspini", "swarovski", "pandora"),
         "parole": ("argento 925", "sterling", "spilla", "bracciale argento"),
         "spedizione_eur": 6.0, "rischio_falsi": "medio", "rischio_guasti": "basso", "prezzo_max_l1": 150,
     },
@@ -88,13 +91,13 @@ RADAR_MODULI = {
     },
     "occhiali": {
         "brand": ("persol", "oliver peoples", "matsuda", "jacques marie mage", "cazal", "linda farrow",
-                  "cutler and gross", "cutler & gross"),
+                  "cutler and gross", "cutler & gross", "porsche design"),
         "parole": ("occhiali", "montatura", "occhiale"),
         "spedizione_eur": 5.0, "rischio_falsi": "medio", "rischio_guasti": "basso", "prezzo_max_l1": 200,
     },
     "borse_vintage": {
         "brand": ("mulberry", "roberta di camerino", "coach", "furla", "coccinelle", "lancel", "bally", "fendi",
-                  "salvatore ferragamo", "ferragamo"),
+                  "salvatore ferragamo", "ferragamo", "loewe", "bottega veneta", "longchamp"),
         "parole": ("borsa", "borsetta", "pochette", "tracolla"),
         "spedizione_eur": 6.0, "rischio_falsi": "alto", "rischio_guasti": "basso", "prezzo_max_l1": 200,
     },
@@ -105,25 +108,26 @@ RADAR_MODULI = {
     },
     "collezionismo": {
         "brand": ("hot toys", "sideshow", "bearbrick", "be@rbrick", "kenner", "transformers", "gundam", "bandai",
-                  "tamagotchi"),
+                  "tamagotchi", "montblanc", "mont blanc", "seiko"),
         "parole": ("action figure", "statua", "modellino", "vintage toy"),
         "spedizione_eur": 9.0, "rischio_falsi": "medio", "rischio_guasti": "basso", "prezzo_max_l1": 250,
     },
     "console_retro": {
-        "brand": ("nintendo", "game boy", "gameboy"),
+        "brand": ("nintendo", "game boy", "gameboy", "game & watch", "game and watch", "sega"),
         "parole": ("game boy", "gameboy", "gamecube", "n64", "nintendo 64", "ds", "3ds", "snes", "nes",
                    "cartuccia", "console"),
         "spedizione_eur": 7.0, "rischio_falsi": "medio", "rischio_guasti": "alto", "prezzo_max_l1": 150,
     },
     "fotografia": {
-        "brand": ("contax", "leica", "hasselblad", "fujifilm", "olympus", "minolta"),
+        "brand": ("contax", "leica", "hasselblad", "fujifilm", "olympus", "minolta", "yashica", "kyocera", "ricoh",
+                  "nikon", "nikkor", "rollei", "canon", "canonet", "konica", "summicron", "elmarit"),
         "parole": ("fotocamera", "macchina fotografica", "obiettivo", "reflex", "analogica", "compatta 35mm"),
         "spedizione_eur": 8.0, "rischio_falsi": "basso", "rischio_guasti": "alto", "prezzo_max_l1": 400,
     },
     "audio": {
         "brand": ("bang & olufsen", "bang olufsen", "b&o", "beoplay", "beosound", "audeze", "focal", "sennheiser",
-                  "beyerdynamic"),
-        "parole": ("cuffie", "speaker", "cassa", "diffusore", "giradischi"),
+                  "beyerdynamic", "walkman", "brionvega"),
+        "parole": ("cuffie", "speaker", "cassa", "diffusore", "giradischi", "minidisc"),
         "spedizione_eur": 9.0, "rischio_falsi": "medio", "rischio_guasti": "alto", "prezzo_max_l1": 400,
     },
     "golf": {

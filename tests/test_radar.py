@@ -222,6 +222,10 @@ def test_matrice_del_repo_casi_reali():
         assert rm.valuta_modello(titolo, None, 10, m)[0] != "ok", titolo
     assert rm.valuta_modello("Zelda Link's Awakening Nintendo Game Boy bon etat", None, 11, m)[0] == "senza_dati"
     assert rm.valuta_modello("New Nintendo 3DS XL nera", None, 60, m)[0] == "ok"
+    # minifigure con il numero del set non sono il set; modelli nuovi per il tetto di 50 EUR
+    assert rm.valuta_modello("Lego figurine Star Wars hoth Rebel Trooper sw0735 75098", None, 20, m)[0] != "ok"
+    assert rm.valuta_modello("Lego 8088 Star Wars ARC-170 Starfighter", None, 20, m)[0] == "ok"
+    assert rm.trova_modello("Appareil photo Yashica T4 Super", None, m)["id"].startswith("yashica_t4")
 
 
 def test_spesa_massima_per_pezzo(monkeypatch):
