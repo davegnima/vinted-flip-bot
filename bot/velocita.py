@@ -17,6 +17,10 @@ VELOCITA_ATTIVA = os.environ.get("VELOCITA_ATTIVA", "1").strip() == "1"
 VELOCITA_K = float(os.environ.get("VELOCITA_K", "10"))                    # peso della media nel tasso del brand
 VELOCITA_SOGLIA_VERDE = float(os.environ.get("VELOCITA_SOGLIA_VERDE", "0.40"))
 VELOCITA_SOGLIA_GIALLO = float(os.environ.get("VELOCITA_SOGLIA_GIALLO", "0.20"))
+# Brand "lento" (9/10): con almeno VELOCITA_LENTO_N_MIN annunci e un lift <= VELOCITA_LENTO_LIFT il rosso salta il Cervello anche
+# a margine rapido positivo (vedi fair_value.check_skip_rosso). Oggi solo Max Mara (n ~155, lift 0,51).
+VELOCITA_LENTO_N_MIN = float(os.environ.get("VELOCITA_LENTO_N_MIN", "100"))
+VELOCITA_LENTO_LIFT = float(os.environ.get("VELOCITA_LENTO_LIFT", "0.60"))
 _VUOTO = {"base": 0.25, "semaforo": {"🟢": 0.50, "🟡": 0.29, "🔴": 0.14}, "brand": {}}
 
 
@@ -43,6 +47,13 @@ def lift_brand(brand, dati=None):
     n, veloci = dati["brand"].get(str(brand or "").lower(), (0.0, 0.0))
     base = dati["base"]
     return ((veloci + VELOCITA_K * base) / (n + VELOCITA_K)) / base if base > 0 else 1.0
+
+
+def brand_lento(brand, dati=None):
+    """True se il brand ha abbastanza annunci (VELOCITA_LENTO_N_MIN) e un lift basso (VELOCITA_LENTO_LIFT). Pura."""
+    dati = dati or _DATI
+    n, _ = dati["brand"].get(str(brand or "").lower(), (0.0, 0.0))
+    return VELOCITA_ATTIVA and n >= VELOCITA_LENTO_N_MIN and lift_brand(brand, dati) <= VELOCITA_LENTO_LIFT
 
 
 def semaforo_corretto(semaforo, brand, dati=None):

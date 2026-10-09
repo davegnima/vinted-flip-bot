@@ -734,11 +734,11 @@ def componi_testi_verdetto(listing_info, verdetto_calcolato, output_finale, info
     return header, resto_output, unificato
 
 
-# RICHIESTA ETICHETTA INTERNA per Prada e Miu Miu (richiesta dell'utente l'8/10): l'etichetta interna e' l'unico modo per
-# verificare l'autenticita' di questi due brand. Se l'Occhio non la vede lo scarto era silenzioso (nessun messaggio, solo
+# RICHIESTA ETICHETTA INTERNA per Prada, Miu Miu (richiesta dell'utente l'8/10) e Max Mara, Rick Owens, Missoni (9/10; Fendi no):
+# l'etichetta interna e' l'unico modo per verificare l'autenticita' di questi brand. Se l'Occhio non la vede lo scarto era silenzioso (nessun messaggio, solo
 # il log); ora, se la stima rapida e' promettente (semaforo 🟢/🟡 dopo la correzione dalla velocita'), arriva un messaggio
 # "chiedi l'etichetta" con il testo da incollare al venditore, nella sua lingua. Non si compra mai senza etichetta.
-BRAND_ETICHETTA_OBBLIGATORIA = ("prada", "miu miu")
+BRAND_ETICHETTA_OBBLIGATORIA = ("prada", "miu miu", "max mara", "rick owens", "missoni")
 # sempre in italiano (richiesta dell'utente l'8/10): cortese e dritto al punto
 RICHIESTA_ETICHETTA_VENDITORE = (
     "Buongiorno, potrebbe cortesemente inviarmi una foto dell'etichetta interna (marca e composizione) "
@@ -747,7 +747,7 @@ RICHIESTA_ETICHETTA_VENDITORE = (
 
 
 def richiede_etichetta(listing_info, motivo_skip):
-    """True se lo scarto e' per etichetta mancante, il brand e' Prada o Miu Miu e la stima rapida e' promettente. Pura."""
+    """True se lo scarto e' per etichetta mancante, il brand e' in BRAND_ETICHETTA_OBBLIGATORIA e la stima rapida e' promettente. Pura."""
     if not str(motivo_skip or "").startswith("[NESSUNA ETICHETTA"):
         return False
     nome = f"{listing_info.get('brand') or ''} {listing_info.get('title') or ''}".lower()
