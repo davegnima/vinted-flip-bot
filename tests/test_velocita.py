@@ -39,6 +39,16 @@ def test_semaforo_corretto_sale_per_i_brand_veloci_e_scende_per_i_lenti(monkeypa
     assert v.semaforo_corretto("🔴", "Loro Piana", TABELLA) == ("🔴", 1.0)
 
 
+def test_soglie_proporzionali_alla_media(monkeypatch):
+    # tabella con media piu' bassa (aggiornamento dell'8/10): un verde di un brand nella media resta verde
+    monkeypatch.setattr(v, "VELOCITA_ATTIVA", True)
+    bassa = {"base": 0.187, "semaforo": {"🟢": 0.383, "🟡": 0.243, "🔴": 0.107}, "brand": {"cucinelli": (51.0, 9.9)}}
+    assert v.semaforo_corretto("🟢", "Cucinelli", bassa)[0] == "🟢"      # 0,383 x 1,03 = 0,395: con soglia fissa 0,40 era 🟡
+    assert v.semaforo_corretto("🟡", "Cucinelli", bassa)[0] == "🟡"
+    assert v.semaforo_corretto("🔴", "Cucinelli", bassa)[0] == "🔴"
+    assert v.semaforo_corretto("🟢", "brand mai visto", bassa)[0] == "🟢"
+
+
 def test_tabella_del_repo_si_carica_e_ha_i_brand():
     d = v.carica_velocita()
     assert d["base"] > 0 and "loro piana" in d["brand"] and "max mara" in d["brand"]
