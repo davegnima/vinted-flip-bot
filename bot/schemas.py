@@ -912,7 +912,8 @@ CERVELLO_RESPONSE_SCHEMA = {
             "items": {"type": "STRING"},
             "description": (
                 "Array vuoto se non servono davvero per legit-check, difetti o trattativa. "
-                "Non riempirlo per curiosita'."
+                "Non riempirlo per curiosita'. Frasi SEMPRE in italiano, cortesi e dirette "
+                "(es. 'Potrebbe inviarmi una foto del wash tag?'), senza dire che sei interessato."
             ),
         },
         "messaggio_venditore_template": {
