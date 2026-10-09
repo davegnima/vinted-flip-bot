@@ -147,6 +147,10 @@ _RIGHE = [
     {"id": "gb_sola", "chiavi": ["game boy"], "rivendita_veloce_eur": 48, "affidabilita": "alta", "sotto_soglia": True},
     {"id": "gb_scatola", "chiavi": ["game boy scatola"], "rivendita_veloce_eur": 179, "affidabilita": "alta",
      "spedizione_eur": 5},
+    {"id": "zelda_scatola", "chiavi": ["zelda link awakening"], "parole_variante": ["scatola", "completo"],
+     "rivendita_veloce_eur": 107, "affidabilita": "alta", "spedizione_eur": 5},
+    {"id": "new_3ds_xl", "chiavi": ["new 3ds xl"], "parole_escluse": ["giochi", "custodia"],
+     "rivendita_veloce_eur": 237, "affidabilita": "alta", "spedizione_eur": 6},
     {"id": "cassina_lc2", "chiavi": ["lc2"], "brand_chiavi": ["cassina"], "escluso": "non_spedibile"},
 ]
 
@@ -174,6 +178,10 @@ def test_trova_modello_chiave_e_brand():
     assert rm.trova_modello("LEGO 75313 nuovo sigillato", None, m)["id"] == "lego_75313_sigillato"
     assert rm.trova_modello("Game Boy classico", None, m)["id"] == "gb_sola"
     assert rm.trova_modello("Game Boy in scatola originale", None, m)["id"] == "gb_scatola"
+    assert rm.trova_modello("Custodia new 3DS XL", None, m) is None
+    assert rm.trova_modello("New 3DS XL blu", None, m)["id"] == "new_3ds_xl"
+    assert rm.valuta_modello("Zelda Link Awakening cartuccia", None, 10, m)[0] == "senza_dati"
+    assert rm.valuta_modello("Zelda Link Awakening completo", None, 10, m)[0] == "ok"
 
 
 def test_livello1_usa_il_buy_max_del_modello():
@@ -208,6 +216,12 @@ def test_matrice_del_repo_casi_reali():
     assert r is None or "gale_of_darkness" not in r["id"]
     assert rm.trova_modello("Olympus mju II zoom", None, m)["sotto_soglia"]
     assert rm.trova_modello("LEGO 75313 AT-AT", None, m)["id"].startswith("lego_75313")
+    # 9/10: giochi e accessori non sono la console; cartuccia sfusa non usa il buy max della riga in scatola
+    for titolo in ("Pack accesoires new 3ds xl big ben", "Ma Vie avec mes Petits Amis Nintendo 3ds/XL/NEW -VF",
+                   "Jeux Game Boy", "Barbie Game Boy Advance PAL completo"):
+        assert rm.valuta_modello(titolo, None, 10, m)[0] != "ok", titolo
+    assert rm.valuta_modello("Zelda Link's Awakening Nintendo Game Boy bon etat", None, 11, m)[0] == "senza_dati"
+    assert rm.valuta_modello("New Nintendo 3DS XL nera", None, 60, m)[0] == "ok"
 
 
 def test_spesa_massima_per_pezzo(monkeypatch):

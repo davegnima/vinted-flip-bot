@@ -88,6 +88,7 @@ def prepara(righe):
                      r.get("rischio_guasti")) if usabile else None
         pronte.append({**r, "_chiavi": chiavi, "_brand": [k for k in (_parole(b) for b in r.get("brand_chiavi") or ()) if k],
                        "_variante": [k for k in (_parole(v) for v in r.get("parole_variante") or ()) if k],
+                       "_escluse": [k for k in (_parole(v) for v in r.get("parole_escluse") or ()) if k],
                        "buy_max": bm})
     # Peso di una chiave = rarita' (idf) della sua parola piu' rara, piu' un centesimo della somma per gli spareggi:
     # "pokemon cristallo" batte "game boy color pokemon" perche' "cristallo" e' rara e le altre sono ovunque.
@@ -108,7 +109,7 @@ def prepara(righe):
 
 def trova_modello(titolo, brand, matrice):
     """Riga della matrice citata dal titolo, None se nessuna. Una chiave e' citata se tutte le sue parole sono nel
-    titolo (in qualsiasi ordine); vince la chiave con le parole piu' rare (peso idf, vedi `prepara`). Se la riga ha `brand_chiavi` serve anche il brand
+    titolo (in qualsiasi ordine) e nessuna delle sue `parole_escluse` lo e'; vince la chiave con le parole piu' rare (peso idf, vedi `prepara`). Se la riga ha `brand_chiavi` serve anche il brand
     nel titolo o nel campo brand dell'annuncio. A parita' (es. stesso set LEGO usato e sigillato) vince la riga le cui
     `parole_variante` sono nel titolo, altrimenti quella senza varianti, altrimenti la rivendita piu' bassa. Pura."""
     t = _parole(" ".join(p for p in (brand or "", titolo or "") if p))
@@ -117,6 +118,8 @@ def trova_modello(titolo, brand, matrice):
         n = max((r["_pesi"][k] for k in r["_chiavi"] if k <= t), default=0)
         if not n or (r["_brand"] and not any(b <= t for b in r["_brand"])):
             continue
+        if any(e <= t for e in r.get("_escluse") or ()):
+            continue  # es. console: "giochi", "custodia", "schermo" nel titolo = non e' la console
         if r["_variante"] and not any(v <= t for v in r["_variante"]):
             n = n / 2  # "in scatola"/"sigillato" senza le sue parole nel titolo: vince la riga base se c'e'
         n = round(n, 6)
@@ -143,7 +146,10 @@ def valuta_modello(titolo, brand, prezzo, matrice):
         return "escluso", r
     if r.get("sotto_soglia"):
         return "sotto_soglia", r
-    if r["buy_max"] is None:
+    # Riga "in scatola"/"sigillato" senza le sue parole nel titolo (es. cartuccia sfusa agganciata alla riga completa,
+    # 9/10): il suo buy max non vale, decide il tetto del modulo.
+    if r["buy_max"] is None or (r["_variante"] and not any(v <= _parole(f"{brand or ''} {titolo or ''}")
+                                                            for v in r["_variante"])):
         return "senza_dati", r
     if r["buy_max"] <= 0 or (prezzo is not None and prezzo > r["buy_max"] * RADAR_TOLLERANZA_BUY_MAX):
         return "sopra_buy_max", r
