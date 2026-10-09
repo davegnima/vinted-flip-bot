@@ -27,7 +27,7 @@ from bot.openai_api import chiama_openai_cervello_forzato
 from bot.foto import download_image_bytes
 from bot.categorie import estrai_categoria_da_titolo
 from bot.logger import log
-from bot.occhio import render_occhio_da_json, valida_payload_occhio, applica_paese_al_verdetto, applica_prove_al_verdetto
+from bot.occhio import render_occhio_da_json, valida_payload_occhio, applica_paese_al_verdetto, applica_prove_al_verdetto, riga_controllo_occhio
 from bot.comps import search_comps_completo, verifica_codici_prodotto_reddit
 from bot.telegram_api import telegram_send_message
 from bot.serper_base import valuta_qualita_comp
@@ -417,6 +417,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
         try:
             occhio_json, problemi_occhio = valida_payload_occhio(json.loads(output_grezzo))
             output_occhi = render_occhio_da_json(occhio_json, problemi_occhio)
+            log.info(riga_controllo_occhio(occhio_json, _estrai_item_id_da_url(url) if url else "n/d"))
             if problemi_occhio:
                 log.info("Occhio JSON con %d anomalie: %s", len(problemi_occhio), problemi_occhio)
         except (json.JSONDecodeError, TypeError, ValueError) as e:

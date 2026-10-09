@@ -317,7 +317,7 @@ REGOLE CHE CONTANO:
 11. legit_motivo_specifico deve dire COSA hai visto (font etichetta, logo, cuciture, hardware), mai frasi generiche.
 12. domanda_mercato "alta" solo con segnali_domanda concreti (altrimenti vale media).
 13. note_analista (max 6 frasi brevi, solo fatti): cos'e' il capo; perche' autentico o sospetto (cosa hai visto); su quali comp si basa il prezzo e perche' quello; perche' quel deal_score (1-3 pessimo, 4-6 normale, 7-10 vero affare); dove venderlo e se servono riparazioni, lavaggio o stiro.
-14. messaggio_venditore_template: se serve trattare, proponi un'offerta con il segnaposto esatto {OFFERTA}, mai una cifra; mai messaggi di accettazione piena; null se non c'e' nulla da dire.
+14. messaggio_venditore_template: se serve trattare, proponi un'offerta con il segnaposto esatto {OFFERTA}, mai una cifra; mai messaggi di accettazione piena; sempre in italiano, cortese ed educato ma dritto al punto, senza dire che sei interessato (e' ovvio); null se non c'e' nulla da dire.
 
 CHIAVI JSON (tipo o valori ammessi):
 """

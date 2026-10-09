@@ -65,6 +65,16 @@ def applica_paese_al_verdetto(v, o, listing_info=None):
 _ETICHETTE_PROVA = {"main_label", "wash_care_tag", "etichetta_composizione", "codice_prodotto", "ologramma_autenticita"}
 
 
+def riga_controllo_occhio(o, item_id):
+    """Riga di log `OCCHIO |` con cio' che l'Occhio ha letto (marchio, rapporto col brand, paese, etichette con leggibilita' e testo):
+    senza, un verdetto discutibile non si puo' ricostruire (caso Missoni 9/10). Pura."""
+    o = o or {}
+    et = "; ".join(f"{e.get('tipo')}:{e.get('leggibilita')}:'{str(e.get('testo_verbatim') or '')[:40]}'"
+                   for e in (o.get("etichette") or []) if isinstance(e, dict)) or "-"
+    return (f"OCCHIO | item={item_id} | brand_letto='{str(o.get('brand_letto_etichetta') or '-')[:40]}' | "
+            f"relazione={o.get('relazione_brand') or '-'} | paese={o.get('paese_produzione_letto') or '-'} | etichette={et}")
+
+
 def applica_prove_al_verdetto(v, o):
     """Segna in v se l'Occhio ha visto almeno un'etichetta NITIDA (marchio, wash tag, composizione, codice, ologramma).
     Senza, un "sospetto" non puo' diventare COMPRA anche con margine alto (caso Loewe 8/10: una foto da lontano, etichetta
@@ -537,7 +547,7 @@ def render_occhio_da_json(occhio, problemi=None):
             "",
             "---",
             "📨 **Messaggio da inviare:**",
-            f'"Ciao! Mi interessa, potresti aggiungere qualche foto? {"; ".join(foto_mancanti)}. Grazie!"',
+            f'"Buongiorno, potrebbe cortesemente aggiungere qualche foto? {"; ".join(foto_mancanti)}. Grazie mille."',
         ]
 
     if problemi:

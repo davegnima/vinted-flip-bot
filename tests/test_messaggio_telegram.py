@@ -122,3 +122,21 @@ def test_campione_extra_ritorna_il_verdetto_validato():
     async def rotta(*a, **k):
         return None, "errore", 0.02, 0, []
     assert asyncio.run(m._campione_target_cervello(rotta, "x", False)) == (None, [], 0.02)
+
+
+def test_messaggi_al_venditore_italiano_cortese_senza_interessato():
+    # richiesta dell'utente 8-9/10: sempre in italiano, cortese, dritto al punto, mai "sono interessato"
+    v = _v()
+    v["legit_verdetto"] = "sospetto_servono_altre_foto"
+    v["domande_al_venditore"] = ["Potrebbe inviarmi una foto del wash tag?"]
+    verdetto = m.calcola_verdetto(v, 29.0)
+    verdetto["decisione"] = "CHIEDI ALTRE FOTO"
+    out = m.render_messaggio_verdetto(v, verdetto, [], {"n_memoria": 0, "n_prezzi_pool": 6, "n_comp": 2})
+    assert "Buongiorno, Potrebbe inviarmi una foto del wash tag? Grazie mille." in out
+    assert "interessa" not in out.lower() and "interessato" not in out.lower()
+    from bot.occhio import riga_controllo_occhio
+    riga = riga_controllo_occhio({"brand_letto_etichetta": "MISSONI", "relazione_brand": "corrisponde", "paese_produzione_letto": None,
+                                  "etichette": [{"tipo": "main_label", "leggibilita": "nitida", "testo_verbatim": "Missoni"},
+                                                {"tipo": "wash_care_tag", "leggibilita": "illeggibile", "testo_verbatim": ""}]}, "123")
+    assert riga.startswith("OCCHIO | item=123") and "main_label:nitida:'Missoni'" in riga and "paese=-" in riga
+    assert riga_controllo_occhio(None, "9").endswith("etichette=-")

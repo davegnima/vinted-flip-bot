@@ -1021,8 +1021,7 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
             # sopra, quindi si sostituisce con un'apertura generica che
             # propone davvero l'offerta calcolata.
             testo_messaggio = (
-                f"Ciao! Molto interessato, te lo prenderei subito a "
-                f"€{verdetto['tratta_prezzo_prodotto']:.2f}. Fammi sapere se puo' andare, grazie!"
+                f"Buongiorno, sarebbe disposto ad accettare €{verdetto['tratta_prezzo_prodotto']:.2f}? Grazie mille."
             )
             messaggio_sostituito = True
     elif dec == "CHIEDI ALTRE FOTO":
@@ -1038,7 +1037,7 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
         # assemblarli, cosi' niente piu' duplicazioni.
         domande_incorporate = False
         if domande:
-            testo_messaggio = "Ciao! Mi interessa molto questo capo. " + " ".join(domande) + " Grazie!"
+            testo_messaggio = "Buongiorno, " + " ".join(domande) + " Grazie mille."
             domande_incorporate = True
         elif template:
             testo_messaggio = template.replace("{OFFERTA}", "").strip()
