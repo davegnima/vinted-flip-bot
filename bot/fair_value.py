@@ -8,7 +8,7 @@ import traceback
 
 
 from bot.verdetto import _a_float, _estrai_item_id_da_url
-from bot.velocita import semaforo_corretto
+from bot.velocita import semaforo_corretto, brand_lento
 from bot.config import _env_float
 from bot.categorie import estrai_categoria_da_titolo, scegli_materiale_per_ricerca
 from bot.logger import log
@@ -291,6 +291,7 @@ def preavviso_con_suono(stima, prezzo):
 # consultato (l'Occhio si': l'autenticita' e' gia' stata letta). Le eccezioni piu' care restano coperte dalla soglia di
 # prezzo. Spento con SALTA_CERVELLO_ROSSO=0. Gli esiti si loggano come SKIP_ROSSO per misurare i falsi negativi.
 SALTA_CERVELLO_ROSSO = os.environ.get("SALTA_CERVELLO_ROSSO", "1").strip() != "0"
+RAPPORTO_ROSSO_LENTO_PASSA = _env_float("RAPPORTO_ROSSO_LENTO_PASSA", 2.5)   # fair value/prezzo da cui il brand lento passa al Cervello
 
 
 def check_skip_rosso(listing_info):
@@ -299,9 +300,16 @@ def check_skip_rosso(listing_info):
     stima = listing_info.get("fair_value") or {}
     prezzo = _a_float(listing_info.get("price"), None)
     if (not SALTA_CERVELLO_ROSSO or stima.get("semaforo") != "🔴" or stima.get("conf") not in ("alta", "media")
-            or stima.get("margine") is None or stima["margine"] >= 0
-            or prezzo is None or prezzo >= GEMINI_SOGLIA_PREZZO_ALTO):
+            or stima.get("margine") is None or prezzo is None or prezzo >= GEMINI_SOGLIA_PREZZO_ALTO):
         return False, None
+    if stima["margine"] >= 0:
+        # brand lento (9/10, Max Mara: 114 annunci, 16 COMPRA/TRATTA su 93 rossi, 1 solo veloce): il rosso salta il Cervello anche
+        # col margine rapido positivo, salvo un rapporto fair value/prezzo molto alto (le eccezioni restano)
+        fv = stima.get("fv")
+        if not (brand_lento(stima.get("brand") or listing_info.get("brand")) and fv and fv / prezzo < RAPPORTO_ROSSO_LENTO_PASSA):
+            return False, None
+        return True, (f"[ROSSO SICURO - BRAND LENTO] {stima.get('brand')} vende piano e la stima rapida e' rossa (fair value ~{fv} € "
+                      f"su {prezzo:.0f} €) -- Cervello non consultato.")
     return True, (f"[ROSSO SICURO] Stima rapida {stima.get('brand')} {stima.get('categoria')}: fair value ~{stima.get('fv')} € "
                   f"sotto il prezzo {prezzo:.0f} € (confidenza {stima.get('conf')}) -- Cervello non consultato.")
 

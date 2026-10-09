@@ -203,6 +203,26 @@ def test_rosso_sicuro_salta_il_cervello():
     assert not check_skip_rosso({"fair_value": {**rosso, "semaforo": "🟡"}, "price": 40})[0]
 
 
+def test_rosso_di_brand_lento_salta_il_cervello_anche_a_margine_positivo(monkeypatch):
+    from bot.fair_value import check_skip_rosso
+    import bot.velocita as vel
+    dati = {"base": 0.187, "semaforo": {"🔴": 0.1}, "brand": {"max mara": (155.0, 14.0), "zegna": (30.0, 1.0), "prada": (133.0, 37.0)}}
+    vecchio = vel._DATI
+    vel._DATI = dati
+    monkeypatch.setattr(vel, "VELOCITA_ATTIVA", True)
+    try:
+        mm = {"semaforo": "🔴", "conf": "alta", "margine": 20, "fv": 60, "brand": "max mara", "categoria": "giacca"}
+        ok, motivo = check_skip_rosso({"fair_value": mm, "price": 40})
+        assert ok and motivo.startswith("[ROSSO SICURO")                                          # contato come SKIP_ROSSO
+        assert not check_skip_rosso({"fair_value": {**mm, "fv": 110}, "price": 40})[0]            # rapporto 2,75: eccezione, passa
+        assert not check_skip_rosso({"fair_value": mm, "price": 60})[0]                           # sopra la soglia di prezzo
+        assert not check_skip_rosso({"fair_value": {**mm, "brand": "prada"}, "price": 40})[0]     # brand che ruota
+        assert not check_skip_rosso({"fair_value": {**mm, "brand": "zegna"}, "price": 40})[0]     # troppo pochi casi (n < 100)
+        assert not check_skip_rosso({"fair_value": {**mm, "conf": "bassa"}, "price": 40})[0]
+    finally:
+        vel._DATI = vecchio
+
+
 def test_fascia_alta_solo_con_stima_solida():
     from bot.pipeline import ruoli_gemini
     verde = {"semaforo": "🟢", "conf": "media"}
@@ -360,14 +380,16 @@ def test_chiedi_foto_brand_esclusi_stessa_soglia_degli_altri():
     assert not n("Prada", 30) and n("Prada", 31) and n("Miu Miu", 79) and n("Loewe", 41)
 
 
-def test_richiesta_etichetta_solo_prada_miumiu_con_stima_promettente():
+def test_richiesta_etichetta_solo_brand_a_rischio_con_stima_promettente():
     from bot.scheda import richiede_etichetta, testo_richiesta_etichetta
     motivo = "[NESSUNA ETICHETTA VISIBILE] Nessuna etichetta leggibile"
     li = {"brand": "Prada", "title": "Cappotto Prada", "price": "60", "fair_value": {"semaforo": "🟡", "fv": 150, "margine": 90}}
     assert richiede_etichetta(li, motivo)
     assert richiede_etichetta({**li, "brand": "Miu Miu", "title": "Gonna"}, "[NESSUNA ETICHETTA INTERNA - PRADA/MIU MIU BORSA] x")
     assert not richiede_etichetta({**li, "fair_value": {"semaforo": "🔴"}}, motivo)        # stima non promettente: niente rumore
-    assert not richiede_etichetta({**li, "brand": "Max Mara", "title": "Blazer"}, motivo)   # altri brand: scarto silenzioso
+    for b in ("Max Mara", "Rick Owens", "Missoni"):                                         # estesi il 9/10
+        assert richiede_etichetta({**li, "brand": b, "title": "Blazer"}, motivo)
+    assert not richiede_etichetta({**li, "brand": "Fendi", "title": "Giacca"}, motivo)       # Fendi no (utente 9/10): scarto silenzioso
     assert not richiede_etichetta(li, "[FALSO CONCLAMATO] etichetta falsa")                  # i falsi restano scartati
     testo = testo_richiesta_etichetta(li, "https://www.vinted.it/items/1-x")
     assert "CHIEDI L'ETICHETTA INTERNA" in testo and "potrebbe cortesemente inviarmi" in testo and "150" in testo
