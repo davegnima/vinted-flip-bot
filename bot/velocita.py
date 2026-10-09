@@ -15,8 +15,13 @@ _AQUI = os.path.dirname(os.path.abspath(__file__))
 VELOCITA_FILE = os.environ.get("VELOCITA_FILE", os.path.join(_AQUI, "dati", "velocita.json"))
 VELOCITA_ATTIVA = os.environ.get("VELOCITA_ATTIVA", "1").strip() == "1"
 VELOCITA_K = float(os.environ.get("VELOCITA_K", "10"))                    # peso della media nel tasso del brand
-VELOCITA_SOGLIA_VERDE = float(os.environ.get("VELOCITA_SOGLIA_VERDE", "0.40"))
-VELOCITA_SOGLIA_GIALLO = float(os.environ.get("VELOCITA_SOGLIA_GIALLO", "0.20"))
+# Soglie PROPORZIONALI alla velocita' media della tabella (9/10): verde da 1,6 volte la media, giallo da 0,8 volte (con la media
+# di allora, 0,25, erano 0,40 e 0,20). Con soglie fisse l'aggiornamento della tabella dell'8/10 (media scesa da 0,25 a 0,19) faceva
+# scendere a giallo anche un Cucinelli a 12 EUR con fair value 67 EUR. VELOCITA_SOGLIA_VERDE/GIALLO (assolute) restano come forzatura.
+VELOCITA_VERDE_X = float(os.environ.get("VELOCITA_VERDE_X", "1.6"))
+VELOCITA_GIALLO_X = float(os.environ.get("VELOCITA_GIALLO_X", "0.8"))
+VELOCITA_SOGLIA_VERDE = float(os.environ.get("VELOCITA_SOGLIA_VERDE") or 0)     # 0 = proporzionale alla media
+VELOCITA_SOGLIA_GIALLO = float(os.environ.get("VELOCITA_SOGLIA_GIALLO") or 0)
 # Brand "lento" (9/10): con almeno VELOCITA_LENTO_N_MIN annunci e un lift <= VELOCITA_LENTO_LIFT il rosso salta il Cervello anche
 # a margine rapido positivo (vedi fair_value.check_skip_rosso). Oggi solo Max Mara (n ~155, lift 0,51).
 VELOCITA_LENTO_N_MIN = float(os.environ.get("VELOCITA_LENTO_N_MIN", "100"))
@@ -63,5 +68,7 @@ def semaforo_corretto(semaforo, brand, dati=None):
         return semaforo, 1.0
     lift = lift_brand(brand, dati)
     punteggio = dati["semaforo"][semaforo] * lift
-    nuovo = "🟢" if punteggio >= VELOCITA_SOGLIA_VERDE else "🟡" if punteggio >= VELOCITA_SOGLIA_GIALLO else "🔴"
+    verde = VELOCITA_SOGLIA_VERDE or VELOCITA_VERDE_X * dati["base"]
+    giallo = VELOCITA_SOGLIA_GIALLO or VELOCITA_GIALLO_X * dati["base"]
+    nuovo = "🟢" if punteggio >= verde else "🟡" if punteggio >= giallo else "🔴"
     return nuovo, round(lift, 2)
