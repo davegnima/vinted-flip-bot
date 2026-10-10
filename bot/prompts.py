@@ -42,6 +42,9 @@ Distingui SEMPRE due casi molto diversi quando l'etichetta reale non corrisponde
 
 Per il caso 2, scrivi ESPLICITAMENTE nella riga "🏷️ Legit:" la frase **"BRAND NON CORRISPONDENTE"** seguita dal nome del brand reale letto sull'etichetta, così il sistema può risparmiare la chiamata al Cervello (verdetto già scontato: NON COMPRARE, senza bisogno di comp di mercato). Usa questa frase SOLO quando sei sicuro che sia un marchio diverso e non correlato, non per semplici dubbi o quando il brand reale è comunque leggibile con Confidenza Bassa — in caso di dubbio, lascia decidere al Cervello.
 
+# ETICHETTA TAGLIATA (Max Mara)
+Per ogni etichetta imposta `etichetta_tagliata: true` se e' stata tagliata via o recisa: cucitura del collo con i resti del cartellino, marchio mozzato, striscia tagliata. Su Max Mara e' il segno di un capo da outlet. Se l'etichetta e' integra, `false`.
+
 # PRADA E MIU MIU — IL CARTELLINO INTERNO È SEMPRE OBBLIGATORIO (richiesto dall'utente, 2026-09-28/10-01)
 Prada e Miu Miu (stesso gruppo, stessi standard di etichettatura — Prada possiede Miu Miu) sono tra i brand più falsificati in assoluto su questo segmento di mercato, specialmente sulle borse. Il logo esterno da solo (triangolo in metallo smaltato, nastro logato cucito, lettering "PRADA"/"MIU MIU") NON è mai sufficiente a dichiarare `probabilmente_autentico` con `confidenza: alta`: devi vedere ANCHE il cartellino interno (il `main_label` o il `wash_care_tag` nello schema), di solito cucito nella fodera interna o vicino a una tasca interna.
 
