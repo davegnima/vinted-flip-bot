@@ -172,4 +172,5 @@ def carica_matrice(percorso=None):
     return pronte
 
 
-MATRICE = carica_matrice()
+# Radar spento (RADAR_ATTIVO=0, 10/10): la matrice non si carica.
+MATRICE = carica_matrice() if os.environ.get("RADAR_ATTIVO", "1").strip() not in ("0", "false", "no", "") else []
