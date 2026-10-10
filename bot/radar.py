@@ -79,9 +79,10 @@ RADAR_MODULI = {
         "spedizione_eur": 10.0, "rischio_falsi": "medio", "rischio_guasti": "basso", "prezzo_max_l1": 200,
     },
     "argento_gioielli": {
-        "brand": ("georg jensen", "torun", "giovanni raspini", "raspini", "swarovski", "pandora"),
+        "brand": ("georg jensen", "vivianna torun", "giovanni raspini", "raspini", "swarovski", "pandora"),
         "parole": ("argento 925", "sterling", "spilla", "bracciale argento"),
         "spedizione_eur": 6.0, "rischio_falsi": "medio", "rischio_guasti": "basso", "prezzo_max_l1": 150,
+        "solo_matrice": True,
     },
     "bijoux_vintage": {
         "brand": ("christian dior", "dior", "yves saint laurent", "saint laurent", "ysl", "givenchy",
@@ -111,6 +112,7 @@ RADAR_MODULI = {
                   "tamagotchi", "montblanc", "mont blanc", "seiko"),
         "parole": ("action figure", "statua", "modellino", "vintage toy"),
         "spedizione_eur": 9.0, "rischio_falsi": "medio", "rischio_guasti": "basso", "prezzo_max_l1": 250,
+        "solo_matrice": True,
     },
     "console_retro": {
         "brand": ("nintendo", "game boy", "gameboy", "game & watch", "game and watch", "sega"),
@@ -123,12 +125,14 @@ RADAR_MODULI = {
                   "nikon", "nikkor", "rollei", "canon", "canonet", "konica", "summicron", "elmarit"),
         "parole": ("fotocamera", "macchina fotografica", "obiettivo", "reflex", "analogica", "compatta 35mm"),
         "spedizione_eur": 8.0, "rischio_falsi": "basso", "rischio_guasti": "alto", "prezzo_max_l1": 400,
+        "solo_matrice": True,
     },
     "audio": {
         "brand": ("bang & olufsen", "bang olufsen", "b&o", "beoplay", "beosound", "audeze", "focal", "sennheiser",
                   "beyerdynamic", "walkman", "brionvega"),
         "parole": ("cuffie", "speaker", "cassa", "diffusore", "giradischi", "minidisc"),
         "spedizione_eur": 9.0, "rischio_falsi": "medio", "rischio_guasti": "alto", "prezzo_max_l1": 400,
+        "solo_matrice": True,
     },
     "golf": {
         "brand": ("scotty cameron", "titleist"),
@@ -248,6 +252,10 @@ def filtro_livello1(titolo, prezzo, modulo, brand=None, matrice=None):
         return False, f"sopra_buy_max:{riga['buy_max']:g}"
     if esito == "ok":
         return True, "ok"
+    # Moduli raggiunti solo da ricerche per modello (10/10: "yashica t4" restituisce 46 compatte qualsiasi, 0 vendute):
+    # passa solo cio' che la matrice riconosce.
+    if esito == "nessuno" and RADAR_MODULI[modulo].get("solo_matrice"):
+        return False, "modello_sconosciuto"
     tetto = RADAR_MODULI[modulo]["prezzo_max_l1"]
     if prezzo > tetto:
         return False, f"prezzo_sopra_tetto:{tetto:g}"

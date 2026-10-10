@@ -226,6 +226,11 @@ def test_matrice_del_repo_casi_reali():
     assert rm.valuta_modello("Lego figurine Star Wars hoth Rebel Trooper sw0735 75098", None, 20, m)[0] != "ok"
     assert rm.valuta_modello("Lego 8088 Star Wars ARC-170 Starfighter", None, 20, m)[0] == "ok"
     assert rm.trova_modello("Appareil photo Yashica T4 Super", None, m)["id"].startswith("yashica_t4")
+    # 10/10: falsi agganci dei log del 9/10
+    for titolo in ("Chargeur pour Nintendo dsi, 2ds, 3ds, 3ds xl", "30 Stickers Ultras Elana Torun - Pologne",
+                   "Supporto per lego 75192 Millennium Falcon", "presentoir Publicitaire Montblanc Meisterstuck 149",
+                   "Carte da Gioco Vintage Yashica t4", "Game et Watch The Legend of Zelda"):
+        assert rm.valuta_modello(titolo, None, 10, m)[0] != "ok", titolo
 
 
 def test_spesa_massima_per_pezzo(monkeypatch):
@@ -233,3 +238,11 @@ def test_spesa_massima_per_pezzo(monkeypatch):
     m = rm.prepara(_RIGHE)
     assert radar.filtro_livello1("Flos Arco", 350, "illuminazione_design", matrice=m) == (False, "sopra_spesa_max:50")
     assert radar.filtro_livello1("Artemide Tolomeo", 50, "illuminazione_design", matrice=m) == (True, "ok")
+
+
+def test_moduli_solo_matrice():
+    m = rm.prepara(_RIGHE)
+    # fotografia arriva solo da ricerche per modello: cio' che la matrice non riconosce si scarta
+    assert radar.filtro_livello1("Olympus Superzoom 70", 30, "fotografia", matrice=m) == (False, "modello_sconosciuto")
+    assert radar.filtro_livello1("Lampada Artemide", 40, "illuminazione_design", matrice=m) == (True, "ok")
+
