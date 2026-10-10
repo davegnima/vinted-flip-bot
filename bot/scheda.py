@@ -192,7 +192,8 @@ def testo_preavviso(listing_info, url=None, riga_finale=RIGA_PREAVVISO_IN_ATTESA
         # preavviso rimasto senza verdetto: l'esito (scartato/interrotto) in cima, poi solo testata e titolo con il semaforo
         # (richiesta del 10/10: il messaggio riporta il verdetto finale, non lo concatena al preavviso)
         esito, _, resto = (riga_finale or "").partition("\n")
-        return "\n".join([esito] + righe + ([resto] if resto else []))
+        link = [f"[vedi su Vinted]({url})"] if url else []   # l'album non ha il bottone: il link resta sempre nel testo
+        return "\n".join([esito] + righe + link + ([resto] if resto else []))
     for riga in (_righe_dettagli_annuncio(listing_info), esc(_riga_fair_value_testo(fv) or "")):
         if riga:
             righe.append(riga)

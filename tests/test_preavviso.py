@@ -421,7 +421,7 @@ def test_preavviso_scartato_mette_l_esito_in_cima_e_toglie_il_resto(monkeypatch)
     righe = t.split("\n")
     assert righe[0].startswith("🚫 scartato prima del verdetto: ")
     assert righe[1].startswith("⚡ 🟢") and "Pantalón negro" in righe[2]
-    assert "Fair value" not in t and "vedi su Vinted" not in t and "preavviso del semaforo" not in t
+    assert "Fair value" not in t and "[vedi su Vinted](https://www.vinted.it/items/1-x)" in t and "preavviso del semaforo" not in t
     assert "t.me/c/1234567890/55" in t
     # senza esito (preavviso in attesa) resta il messaggio completo
     assert "vedi su Vinted" in scheda.testo_preavviso(info, "https://www.vinted.it/items/1-x")
