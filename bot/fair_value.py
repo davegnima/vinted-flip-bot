@@ -254,6 +254,11 @@ PREAVVISO_MARGINE_FACILI = _env_float("PREAVVISO_MARGINE_FACILI", 10)
 # Suono solo per i migliori: fair value rapido / prezzo >= soglia (63% di venduti rapidi con >=4) o brand facile. Gli
 # altri preavvisi arrivano in silenzio. 0 = suono sempre.
 PREAVVISO_SUONO_RAPPORTO_MIN = _env_float("PREAVVISO_SUONO_RAPPORTO_MIN", 4)
+# Ogni 🟢 (semaforo corretto dalla velocita' del brand) manda il preavviso e SUONA (10/10, richiesta dell'utente: gli annunci venduti
+# in pochi secondi il semaforo deve segnalarli subito). Prima serviva margine rapido >= PREAVVISO_MARGINE_MIN e rapporto fair value/prezzo >= 4.
+# Su 8-9/10 (1.066 annunci, due giorni concordi): preavvisi col suono da 52 a ~98 al giorno, venduti entro 5 min presi dal 29% al 50%, precisione 35% -> 32%.
+# Spento con PREAVVISO_SUONO_VERDE=0 (torna alle regole di prima).
+PREAVVISO_SUONO_VERDE = os.environ.get("PREAVVISO_SUONO_VERDE", "1").strip() != "0"
 
 
 def valuta_preavviso(stima, prezzo):
@@ -268,7 +273,7 @@ def valuta_preavviso(stima, prezzo):
         return False, "no"
     if brand in PREAVVISO_BRAND_FACILI and marg >= PREAVVISO_MARGINE_FACILI:
         return True, "brand_facile"
-    if sem == "🟢" and marg >= PREAVVISO_MARGINE_MIN:
+    if sem == "🟢" and (marg >= PREAVVISO_MARGINE_MIN or (PREAVVISO_SUONO_VERDE and marg > 0)):
         return True, "semaforo"
     if prezzo <= PREAVVISO_PREZZO_BASSO and marg >= PREAVVISO_MARGINE_BASSO:
         return True, "prezzo_basso"
@@ -281,6 +286,8 @@ def preavviso_con_suono(stima, prezzo):
         return True
     stima = stima or {}
     if (stima.get("brand") or "").lower() in PREAVVISO_BRAND_FACILI:
+        return True
+    if PREAVVISO_SUONO_VERDE and stima.get("semaforo") == "🟢":
         return True
     fv = stima.get("fv")
     return bool(fv and prezzo and prezzo > 0 and fv / prezzo >= PREAVVISO_SUONO_RAPPORTO_MIN)

@@ -9,7 +9,9 @@ def _stima(sem, margine):
 
 def test_preavviso_semaforo_verde_con_margine():
     assert valuta_preavviso(_stima("🟢", 40), 30) == (True, "semaforo")
-    assert valuta_preavviso(_stima("🟢", 20), 60) == (False, "no")   # verde ma margine sotto soglia, prezzo non basso
+    assert valuta_preavviso(_stima("🟢", 20), 60) == (True, "semaforo")   # dal 10/10 ogni verde con margine positivo scatta
+    assert valuta_preavviso(_stima("🟢", 0), 60) == (False, "no")         # ma non a margine nullo
+    assert valuta_preavviso({**_stima("🟢", 40), "conf": "bassa"}, 30) == (False, "no")   # ne' con stima debole
 
 
 def test_preavviso_prezzo_basso():
@@ -358,9 +360,10 @@ def test_preavviso_brand_e_suono():
     giallo = {"semaforo": "🟡", "margine": 22, "conf": "media", "fv": 40, "brand": "prada"}
     assert valuta_preavviso(giallo, 18) == (True, "prezzo_basso")
     assert valuta_preavviso(giallo, 24) == (False, "no")
-    # suono: solo con fv/prezzo >= 4 o brand facile
+    # suono: con fv/prezzo >= 4, brand facile o (dal 10/10) semaforo verde; il giallo con rapporto 3 resta muto
     assert preavviso_con_suono({**verde, "fv": 130}, 30)
-    assert not preavviso_con_suono({**verde, "fv": 90}, 30)
+    assert preavviso_con_suono({**verde, "fv": 90}, 30)
+    assert not preavviso_con_suono({**giallo, "fv": 90}, 30)
     assert preavviso_con_suono({**verde, "brand": "jean paul gaultier", "fv": 50}, 30)
 
 
@@ -396,3 +399,14 @@ def test_richiesta_etichetta_solo_brand_a_rischio_con_stima_promettente():
     assert "interessato" not in testo
     # sempre in italiano, anche per un annuncio in francese
     assert "Buongiorno" in testo_richiesta_etichetta({**li, "title": "Manteau Prada pour femme"}, None)
+
+
+def test_preavviso_suona_per_ogni_verde(monkeypatch):
+    from bot import fair_value as fv
+    verde = {**_stima("🟢", 20), "brand": "max mara"}
+    assert fv.preavviso_con_suono(verde, 30)                       # rapporto 2, ma verde: suona
+    assert not fv.preavviso_con_suono({**_stima("🟡", 30), "brand": "max mara"}, 30)   # giallo, rapporto 2: muto
+    assert fv.preavviso_con_suono({**_stima("🟡", 30), "fv": 150, "brand": "x"}, 30)    # rapporto 5: suona come prima
+    monkeypatch.setattr(fv, "PREAVVISO_SUONO_VERDE", False)        # interruttore: torna alle regole di prima
+    assert not fv.preavviso_con_suono(verde, 30)
+    assert fv.valuta_preavviso(_stima("🟢", 20), 60) == (False, "no")
