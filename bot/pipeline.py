@@ -6,7 +6,7 @@ import traceback
 from functools import partial
 
 
-from bot.scheda import richiede_etichetta, invia_richiesta_etichetta, ANALISI_GEMINI_ATTIVA, STATO_ANALISI_COMPLETATA, STATO_ANALISI_INTERROTTA, _PermessoAnalisi, _aggiorna_stato_scheda, _invia_galleria_anticipata, _invia_risultato_telegram, aggiorna_preavviso, invia_preavviso, riga_scarto_preavviso, componi_testi_verdetto
+from bot.scheda import richiede_etichetta, invia_richiesta_etichetta, ANALISI_GEMINI_ATTIVA, STATO_ANALISI_COMPLETATA, STATO_ANALISI_INTERROTTA, _PermessoAnalisi, _aggiorna_stato_scheda, _invia_galleria_anticipata, _invia_risultato_telegram, aggiorna_preavviso, invia_galleria_dopo_lampo, invia_preavviso, riga_scarto_preavviso, componi_testi_verdetto
 from bot.verdetto import CERVELLO_CAMPIONI_EXTRA, _a_float, _estrai_item_id_da_url, _estrai_prezzi_da_pool_ricerca, _riepilogo_comp_per_fonte, calcola_verdetto, classifica_provenienza_comp, consolida_target_cervello, render_messaggio_verdetto, valida_payload_cervello
 from bot.config import GEMINI_SOGLIA_PREZZO_ALTO, TELEGRAM_ALERT_CHAT_ID, CERVELLO_PROVIDER, DEBUG_CONFRONTO_COMP_TELEGRAM, OCCHIO_OUTPUT_JSON, RAFFREDDAMENTO_SERPER_SECONDI, SERPER_API_KEY, SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO, SOGLIA_MARGINE_ASSOLUTO_NOTIFICA, TELEGRAM_OWNER_CHAT_ID, _serper_fallimenti_consecutivi, _serper_notifica_esaurimento_inviata, _serper_timestamp_ultimo_fallimento
 from bot.panel import EXTRA_LLM_URL, PANEL_CERVELLO_MODELLI, PANEL_OCCHIO_MODELLI, _bg_task, panel_cervello, panel_occhio
@@ -119,6 +119,7 @@ def _preavviso_lampo(listing_info, url, cover_photo_bytes, msg_date, t_ricevuto_
         riga_tempi = ("⏱ " + " · ".join(p.replace("telegram→notifica", "telegram→preavviso").replace("pubblicato", "caricato")
                                        for p in pezzi)) if pezzi else None
         stato["task_preavviso"] = asyncio.create_task(invia_preavviso(info, url, [cover_photo_bytes], riga_tempi=riga_tempi, secondi=sec))
+        stato["preavviso_lampo"] = True
         log.info("PREAVVISO LAMPO | item=%s | regola=%s | semaforo=%s | prezzo=%s", _estrai_item_id_da_url(url), regola, fv.get("semaforo"), prezzo)
     except Exception:
         log.warning("Preavviso lampo non inviato:\n%s", traceback.format_exc())
@@ -339,6 +340,9 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
                            ) if _pezzi_pre else None
         stato["task_preavviso"] = asyncio.create_task(invia_preavviso(
             dict(listing_info), url, photo_bytes_list, riga_tempi=_riga_tempi_pre, secondi=_sec_pre))
+    if stato is not None and stato.get("preavviso_lampo") and len(photo_bytes_list) > 1:
+        # il lampo e' partito con la sola copertina: appena scaricate, tutte le foto nel gruppo (10/10, richiesta dell'utente)
+        asyncio.create_task(invia_galleria_dopo_lampo(stato, listing_info.get("title") or "Annuncio", photo_bytes_list))
     if not photo_bytes_list:
         await telegram_send_message(
             TELEGRAM_OWNER_CHAT_ID,

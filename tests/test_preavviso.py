@@ -451,3 +451,23 @@ def test_preavviso_lampo_parte_prima_dello_scrape_solo_con_categoria_dal_titolo(
 
     assert asyncio.run(prova("titolo"))["task_preavviso"] is not None and inviati == [("🟢", 1)]
     assert asyncio.run(prova("catalogo")).get("task_preavviso") is None      # categoria dal catalogo: serve la pagina
+
+
+def test_galleria_completa_dopo_il_lampo_in_risposta_e_senza_suono(monkeypatch):
+    import asyncio
+    scheda, chiamate = _finti(monkeypatch)
+    inviate = []
+
+    async def album(chat, foto, caption=None, disable_notification=False, parse_mode=None, reply_to=None):
+        inviate.append((len(foto), disable_notification, reply_to))
+        return 5
+
+    monkeypatch.setattr(scheda, "telegram_send_media_group", album)
+    info = {"price": 15, "brand": "Prada", "title": "Gonna", "fair_value": _stima("🟢", 40)}
+
+    async def prova():
+        stato = {"task_preavviso": asyncio.ensure_future(scheda.invia_preavviso(info, "https://www.vinted.it/items/1-x", [b"c"]))}
+        await scheda.invia_galleria_dopo_lampo(stato, "Gonna", [b"1", b"2", b"3"])
+        await scheda.invia_galleria_dopo_lampo(stato, "Gonna", [b"1"])        # una sola foto: niente album
+    asyncio.run(prova())
+    assert inviate == [(3, True, 8)]       # 8 = id del messaggio del lampo (foto singola)
