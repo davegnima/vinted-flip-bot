@@ -10,7 +10,7 @@ from bot.scheda import richiede_etichetta, invia_richiesta_etichetta, ANALISI_GE
 from bot.verdetto import CERVELLO_CAMPIONI_EXTRA, _a_float, _estrai_item_id_da_url, _estrai_prezzi_da_pool_ricerca, _riepilogo_comp_per_fonte, calcola_verdetto, classifica_provenienza_comp, consolida_target_cervello, render_messaggio_verdetto, valida_payload_cervello
 from bot.config import GEMINI_SOGLIA_PREZZO_ALTO, TELEGRAM_ALERT_CHAT_ID, CERVELLO_PROVIDER, DEBUG_CONFRONTO_COMP_TELEGRAM, OCCHIO_OUTPUT_JSON, RAFFREDDAMENTO_SERPER_SECONDI, SERPER_API_KEY, SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO, SOGLIA_MARGINE_ASSOLUTO_NOTIFICA, TELEGRAM_OWNER_CHAT_ID, _serper_fallimenti_consecutivi, _serper_notifica_esaurimento_inviata, _serper_timestamp_ultimo_fallimento
 from bot.panel import EXTRA_LLM_URL, PANEL_CERVELLO_MODELLI, PANEL_OCCHIO_MODELLI, _bg_task, panel_cervello, panel_occhio
-from bot.fair_value import FAIR_VALUE_FILTRA, check_skip_rosso, catalogo_impara, check_skip_fair_value, fv_registra_gemini, fv_registra_rapida, stima_fair_value, valuta_preavviso, preavviso_con_suono
+from bot.fair_value import FAIR_VALUE_FILTRA, check_skip_rosso, catalogo_impara, check_skip_fair_value, fv_registra_gemini, fv_registra_rapida, stima_fair_value, valuta_preavviso, preavviso_con_suono, PREAVVISO_LAMPO
 from bot.prompts import GEMINI_CERVELLO_SYSTEM_PROMPT, GEMINI_OCCHI_SYSTEM_PROMPT, GEMINI_OCCHI_SYSTEM_PROMPT_JSON
 from bot.schemas import OCCHIO_RESPONSE_SCHEMA_GEMINI
 from bot import db
@@ -99,6 +99,31 @@ def ruoli_gemini(prezzo, stima_rapida, soglia=None):
     return alto, ("occhio_alto" if alto else "occhio"), ("cervello_alto" if alto else "cervello"), da
 
 
+def _preavviso_lampo(listing_info, url, cover_photo_bytes, msg_date, t_ricevuto_bot, stato):
+    """Preavviso prima dello scrape (PREAVVISO_LAMPO): usa solo titolo, brand e prezzo del tracker e la foto di copertina.
+    Parte solo se la categoria si legge dal titolo (stima affidabile senza pagina) e la regola del preavviso scatta.
+    Il messaggio viene poi aggiornato col verdetto come ogni preavviso; quello dopo lo scrape non parte piu'. Non solleva mai."""
+    try:
+        fv = stima_fair_value(listing_info)
+        prezzo = _a_float(listing_info.get("price"), None)
+        if not fv or fv.get("fonte_categoria") != "titolo":
+            return
+        attivo, regola = valuta_preavviso(fv, prezzo)
+        if not attivo:
+            return
+        info = dict(listing_info, fair_value=fv, preavviso=True, preavviso_suono=preavviso_con_suono(fv, prezzo))
+        try:
+            pezzi, sec = _calcola_tempi_pipeline(info, msg_date, t_ricevuto_bot)
+        except Exception:
+            pezzi, sec = [], None
+        riga_tempi = ("⏱ " + " · ".join(p.replace("telegram→notifica", "telegram→preavviso").replace("pubblicato", "caricato")
+                                       for p in pezzi)) if pezzi else None
+        stato["task_preavviso"] = asyncio.create_task(invia_preavviso(info, url, [cover_photo_bytes], riga_tempi=riga_tempi, secondi=sec))
+        log.info("PREAVVISO LAMPO | item=%s | regola=%s | semaforo=%s | prezzo=%s", _estrai_item_id_da_url(url), regola, fv.get("semaforo"), prezzo)
+    except Exception:
+        log.warning("Preavviso lampo non inviato:\n%s", traceback.format_exc())
+
+
 async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None, t_ricevuto_bot=None, stato=None,
                                    permesso=None):
     listing_info = dict(parsed)
@@ -147,6 +172,9 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             listing_info["_motivo_scarto"] = motivo_skip_ante   # intero, per il messaggio di preavviso
             _log_esito(listing_info, "SKIP_PRE_SCRAPE", motivo=(motivo_skip_ante or "")[:80])
             return
+
+        if PREAVVISO_LAMPO and stato is not None and TELEGRAM_ALERT_CHAT_ID and cover_photo_bytes:
+            _preavviso_lampo(listing_info, url, cover_photo_bytes, msg_date, t_ricevuto_bot, stato)
 
         # Guardaroba venditore escluso qui e lanciato in parallelo alle foto
         # poco sotto (vedi _scrapa_guardaroba_venditore): le foto non lo
@@ -302,7 +330,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
         )
     listing_info["fallback_solo_cover_photo"] = fallback_solo_cover_photo
     t_tappe.append(("foto", time.time()))
-    if listing_info.get("preavviso_gruppo") and stato is not None:
+    if listing_info.get("preavviso_gruppo") and stato is not None and stato.get("task_preavviso") is None:
         # PREAVVISO nel gruppo COMPRA: album con tutte le foto + semaforo, in parallelo al resto; a fine analisi
         # lo stesso messaggio viene aggiornato col verdetto
         _pezzi_pre, _sec_pre = _calcola_tempi_pipeline(listing_info, msg_date, t_ricevuto_bot)
@@ -648,7 +676,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
         v, problemi = valida_payload_cervello(verdetto_json)
         stats_comp = classifica_provenienza_comp(v, pool_ricerca_grezzo)
         applica_paese_al_verdetto(v, occhio_json, listing_info)   # Made in insolito (brand "medio"): non puo' restare autentico
-        applica_prove_al_verdetto(v, occhio_json)
+        applica_prove_al_verdetto(v, occhio_json, listing_info.get("brand"))
         legit_cervello = v.get("legit_verdetto")
         verdetto_calcolato = calcola_verdetto(v, prezzo_prodotto)
         campioni_target = None
@@ -671,7 +699,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
                 v["prezzo_target_vendita_eur"] = valore_c
                 stats_comp = classifica_provenienza_comp(v, pool_ricerca_grezzo)
                 applica_paese_al_verdetto(v, occhio_json, listing_info)
-                applica_prove_al_verdetto(v, occhio_json)
+                applica_prove_al_verdetto(v, occhio_json, listing_info.get("brand"))
                 legit_cervello = v.get("legit_verdetto")
                 verdetto_calcolato = calcola_verdetto(v, prezzo_prodotto)
             t_tappe.append(("campioni_target", time.time()))

@@ -75,13 +75,21 @@ def riga_controllo_occhio(o, item_id):
             f"relazione={o.get('relazione_brand') or '-'} | paese={o.get('paese_produzione_letto') or '-'} | etichette={et}")
 
 
-def applica_prove_al_verdetto(v, o):
+# brand per cui l'etichetta INTERNA (lavaggio, composizione, codice) e' l'unica prova: senza, niente COMPRA (10/10, Prada Sport)
+BRAND_ETICHETTA_OBBLIGATORIA = ("prada", "miu miu", "max mara", "rick owens", "missoni")
+_ETICHETTE_INTERNE = _ETICHETTE_PROVA - {"main_label"}
+
+
+def applica_prove_al_verdetto(v, o, brand=None):
     """Segna in v se l'Occhio ha visto almeno un'etichetta NITIDA (marchio, wash tag, composizione, codice, ologramma).
     Senza, un "sospetto" non puo' diventare COMPRA anche con margine alto (caso Loewe 8/10: una foto da lontano, etichetta
-    parziale, 14 EUR): `calcola_verdetto` lo manda a CHIEDI ALTRE FOTO. Modifica v in place."""
-    v["_etichetta_nitida"] = any(
-        isinstance(e, dict) and e.get("tipo") in _ETICHETTE_PROVA and e.get("leggibilita") == "nitida"
-        for e in ((o or {}).get("etichette") or []))
+    parziale, 14 EUR): `calcola_verdetto` lo manda a CHIEDI ALTRE FOTO. Per i brand di BRAND_ETICHETTA_OBBLIGATORIA serve
+    un'etichetta INTERNA nitida (`_etichetta_interna_richiesta`): il solo marchio esterno non basta. Modifica v in place."""
+    etichette = [e for e in ((o or {}).get("etichette") or []) if isinstance(e, dict) and e.get("leggibilita") == "nitida"]
+    v["_etichetta_nitida"] = any(e.get("tipo") in _ETICHETTE_PROVA for e in etichette)
+    nome = (brand or "").lower()
+    if any(b in nome for b in BRAND_ETICHETTA_OBBLIGATORIA):
+        v["_etichetta_interna_richiesta"] = not any(e.get("tipo") in _ETICHETTE_INTERNE for e in etichette)
 
 
 def calcola_scarto_occhio(o, solo_cover_photo=False, listing_info=None):
