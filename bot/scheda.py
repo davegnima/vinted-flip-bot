@@ -305,6 +305,18 @@ async def invia_preavviso(listing_info, url, photo_bytes_list=None, riga_tempi=N
     return None
 
 
+async def invia_galleria_dopo_lampo(stato, titolo, photo_bytes_list):
+    """Dopo un preavviso lampo (solo copertina): l'ALBUM con tutte le foto, appena scaricate, nel gruppo COMPRA come risposta al
+    preavviso e senza suono (il suono e' gia' partito col lampo). Non solleva mai."""
+    try:
+        info = await asyncio.wait_for(stato["task_preavviso"], 15)
+        if info and len(photo_bytes_list) > 1:
+            await telegram_send_media_group(TELEGRAM_ALERT_CHAT_ID, photo_bytes_list, caption=f"📸 {titolo} · {len(photo_bytes_list)} foto",
+                                            disable_notification=True, reply_to=info["msg_id"])
+    except Exception:
+        log.warning("Galleria dopo il preavviso lampo non inviata:\n%s", traceback.format_exc())
+
+
 async def aggiorna_preavviso(stato, url, testo_verdetto=None, riga_finale=None):
     """Sostituisce il contenuto del messaggio di preavviso: con il verdetto (didascalia ridotta se e' una foto) o,
     senza verdetto, con la scheda del preavviso e una riga finale ("scartato", "interrotta"). Una sola volta per

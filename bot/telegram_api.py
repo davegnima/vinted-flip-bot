@@ -169,7 +169,7 @@ async def telegram_send_photo_con_bottone(chat_id, photo_bytes, caption, url_ann
 
 
 async def telegram_send_media_group(chat_id, photos_bytes_list, caption=None, disable_notification=False,
-                                    parse_mode=None):
+                                    parse_mode=None, reply_to=None):
     """Ritorna il message_id della prima foto dell'album (None se fallito). Con parse_mode la didascalia e'
     formattata; se Telegram la rifiuta (400) si ritenta senza formattazione."""
     if not photos_bytes_list:
@@ -189,9 +189,10 @@ async def telegram_send_media_group(chat_id, photos_bytes_list, caption=None, di
             media.append(item)
         return media
 
+    extra = {"reply_to_message_id": reply_to} if reply_to else {}
     resp = await _telegram_post(
         "sendMediaGroup",
-        data={"chat_id": chat_id, "media": json.dumps(_media(True)), "disable_notification": disable_notification},
+        data={"chat_id": chat_id, "media": json.dumps(_media(True)), "disable_notification": disable_notification, **extra},
         files=files,
         timeout=60,
     )
@@ -200,7 +201,7 @@ async def telegram_send_media_group(chat_id, photos_bytes_list, caption=None, di
                     parse_mode, resp.status_code, resp.text[:300])
         resp = await _telegram_post(
             "sendMediaGroup",
-            data={"chat_id": chat_id, "media": json.dumps(_media(False)), "disable_notification": disable_notification},
+            data={"chat_id": chat_id, "media": json.dumps(_media(False)), "disable_notification": disable_notification, **extra},
             files=files,
             timeout=60,
         )
