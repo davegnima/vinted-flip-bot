@@ -294,3 +294,23 @@ def test_sospetto_con_margine_alto_diventa_compra():
     assert v_s["_etichetta_nitida"] is False
     applica_prove_al_verdetto(v_s, {"etichette": [{"tipo": "wash_care_tag", "leggibilita": "nitida"}]})
     assert v_s["_etichetta_nitida"] is True and m.calcola_verdetto(v_s, 30.0)["decisione"] == "COMPRA"
+
+
+def test_compra_senza_etichetta_interna_per_brand_obbligatori_e_senza_etichetta_nitida():
+    # caso Prada Sport 10/10: COMPRA con "manca il wash tag": con il solo marchio esterno nitido diventa CHIEDI ALTRE FOTO
+    from bot.occhio import applica_prove_al_verdetto
+    ok = _v(160)
+    esterna = {"etichette": [{"tipo": "main_label", "leggibilita": "nitida"}]}
+    v = m.valida_payload_cervello(ok)[0]
+    applica_prove_al_verdetto(v, esterna, "Prada")
+    r = m.calcola_verdetto(v, 30.0)
+    assert r["decisione"] == "CHIEDI ALTRE FOTO" and any("etichetta" in x for x in r["limiti_applicati"])
+    v = m.valida_payload_cervello(ok)[0]
+    applica_prove_al_verdetto(v, esterna, "Jacquemus")                  # brand non obbligatorio: il marchio nitido basta
+    assert m.calcola_verdetto(v, 30.0)["decisione"] == "COMPRA"
+    v = m.valida_payload_cervello(ok)[0]
+    applica_prove_al_verdetto(v, {"etichette": [{"tipo": "main_label", "leggibilita": "parziale"}]}, "Jacquemus")
+    assert m.calcola_verdetto(v, 30.0)["decisione"] == "CHIEDI ALTRE FOTO"   # nemmeno uno straccio di etichetta nitida
+    v = m.valida_payload_cervello(ok)[0]
+    applica_prove_al_verdetto(v, {"etichette": [{"tipo": "wash_care_tag", "leggibilita": "nitida"}]}, "Prada")
+    assert m.calcola_verdetto(v, 30.0)["decisione"] == "COMPRA"

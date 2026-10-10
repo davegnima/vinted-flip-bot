@@ -831,6 +831,11 @@ def calcola_verdetto(v, prezzo_prodotto):
             )
         elif v["legit_verdetto"] in ("sospetto_servono_altre_foto", "non_verificabile"):
             decisione = "CHIEDI ALTRE FOTO"
+        elif v.get("_etichetta_interna_richiesta") or not v.get("_etichetta_nitida", True):
+            # niente COMPRA senza una prova di autenticita' leggibile (10/10, Prada Sport: COMPRA con "manca il wash tag"):
+            # per i brand a etichetta obbligatoria serve quella interna, per gli altri almeno una nitida
+            decisione = "CHIEDI ALTRE FOTO"
+            limiti_applicati.append("nessuna etichetta nitida da cui verificare l'autenticita': prima le foto, poi si compra")
         else:
             decisione = "COMPRA"
     elif tratta_supera_soglia:

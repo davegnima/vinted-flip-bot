@@ -410,3 +410,44 @@ def test_preavviso_suona_per_ogni_verde(monkeypatch):
     monkeypatch.setattr(fv, "PREAVVISO_SUONO_VERDE", False)        # interruttore: torna alle regole di prima
     assert not fv.preavviso_con_suono(verde, 30)
     assert fv.valuta_preavviso(_stima("🟢", 20), 60) == (False, "no")
+
+
+def test_preavviso_scartato_mette_l_esito_in_cima_e_toglie_il_resto(monkeypatch):
+    from bot import scheda
+    monkeypatch.setattr(scheda, "TELEGRAM_OWNER_CHAT_ID", "-1001234567890")
+    info = {"price": 47, "brand": "Rick Owens", "title": "Pantalón negro", "size": "L", "fair_value": _stima("🟢", 112)}
+    riga = scheda.riga_scarto_preavviso("[FALSO CONCLAMATO] etichetta con errori", 55)
+    t = scheda.testo_preavviso(info, "https://www.vinted.it/items/1-x", riga_finale=riga, compatto=True)
+    righe = t.split("\n")
+    assert righe[0].startswith("🚫 scartato prima del verdetto: ")
+    assert righe[1].startswith("⚡ 🟢") and "Pantalón negro" in righe[2]
+    assert "Fair value" not in t and "vedi su Vinted" not in t and "preavviso del semaforo" not in t
+    assert "t.me/c/1234567890/55" in t
+    # senza esito (preavviso in attesa) resta il messaggio completo
+    assert "vedi su Vinted" in scheda.testo_preavviso(info, "https://www.vinted.it/items/1-x")
+
+
+def test_preavviso_lampo_parte_prima_dello_scrape_solo_con_categoria_dal_titolo(monkeypatch):
+    import asyncio
+    from bot import pipeline as p
+    inviati = []
+
+    async def finto(info, url, foto, riga_tempi=None, secondi=None):
+        inviati.append((info["fair_value"]["semaforo"], len(foto)))
+        return {"msg_id": 1, "tipo": "foto", "base": info, "riga_tempi": riga_tempi}
+
+    monkeypatch.setattr(p, "invia_preavviso", finto)
+    verde = _stima("🟢", 120)
+    monkeypatch.setattr(p, "stima_fair_value", lambda li: {**verde, "fonte_categoria": "titolo"})
+    monkeypatch.setattr(p, "valuta_preavviso", lambda fv, pr: (True, "semaforo"))
+
+    async def prova(fonte):
+        monkeypatch.setattr(p, "stima_fair_value", lambda li: {**verde, "fonte_categoria": fonte})
+        stato = {}
+        p._preavviso_lampo({"price": 20, "brand": "Prada", "title": "Maglione"}, "https://www.vinted.it/items/1-x", b"cover", None, None, stato)
+        if stato.get("task_preavviso") is not None:
+            await stato["task_preavviso"]
+        return stato
+
+    assert asyncio.run(prova("titolo"))["task_preavviso"] is not None and inviati == [("🟢", 1)]
+    assert asyncio.run(prova("catalogo")).get("task_preavviso") is None      # categoria dal catalogo: serve la pagina

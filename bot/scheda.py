@@ -179,7 +179,7 @@ def _testa_prezzo_brand(listing_info):
 RIGA_PREAVVISO_IN_ATTESA = "_preavviso del semaforo: la valutazione completa arriva dopo_"
 
 
-def testo_preavviso(listing_info, url=None, riga_finale=RIGA_PREAVVISO_IN_ATTESA, riga_tempi=None):
+def testo_preavviso(listing_info, url=None, riga_finale=RIGA_PREAVVISO_IN_ATTESA, riga_tempi=None, compatto=False):
     """Messaggio breve del PREAVVISO (gruppo COMPRA): prima riga = fulmine, semaforo, margine rapido, prezzo e brand
     (e' quello che compare nell'anteprima della notifica), poi titolo, dettagli, fair value rapido, link e riga finale
     (sostituita a fine analisi). Pura."""
@@ -188,6 +188,11 @@ def testo_preavviso(listing_info, url=None, riga_finale=RIGA_PREAVVISO_IN_ATTESA
     testa = _testa_prezzo_brand(listing_info) or ""
     marca = "⚡ " + (f"{fv['semaforo']} ~+{fv['margine']:.0f} € · " if fv.get("margine") is not None and fv.get("semaforo") else "")
     righe = [marca + "*" + testa + "*", esc(listing_info.get("title") or "Annuncio")]
+    if compatto:
+        # preavviso rimasto senza verdetto: l'esito (scartato/interrotto) in cima, poi solo testata e titolo con il semaforo
+        # (richiesta del 10/10: il messaggio riporta il verdetto finale, non lo concatena al preavviso)
+        esito, _, resto = (riga_finale or "").partition("\n")
+        return "\n".join([esito] + righe + ([resto] if resto else []))
     for riga in (_righe_dettagli_annuncio(listing_info), esc(_riga_fair_value_testo(fv) or "")):
         if riga:
             righe.append(riga)
@@ -319,7 +324,7 @@ async def aggiorna_preavviso(stato, url, testo_verdetto=None, riga_finale=None):
             testo = testo_verdetto
         else:
             testo = testo_preavviso(info["base"], url, riga_finale=riga_finale or RIGA_PREAVVISO_IN_ATTESA,
-                                    riga_tempi=info.get("riga_tempi"))
+                                    riga_tempi=info.get("riga_tempi"), compatto=bool(riga_finale))
         if info["tipo"] == "testo":
             ok = await telegram_edit_message(TELEGRAM_ALERT_CHAT_ID, info["msg_id"], testo, url)
         else:
@@ -738,7 +743,7 @@ def componi_testi_verdetto(listing_info, verdetto_calcolato, output_finale, info
 # l'etichetta interna e' l'unico modo per verificare l'autenticita' di questi brand. Se l'Occhio non la vede lo scarto era silenzioso (nessun messaggio, solo
 # il log); ora, se la stima rapida e' promettente (semaforo 🟢/🟡 dopo la correzione dalla velocita'), arriva un messaggio
 # "chiedi l'etichetta" con il testo da incollare al venditore, nella sua lingua. Non si compra mai senza etichetta.
-BRAND_ETICHETTA_OBBLIGATORIA = ("prada", "miu miu", "max mara", "rick owens", "missoni")
+from bot.occhio import BRAND_ETICHETTA_OBBLIGATORIA  # noqa: E402
 # sempre in italiano (richiesta dell'utente l'8/10): cortese e dritto al punto
 RICHIESTA_ETICHETTA_VENDITORE = (
     "Buongiorno, potrebbe cortesemente inviarmi una foto dell'etichetta interna (marca e composizione) "

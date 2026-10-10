@@ -259,6 +259,10 @@ PREAVVISO_SUONO_RAPPORTO_MIN = _env_float("PREAVVISO_SUONO_RAPPORTO_MIN", 4)
 # Su 8-9/10 (1.066 annunci, due giorni concordi): preavvisi col suono da 52 a ~98 al giorno, venduti entro 5 min presi dal 29% al 50%, precisione 35% -> 32%.
 # Spento con PREAVVISO_SUONO_VERDE=0 (torna alle regole di prima).
 PREAVVISO_SUONO_VERDE = os.environ.get("PREAVVISO_SUONO_VERDE", "1").strip() != "0"
+# PREAVVISO LAMPO (10/10): per gli annunci la cui categoria si legge dal TITOLO il preavviso parte PRIMA dello scarico della pagina, con
+# la sola foto di copertina del tracker (da ~3 s a meno di 1 s). Il messaggio e' lo stesso: a fine analisi viene aggiornato col verdetto.
+# Spento con PREAVVISO_LAMPO=0 (il preavviso parte dopo lo scrape, con l'album completo).
+PREAVVISO_LAMPO = os.environ.get("PREAVVISO_LAMPO", "1").strip() != "0"
 
 
 def valuta_preavviso(stima, prezzo):
