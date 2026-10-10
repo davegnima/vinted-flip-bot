@@ -31,6 +31,8 @@ from bot.logger import log
 # ---- fine import ----
 
 RADAR_MARCATORE = os.environ.get("RADAR_MARCATORE", "📡").strip()
+# Interruttore generale (10/10: l'utente ferma il test del radar): 0 = messaggi radar ignorati, niente visite ne' matrice.
+RADAR_ATTIVO = os.environ.get("RADAR_ATTIVO", "1").strip() not in ("0", "false", "no", "")
 RADAR_GROUP_ID = int(os.environ["RADAR_GROUP_ID"]) if os.environ.get("RADAR_GROUP_ID", "").strip() else None
 # Gruppo dedicato (7/10: "Radar grezzo", da silenziare): se RADAR_GROUP_ID non c'e', all'avvio lo si cerca per nome tra
 # le chat dell'account (risolvi_gruppo_radar). RADAR_CHAT_IDS e' l'insieme delle chat radar ascoltate.
@@ -291,6 +293,8 @@ def radar_in_pausa(adesso=None):
 async def gestisci_annuncio_radar(parsed, url, t0=None):
     """Fase 0: classifica, filtra, visita la pagina se serve, registra. Mai messaggi, mai AI."""
     global _radar_pausa_saltati
+    if not RADAR_ATTIVO:
+        return
     if radar_in_pausa():
         _radar_pausa_saltati += 1
         if _radar_pausa_saltati % 100 == 1:
