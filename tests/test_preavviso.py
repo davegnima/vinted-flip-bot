@@ -471,3 +471,17 @@ def test_galleria_completa_dopo_il_lampo_in_risposta_e_senza_suono(monkeypatch):
         await scheda.invia_galleria_dopo_lampo(stato, "Gonna", [b"1"])        # una sola foto: niente album
     asyncio.run(prova())
     assert inviate == [(3, True, 8)]       # 8 = id del messaggio del lampo (foto singola)
+
+
+def test_max_mara_con_etichetta_tagliata_e_outlet_e_si_scarta():
+    from bot.occhio import calcola_scarto_occhio, valida_payload_occhio
+    o = {"relazione_brand": "corrisponde", "etichette": [
+        {"tipo": "main_label", "testo_verbatim": "MAX MARA", "leggibilita": "nitida", "etichetta_tagliata": True}]}
+    li = {"brand": "Max Mara", "title": "Cappotto"}
+    scarta, motivo = calcola_scarto_occhio(o, listing_info=li)
+    assert scarta and motivo.startswith("[OUTLET - ETICHETTA TAGLIATA]")
+    o["etichette"][0]["etichetta_tagliata"] = False
+    assert not calcola_scarto_occhio(o, listing_info=li)[0]
+    o["etichette"][0]["etichetta_tagliata"] = True
+    assert not calcola_scarto_occhio(o, listing_info={"brand": "Prada", "title": "Giacca"})[0]    # solo Max Mara
+    assert valida_payload_occhio({"etichette": [{"tipo": "main_label", "testo_verbatim": "x", "leggibilita": "nitida"}]})[0]["etichette"][0]["etichetta_tagliata"] is False

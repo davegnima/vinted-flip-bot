@@ -306,6 +306,14 @@ def calcola_scarto_occhio(o, solo_cover_photo=False, listing_info=None):
                 "anche se il logo esterno sembra coerente."
             )
 
+    # MAX MARA con l'etichetta TAGLIATA al collo = capo da outlet (richiesta dell'utente il 10/10): si scarta sempre.
+    if (e_contesto_max_mara or "max mara" in (_norm(o.get("brand_letto_etichetta")) or "")) and any(
+            e.get("etichetta_tagliata") for e in etichette):
+        return True, (
+            "[OUTLET - ETICHETTA TAGLIATA] Max Mara con l'etichetta tagliata al collo: capo da outlet, "
+            "non si compra -- cervello non consultato."
+        )
+
     nessuna_etichetta = not etichette or all(
         _norm(e.get("leggibilita")) == "illeggibile" for e in etichette
     )
@@ -410,6 +418,8 @@ def valida_payload_occhio(occhio):
                     voce[campo] = voce[campo].strip().lower()
             if nome_array == "difetti":
                 voce["strutturale"] = bool(voce.get("strutturale"))
+            if nome_array == "etichette":
+                voce["etichetta_tagliata"] = bool(voce.get("etichetta_tagliata"))
 
     o["segnali_rischio_annuncio"] = [
         s.strip().lower() for s in o["segnali_rischio_annuncio"] if isinstance(s, str) and s.strip()

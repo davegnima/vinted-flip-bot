@@ -99,7 +99,7 @@ OCCHIO_RESPONSE_SCHEMA = {
             "description": "Una voce per ogni etichetta visibile, anche parziale. Vuoto se nessuna.",
             "items": {
                 "type": "OBJECT",
-                "propertyOrdering": ["tipo", "testo_verbatim", "leggibilita", "osservazioni_tecniche"],
+                "propertyOrdering": ["tipo", "testo_verbatim", "leggibilita", "etichetta_tagliata", "osservazioni_tecniche"],
                 "properties": {
                     "tipo": {
                         "type": "STRING",
@@ -123,6 +123,13 @@ OCCHIO_RESPONSE_SCHEMA = {
                         "type": "STRING",
                         "format": "enum",
                         "enum": ["nitida", "parziale", "illeggibile"],
+                    },
+                    "etichetta_tagliata": {
+                        "type": "BOOLEAN",
+                        "description": (
+                            "true se l'etichetta e' stata TAGLIATA via o recisa (cucitura del collo con resti del cartellino, "
+                            "marchio mozzato, striscia di tessuto tagliata): segno tipico dei capi da outlet. false altrimenti."
+                        ),
                     },
                     "osservazioni_tecniche": {
                         "type": "STRING",
