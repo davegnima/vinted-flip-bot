@@ -517,3 +517,12 @@ def test_max_mara_con_etichetta_tagliata_e_outlet_e_si_scarta():
     o["etichette"][0]["etichetta_tagliata"] = True
     assert not calcola_scarto_occhio(o, listing_info={"brand": "Prada", "title": "Giacca"})[0]    # solo Max Mara
     assert valida_payload_occhio({"etichette": [{"tipo": "main_label", "testo_verbatim": "x", "leggibilita": "nitida"}]})[0]["etichette"][0]["etichetta_tagliata"] is False
+
+
+def test_descrizione_incoerente_non_scarta_piu_ma_screenshot_si():
+    from bot.occhio import calcola_scarto_occhio
+    base = {"relazione_brand": "corrisponde", "etichette": [{"tipo": "main_label", "testo_verbatim": "PRADA", "leggibilita": "nitida"}]}
+    li = {"brand": "Prada", "title": "Maglione"}
+    assert not calcola_scarto_occhio({**base, "segnali_rischio_annuncio": ["descrizione_incoerente_con_le_foto"]}, listing_info=li)[0]
+    scarta, motivo = calcola_scarto_occhio({**base, "segnali_rischio_annuncio": ["screenshot_di_altro_annuncio"]}, listing_info=li)
+    assert scarta and motivo.startswith("[ANNUNCIO FRAUDOLENTO]")
