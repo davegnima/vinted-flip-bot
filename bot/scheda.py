@@ -346,6 +346,14 @@ async def aggiorna_preavviso(stato, url, testo_verdetto=None, riga_finale=None):
                 url if info["tipo"] == "foto" else None)
         if ok:
             stato["preavviso_aggiornato"] = True
+            if testo_verdetto is not None and info["tipo"] != "testo" and len(testo_verdetto) > len(didascalia_verdetto(testo_verdetto)):
+                # la didascalia di una foto/album arriva a 1024 caratteri: il verdetto completo (analisi, domande, venditore)
+                # segue come risposta, senza suono (10/10: COMPRA Cucinelli senza descrizione nel gruppo)
+                try:
+                    await telegram_send_with_buttons(TELEGRAM_ALERT_CHAT_ID, testo_verdetto, url, None,
+                                                     disable_notification=True, reply_to=info["msg_id"])
+                except Exception:
+                    log.warning("Verdetto completo non inviato come risposta:\n%s", traceback.format_exc())
         return ok
     except Exception:
         log.warning("Preavviso non aggiornato:\n%s", traceback.format_exc())
