@@ -137,3 +137,48 @@ def test_annuncio_sparito_si_segue_e_se_riappare_si_logga(monkeypatch, caplog):
     assert "RICONTROLLO RIAPPARSO" in testo
     assert "RICONTROLLO STORIA" in testo and "rimosso?" in testo
     assert "10259999999" not in tr._tracc_stop   # mai venduto: la serie e' arrivata in fondo
+
+
+def test_watchdog_riavvia_se_telegram_ha_messaggi_che_non_arrivano(monkeypatch):
+    import time
+    from types import SimpleNamespace
+    monkeypatch.setattr(m, "WATCHDOG_MINUTI", 10)
+    monkeypatch.setattr(m, "radar_in_pausa", lambda: False)
+    uscite = []
+
+    class Uscita(BaseException):
+        pass
+
+    def esci(codice):
+        uscite.append(codice)
+        raise Uscita()
+
+    monkeypatch.setattr(m.os, "_exit", esci)
+    giri = {"n": 0}
+
+    async def sonno(s):
+        giri["n"] += 1
+        if giri["n"] > 3:
+            raise asyncio.CancelledError()
+
+    monkeypatch.setattr(m.asyncio, "sleep", sonno)
+
+    def prova(id_telegram):
+        m._ultimo_msg_gruppo.update({"t": time.time() - 1200, "id": 100})
+        giri["n"] = 0
+
+        chiamate = iter([100] + [id_telegram] * 10)    # la prima lettura e' quella dell'avvio (baseline)
+
+        async def leggi(chat, limit=1):
+            return [SimpleNamespace(id=next(chiamate))]
+
+        monkeypatch.setattr(m.client, "get_messages", leggi)
+        try:
+            asyncio.run(m.watchdog_messaggi())
+        except (Uscita, asyncio.CancelledError):
+            pass
+
+    prova(100)                       # nessun messaggio nuovo: davvero silenzio, nessun riavvio
+    assert uscite == []
+    prova(105)                       # Telegram ha un messaggio piu' recente mai ricevuto: riavvio
+    assert uscite == [1]
