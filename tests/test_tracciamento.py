@@ -182,3 +182,9 @@ def test_watchdog_riavvia_se_telegram_ha_messaggi_che_non_arrivano(monkeypatch):
     assert uscite == []
     prova(105)                       # Telegram ha un messaggio piu' recente mai ricevuto: riavvio
     assert uscite == [1]
+
+
+def test_processo_bloccato_solo_se_il_battito_manca_oltre_la_soglia():
+    assert m.processo_bloccato(1000, 1100, 120) is False
+    assert m.processo_bloccato(1000, 1121, 120) is True
+    assert m.processo_bloccato(0, 99999, 0) is False        # soglia 0 = spento

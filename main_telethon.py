@@ -1447,6 +1447,42 @@ async def watchdog_messaggi():
             log.warning("WATCHDOG | controllo fallito:\n%s", traceback.format_exc())
 
 
+# BLOCCO DEL PROCESSO (11/10: due volte il worker e' rimasto muto 2h40 e 25 min, senza nessuna riga di log, mentre il tracker
+# continuava a notificare): il watchdog sopra gira nello stesso event loop e non puo' accorgersi di un blocco. Qui un thread
+# separato controlla il "battito" scritto dal loop ogni 5 s: se manca da piu' di BLOCCO_SECONDI scrive su stderr lo stack di
+# tutti i thread (dove e' bloccato) e termina il processo, Railway lo riavvia. 0 = spento.
+BLOCCO_SECONDI = float(os.environ.get("BLOCCO_SECONDI", "120") or 0)
+_battito = {"t": time.time()}
+
+
+def processo_bloccato(ultimo_battito, adesso, soglia):
+    """True se il loop non da' segni di vita da oltre `soglia` secondi (soglia <= 0: controllo spento). Pura."""
+    return soglia > 0 and adesso - ultimo_battito > soglia
+
+
+async def _battito_loop():
+    while True:
+        _battito["t"] = time.time()
+        await asyncio.sleep(5)
+
+
+def _thread_blocco():
+    import faulthandler
+    import threading
+    def _controllo():
+        while True:
+            time.sleep(15)
+            if processo_bloccato(_battito["t"], time.time(), BLOCCO_SECONDI):
+                try:
+                    sys.stderr.write(f"BLOCCO PROCESSO | il loop e' fermo da {time.time() - _battito['t']:.0f} s: stack dei thread e riavvio\n")
+                    faulthandler.dump_traceback(file=sys.stderr, all_threads=True)
+                    sys.stderr.flush()
+                finally:
+                    os._exit(1)
+    if BLOCCO_SECONDI > 0:
+        threading.Thread(target=_controllo, name="blocco-watchdog", daemon=True).start()
+
+
 @client.on(events.NewMessage(chats=TELEGRAM_GROUP_ID))
 @client.on(events.NewMessage(func=lambda e: e.chat_id in RADAR_CHAT_IDS and e.chat_id != TELEGRAM_GROUP_ID))
 async def on_new_message(event):
@@ -1595,6 +1631,9 @@ async def main():
         await client.start()
         await risolvi_gruppo_radar(client)
         asyncio.get_event_loop().create_task(watchdog_messaggi())
+        _battito["t"] = time.time()
+        asyncio.get_event_loop().create_task(_battito_loop())
+        _thread_blocco()
         await client.run_until_disconnected()
     finally:
         await chiudi_client_http()
