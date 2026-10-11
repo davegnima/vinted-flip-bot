@@ -15,6 +15,8 @@ from bot.tempi import _parse_created_at_dt
 from bot.vinted_http import _vinted_get_con_retry
 from bot.categorie import estrai_categoria_da_titolo
 from bot.logger import log
+from bot.config import TELEGRAM_ALERT_CHAT_ID
+from bot.telegram_api import telegram_send_with_buttons
 # ---- fine import ----
 # ---------------------------------------------------------------------------
 # TRACCIAMENTO VENDITE (richiesto dall'utente il 2026-10-02/03)
@@ -47,6 +49,17 @@ _tracc_ridotti = set()
 # negativi dei filtri e dell'Occhio. SKIP_PRE_SCRAPE (esclusioni dell'utente su titolo/brand) resta senza serie.
 TRACCIAMENTO_SERIE_SKIP_S = (300, 900, 3600)
 _SKIP_DA_SEGUIRE = ("SKIP_PRE_GEMINI", "SKIP_PRE_CERVELLO", "SKIP_ROSSO")
+# ALLARME PREFERITI (11/10, caso Margiela 56 EUR: NON COMPRARE del Cervello, 18 preferiti in 3 minuti): i preferiti letti dai
+# ricontrolli sono il segnale di domanda piu' forte che abbiamo (10/10, 709 annunci: con 2+ preferiti a 60 s il 50% si vende
+# entro 15 min contro il 7% con zero). Se a 60 s ci sono >= ALLARME_PREF_60 preferiti (o a 300 s >= ALLARME_PREF_300), l'annuncio
+# e' ancora in vendita, il fair value rapido e' >= ALLARME_PREF_RAPPORTO volte il prezzo e il bot NON aveva detto COMPRA (ne' scartato
+# per falso), un messaggio con suono arriva nel gruppo. Sul 10/10: ~16 allarmi al giorno, ~70% venduti entro 1 h dopo l'allarme
+# (soglie scelte sugli stessi dati: da riverificare). Spento con ALLARME_PREF_ATTIVO=0.
+ALLARME_PREF_ATTIVO = os.environ.get("ALLARME_PREF_ATTIVO", "1").strip() != "0"
+ALLARME_PREF_60 = int(float(os.environ.get("ALLARME_PREF_60", "3")))
+ALLARME_PREF_300 = int(float(os.environ.get("ALLARME_PREF_300", "6")))
+ALLARME_PREF_RAPPORTO = float(os.environ.get("ALLARME_PREF_RAPPORTO", "1.5"))
+_ALLARME_ESITI = ("NON COMPRARE", "TRATTA", "CHIEDI ALTRE FOTO", "SKIP_ROSSO")
 _tracc_pref = {}   # item_id -> [(offset, preferiti)] letti a ogni controllo: la crescita e' un segnale di domanda
 _tracc_ctx = {}   # item_id -> contesto dell'annuncio (esito, margine, semaforo, categoria...) per la riga TRACCIATO
 _STATI_SPARITO = ('rimosso', 'rimosso?', 'n.d.')
@@ -270,6 +283,48 @@ async def _tracc_serie(item_id, url, brand, prezzo, t0, offsets=None, storia=Non
                      " ".join(f"{o}s:{st}" for o, st in storia))
 
 
+def allarme_preferiti_da_inviare(ctx, prezzo, offset_s, preferiti, stato):
+    """True se i preferiti letti al controllo `offset_s` giustificano l'allarme (vedi ALLARME_PREF_*). Pura."""
+    if not ALLARME_PREF_ATTIVO or stato != "attivo" or not isinstance(preferiti, int) or not ctx or ctx.get("_allarmato"):
+        return False
+    if ctx.get("esito") not in _ALLARME_ESITI or ctx.get("legit") == "probabilmente_falso":
+        return False
+    fv, prezzo = _a_float(ctx.get("fv"), None), _a_float(prezzo, None)
+    if not fv or not prezzo or prezzo <= 0 or fv / prezzo < ALLARME_PREF_RAPPORTO:
+        return False
+    return (offset_s == 60 and preferiti >= ALLARME_PREF_60) or (offset_s == 300 and preferiti >= ALLARME_PREF_300)
+
+
+def testo_allarme_preferiti(item_id, url, brand, prezzo, offset_s, preferiti, ctx):
+    """Messaggio Markdown dell'allarme preferiti. Pura."""
+    from bot.testo import _escapa_markdown_legacy as esc
+    minuti = offset_s / 60
+    righe = [f"🔥 *{preferiti} preferiti in {minuti:.0f} min* · 💶 {_a_float(prezzo, 0):.0f} € · 🏷️ {esc(str(brand or 'n/d'))}"]
+    if ctx.get("_titolo"):
+        righe.append(esc(str(ctx["_titolo"])))
+    pezzi = [f"il bot: {ctx.get('esito')}"]
+    if ctx.get("target"):
+        pezzi.append(f"target {ctx['target']} €")
+    if ctx.get("sem"):
+        pezzi.append(str(ctx["sem"]))
+    if ctx.get("fv"):
+        pezzi.append(f"fair value ~{ctx['fv']} €")
+    righe.append(esc(" · ".join(pezzi)))
+    righe.append(f"[vedi su Vinted]({url})")
+    return "\n".join(righe)
+
+
+async def _invia_allarme_preferiti(item_id, url, brand, prezzo, offset_s, preferiti):
+    ctx = _tracc_ctx.get(item_id) or {}
+    ctx["_allarmato"] = True
+    _tracc_ctx[item_id] = ctx
+    log.info("ALLARME PREFERITI | item=%s | brand='%s' | preferiti=%s | offset=%ss | esito=%s | fv=%s | prezzo=%s | target=%s",
+             item_id, brand or "n/d", preferiti, offset_s, ctx.get("esito"), ctx.get("fv"), prezzo, ctx.get("target"))
+    if TELEGRAM_ALERT_CHAT_ID:
+        await telegram_send_with_buttons(TELEGRAM_ALERT_CHAT_ID, testo_allarme_preferiti(item_id, url, brand, prezzo, offset_s, preferiti, ctx),
+                                         url, None)
+
+
 async def _tracc_serie_interna(item_id, url, brand, prezzo, t0, storia, offsets=None):
     fatto_in_ritardo = False
     for s_dopo in (offsets or TRACCIAMENTO_SERIE_SECONDI):
@@ -314,6 +369,11 @@ async def _tracc_serie_interna(item_id, url, brand, prezzo, t0, storia, offsets=
             if isinstance(segnali.get("preferiti"), int):
                 _tracc_pref.setdefault(item_id, []).append((s_dopo, segnali["preferiti"]))
             db.aggiorna_serie(item_id, storia=storia)
+            try:
+                if allarme_preferiti_da_inviare(_tracc_ctx.get(item_id), prezzo, s_dopo, segnali.get("preferiti"), stato):
+                    await _invia_allarme_preferiti(item_id, url, brand, prezzo, s_dopo, segnali["preferiti"])
+            except Exception:
+                log.warning("Allarme preferiti non inviato:\n%s", traceback.format_exc())
             if _tracc_pref.get(item_id):   # i preferiti restano nel DB con il contesto: un riavvio non li perde
                 db.aggiorna_serie(item_id, ctx={**_tracc_ctx.get(item_id, {}), "_pref": _tracc_pref[item_id]})
             if stato == "venduto":
@@ -478,6 +538,7 @@ def _contesto_tracciato(listing_info, esito, campi):
         "categoria": fv.get("categoria") or estrai_categoria_da_titolo(listing_info.get("title") or "", listing_info.get("description")),
         "cond": listing_info.get("condition"), "preavviso": "si" if listing_info.get("preavviso") else "no",
         "motivo": (str(campi.get("motivo") or "")[:60].replace("|", "/") or None),
+        "_titolo": (str(listing_info.get("title") or "")[:80] or None),   # chiavi con "_": non finiscono nella riga TRACCIATO
     }
     return {k: (v.replace("|", "/") if isinstance(v, str) else v) for k, v in ctx.items() if v not in (None, "")}
 
