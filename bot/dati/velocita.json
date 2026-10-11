@@ -1,177 +1,189 @@
 {
- "aggiornato": "2026-10-09T21:58:39.960712188Z",
- "base": 0.1812,
+ "aggiornato": "2026-10-10T21:28:14.082014832Z",
+ "base": 0.1825,
  "brand": {
   "45rpm": {
-   "n": 2.97,
+   "n": 2.88,
    "veloci": 0.0
   },
   "acne studios": {
-   "n": 93.62,
-   "veloci": 8.67
+   "n": 138.81,
+   "veloci": 9.41
   },
-  "ann demeulemeester": {
-   "n": 0.94,
-   "veloci": 0.0
-  },
-  "barena venezia": {
-   "n": 3.88,
-   "veloci": 0.0
-  },
-  "bottega veneta": {
-   "n": 2.91,
-   "veloci": 1.0
-  },
-  "brunello cucinelli": {
-   "n": 88.95,
-   "veloci": 19.64
-  },
-  "claude montana": {
+  "alaia": {
    "n": 2,
    "veloci": 0
   },
+  "ann demeulemeester": {
+   "n": 1.91,
+   "veloci": 1.0
+  },
+  "barena venezia": {
+   "n": 4.76,
+   "veloci": 0.0
+  },
+  "bottega veneta": {
+   "n": 8.82,
+   "veloci": 1.97
+  },
+  "brunello cucinelli": {
+   "n": 131.28,
+   "veloci": 29.05
+  },
+  "claude montana": {
+   "n": 6.94,
+   "veloci": 0.0
+  },
   "courreges": {
-   "n": 50.45,
-   "veloci": 6.82
+   "n": 65.94,
+   "veloci": 7.62
   },
   "dries van noten": {
-   "n": 14.7,
-   "veloci": 1.94
+   "n": 31.26,
+   "veloci": 3.88
   },
   "engineered garments": {
-   "n": 5.91,
+   "n": 7.73,
    "veloci": 0.0
   },
   "fendi": {
-   "n": 50.72,
-   "veloci": 3.88
+   "n": 75.2,
+   "veloci": 3.76
   },
   "haider ackermann": {
-   "n": 0.97,
+   "n": 1.94,
    "veloci": 0.0
   },
   "helmut lang": {
-   "n": 17.67,
-   "veloci": 0.94
+   "n": 32.14,
+   "veloci": 1.91
   },
   "issey miyake": {
-   "n": 2.88,
-   "veloci": 0.94
+   "n": 4.79,
+   "veloci": 1.91
   },
   "jacquemus": {
-   "n": 43.57,
-   "veloci": 6.7
+   "n": 50.26,
+   "veloci": 9.5
   },
   "jean paul gaultier": {
-   "n": 41.9,
-   "veloci": 10.7
+   "n": 66.64,
+   "veloci": 24.38
   },
   "junya watanabe": {
-   "n": 1.94,
-   "veloci": 1.0
+   "n": 3.88,
+   "veloci": 0.97
   },
   "kapital": {
-   "n": 1.97,
+   "n": 1.91,
    "veloci": 0.0
   },
+  "khaite": {
+   "n": 1,
+   "veloci": 0
+  },
+  "kiko kostadinov": {
+   "n": 1,
+   "veloci": 0
+  },
   "lemaire": {
-   "n": 3.85,
+   "n": 4.73,
    "veloci": 0.0
   },
   "loewe": {
-   "n": 10.73,
-   "veloci": 4.91
+   "n": 13.41,
+   "veloci": 5.76
   },
   "loro piana": {
-   "n": 40.87,
-   "veloci": 15.38
+   "n": 57.64,
+   "veloci": 21.92
   },
   "margiela": {
-   "n": 1.97,
-   "veloci": 1.0
-  },
-  "marni": {
-   "n": 30.17,
-   "veloci": 5.85
-  },
-  "max mara": {
-   "n": 269.01,
-   "veloci": 28.43
-  },
-  "missoni": {
-   "n": 104.53,
-   "veloci": 15.61
-  },
-  "miu miu": {
-   "n": 29.14,
-   "veloci": 14.47
-  },
-  "mugler": {
-   "n": 8.79,
+   "n": 1.91,
    "veloci": 0.97
   },
+  "marni": {
+   "n": 47.26,
+   "veloci": 7.67
+  },
+  "max mara": {
+   "n": 410.94,
+   "veloci": 47.58
+  },
+  "missoni": {
+   "n": 148.39,
+   "veloci": 26.14
+  },
+  "miu miu": {
+   "n": 39.27,
+   "veloci": 21.04
+  },
+  "mugler": {
+   "n": 12.53,
+   "veloci": 0.94
+  },
   "prada": {
-   "n": 212.85,
-   "veloci": 58.42
+   "n": 299.46,
+   "veloci": 80.67
   },
   "pucci": {
-   "n": 7.82,
-   "veloci": 1.0
+   "n": 14.59,
+   "veloci": 0.97
   },
   "raf simons": {
-   "n": 4.94,
-   "veloci": 2.94
+   "n": 9.79,
+   "veloci": 4.85
   },
   "rick owens": {
-   "n": 5.88,
-   "veloci": 1.94
+   "n": 9.7,
+   "veloci": 1.88
   },
   "sacai": {
-   "n": 1.94,
-   "veloci": 0.0
+   "n": 3.88,
+   "veloci": 1.0
   },
   "the attico": {
-   "n": 1.97,
+   "n": 1.91,
    "veloci": 0.0
   },
   "the row": {
-   "n": 4.85,
+   "n": 5.7,
    "veloci": 0.0
   },
   "totême": {
-   "n": 16.38,
+   "n": 27.89,
    "veloci": 0.0
   },
   "undercover": {
-   "n": 4.94,
+   "n": 11.79,
    "veloci": 0.0
   },
   "vivienne westwood": {
-   "n": 24.26,
-   "veloci": 12.52
+   "n": 35.53,
+   "veloci": 17.14
   },
   "yohji yamamoto": {
-   "n": 4.88,
-   "veloci": 0.97
+   "n": 4.73,
+   "veloci": 0.94
   },
   "zegna": {
-   "n": 49.93,
-   "veloci": 2.97
+   "n": 48.43,
+   "veloci": 2.88
   }
  },
- "fino_ts": "2026-10-09T20:46:16.386057074Z",
+ "fino_ts": "2026-10-10T20:17:14.781796771Z",
  "semaforo": {
   "🔴": {
-   "n": 765.0,
-   "veloci": 72.83
+   "n": 1128.05,
+   "veloci": 106.65
   },
   "🟡": {
-   "n": 248.13,
-   "veloci": 58.51
+   "n": 359.69,
+   "veloci": 77.75
   },
   "🟢": {
-   "n": 254.52,
-   "veloci": 98.3
+   "n": 362.88,
+   "veloci": 153.35
   }
  }
 }
