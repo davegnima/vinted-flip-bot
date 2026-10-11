@@ -236,13 +236,18 @@ def didascalia_verdetto(testo, limite=1024):
         return testo
     righe = testo.split("\n")
     MIN_RIGA = 140
-    while len("\n".join(righe)) > limite:
+    for _ in range(len(righe) * 2 + 5):          # numero di giri limitato: la funzione deve sempre finire
+        totale = len("\n".join(righe))
+        if totale <= limite:
+            break
         i = max(range(len(righe)), key=lambda k: len(righe[k]))
-        eccesso = len("\n".join(righe)) - limite
         if len(righe[i]) <= MIN_RIGA:
             break
-        nuova_len = max(MIN_RIGA, len(righe[i]) - eccesso - 1)
-        righe[i] = righe[i][:nuova_len].rstrip(" \\") + "…"
+        tenuti = max(MIN_RIGA, len(righe[i]) - (totale - limite) - 1)
+        accorciata = righe[i][:tenuti].rstrip(" \\") + "…"
+        if len(accorciata) >= len(righe[i]):     # nessun progresso (riga gia' accorciata al minimo)
+            break
+        righe[i] = accorciata
     while len("\n".join(righe)) > limite and len(righe) > 1:
         righe.pop()
     out = "\n".join(righe).rstrip()
