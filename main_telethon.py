@@ -42,7 +42,7 @@ from bot import http_clients as hc
 from bot.db import DB_FILE
 from bot.gemini_stato import ripristina_stato_gemini
 from bot.tracciamento import importa_tracciamento_jsonl, tracc_riprendi_serie
-from bot.radar import RADAR_CHAT_IDS, e_messaggio_radar, gestisci_annuncio_radar, risolvi_gruppo_radar, togli_marcatore
+from bot.radar import RADAR_CHAT_IDS, radar_in_pausa, e_messaggio_radar, gestisci_annuncio_radar, risolvi_gruppo_radar, togli_marcatore
 from bot.costanti import (
     BRAND_BLOCKLIST,
     CATEGORIA_KEYWORDS,
@@ -1408,9 +1408,51 @@ async def on_comando_test_proxy(event):
             pass
 
 
+# CONTROLLO DI SALUTE (11/10: il worker ha smesso di ricevere i messaggi del tracker per quasi 3 ore, senza errori): ultimo
+# messaggio del gruppo ricevuto e suo id; il watchdog (vedi sotto) riavvia il processo se Telegram ne ha di piu' recenti.
+_ultimo_msg_gruppo = {"t": time.time(), "id": 0}
+WATCHDOG_MINUTI = float(os.environ.get("WATCHDOG_MINUTI", "10") or 0)
+
+
+async def watchdog_messaggi():
+    """Ogni minuto, se per oltre WATCHDOG_MINUTI (0 = spento) non arriva nulla dal gruppo del tracker (fuori dalla pausa notturna),
+    chiede a Telegram l'ultimo messaggio: se e' piu' recente di quello visto, il client Telethon ha perso gli aggiornamenti e
+    il processo esce (Railway lo riavvia; le serie di ricontrolli sono nel DB). Mai in pausa notturna. Non solleva."""
+    if WATCHDOG_MINUTI <= 0:
+        return
+    try:
+        ultimo = await client.get_messages(TELEGRAM_GROUP_ID, limit=1)
+        if ultimo:
+            _ultimo_msg_gruppo["id"] = max(_ultimo_msg_gruppo["id"], ultimo[0].id)
+    except Exception:
+        log.warning("WATCHDOG | ultimo messaggio non letto all'avvio:\n%s", traceback.format_exc())
+    while True:
+        await asyncio.sleep(60)
+        try:
+            if radar_in_pausa() or time.time() - _ultimo_msg_gruppo["t"] < WATCHDOG_MINUTI * 60:
+                continue
+            ultimo = await asyncio.wait_for(client.get_messages(TELEGRAM_GROUP_ID, limit=1), 30)
+            if ultimo and ultimo[0].id > _ultimo_msg_gruppo["id"]:
+                log.error("WATCHDOG | nessun messaggio ricevuto da %.0f min ma Telegram ne ha di nuovi (id %s > %s): "
+                          "aggiornamenti persi, riavvio del processo", (time.time() - _ultimo_msg_gruppo["t"]) / 60,
+                          ultimo[0].id, _ultimo_msg_gruppo["id"])
+                logging.shutdown()
+                os._exit(1)
+            _ultimo_msg_gruppo["t"] = time.time()   # davvero silenzio: ricontrolla fra altri WATCHDOG_MINUTI
+        except asyncio.TimeoutError:
+            log.error("WATCHDOG | Telegram non risponde da 30 s: riavvio del processo")
+            logging.shutdown()
+            os._exit(1)
+        except Exception:
+            log.warning("WATCHDOG | controllo fallito:\n%s", traceback.format_exc())
+
+
 @client.on(events.NewMessage(chats=TELEGRAM_GROUP_ID))
 @client.on(events.NewMessage(func=lambda e: e.chat_id in RADAR_CHAT_IDS and e.chat_id != TELEGRAM_GROUP_ID))
 async def on_new_message(event):
+    if event.chat_id == TELEGRAM_GROUP_ID:
+        _ultimo_msg_gruppo["t"] = time.time()
+        _ultimo_msg_gruppo["id"] = max(_ultimo_msg_gruppo["id"], event.message.id)
     # Catturati il piu' presto possibile nell'handler (richiesto dall'utente
     # il 2026-09-21, "monitorare il delay tra ogni step"): t_ricevuto_bot e'
     # il riferimento per quanto ci mette la NOSTRA pipeline (scrape, foto,
@@ -1552,6 +1594,7 @@ async def main():
     try:
         await client.start()
         await risolvi_gruppo_radar(client)
+        asyncio.get_event_loop().create_task(watchdog_messaggi())
         await client.run_until_disconnected()
     finally:
         await chiudi_client_http()
