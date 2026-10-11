@@ -182,6 +182,9 @@ def test_didascalia_verdetto_accorcia_le_righe_lunghe_e_tiene_le_altre():
     assert len(out) <= 1024 and "🟢 COMPRA" in out and "💶 22 € → 81 €" in out and "🛡️ fake M" in out and "📊 Fair value" in out
     assert "🧠 analisi" in out and "…" in out
     assert len(didascalia_verdetto("riga\n" * 400, 1024)) <= 1024
+    # regressione 11/10: righe appena sopra il minimo che non si accorciavano piu' bloccavano il bot (ciclo infinito)
+    assert len(didascalia_verdetto("\n".join(["x" * 141] * 12), 1024)) <= 1024
+    assert len(didascalia_verdetto("\n".join(["x" * 150, "y" * 900, "z" * 300]), 1024)) <= 1024
 
 
 def test_riga_scarto_con_motivo_e_link(monkeypatch):
