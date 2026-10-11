@@ -188,3 +188,38 @@ def test_processo_bloccato_solo_se_il_battito_manca_oltre_la_soglia():
     assert m.processo_bloccato(1000, 1100, 120) is False
     assert m.processo_bloccato(1000, 1121, 120) is True
     assert m.processo_bloccato(0, 99999, 0) is False        # soglia 0 = spento
+
+
+def test_allarme_preferiti_regole_e_testo(monkeypatch):
+    ctx = {"esito": "NON COMPRARE", "fv": 161, "target": 68, "sem": "🟢", "_titolo": "Maison Margiela Blazer"}
+    ok = tr.allarme_preferiti_da_inviare
+    assert ok(ctx, 56, 60, 3, "attivo") and ok(ctx, 56, 300, 6, "attivo")
+    assert not ok(ctx, 56, 60, 2, "attivo") and not ok(ctx, 56, 300, 5, "attivo")           # sotto soglia
+    assert not ok(ctx, 56, 60, 3, "venduto") and not ok(ctx, 56, 60, None, "attivo")         # non piu' in vendita / senza dato
+    assert not ok(ctx, 150, 60, 3, "attivo")                                                  # fair value < 1,5 x prezzo
+    assert not ok({**ctx, "esito": "COMPRA"}, 56, 60, 9, "attivo")                            # gia' segnalato come COMPRA
+    assert not ok({**ctx, "esito": "SKIP_PRE_CERVELLO"}, 56, 60, 9, "attivo")                 # scartato per falso: mai
+    assert not ok({**ctx, "legit": "probabilmente_falso"}, 56, 60, 9, "attivo")
+    assert not ok({**ctx, "_allarmato": True}, 56, 60, 9, "attivo")                           # una sola volta
+    assert not ok(None, 56, 60, 9, "attivo")
+    t = tr.testo_allarme_preferiti("1", "https://www.vinted.it/items/1-x", "Maison Margiela", 56, 60, 18, ctx)
+    assert "18 preferiti" in t and "NON COMPRARE" in t and "target 68" in t and "fair value ~161" in t and "vedi su Vinted" in t
+
+
+def test_allarme_preferiti_viene_inviato_una_volta(monkeypatch):
+    inviati = []
+
+    async def invia(chat, testo, url, item=None, **kw):
+        inviati.append(testo)
+        return 1
+
+    monkeypatch.setattr(tr, "TELEGRAM_ALERT_CHAT_ID", "-100")
+    monkeypatch.setattr(tr, "telegram_send_with_buttons", invia)
+    tr._tracc_ctx["77"] = {"esito": "NON COMPRARE", "fv": 161, "target": 68, "sem": "🟢"}
+
+    async def prova():
+        await tr._invia_allarme_preferiti("77", "https://www.vinted.it/items/77-x", "Margiela", 56, 60, 18)
+    asyncio.run(prova())
+    assert len(inviati) == 1 and tr._tracc_ctx["77"]["_allarmato"] is True
+    assert not tr.allarme_preferiti_da_inviare(tr._tracc_ctx["77"], 56, 300, 20, "attivo")   # non si ripete
+    tr._tracc_ctx.pop("77", None)
