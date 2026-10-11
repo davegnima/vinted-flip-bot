@@ -288,6 +288,14 @@ async def telegram_edit_message(chat_id, message_id, text, url_annuncio=None):
     return bool(resp is not None and resp.is_success)
 
 
+async def telegram_delete_message(chat_id, message_id):
+    """Cancella un messaggio GIA' inviato dal bot (entro 48 ore). Ritorna True se e' stato cancellato (o non esisteva piu')."""
+    if not message_id:
+        return False
+    resp = await _telegram_post("deleteMessage", json={"chat_id": chat_id, "message_id": int(message_id)})
+    return bool(resp is not None and (resp.is_success or "message to delete not found" in (resp.text or "")))
+
+
 async def telegram_edit_caption(chat_id, message_id, caption, url_annuncio=None):
     """Modifica la didascalia di una foto (o della prima foto di un album) GIA' inviata dal bot: nessuna nuova
     notifica. Su un album i bottoni non esistono (url_annuncio va passato solo per una foto singola: editMessageCaption

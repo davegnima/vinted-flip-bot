@@ -490,7 +490,14 @@ def test_con_lampo_il_verdetto_va_nella_didascalia_dell_album(monkeypatch):
     async def album(chat, foto, caption=None, disable_notification=False, parse_mode=None, reply_to=None):
         return 50
 
+    cancellati = []
+
+    async def cancella(chat, mid):
+        cancellati.append(mid)
+        return True
+
     monkeypatch.setattr(scheda, "telegram_edit_caption", edit_cap)
+    monkeypatch.setattr(scheda, "telegram_delete_message", cancella)
     monkeypatch.setattr(scheda, "telegram_send_media_group", album)
     info = {"price": 15, "brand": "Prada", "title": "Gonna", "fair_value": _stima("🟢", 40)}
     u = "https://www.vinted.it/items/1-x"
@@ -502,7 +509,14 @@ def test_con_lampo_il_verdetto_va_nella_didascalia_dell_album(monkeypatch):
         assert await scheda.aggiorna_preavviso(stato, u, testo_verdetto=lungo)
     asyncio.run(prova())
     assert modifiche[0][0] == 50 and modifiche[0][1] <= 1024 and not modifiche[0][2]     # album: verdetto, niente bottone
-    assert modifiche[1][0] == 8 and modifiche[1][1] <= 350 and modifiche[1][2]           # lampo: solo testata, col bottone
+    assert cancellati == [8] and len(modifiche) == 1                                      # il preavviso con la copertina e' cancellato
+    # se la cancellazione fallisce, il preavviso resta con la sola testata e il bottone
+    async def non_cancella(chat, mid):
+        return False
+    monkeypatch.setattr(scheda, "telegram_delete_message", non_cancella)
+    modifiche.clear()
+    asyncio.run(prova())
+    assert modifiche[1][0] == 8 and modifiche[1][1] <= 350 and modifiche[1][2]
 
 
 def test_max_mara_con_etichetta_tagliata_e_outlet_e_si_scarta():
