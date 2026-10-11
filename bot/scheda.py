@@ -312,14 +312,17 @@ async def invia_preavviso(listing_info, url, photo_bytes_list=None, riga_tempi=N
 
 async def invia_galleria_dopo_lampo(stato, titolo, photo_bytes_list):
     """Dopo un preavviso lampo (solo copertina): l'ALBUM con tutte le foto, appena scaricate, nel gruppo COMPRA come risposta al
-    preavviso e senza suono (il suono e' gia' partito col lampo). Non solleva mai."""
+    preavviso e senza suono (il suono e' gia' partito col lampo). Ritorna l'id dell'album (la sua didascalia riceve il verdetto
+    finale: e' il messaggio piu' in basso nel feed) oppure None. Non solleva mai."""
     try:
         info = await asyncio.wait_for(stato["task_preavviso"], 15)
         if info and len(photo_bytes_list) > 1:
-            await telegram_send_media_group(TELEGRAM_ALERT_CHAT_ID, photo_bytes_list, caption=f"📸 {titolo} · {len(photo_bytes_list)} foto",
-                                            disable_notification=True, reply_to=info["msg_id"])
+            return await telegram_send_media_group(
+                TELEGRAM_ALERT_CHAT_ID, photo_bytes_list, caption=f"📸 {titolo} · {len(photo_bytes_list)} foto",
+                disable_notification=True, reply_to=info["msg_id"])
     except Exception:
         log.warning("Galleria dopo il preavviso lampo non inviata:\n%s", traceback.format_exc())
+    return None
 
 
 async def aggiorna_preavviso(stato, url, testo_verdetto=None, riga_finale=None):
@@ -343,8 +346,19 @@ async def aggiorna_preavviso(stato, url, testo_verdetto=None, riga_finale=None):
         else:
             testo = testo_preavviso(info["base"], url, riga_finale=riga_finale or RIGA_PREAVVISO_IN_ATTESA,
                                     riga_tempi=info.get("riga_tempi"), compatto=bool(riga_finale))
+        id_album = None
+        if info["tipo"] != "testo" and stato.get("task_album_lampo") is not None:
+            try:
+                id_album = await asyncio.wait_for(stato["task_album_lampo"], 15)
+            except Exception:
+                id_album = None
         if info["tipo"] == "testo":
             ok = await telegram_edit_message(TELEGRAM_ALERT_CHAT_ID, info["msg_id"], testo, url)
+        elif id_album and await telegram_edit_caption(TELEGRAM_ALERT_CHAT_ID, id_album, didascalia_verdetto(testo), None):
+            # preavviso lampo + album: il verdetto sta nella didascalia dell'album (il messaggio piu' in basso, 11/10);
+            # il preavviso in alto resta con la sola testata (esito, prezzi, brand) e il bottone
+            ok = await telegram_edit_caption(TELEGRAM_ALERT_CHAT_ID, info["msg_id"], didascalia_verdetto(testo, 350),
+                                             url if info["tipo"] == "foto" else None)
         else:
             ok = await telegram_edit_caption(
                 TELEGRAM_ALERT_CHAT_ID, info["msg_id"], didascalia_verdetto(testo),
