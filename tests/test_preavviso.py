@@ -170,7 +170,8 @@ def test_aggiorna_preavviso_col_verdetto_una_sola_volta(monkeypatch):
         return stato
     stato = asyncio.run(prova())
     assert stato["preavviso_aggiornato"]
-    assert chiamate[-1] == ("edit_cap", 7, True, False)   # album: didascalia <= 1024, niente bottone
+    assert ("edit_cap", 7, True, False) in chiamate        # album: didascalia <= 1024, niente bottone
+    assert chiamate[-1] == ("testo", True)                 # verdetto completo come risposta, senza suono
 
 
 def test_didascalia_verdetto_taglia_a_paragrafi():
