@@ -170,17 +170,17 @@ def test_aggiorna_preavviso_col_verdetto_una_sola_volta(monkeypatch):
         return stato
     stato = asyncio.run(prova())
     assert stato["preavviso_aggiornato"]
-    assert ("edit_cap", 7, True, False) in chiamate        # album: didascalia <= 1024, niente bottone
-    assert chiamate[-1] == ("testo", True)                 # verdetto completo come risposta, senza suono
+    assert chiamate[-1] == ("edit_cap", 7, True, False)   # album: didascalia <= 1024, niente bottone; nessun altro messaggio
 
 
-def test_didascalia_verdetto_taglia_a_paragrafi():
+def test_didascalia_verdetto_accorcia_le_righe_lunghe_e_tiene_le_altre():
     from bot.scheda import didascalia_verdetto
     corto = "a\n\nb"
     assert didascalia_verdetto(corto) == corto
-    testo = "testa\nriga\n\n" + "c" * 600 + "\n\n" + "d" * 600
+    testo = "🟢 COMPRA\n💶 22 € → 81 €\n\n🧠 " + "analisi " * 150 + "\n❓ " + "dubbio " * 60 + "\n🛡️ fake M\n📊 Fair value ~79 €"
     out = didascalia_verdetto(testo, 1024)
-    assert out.endswith("c" * 600) and "d" not in out and len(out) <= 1024
+    assert len(out) <= 1024 and "🟢 COMPRA" in out and "💶 22 € → 81 €" in out and "🛡️ fake M" in out and "📊 Fair value" in out
+    assert "🧠 analisi" in out and "…" in out
     assert len(didascalia_verdetto("riga\n" * 400, 1024)) <= 1024
 
 

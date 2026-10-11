@@ -228,25 +228,25 @@ def riga_scarto_preavviso(motivo, msg_id=None, interrotta=False):
 
 
 def didascalia_verdetto(testo, limite=1024):
-    """Riduce il messaggio del verdetto alla didascalia di una foto (max 1024): tiene i paragrafi interi dall'alto
-    finche' ci stanno; se il primo e' gia' troppo lungo lo tronca all'ultima riga intera. Pura."""
+    """Riduce il messaggio del verdetto alla didascalia di una foto (max 1024, limite di Telegram): se non ci sta accorcia le
+    righe piu' lunghe (analisi, dubbi: troncate con "…") e tiene tutte le altre, cosi' restano esito, prezzi, dettagli e fair
+    value. Se non basta ancora, toglie le righe dal fondo. Pura."""
     testo = (testo or "").strip()
     if len(testo) <= limite:
         return testo
-    out = ""
-    for par in testo.split("\n\n"):
-        candidato = (out + "\n\n" + par) if out else par
-        if len(candidato) > limite:
+    righe = testo.split("\n")
+    MIN_RIGA = 140
+    while len("\n".join(righe)) > limite:
+        i = max(range(len(righe)), key=lambda k: len(righe[k]))
+        eccesso = len("\n".join(righe)) - limite
+        if len(righe[i]) <= MIN_RIGA:
             break
-        out = candidato
-    if out:
-        return out
-    righe, acc = testo.split("\n"), ""
-    for r in righe:
-        if len(acc) + len(r) + 2 > limite:
-            break
-        acc += (r + "\n")
-    return acc.rstrip() + "…" if acc else testo[:limite - 1] + "…"
+        nuova_len = max(MIN_RIGA, len(righe[i]) - eccesso - 1)
+        righe[i] = righe[i][:nuova_len].rstrip(" \\") + "…"
+    while len("\n".join(righe)) > limite and len(righe) > 1:
+        righe.pop()
+    out = "\n".join(righe).rstrip()
+    return out if len(out) <= limite else out[:limite - 1] + "…"
 
 
 def _preavviso_inviato(listing_info, id_msg, tipo, riga_tempi, secondi, t_inizio):
@@ -346,14 +346,6 @@ async def aggiorna_preavviso(stato, url, testo_verdetto=None, riga_finale=None):
                 url if info["tipo"] == "foto" else None)
         if ok:
             stato["preavviso_aggiornato"] = True
-            if testo_verdetto is not None and info["tipo"] != "testo" and len(testo_verdetto) > len(didascalia_verdetto(testo_verdetto)):
-                # la didascalia di una foto/album arriva a 1024 caratteri: il verdetto completo (analisi, domande, venditore)
-                # segue come risposta, senza suono (10/10: COMPRA Cucinelli senza descrizione nel gruppo)
-                try:
-                    await telegram_send_with_buttons(TELEGRAM_ALERT_CHAT_ID, testo_verdetto, url, None,
-                                                     disable_notification=True, reply_to=info["msg_id"])
-                except Exception:
-                    log.warning("Verdetto completo non inviato come risposta:\n%s", traceback.format_exc())
         return ok
     except Exception:
         log.warning("Preavviso non aggiornato:\n%s", traceback.format_exc())
