@@ -13,7 +13,7 @@ from bot.verdetto import EMOJI_DECISIONE, ETICHETTA_CONFIDENZA, ETICHETTA_RISCHI
 from bot.testo import _escapa_markdown_legacy
 from bot.fair_value import _riga_fair_value_testo, _riga_fair_value_unica
 from bot.logger import log
-from bot.telegram_api import telegram_edit_caption, telegram_edit_message, telegram_send_media_group, telegram_send_message, telegram_send_photo, telegram_send_photo_con_bottone, telegram_send_with_buttons
+from bot.telegram_api import telegram_delete_message, telegram_edit_caption, telegram_edit_message, telegram_send_media_group, telegram_send_message, telegram_send_photo, telegram_send_photo_con_bottone, telegram_send_with_buttons
 # ---- fine import ----
 # GALLERIA ANTICIPATA (richiesto dall'utente il 2026-09-28): la galleria
 # completa arriva nella chat principale APPENA le foto sono scaricate, prima
@@ -355,10 +355,11 @@ async def aggiorna_preavviso(stato, url, testo_verdetto=None, riga_finale=None):
         if info["tipo"] == "testo":
             ok = await telegram_edit_message(TELEGRAM_ALERT_CHAT_ID, info["msg_id"], testo, url)
         elif id_album and await telegram_edit_caption(TELEGRAM_ALERT_CHAT_ID, id_album, didascalia_verdetto(testo), None):
-            # preavviso lampo + album: il verdetto sta nella didascalia dell'album (il messaggio piu' in basso, 11/10);
-            # il preavviso in alto resta con la sola testata (esito, prezzi, brand) e il bottone
-            ok = await telegram_edit_caption(TELEGRAM_ALERT_CHAT_ID, info["msg_id"], didascalia_verdetto(testo, 350),
-                                             url if info["tipo"] == "foto" else None)
+            # preavviso lampo + album: il verdetto sta nella didascalia dell'album (il messaggio piu' in basso, 11/10) e il
+            # preavviso con la sola copertina si CANCELLA (meno messaggi da guardare); se la cancellazione fallisce resta con
+            # la sola testata (esito, prezzi, brand) e il bottone
+            ok = await telegram_delete_message(TELEGRAM_ALERT_CHAT_ID, info["msg_id"]) or await telegram_edit_caption(
+                TELEGRAM_ALERT_CHAT_ID, info["msg_id"], didascalia_verdetto(testo, 350), url if info["tipo"] == "foto" else None)
         else:
             ok = await telegram_edit_caption(
                 TELEGRAM_ALERT_CHAT_ID, info["msg_id"], didascalia_verdetto(testo),
