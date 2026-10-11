@@ -471,10 +471,38 @@ def test_galleria_completa_dopo_il_lampo_in_risposta_e_senza_suono(monkeypatch):
 
     async def prova():
         stato = {"task_preavviso": asyncio.ensure_future(scheda.invia_preavviso(info, "https://www.vinted.it/items/1-x", [b"c"]))}
-        await scheda.invia_galleria_dopo_lampo(stato, "Gonna", [b"1", b"2", b"3"])
-        await scheda.invia_galleria_dopo_lampo(stato, "Gonna", [b"1"])        # una sola foto: niente album
-    asyncio.run(prova())
+        id1 = await scheda.invia_galleria_dopo_lampo(stato, "Gonna", [b"1", b"2", b"3"])
+        id2 = await scheda.invia_galleria_dopo_lampo(stato, "Gonna", [b"1"])        # una sola foto: niente album
+        return id1, id2
+    assert asyncio.run(prova()) == (5, None)
     assert inviate == [(3, True, 8)]       # 8 = id del messaggio del lampo (foto singola)
+
+
+def test_con_lampo_il_verdetto_va_nella_didascalia_dell_album(monkeypatch):
+    import asyncio
+    scheda, chiamate = _finti(monkeypatch)
+    modifiche = []
+
+    async def edit_cap(chat, mid, cap, url=None):
+        modifiche.append((mid, len(cap), bool(url)))
+        return True
+
+    async def album(chat, foto, caption=None, disable_notification=False, parse_mode=None, reply_to=None):
+        return 50
+
+    monkeypatch.setattr(scheda, "telegram_edit_caption", edit_cap)
+    monkeypatch.setattr(scheda, "telegram_send_media_group", album)
+    info = {"price": 15, "brand": "Prada", "title": "Gonna", "fair_value": _stima("🟢", 40)}
+    u = "https://www.vinted.it/items/1-x"
+
+    async def prova():
+        stato = {"task_preavviso": asyncio.ensure_future(scheda.invia_preavviso(info, u, [b"c"]))}
+        stato["task_album_lampo"] = asyncio.ensure_future(scheda.invia_galleria_dopo_lampo(stato, "Gonna", [b"1", b"2"]))
+        lungo = "🟢 *COMPRA*\n💶 15 € → 40 €\n\n🧠 " + "analisi " * 200
+        assert await scheda.aggiorna_preavviso(stato, u, testo_verdetto=lungo)
+    asyncio.run(prova())
+    assert modifiche[0][0] == 50 and modifiche[0][1] <= 1024 and not modifiche[0][2]     # album: verdetto, niente bottone
+    assert modifiche[1][0] == 8 and modifiche[1][1] <= 350 and modifiche[1][2]           # lampo: solo testata, col bottone
 
 
 def test_max_mara_con_etichetta_tagliata_e_outlet_e_si_scarta():

@@ -342,7 +342,8 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             dict(listing_info), url, photo_bytes_list, riga_tempi=_riga_tempi_pre, secondi=_sec_pre))
     if stato is not None and stato.get("preavviso_lampo") and len(photo_bytes_list) > 1:
         # il lampo e' partito con la sola copertina: appena scaricate, tutte le foto nel gruppo (10/10, richiesta dell'utente)
-        asyncio.create_task(invia_galleria_dopo_lampo(stato, listing_info.get("title") or "Annuncio", photo_bytes_list))
+        stato["task_album_lampo"] = asyncio.create_task(
+            invia_galleria_dopo_lampo(stato, listing_info.get("title") or "Annuncio", photo_bytes_list))
     if not photo_bytes_list:
         await telegram_send_message(
             TELEGRAM_OWNER_CHAT_ID,
