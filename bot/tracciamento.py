@@ -542,6 +542,7 @@ def _contesto_tracciato(listing_info, esito, campi):
         "colore": (str(listing_info.get("color_raw") or "")[:30] or None), "taglia": listing_info.get("size"),
         "tit": (str(listing_info.get("title") or "")[:50] or None),
         "motivo": (str(campi.get("motivo") or "")[:60].replace("|", "/") or None),
+        "_prezzo": _a_float(listing_info.get("price"), None),
         "_titolo": (str(listing_info.get("title") or "")[:80] or None),   # chiavi con "_": non finiscono nella riga TRACCIATO
     }
     return {k: (v.replace("|", "/") if isinstance(v, str) else v) for k, v in ctx.items() if v not in (None, "")}

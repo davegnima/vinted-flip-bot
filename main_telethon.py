@@ -42,7 +42,7 @@ from bot import http_clients as hc
 from bot.db import DB_FILE
 from bot.gemini_stato import ripristina_stato_gemini
 from bot.tracciamento import importa_tracciamento_jsonl, tracc_riprendi_serie
-from bot.feedback import parse_risposta, registra_feedback, ciclo_callback, _contesti
+from bot.feedback import parse_risposta, registra_feedback, ciclo_callback, _contesti, _ctx_item
 from bot.radar import RADAR_CHAT_IDS, radar_in_pausa, e_messaggio_radar, gestisci_annuncio_radar, risolvi_gruppo_radar, togli_marcatore
 from bot.costanti import (
     BRAND_BLOCKLIST,
@@ -1260,7 +1260,8 @@ async def on_stima_umana(event):
                 disable_notification=True)
             return
         giudizio, valore = risposta
-        registra_feedback(item_id, giudizio, valore, "risposta", _contesti.get(str(item_id), {}))
+        giudizio = giudizio or (_contesti.get(str(item_id)) or {}).get("_giudizio")
+        registra_feedback(item_id, giudizio, valore, "risposta", _ctx_item(str(item_id)))
         if valore is None:
             await telegram_send_message(TELEGRAM_OWNER_CHAT_ID, f"✅ Registrato: {giudizio}", disable_notification=True)
             return

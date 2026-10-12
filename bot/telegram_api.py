@@ -1,5 +1,7 @@
 """Modulo estratto da main_telethon.py (spostamento meccanico)."""
 import json
+import os
+import re
 import asyncio
 
 
@@ -7,6 +9,26 @@ from bot.config import TELEGRAM_API
 from bot.logger import log
 from bot import http_clients as hc
 # ---- fine import ----
+# Bottoni di FEEDBACK su ogni scheda/verdetto (12/10): Originale / Falso / Prezzo atteso. Spenti con FEEDBACK_ATTIVO=0.
+FEEDBACK_BOTTONI = os.environ.get("FEEDBACK_ATTIVO", "1").strip() != "0"
+_RE_ITEM_URL = re.compile(r"/items/(\d+)")
+
+
+def righe_feedback(url_annuncio):
+    """Riga di bottoni di feedback per l'annuncio dell'URL (lista vuota se spenti o senza id). Pura."""
+    m = _RE_ITEM_URL.search(url_annuncio or "")
+    if not FEEDBACK_BOTTONI or not m:
+        return []
+    i = m.group(1)
+    return [[{"text": "✅ Originale", "callback_data": f"sb|{i}|o"},
+             {"text": "❌ Falso", "callback_data": f"sb|{i}|f"},
+             {"text": "💶 Prezzo", "callback_data": f"sp|{i}|ask"}]]
+
+
+def tastiera_annuncio(url_annuncio, righe_extra=None):
+    """Tastiera standard dei messaggi sull'annuncio: 'Apri su Vinted', eventuali righe extra e il feedback. Pura."""
+    return [[{"text": "🔗 Apri su Vinted", "url": url_annuncio}]] + list(righe_extra or []) + righe_feedback(url_annuncio)
+
 def _spezza_per_telegram(text, max_len=3500):
     """Chunking condiviso da telegram_send_message e telegram_send_with_buttons
     (prima duplicato identico in entrambe). Taglia preferibilmente su riga
@@ -155,7 +177,7 @@ async def telegram_send_photo(chat_id, photo_bytes, caption=None, disable_notifi
 async def telegram_send_photo_con_bottone(chat_id, photo_bytes, caption, url_annuncio, disable_notification=False):
     """Foto con didascalia Markdown (max 1024) e bottone "Apri su Vinted". Se Telegram rifiuta il Markdown ritenta
     senza parse_mode. Ritorna il message_id (None se fallita)."""
-    keyboard = json.dumps({"inline_keyboard": [[{"text": "🔗 Apri su Vinted", "url": url_annuncio}]]})
+    keyboard = json.dumps({"inline_keyboard": tastiera_annuncio(url_annuncio)})
     data = {"chat_id": chat_id, "disable_notification": disable_notification, "caption": (caption or "")[:1024],
             "reply_markup": keyboard}
     resp = await _telegram_post("sendPhoto", data={**data, "parse_mode": "Markdown"},
@@ -226,13 +248,8 @@ async def telegram_send_with_buttons(chat_id, text, url_annuncio, item_id=None, 
     l'annuncio/scrivere al venditore dopo aver letto tutto)."""
     chunks = _spezza_per_telegram(text, 3500)
 
-    keyboard = {"inline_keyboard": [[
-        {"text": "🔗 Apri su Vinted", "url": url_annuncio},
-    ]]}
-    if item_id:
-        keyboard["inline_keyboard"].append([
-            {"text": "💬 Scrivi venditore", "url": f"https://www.vinted.it/items/{item_id}"},
-        ])
+    keyboard = {"inline_keyboard": tastiera_annuncio(
+        url_annuncio, [[{"text": "💬 Scrivi venditore", "url": f"https://www.vinted.it/items/{item_id}"}]] if item_id else None)}
 
     primo_id = None
     for i, chunk in enumerate(chunks):
@@ -277,7 +294,7 @@ async def telegram_edit_message(chat_id, message_id, text, url_annuncio=None):
     payload = {"chat_id": chat_id, "message_id": int(message_id), "text": text[:4000],
                "disable_web_page_preview": True}
     if url_annuncio:
-        payload["reply_markup"] = {"inline_keyboard": [[{"text": "🔗 Apri su Vinted", "url": url_annuncio}]]}
+        payload["reply_markup"] = {"inline_keyboard": tastiera_annuncio(url_annuncio)}
     resp = await _telegram_post("editMessageText", json={**payload, "parse_mode": "Markdown"})
     if resp is not None and not resp.is_success:
         if "not modified" in (resp.text or ""):
@@ -304,7 +321,7 @@ async def telegram_edit_caption(chat_id, message_id, caption, url_annuncio=None)
         return False
     payload = {"chat_id": chat_id, "message_id": int(message_id), "caption": (caption or "")[:1024]}
     if url_annuncio:
-        payload["reply_markup"] = {"inline_keyboard": [[{"text": "🔗 Apri su Vinted", "url": url_annuncio}]]}
+        payload["reply_markup"] = {"inline_keyboard": tastiera_annuncio(url_annuncio)}
     resp = await _telegram_post("editMessageCaption", json={**payload, "parse_mode": "Markdown"})
     if resp is not None and not resp.is_success:
         if "not modified" in (resp.text or ""):
@@ -365,3 +382,23 @@ async def telegram_get_updates(offset=None, timeout=20):
 
 async def telegram_answer_callback(callback_id, testo=None):
     await _telegram_post("answerCallbackQuery", json={"callback_query_id": callback_id, "text": (testo or "")[:150]})
+
+
+async def telegram_edit_tastiera(chat_id, message_id, tastiera):
+    """Cambia solo i bottoni di un messaggio del bot (testo invariato). True se riuscito o invariato."""
+    if not message_id:
+        return False
+    resp = await _telegram_post("editMessageReplyMarkup", json={
+        "chat_id": chat_id, "message_id": int(message_id), "reply_markup": {"inline_keyboard": tastiera or []}})
+    if resp is not None and not resp.is_success and "not modified" in (resp.text or ""):
+        return True
+    return bool(resp is not None and resp.is_success)
+
+
+async def telegram_send_richiesta_prezzo(chat_id, testo, reply_to=None):
+    """Messaggio che apre il campo di risposta (force_reply): l'utente scrive il numero e la risposta e' gia' agganciata."""
+    payload = {"chat_id": chat_id, "text": testo[:4000], "disable_web_page_preview": True, "disable_notification": True,
+               "reply_markup": {"force_reply": True, "input_field_placeholder": "Prezzo atteso, es. 90", "selective": True},
+               **_parametri_reply(reply_to)}
+    resp = await _telegram_post("sendMessage", json=payload)
+    return _primo_message_id(resp)
