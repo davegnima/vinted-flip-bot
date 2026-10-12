@@ -42,6 +42,7 @@ from bot import http_clients as hc
 from bot.db import DB_FILE
 from bot.gemini_stato import ripristina_stato_gemini
 from bot.tracciamento import importa_tracciamento_jsonl, tracc_riprendi_serie
+from bot.feedback import parse_risposta, registra_feedback, ciclo_callback, _contesti
 from bot.radar import RADAR_CHAT_IDS, radar_in_pausa, e_messaggio_radar, gestisci_annuncio_radar, risolvi_gruppo_radar, togli_marcatore
 from bot.costanti import (
     BRAND_BLOCKLIST,
@@ -1243,8 +1244,8 @@ async def on_stima_umana(event):
     try:
         if not event.is_reply:
             return
-        m = _RE_STIMA_UMANA.match(event.raw_text or "")
-        if not m:
+        risposta = parse_risposta(event.raw_text or "")
+        if risposta is None:
             return
         originale = await event.get_reply_message()
         bot_id = _id_utente_del_bot()
@@ -1258,8 +1259,11 @@ async def on_stima_umana(event):
                 "⚠️ Non trovo il link dell'annuncio in quel messaggio: rispondi alla scheda o al verdetto.",
                 disable_notification=True)
             return
-        valore = float(m.group(1).replace(",", "."))
-        fv_registra_umana(item_id, valore)
+        giudizio, valore = risposta
+        registra_feedback(item_id, giudizio, valore, "risposta", _contesti.get(str(item_id), {}))
+        if valore is None:
+            await telegram_send_message(TELEGRAM_OWNER_CHAT_ID, f"✅ Registrato: {giudizio}", disable_notification=True)
+            return
         d = fv_unisci(_fv_leggi()).get(str(item_id), {})
         pezzi = [f"✅ Stima registrata: {valore:.0f} €"]
         rap, gem = d.get("rapida") or {}, d.get("gemini") or {}
@@ -1631,6 +1635,7 @@ async def main():
         await client.start()
         await risolvi_gruppo_radar(client)
         asyncio.get_event_loop().create_task(watchdog_messaggi())
+        asyncio.get_event_loop().create_task(ciclo_callback())
         _battito["t"] = time.time()
         asyncio.get_event_loop().create_task(_battito_loop())
         _thread_blocco()

@@ -9,6 +9,7 @@ from functools import partial
 from bot.scheda import richiede_etichetta, invia_richiesta_etichetta, ANALISI_GEMINI_ATTIVA, STATO_ANALISI_COMPLETATA, STATO_ANALISI_INTERROTTA, _PermessoAnalisi, _aggiorna_stato_scheda, _invia_galleria_anticipata, _invia_risultato_telegram, aggiorna_preavviso, invia_galleria_dopo_lampo, invia_preavviso, riga_scarto_preavviso, componi_testi_verdetto
 from bot.verdetto import CERVELLO_CAMPIONI_EXTRA, _a_float, _estrai_item_id_da_url, _estrai_prezzi_da_pool_ricerca, _riepilogo_comp_per_fonte, calcola_verdetto, classifica_provenienza_comp, consolida_target_cervello, render_messaggio_verdetto, valida_payload_cervello
 from bot.config import GEMINI_SOGLIA_PREZZO_ALTO, TELEGRAM_ALERT_CHAT_ID, CERVELLO_PROVIDER, DEBUG_CONFRONTO_COMP_TELEGRAM, OCCHIO_OUTPUT_JSON, RAFFREDDAMENTO_SERPER_SECONDI, SERPER_API_KEY, SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO, SOGLIA_MARGINE_ASSOLUTO_NOTIFICA, TELEGRAM_OWNER_CHAT_ID, _serper_fallimenti_consecutivi, _serper_notifica_esaurimento_inviata, _serper_timestamp_ultimo_fallimento
+from bot.feedback import proponi_controllo, rischio_falso_da_scarto, rischio_falso_da_verdetto, contesto_annuncio
 from bot.panel import EXTRA_LLM_URL, PANEL_CERVELLO_MODELLI, PANEL_OCCHIO_MODELLI, _bg_task, panel_cervello, panel_occhio
 from bot.fair_value import FAIR_VALUE_FILTRA, check_skip_rosso, catalogo_impara, check_skip_fair_value, fv_registra_gemini, fv_registra_rapida, stima_fair_value, valuta_preavviso, preavviso_con_suono, PREAVVISO_LAMPO
 from bot.prompts import GEMINI_CERVELLO_SYSTEM_PROMPT, GEMINI_OCCHI_SYSTEM_PROMPT, GEMINI_OCCHI_SYSTEM_PROMPT_JSON
@@ -923,6 +924,10 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
                      _estrai_item_id_da_url(url) if url else "n/d", listing_info.get("brand"), richiesta_etichetta)
         if not richiesta_etichetta:
             log.info("SKIP non inviato su Telegram per '%s': %s", listing_info.get("title"), motivo_skip)
+        # scartato per falso ma economicamente interessante: chiedo il tuo parere (etichetta vera per tarare l'Occhio)
+        if rischio_falso_da_scarto(motivo_skip, (listing_info.get("fair_value") or {}).get("semaforo")):
+            await proponi_controllo(_estrai_item_id_da_url(url) if url else None, url,
+                                    contesto_annuncio(listing_info, esito="SKIP_PRE_CERVELLO"), motivo_skip, reply_to=msg_id_galleria)
         if stato is not None and stato.get("msg_id_scheda"):
             stato["stato_finale_override"] = (
                 "🔎 Etichetta interna non visibile: richiesta al venditore" if richiesta_etichetta
@@ -935,3 +940,12 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
         margine=verdetto_calcolato["margine"] if verdetto_calcolato else None,
         msg_id_galleria=msg_id_galleria, stato=stato, testo_unificato=testo_unificato,
     )
+    try:
+        if rischio_falso_da_verdetto(v.get("legit_verdetto"), decisione, (listing_info.get("fair_value") or {}).get("semaforo")):
+            await proponi_controllo(
+                _estrai_item_id_da_url(url) if url else None, url,
+                contesto_annuncio(listing_info, esito=decisione, legit=v.get("legit_verdetto"),
+                                  target=(verdetto_calcolato or {}).get("target")),
+                f"il Cervello: {v.get('legit_verdetto')} · {str(v.get('legit_motivo_specifico') or '')[:160]}", reply_to=msg_id_galleria)
+    except Exception:
+        log.warning("Controllo autenticita' non proposto:\n%s", traceback.format_exc())
