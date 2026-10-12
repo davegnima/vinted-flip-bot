@@ -99,8 +99,8 @@ def test_bottoni_registrano_giudizio_e_prezzo(monkeypatch):
 def test_ogni_scheda_ha_la_riga_di_feedback():
     from bot import telegram_api as tg
     t = tg.tastiera_annuncio("https://www.vinted.it/items/10345-x")
-    assert t[0][0]["url"].endswith("10345-x") and [b["callback_data"] for b in t[-1]] == ["sb|10345|o", "sb|10345|f", "sp|10345|ask"]
-    assert len(tg.tastiera_annuncio("https://www.vinted.it/items/10345-x", [[{"text": "x", "url": "https://a"}]])) == 3
+    assert t[0][0]["url"].endswith("10345-x") and [b["callback_data"] for b in t[-2]] == ["sb|10345|o", "sb|10345|f", "sp|10345|ask"] and t[-1][0]["callback_data"] == "sp|10345|nota"
+    assert len(tg.tastiera_annuncio("https://www.vinted.it/items/10345-x", [[{"text": "x", "url": "https://a"}]])) == 4
     assert tg.righe_feedback("https://www.vinted.it/catalog?x=1") == []
 
 
@@ -112,7 +112,7 @@ def test_bottoni_sulla_scheda_giudizio_prezzo_e_campo_libero(monkeypatch):
         tastiere.append(tastiera)
         return True
 
-    async def ask(chat, testo, reply_to=None):
+    async def ask(chat, testo, reply_to=None, segnaposto=None):
         richieste.append((testo, reply_to))
         return 3
 
@@ -140,3 +140,23 @@ def test_bottoni_sulla_scheda_giudizio_prezzo_e_campo_libero(monkeypatch):
     assert "❌ Registrato: falso" in [b["text"] for r in tastiere[2] for b in r]
     ev = db.leggi_eventi("feedback")
     assert len(ev) == 2
+
+
+def test_nota_libera_si_registra_e_si_apre_dal_bottone(monkeypatch):
+    from bot import feedback as fb
+    eventi, richieste = [], []
+    monkeypatch.setattr(fb.db, "scrivi_evento", lambda *a, **k: eventi.append(a))
+
+    async def ask(chat, testo, reply_to=None, segnaposto=None):
+        richieste.append((testo, segnaposto))
+
+    async def risp(cb, testo=None):
+        pass
+    monkeypatch.setattr(fb, "telegram_send_richiesta_prezzo", ask)
+    monkeypatch.setattr(fb, "telegram_answer_callback", risp)
+    msg = {"chat": {"id": 1}, "message_id": 9, "text": "v", "reply_markup": {"inline_keyboard": []}}
+    asyncio.run(fb.gestisci_callback({"id": "a", "data": "sp|77|nota", "message": msg}))
+    assert richieste and richieste[0][0].startswith("📝") and richieste[0][1] == "La tua nota"
+    fb.registra_nota("77", "  etichetta   cucita male ", {"brand": "Prada"})
+    fb.registra_nota("77", "   ")
+    assert len(eventi) == 1 and eventi[0][3]["nota"] == "etichetta cucita male" and eventi[0][3]["fonte"] == "nota"

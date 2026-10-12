@@ -154,6 +154,22 @@ def registra_feedback(item_id, giudizio, prezzo, fonte, ctx=None):
             log.warning("Stima umana non registrata:\n%s", traceback.format_exc())
 
 
+def registra_nota(item_id, nota, ctx=None):
+    """Salva il commento libero dell'utente su un annuncio (DB + riga di log `FEEDBACK NOTA`), da rileggere nel recap."""
+    ctx = ctx or {}
+    nota = " ".join((nota or "").split())[:500]
+    if not nota:
+        return
+    log.info("FEEDBACK NOTA | item=%s | brand='%s' | prezzo=%s | esito=%s | sem=%s | fv=%s | legit=%s | nota=%s",
+             item_id, ctx.get("brand") or "n/d", ctx.get("prezzo"), ctx.get("esito"), ctx.get("sem"), ctx.get("fv"),
+             ctx.get("legit"), nota)
+    try:
+        db.scrivi_evento("feedback", str(item_id), ctx.get("brand"), {"giudizio": None, "prezzo_atteso": None, "fonte": "nota", "nota": nota, **{
+            k: ctx.get(k) for k in ("prezzo", "esito", "sem", "fv", "target", "legit", "motivo", "titolo")}})
+    except Exception:
+        log.warning("Nota non salvata nel DB:\n%s", traceback.format_exc())
+
+
 async def proponi_controllo(item_id, url, ctx, motivo, reply_to=None):
     """Manda nella chat principale (senza suono) il messaggio con i bottoni, una volta per annuncio e nei limiti giornalieri.
     Non solleva mai. Ritorna True se e' partito."""
@@ -217,7 +233,8 @@ async def _gestisci_callback_scheda(cq, dati):
     base = _righe_base(msg)
     url = _url_da_righe(base)
     ctx = _ctx_item(item_id)
-    stato = lambda t: [[{"text": t, "callback_data": f"sn|{item_id}|x"}, {"text": "↩️ Cambia", "callback_data": f"sb|{item_id}|r"}]]
+    stato = lambda t: [[{"text": t, "callback_data": f"sn|{item_id}|x"}, {"text": "↩️ Cambia", "callback_data": f"sb|{item_id}|r"}],
+                    [{"text": "📝 Aggiungi nota", "callback_data": f"sp|{item_id}|nota"}]]
     if tipo == "sb":
         if valore == "r":
             _contesti.setdefault(item_id, {}).pop("_giudizio", None)
@@ -232,6 +249,12 @@ async def _gestisci_callback_scheda(cq, dati):
             _contesti.setdefault(item_id, {})["_giudizio"] = giudizio
             await telegram_edit_tastiera(chat, mid, base + tastiera_prezzi_scheda(item_id, ctx.get("fv")))
             await telegram_answer_callback(cq.get("id"), "A che prezzo lo rivenderesti?")
+        return
+    if valore == "nota":
+        await telegram_send_richiesta_prezzo(
+            chat, f"📝 Scrivi la tua nota su questo annuncio (es. perche' e' falso, cosa non torna).\n{url or ''}".strip(),
+            reply_to=mid, segnaposto="La tua nota")
+        await telegram_answer_callback(cq.get("id"), "Scrivi la nota")
         return
     if valore == "ask":
         await telegram_send_richiesta_prezzo(
