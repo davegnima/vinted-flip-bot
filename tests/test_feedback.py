@@ -94,3 +94,49 @@ def test_bottoni_registrano_giudizio_e_prezzo(monkeypatch):
     assert "Registrato: originale" in modifiche[1][0] and "80" in modifiche[1][0] and modifiche[1][1] == []
     assert "Cosa dici" not in modifiche[1][0] and modifiche[1][0].count("✅") == 1
     assert "Registrato: falso" in modifiche[2][0]
+
+
+def test_ogni_scheda_ha_la_riga_di_feedback():
+    from bot import telegram_api as tg
+    t = tg.tastiera_annuncio("https://www.vinted.it/items/10345-x")
+    assert t[0][0]["url"].endswith("10345-x") and [b["callback_data"] for b in t[-1]] == ["sb|10345|o", "sb|10345|f", "sp|10345|ask"]
+    assert len(tg.tastiera_annuncio("https://www.vinted.it/items/10345-x", [[{"text": "x", "url": "https://a"}]])) == 3
+    assert tg.righe_feedback("https://www.vinted.it/catalog?x=1") == []
+
+
+def test_bottoni_sulla_scheda_giudizio_prezzo_e_campo_libero(monkeypatch):
+    from bot import telegram_api as tg
+    tastiere, richieste, risposte = [], [], []
+
+    async def edit(chat, mid, tastiera):
+        tastiere.append(tastiera)
+        return True
+
+    async def ask(chat, testo, reply_to=None):
+        richieste.append((testo, reply_to))
+        return 3
+
+    async def risp(cb, testo=None):
+        risposte.append(testo)
+
+    monkeypatch.setattr(fb, "telegram_edit_tastiera", edit)
+    monkeypatch.setattr(fb, "telegram_send_richiesta_prezzo", ask)
+    monkeypatch.setattr(fb, "telegram_answer_callback", risp)
+    url = "https://www.vinted.it/items/77-x"
+    msg = {"chat": {"id": 1}, "message_id": 9, "text": "verdetto", "reply_markup": {"inline_keyboard": tg.tastiera_annuncio(url)}}
+
+    async def prova():
+        await fb.gestisci_callback({"id": "a", "data": "sb|77|o", "message": msg})
+        await fb.gestisci_callback({"id": "b", "data": "sp|77|ask", "message": msg})
+        await fb.gestisci_callback({"id": "c", "data": "sp|77|80", "message": msg})
+        await fb.gestisci_callback({"id": "d", "data": "sb|78|f", "message": msg})
+    asyncio.run(prova())
+    prezzi = [b["callback_data"] for r in tastiere[0] for b in r if b.get("callback_data", "").startswith("sp|")]
+    assert tastiere[0][0][0]["url"] == url and "sp|77|80" in prezzi and "sp|77|ask" in prezzi     # restano 'Apri su Vinted' + prezzi rapidi
+    assert richieste == [("💶 A che prezzo lo rivenderesti? Scrivi solo il numero (es. 90).\n" + url, 9)]
+    assert "Registrato" not in str(tastiere[0])
+    ultimo_ok = [b["text"] for r in tastiere[1] for b in r]
+    assert "✅ originale · 80 €" in ultimo_ok and "↩️ Cambia" in ultimo_ok
+    assert "❌ Registrato: falso" in [b["text"] for r in tastiere[2] for b in r]
+    ev = db.leggi_eventi("feedback")
+    assert len(ev) == 2
