@@ -23,6 +23,8 @@ def righe_feedback(url_annuncio):
     return [[{"text": "✅ Originale", "callback_data": f"sb|{i}|o"},
              {"text": "❌ Falso", "callback_data": f"sb|{i}|f"},
              {"text": "💶 Prezzo", "callback_data": f"sp|{i}|ask"}],
+            [{"text": "🧠 Verdetto giusto", "callback_data": f"sv|{i}|g"},
+             {"text": "🧠 Verdetto sbagliato", "callback_data": f"sv|{i}|s"}],
             [{"text": "📝 Aggiungi nota", "callback_data": f"sp|{i}|nota"}]]
 
 
