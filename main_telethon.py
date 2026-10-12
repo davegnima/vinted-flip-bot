@@ -42,7 +42,7 @@ from bot import http_clients as hc
 from bot.db import DB_FILE
 from bot.gemini_stato import ripristina_stato_gemini
 from bot.tracciamento import importa_tracciamento_jsonl, tracc_riprendi_serie
-from bot.feedback import parse_risposta, registra_feedback, ciclo_callback, _contesti, _ctx_item
+from bot.feedback import parse_risposta, registra_feedback, registra_nota, ciclo_callback, _contesti, _ctx_item
 from bot.radar import RADAR_CHAT_IDS, radar_in_pausa, e_messaggio_radar, gestisci_annuncio_radar, risolvi_gruppo_radar, togli_marcatore
 from bot.costanti import (
     BRAND_BLOCKLIST,
@@ -1245,8 +1245,6 @@ async def on_stima_umana(event):
         if not event.is_reply:
             return
         risposta = parse_risposta(event.raw_text or "")
-        if risposta is None:
-            return
         originale = await event.get_reply_message()
         bot_id = _id_utente_del_bot()
         if not originale or bot_id is None or originale.sender_id != bot_id:
@@ -1258,6 +1256,11 @@ async def on_stima_umana(event):
                 TELEGRAM_OWNER_CHAT_ID,
                 "⚠️ Non trovo il link dell'annuncio in quel messaggio: rispondi alla scheda o al verdetto.",
                 disable_notification=True)
+            return
+        if risposta is None:
+            # non e' un giudizio/prezzo: e' un commento libero, lo conservo per il recap
+            registra_nota(item_id, event.raw_text or "", _ctx_item(str(item_id)))
+            await telegram_send_message(TELEGRAM_OWNER_CHAT_ID, "📝 Nota registrata", disable_notification=True)
             return
         giudizio, valore = risposta
         giudizio = giudizio or (_contesti.get(str(item_id)) or {}).get("_giudizio")

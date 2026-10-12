@@ -22,7 +22,8 @@ def righe_feedback(url_annuncio):
     i = m.group(1)
     return [[{"text": "✅ Originale", "callback_data": f"sb|{i}|o"},
              {"text": "❌ Falso", "callback_data": f"sb|{i}|f"},
-             {"text": "💶 Prezzo", "callback_data": f"sp|{i}|ask"}]]
+             {"text": "💶 Prezzo", "callback_data": f"sp|{i}|ask"}],
+            [{"text": "📝 Aggiungi nota", "callback_data": f"sp|{i}|nota"}]]
 
 
 def tastiera_annuncio(url_annuncio, righe_extra=None):
@@ -395,10 +396,10 @@ async def telegram_edit_tastiera(chat_id, message_id, tastiera):
     return bool(resp is not None and resp.is_success)
 
 
-async def telegram_send_richiesta_prezzo(chat_id, testo, reply_to=None):
+async def telegram_send_richiesta_prezzo(chat_id, testo, reply_to=None, segnaposto="Prezzo atteso, es. 90"):
     """Messaggio che apre il campo di risposta (force_reply): l'utente scrive il numero e la risposta e' gia' agganciata."""
     payload = {"chat_id": chat_id, "text": testo[:4000], "disable_web_page_preview": True, "disable_notification": True,
-               "reply_markup": {"force_reply": True, "input_field_placeholder": "Prezzo atteso, es. 90", "selective": True},
+               "reply_markup": {"force_reply": True, "input_field_placeholder": segnaposto, "selective": True},
                **_parametri_reply(reply_to)}
     resp = await _telegram_post("sendMessage", json=payload)
     return _primo_message_id(resp)
