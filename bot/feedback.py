@@ -154,6 +154,19 @@ def registra_feedback(item_id, giudizio, prezzo, fonte, ctx=None):
             log.warning("Stima umana non registrata:\n%s", traceback.format_exc())
 
 
+def registra_verdetto(item_id, valutazione, ctx=None):
+    """Salva il parere dell'utente sul verdetto del Cervello ("giusto"|"sbagliato"): DB + riga `FEEDBACK VERDETTO`."""
+    ctx = ctx or {}
+    log.info("FEEDBACK VERDETTO | item=%s | verdetto=%s | brand='%s' | prezzo=%s | esito=%s | sem=%s | fv=%s | target=%s | legit=%s",
+             item_id, valutazione, ctx.get("brand") or "n/d", ctx.get("prezzo"), ctx.get("esito"), ctx.get("sem"),
+             ctx.get("fv"), ctx.get("target"), ctx.get("legit"))
+    try:
+        db.scrivi_evento("feedback", str(item_id), ctx.get("brand"), {"giudizio": None, "prezzo_atteso": None, "fonte": "verdetto",
+                         "verdetto_utente": valutazione, **{k: ctx.get(k) for k in ("prezzo", "esito", "sem", "fv", "target", "legit", "motivo", "titolo")}})
+    except Exception:
+        log.warning("Parere sul verdetto non salvato nel DB:\n%s", traceback.format_exc())
+
+
 def registra_nota(item_id, nota, ctx=None):
     """Salva il commento libero dell'utente su un annuncio (DB + riga di log `FEEDBACK NOTA`), da rileggere nel recap."""
     ctx = ctx or {}
@@ -194,7 +207,7 @@ _contesti = {}   # item_id -> contesto del controllo proposto (per il log del pa
 def _righe_base(msg):
     """Le righe della tastiera del messaggio senza quelle del feedback (restano 'Apri su Vinted' ecc.). Pura."""
     righe = ((msg.get("reply_markup") or {}).get("inline_keyboard") or [])
-    return [r for r in righe if not any(str(b.get("callback_data", "")).startswith(("sb|", "sp|", "sn|")) for b in r)]
+    return [r for r in righe if not any(str(b.get("callback_data", "")).startswith(("sb|", "sp|", "sn|", "sv|")) for b in r)]
 
 
 def _url_da_righe(righe):
@@ -235,6 +248,12 @@ async def _gestisci_callback_scheda(cq, dati):
     ctx = _ctx_item(item_id)
     stato = lambda t: [[{"text": t, "callback_data": f"sn|{item_id}|x"}, {"text": "↩️ Cambia", "callback_data": f"sb|{item_id}|r"}],
                     [{"text": "📝 Aggiungi nota", "callback_data": f"sp|{item_id}|nota"}]]
+    if tipo == "sv":
+        valutazione = "giusto" if valore == "g" else "sbagliato"
+        registra_verdetto(item_id, valutazione, ctx)
+        await telegram_edit_tastiera(chat, mid, base + stato(f"🧠 Verdetto {valutazione}"))
+        await telegram_answer_callback(cq.get("id"), f"Registrato: verdetto {valutazione}")
+        return
     if tipo == "sb":
         if valore == "r":
             _contesti.setdefault(item_id, {}).pop("_giudizio", None)
@@ -274,7 +293,7 @@ async def gestisci_callback(cq):
         dati = (cq.get("data") or "").split("|")
         msg = cq.get("message") or {}
         chat, mid = (msg.get("chat") or {}).get("id"), msg.get("message_id")
-        if len(dati) == 3 and dati[0] in ("sb", "sp"):
+        if len(dati) == 3 and dati[0] in ("sb", "sp", "sv"):
             await _gestisci_callback_scheda(cq, dati)
             return
         if len(dati) != 3 or dati[0] not in ("fb", "fp"):

@@ -99,8 +99,8 @@ def test_bottoni_registrano_giudizio_e_prezzo(monkeypatch):
 def test_ogni_scheda_ha_la_riga_di_feedback():
     from bot import telegram_api as tg
     t = tg.tastiera_annuncio("https://www.vinted.it/items/10345-x")
-    assert t[0][0]["url"].endswith("10345-x") and [b["callback_data"] for b in t[-2]] == ["sb|10345|o", "sb|10345|f", "sp|10345|ask"] and t[-1][0]["callback_data"] == "sp|10345|nota"
-    assert len(tg.tastiera_annuncio("https://www.vinted.it/items/10345-x", [[{"text": "x", "url": "https://a"}]])) == 4
+    assert t[0][0]["url"].endswith("10345-x") and [b["callback_data"] for b in t[-3]] == ["sb|10345|o", "sb|10345|f", "sp|10345|ask"] and [b["callback_data"] for b in t[-2]] == ["sv|10345|g", "sv|10345|s"] and t[-1][0]["callback_data"] == "sp|10345|nota"
+    assert len(tg.tastiera_annuncio("https://www.vinted.it/items/10345-x", [[{"text": "x", "url": "https://a"}]])) == 5
     assert tg.righe_feedback("https://www.vinted.it/catalog?x=1") == []
 
 
@@ -160,3 +160,22 @@ def test_nota_libera_si_registra_e_si_apre_dal_bottone(monkeypatch):
     fb.registra_nota("77", "  etichetta   cucita male ", {"brand": "Prada"})
     fb.registra_nota("77", "   ")
     assert len(eventi) == 1 and eventi[0][3]["nota"] == "etichetta cucita male" and eventi[0][3]["fonte"] == "nota"
+
+
+def test_conferma_del_verdetto_del_cervello(monkeypatch):
+    from bot import feedback as fb
+    eventi, tastiere = [], []
+    monkeypatch.setattr(fb.db, "scrivi_evento", lambda *a, **k: eventi.append(a))
+
+    async def edit(chat, mid, tastiera):
+        tastiere.append(tastiera)
+
+    async def risp(cb, testo=None):
+        pass
+    monkeypatch.setattr(fb, "telegram_edit_tastiera", edit)
+    monkeypatch.setattr(fb, "telegram_answer_callback", risp)
+    fb._contesti["88"] = {"brand": "Prada", "esito": "COMPRA"}
+    msg = {"chat": {"id": 1}, "message_id": 9, "text": "v", "reply_markup": {"inline_keyboard": []}}
+    asyncio.run(fb.gestisci_callback({"id": "a", "data": "sv|88|s", "message": msg}))
+    assert eventi[0][3]["verdetto_utente"] == "sbagliato" and eventi[0][3]["esito"] == "COMPRA" and eventi[0][3]["fonte"] == "verdetto"
+    assert "🧠 Verdetto sbagliato" in [b["text"] for r in tastiere[0] for b in r]
