@@ -313,3 +313,55 @@ async def telegram_edit_caption(chat_id, message_id, caption, url_annuncio=None)
         if resp is not None and not resp.is_success and "not modified" in (resp.text or ""):
             return True
     return bool(resp is not None and resp.is_success)
+
+
+async def telegram_send_con_tastiera(chat_id, testo, tastiera, reply_to=None, disable_notification=True):
+    """Messaggio con una tastiera inline arbitraria (lista di righe di bottoni: url o callback_data). Ritorna il message_id o None."""
+    payload = {"chat_id": chat_id, "text": testo[:4000], "disable_web_page_preview": True,
+               "disable_notification": disable_notification, "reply_markup": {"inline_keyboard": tastiera},
+               **_parametri_reply(reply_to)}
+    resp = await _telegram_post("sendMessage", json={**payload, "parse_mode": "Markdown"})
+    if resp is not None and not resp.is_success:
+        resp = await _telegram_post("sendMessage", json=payload)
+    return _primo_message_id(resp)
+
+
+async def telegram_edit_con_tastiera(chat_id, message_id, testo, tastiera=None):
+    """Riscrive testo e tastiera di un messaggio del bot (tastiera None o [] = nessun bottone). True se riuscito o invariato."""
+    if not message_id:
+        return False
+    payload = {"chat_id": chat_id, "message_id": int(message_id), "text": testo[:4000], "disable_web_page_preview": True,
+               "reply_markup": {"inline_keyboard": tastiera or []}}
+    resp = await _telegram_post("editMessageText", json={**payload, "parse_mode": "Markdown"})
+    if resp is not None and not resp.is_success:
+        if "not modified" in (resp.text or ""):
+            return True
+        resp = await _telegram_post("editMessageText", json=payload)
+        if resp is not None and not resp.is_success and "not modified" in (resp.text or ""):
+            return True
+    return bool(resp is not None and resp.is_success)
+
+
+async def telegram_get_updates(offset=None, timeout=20):
+    """Aggiornamenti del bot (solo le pressioni dei bottoni). Ritorna la lista (vuota se nulla o errore) e l'esito
+    ('ok' | 'conflitto' | 'errore'): un conflitto (409) vuol dire che un altro processo sta leggendo gli stessi aggiornamenti."""
+    payload = {"timeout": timeout, "allowed_updates": ["callback_query"]}
+    if offset is not None:
+        payload["offset"] = offset
+    try:
+        resp = await hc._client_telegram.post(f"{TELEGRAM_API}/getUpdates", json=payload, timeout=timeout + 15)
+    except Exception as e:
+        log.warning("Telegram getUpdates: errore di rete: %s", type(e).__name__)
+        return [], "errore"
+    if resp.status_code == 409:
+        return [], "conflitto"
+    if not resp.is_success:
+        return [], "errore"
+    try:
+        return (resp.json().get("result") or []), "ok"
+    except Exception:
+        return [], "errore"
+
+
+async def telegram_answer_callback(callback_id, testo=None):
+    await _telegram_post("answerCallbackQuery", json={"callback_query_id": callback_id, "text": (testo or "")[:150]})
