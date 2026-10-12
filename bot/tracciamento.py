@@ -537,6 +537,10 @@ def _contesto_tracciato(listing_info, esito, campi):
         "fv": fv.get("fv"), "conf": fv.get("conf"), "brand_n": fv.get("brand"),
         "categoria": fv.get("categoria") or estrai_categoria_da_titolo(listing_info.get("title") or "", listing_info.get("description")),
         "cond": listing_info.get("condition"), "preavviso": "si" if listing_info.get("preavviso") else "no",
+        # campi per costruire la matrice del semaforo (12/10): catalogo Vinted, materiale, colore, taglia e inizio del titolo
+        "catalogo": listing_info.get("catalog_id"), "mat": (str(listing_info.get("material_raw") or "")[:30] or None),
+        "colore": (str(listing_info.get("color_raw") or "")[:30] or None), "taglia": listing_info.get("size"),
+        "tit": (str(listing_info.get("title") or "")[:50] or None),
         "motivo": (str(campi.get("motivo") or "")[:60].replace("|", "/") or None),
         "_titolo": (str(listing_info.get("title") or "")[:80] or None),   # chiavi con "_": non finiscono nella riga TRACCIATO
     }
