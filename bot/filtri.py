@@ -38,6 +38,33 @@ def _miumiu_top_economico(listing_info):
     return prezzo is None or prezzo <= MIUMIU_TOP_PREZZO_MAX
 
 
+# 13/10: maglie leggere (t-shirt, canotte, top, bluse) Courreges, Loewe e Miu Miu a prezzo basso. Nei feedback dell'utente del 12-13/10
+# sono risultati falsi 7 su 7 per Courreges, 10 su 10 per Miu Miu, 4 su 5 per Loewe (l'unico originale era una giacca): si scartano
+# a monte. Tetto di prezzo configurabile (TOP_FALSI_PREZZO_MAX, 0 = spento); sopra il tetto passano all'Occhio.
+try:
+    TOP_FALSI_PREZZO_MAX = float(os.environ.get("TOP_FALSI_PREZZO_MAX", "60").replace(",", "."))
+except ValueError:
+    TOP_FALSI_PREZZO_MAX = 60.0
+_RE_BRAND_TOP_FALSI = re.compile(r"\b(miu\s*-?\s*miu|courr[eè]ges|loewe)\b")
+_RE_MAGLIA_LEGGERA = re.compile(
+    r"\b(t-?\s?shirts?|tshirt|tees?|ringer|maglietta|camiseta|than?ktops?|tr[aä]gerhemd\w*|blus[ae]|bluse|blouse|"
+    r"tops?|d[eé]bardeurs?|tank|canotta|canottiera|camisole|crop)\b"
+)
+
+
+def _maglia_leggera_brand_falsi(listing_info):
+    if TOP_FALSI_PREZZO_MAX <= 0:
+        return False
+    titolo = (listing_info.get("title") or "").lower()
+    brand = (listing_info.get("brand") or "").lower()
+    if not (_RE_BRAND_TOP_FALSI.search(brand) or _RE_BRAND_TOP_FALSI.search(titolo)):
+        return False
+    if not _RE_MAGLIA_LEGGERA.search(titolo):
+        return False
+    prezzo = _a_float(listing_info.get("price"), None)
+    return prezzo is None or prezzo <= TOP_FALSI_PREZZO_MAX
+
+
 def check_skip_pre_gemini(listing_info):
     """Filtro veloce basato sul testo, eseguito dopo lo scraping ma PRIMA di API/foto."""
     titolo = (listing_info.get("title") or "").lower()
@@ -49,6 +76,9 @@ def check_skip_pre_gemini(listing_info):
 
     if _miumiu_top_economico(listing_info):
         return True, "[CATEGORIA GENERICA NON FLIPPABILE] Miu Miu top/haut/debardeur/canotta (quasi sempre falsi)"
+
+    if _maglia_leggera_brand_falsi(listing_info):
+        return True, "[CATEGORIA GENERICA NON FLIPPABILE] t-shirt/canotta/top/bluse di Courreges, Loewe o Miu Miu a prezzo basso (nei feedback quasi sempre falsi)"
 
     # 1. Blocklist venditori
     if seller and seller in VENDITORI_BLOCKLIST:
