@@ -14,6 +14,23 @@ from bot.foto import costruisci_parts_foto
 from bot.logger import log
 from bot import http_clients as hc
 # ---- fine import ----
+async def testa_chiavi_gemini(chiavi=None):
+    """Prova ogni chiave con un elenco modelli (non consuma quota di generazione). Ritorna [(numero, esito)] con esito
+    'valida' | 'NON VALIDA' | 'valida, ma 429' | 'errore <codice>'. Le chiavi non vengono mai restituite ne' loggate."""
+    chiavi = GEMINI_API_KEYS if chiavi is None else chiavi
+    risultati = []
+    for i, k in enumerate(chiavi, 1):
+        try:
+            r = await hc._client_generico.get("https://generativelanguage.googleapis.com/v1beta/models",
+                                              headers={"x-goog-api-key": k}, timeout=15)
+            c = r.status_code
+            esito = "valida" if c == 200 else "NON VALIDA" if c in (400, 401, 403) else "valida, ma 429" if c == 429 else f"errore {c}"
+        except Exception as e:
+            esito = f"errore di rete ({type(e).__name__})"
+        risultati.append((i, esito))
+    return risultati
+
+
 def costo_gemini_token(usage, prezzo_input=PREZZO_OCCHIO_INPUT, prezzo_output=PREZZO_OCCHIO_OUTPUT):
     inp = usage.get("promptTokenCount", 0) or 0
     out = usage.get("candidatesTokenCount", 0) or 0

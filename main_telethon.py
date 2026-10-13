@@ -463,6 +463,7 @@ from bot.serper_base import (
 
 from bot.gemini_api import (
     CERVELLO_FUNCTION_DECLARATION,
+    testa_chiavi_gemini,
     ISTRUZIONE_FASE_JSON,
     MAX_ROUNDS_FUNZIONE,
     _estrai_testo_da_parts,
@@ -1412,6 +1413,22 @@ async def on_comando_test_proxy(event):
         log.error("Errore nel comando /test_proxy:\n%s", traceback.format_exc())
         try:
             await event.respond("⚠️ Test proxy fallito per un errore interno, vedi i log Railway.")
+        except Exception:
+            pass
+
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'(?i)^/test_?chiavi\b'))
+async def on_comando_test_chiavi(event):
+    """/test_chiavi: prova le chiavi di GEMINI_API_KEYS gia' caricate nel worker e risponde solo con numero ed esito (mai la chiave)."""
+    try:
+        risultati = await testa_chiavi_gemini()
+        righe = [f"{'✅' if e == 'valida' else '⚠️' if 'valida' in e.lower() and 'NON' not in e else '❌'} Chiave #{i}: {e}" for i, e in risultati]
+        buone = sum(1 for _, e in risultati if e.startswith("valida"))
+        await event.respond(f"🔑 Chiavi Gemini nel worker: {len(risultati)}, valide {buone}\n" + "\n".join(righe))
+    except Exception:
+        log.error("Errore nel comando /test_chiavi:\n%s", traceback.format_exc())
+        try:
+            await event.respond("⚠️ Test chiavi fallito per un errore interno, vedi i log Railway.")
         except Exception:
             pass
 
