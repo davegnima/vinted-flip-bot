@@ -179,3 +179,22 @@ def test_conferma_del_verdetto_del_cervello(monkeypatch):
     asyncio.run(fb.gestisci_callback({"id": "a", "data": "sv|88|s", "message": msg}))
     assert eventi[0][3]["verdetto_utente"] == "sbagliato" and eventi[0][3]["esito"] == "COMPRA" and eventi[0][3]["fonte"] == "verdetto"
     assert "🧠 Verdetto sbagliato" in [b["text"] for r in tastiere[0] for b in r]
+
+
+def test_testa_chiavi_gemini_non_espone_le_chiavi(monkeypatch):
+    import asyncio
+    from bot import gemini_api, http_clients as hc
+
+    class R:
+        def __init__(self, c): self.status_code = c
+
+    codici = {"k1": 200, "k2": 403, "k3": 429}
+
+    class C:
+        async def get(self, url, headers=None, timeout=None):
+            return R(codici[headers["x-goog-api-key"]])
+
+    monkeypatch.setattr(hc, "_client_generico", C())
+    ris = asyncio.run(gemini_api.testa_chiavi_gemini(["k1", "k2", "k3"]))
+    assert ris == [(1, "valida"), (2, "NON VALIDA"), (3, "valida, ma 429")]
+    assert "k1" not in str(ris)
