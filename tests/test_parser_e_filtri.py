@@ -75,6 +75,17 @@ def test_miumiu_top_e_canotte_si_scartano_a_qualunque_prezzo():
     assert not m.check_skip_pre_gemini(_li("Cappotto Miu Miu", "Miu Miu", "ottime condizioni", price="150"))[0]
 
 
+def test_maglie_leggere_courreges_loewe_miumiu_a_prezzo_basso_si_scartano():
+    for t, b, pr in [("Miu miu tshirt", "Miu Miu", "35"), ("bianca T-shirt", "Courrèges", "20"), ("Thanktop", "Loewe", "12"),
+                     ("Trägerhemden", "Miu Miu", "5"), ("Black & White Ringer Tee / Size M", "Courreges", "30"), ("Bluse Rose", "Miu Miu", "22")]:
+        assert m.check_skip_pre_gemini(_li(t, b, "", price=pr))[0], (t, b)
+    # sopra il tetto, altre categorie e altri brand passano
+    assert not m.check_skip_pre_gemini(_li("T-shirt Loewe", "Loewe", "", price="120"))[0]
+    assert not m.check_skip_pre_gemini(_li("Giacca Loewe", "Loewe", "ottime condizioni", price="35"))[0]
+    assert not m.check_skip_pre_gemini(_li("Pull Courreges", "Courrèges", "", price="20"))[0]
+    assert not m.check_skip_pre_gemini(_li("T-shirt Prada", "Prada", "", price="20"))[0]
+
+
 def test_paese_di_produzione_incoerente_col_brand():
     from bot.occhio import applica_paese_al_verdetto, calcola_scarto_occhio, paese_incoerente
 
