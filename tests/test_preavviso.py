@@ -15,9 +15,20 @@ def test_preavviso_semaforo_verde_con_margine():
 
 
 def test_preavviso_prezzo_basso():
-    assert valuta_preavviso(_stima("🟡", 22), 15) == (True, "prezzo_basso")
+    assert valuta_preavviso(_stima("🟡", 22), 18) == (True, "prezzo_basso")
     assert valuta_preavviso(_stima("🟡", 22), 40) == (False, "no")
-    assert valuta_preavviso(_stima("🟡", 10), 15) == (False, "no")
+    assert valuta_preavviso(_stima("🟡", 10), 18) == (False, "no")
+
+
+def test_preavviso_giallo_economico_con_suono():
+    from bot.fair_value import preavviso_con_suono
+    # 14/10: 🟡 fino a 15 EUR scatta e suona anche con margine piccolo o stima debole
+    assert valuta_preavviso(_stima("🟡", 10), 15) == (True, "giallo_economico")
+    assert valuta_preavviso({**_stima("🟡", 5), "conf": "bassa"}, 8) == (True, "giallo_economico")
+    assert preavviso_con_suono(_stima("🟡", 10), 15) is True
+    assert preavviso_con_suono(_stima("🟡", 10), 18) is False          # fv/prezzo 60/18 < 4
+    assert valuta_preavviso({**_stima("🟡", 10), "brand": "marni"}, 10) == (False, "no")   # brand esclusi restano fuori
+    assert valuta_preavviso(_stima("🔴", 10), 10) == (False, "no")
 
 
 def test_preavviso_non_scatta_senza_stima_affidabile():
