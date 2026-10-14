@@ -98,8 +98,15 @@ def _riga_caricato_annuncio(listing_info):
 def _riga_venditore_annuncio(listing_info):
     esc = _escapa_markdown_legacy
     venditore = []
-    if listing_info.get("seller_login"):
-        venditore.append(esc(str(listing_info["seller_login"])))
+    login, sid = listing_info.get("seller_login"), str(listing_info.get("seller_id") or "")
+    if login and sid.isdigit():
+        # nome cliccabile verso il profilo (14/10, richiesta dell'utente). Nel Markdown legacy il testo del link non si
+        # escapa (il backslash comparirebbe): si tolgono solo le parentesi che chiuderebbero il link.
+        dominio = re.search(r"https?://(?:www\.)?(vinted\.[a-z.]+)", str(listing_info.get("url") or ""))
+        nome = re.sub(r"[\[\]()]", "", str(login)) or "profilo"
+        venditore.append(f"[{nome}](https://www.{dominio.group(1) if dominio else 'vinted.it'}/member/{sid})")
+    elif login:
+        venditore.append(esc(str(login)))
     rep = listing_info.get("seller_feedback_reputation")
     n_rec = listing_info.get("seller_feedback_count")
     if n_rec is not None:
