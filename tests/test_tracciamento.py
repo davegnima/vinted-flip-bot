@@ -223,3 +223,23 @@ def test_allarme_preferiti_viene_inviato_una_volta(monkeypatch):
     assert len(inviati) == 1 and tr._tracc_ctx["77"]["_allarmato"] is True
     assert not tr.allarme_preferiti_da_inviare(tr._tracc_ctx["77"], 56, 300, 20, "attivo")   # non si ripete
     tr._tracc_ctx.pop("77", None)
+
+
+def test_riga_venduto_prima_del_verdetto_riceve_il_verdetto(monkeypatch):
+    """Venduto in 15 s, verdetto dopo 25 s: la riga TRACCIATO esce una sola volta e con esito/margine/roi."""
+    import bot.tracciamento as tr
+    righe = []
+    monkeypatch.setattr(tr.log, "info", lambda msg, *a: righe.append(msg % a if a else msg))
+    monkeypatch.setattr(tr.db, "elimina_serie", lambda *a, **k: None)
+    monkeypatch.setattr(tr.db, "aggiorna_serie", lambda *a, **k: None)
+    monkeypatch.setattr(tr.db, "scrivi_evento", lambda *a, **k: None)
+    tr._tracc_attesa_esito.add("77")
+    tr._tracc_differiti["77"] = ("Prada", 30.0, [(15, "venduto")])   # serie finita prima del verdetto
+    info = {"url": "https://www.vinted.it/items/77-x", "brand": "Prada", "title": "Giacca", "price": 30}
+    tr._log_esito(info, "COMPRA", margine=90, roi=300, target=120)
+    tracciati = [r for r in righe if r.startswith("TRACCIATO |")]
+    assert len(tracciati) == 1
+    assert "esito=COMPRA" in tracciati[0] and "margine=90" in tracciati[0] and "classe=AFFARE" in tracciati[0]
+    assert "77" not in tr._tracc_differiti and "77" not in tr._tracc_attesa_esito
+    tr._tracc_scrivi_differita("77")   # il timer scaduto dopo la scrittura non duplica
+    assert len([r for r in righe if r.startswith("TRACCIATO |")]) == 1

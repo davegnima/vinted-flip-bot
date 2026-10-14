@@ -62,6 +62,9 @@ ALLARME_PREF_RAPPORTO = float(os.environ.get("ALLARME_PREF_RAPPORTO", "1.5"))
 _ALLARME_ESITI = ("NON COMPRARE", "TRATTA", "CHIEDI ALTRE FOTO", "SKIP_ROSSO")
 _tracc_pref = {}   # item_id -> [(offset, preferiti)] letti a ogni controllo: la crescita e' un segnale di domanda
 _tracc_ctx = {}   # item_id -> contesto dell'annuncio (esito, margine, semaforo, categoria...) per la riga TRACCIATO
+_tracc_attesa_esito = set()   # item_id con serie avviata e verdetto del bot non ancora arrivato (ne' _log_esito)
+_tracc_differiti = {}   # item_id -> (brand, prezzo, storia): serie finita (venduto in pochi secondi) prima del verdetto
+TRACC_ATTESA_ESITO_MAX_S = 240   # oltre, la riga esce comunque (senza esito del bot)
 _STATI_SPARITO = ('rimosso', 'rimosso?', 'n.d.')
 TRACCIAMENTO_SERIE_RIDOTTA_MAX_S = 300
 _SCARTI_DA_SEGUIRE = ("[FALSO CONCLAMATO", "[ANNUNCIO FRAUDOLENTO")
@@ -254,6 +257,29 @@ def _riga_tracciato(item_id, brand, prezzo, storia, ctx, incompleto=False, prefi
     return f"{prefisso} | " + " | ".join(f"{k}={v}" for k, v in campi.items() if v not in (None, ""))
 
 
+def _tracc_scrivi_finale(item_id, brand, prezzo, storia, radar=False):
+    """Scrive la riga TRACCIATO di fine serie e ripulisce lo stato in memoria e nel DB."""
+    item_id = str(item_id)
+    _tracc_attesa_esito.discard(item_id)
+    try:
+        ctx = _tracc_ctx.get(item_id, {})
+        log.info(_riga_tracciato(item_id, brand, prezzo, storia, ctx, prefisso="TRACCIATO_RADAR" if radar else "TRACCIATO"))
+        if not radar:
+            db.scrivi_evento("tracciato", item_id, brand, {"prezzo": prezzo, **ctx, "storia": storia})
+        db.elimina_serie(item_id)
+        _tracc_ctx.pop(item_id, None)
+        _tracc_pref.pop(item_id, None)
+    except Exception:
+        log.warning("TRACCIATO non scritto:\n%s", traceback.format_exc())
+
+
+def _tracc_scrivi_differita(item_id):
+    """Scrive la riga rimasta in attesa del verdetto (arrivato, o scaduto il tempo massimo). Idempotente."""
+    d = _tracc_differiti.pop(str(item_id), None)
+    if d:
+        _tracc_scrivi_finale(item_id, *d)
+
+
 async def _tracc_serie(item_id, url, brand, prezzo, t0, offsets=None, storia=None, radar=False):
     """Serie di controlli ancorati a t0: attende ciascun offset, rilegge la pagina e si ferma alla prima
     vendita (o se l'annuncio e' scartato). Registra i secondi reali da t0, la fascia e la classe. La serie e' salvata nel
@@ -268,16 +294,16 @@ async def _tracc_serie(item_id, url, brand, prezzo, t0, offsets=None, storia=Non
         raise
     finally:
         if finita:
-            try:
-                ctx = _tracc_ctx.get(item_id, {})
-                log.info(_riga_tracciato(item_id, brand, prezzo, storia, ctx, prefisso="TRACCIATO_RADAR" if radar else "TRACCIATO"))
-                if not radar:
-                    db.scrivi_evento("tracciato", item_id, brand, {"prezzo": prezzo, **ctx, "storia": storia})
-                db.elimina_serie(item_id)
-                _tracc_ctx.pop(item_id, None)
-                _tracc_pref.pop(item_id, None)
-            except Exception:
-                log.warning("TRACCIATO non scritto:\n%s", traceback.format_exc())
+            if (not radar and item_id in _tracc_attesa_esito and not (_tracc_ctx.get(item_id) or {}).get("esito")):
+                # venduto prima che il Cervello finisse: la riga aspetta il verdetto (lo scrive _log_esito) cosi' ha esito, margine, roi
+                _tracc_differiti[item_id] = (brand, prezzo, storia)
+                try:
+                    db.elimina_serie(item_id)
+                    asyncio.get_running_loop().call_later(TRACC_ATTESA_ESITO_MAX_S, _tracc_scrivi_differita, item_id)
+                except Exception:
+                    log.warning("TRACCIATO differito non pianificato:\n%s", traceback.format_exc())
+            else:
+                _tracc_scrivi_finale(item_id, brand, prezzo, storia, radar)
         if any(st in _STATI_SPARITO for _, st in storia):
             log.info("RICONTROLLO STORIA | item=%s | brand='%s' | stati=%s", item_id, brand or "n/d",
                      " ".join(f"{o}s:{st}" for o, st in storia))
@@ -400,6 +426,8 @@ def tracc_avvia_serie(listing_info, url, t0, offsets=None):
             return
         prezzo = _a_float(listing_info.get("price"), None)
         db.salva_serie(item_id, url, listing_info.get("brand"), prezzo, t0, list(offsets or TRACCIAMENTO_SERIE_SECONDI))
+        if not offsets:
+            _tracc_attesa_esito.add(str(item_id))
         asyncio.get_running_loop().create_task(_tracc_serie(item_id, url, listing_info.get("brand"), prezzo, t0, offsets, radar=bool(offsets)))
     except Exception:
         log.warning("Tracciamento: serie di controlli non avviata:\n%s", traceback.format_exc())
@@ -561,7 +589,11 @@ def _log_esito(listing_info, esito, **campi):
             elif str(esito).startswith("SKIP_"):
                 _tracc_stop.add(str(_id))
             _tracc_ctx[str(_id)] = _contesto_tracciato(listing_info, esito, campi)
-            db.aggiorna_serie(_id, ctx=_tracc_ctx[str(_id)])
+            _tracc_attesa_esito.discard(str(_id))
+            if str(_id) in _tracc_differiti:
+                _tracc_scrivi_differita(_id)   # era gia' venduto: la riga esce ora, con il verdetto
+            else:
+                db.aggiorna_serie(_id, ctx=_tracc_ctx[str(_id)])
             if len(_tracc_esiti) > 5000:
                 for _k in list(_tracc_esiti)[:1000]:
                     _tracc_esiti.pop(_k, None)
