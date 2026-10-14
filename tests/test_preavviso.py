@@ -551,3 +551,13 @@ def test_descrizione_incoerente_non_scarta_piu_ma_screenshot_si():
     assert not calcola_scarto_occhio({**base, "segnali_rischio_annuncio": ["descrizione_incoerente_con_le_foto"]}, listing_info=li)[0]
     scarta, motivo = calcola_scarto_occhio({**base, "segnali_rischio_annuncio": ["screenshot_di_altro_annuncio"]}, listing_info=li)
     assert scarta and motivo.startswith("[ANNUNCIO FRAUDOLENTO]")
+
+
+def test_venditore_con_link_al_profilo():
+    from bot.scheda import _riga_venditore_annuncio
+    info = {"seller_login": "anna_vintage", "seller_id": "49465070", "seller_feedback_count": 12,
+            "seller_feedback_reputation": 4.9, "url": "https://www.vinted.fr/items/1-x"}
+    riga = _riga_venditore_annuncio(info)
+    assert riga.startswith("👤 [anna_vintage](https://www.vinted.fr/member/49465070) · ⭐ 4,9 (12)")
+    assert "[anna\\_vintage]" not in riga
+    assert _riga_venditore_annuncio({"seller_login": "anna_vintage"}) == "👤 anna\\_vintage"   # senza id: niente link
