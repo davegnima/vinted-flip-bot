@@ -198,3 +198,31 @@ def test_testa_chiavi_gemini_non_espone_le_chiavi(monkeypatch):
     ris = asyncio.run(gemini_api.testa_chiavi_gemini(["k1", "k2", "k3"]))
     assert ris == [(1, "valida"), (2, "NON VALIDA"), (3, "valida, ma 429")]
     assert "k1" not in str(ris)
+
+
+def test_arresto_ordinato_aspetta_le_analisi(monkeypatch):
+    """SIGTERM (deploy): il bot si disconnette solo quando le analisi in corso sono finite (o scade l'attesa)."""
+    import asyncio
+    import main_telethon as m
+    chiamate = []
+
+    async def disconnetti():
+        chiamate.append(m._analisi_attive["n"])
+    monkeypatch.setattr(m.client, "disconnect", disconnetti)
+    monkeypatch.setitem(m._analisi_attive, "arresto", False)
+    monkeypatch.setitem(m._analisi_attive, "n", 1)
+
+    async def prova():
+        async def fine_analisi():
+            await asyncio.sleep(0.05)
+            m._analisi_attive["n"] -= 1
+        asyncio.get_running_loop().create_task(fine_analisi())
+        await m._arresto_ordinato(attesa_max=5, passo=0.01)
+        await m._arresto_ordinato(attesa_max=5, passo=0.01)   # secondo SIGTERM: ignorato
+    asyncio.run(prova())
+    assert chiamate == [0]
+
+    monkeypatch.setitem(m._analisi_attive, "arresto", False)
+    monkeypatch.setitem(m._analisi_attive, "n", 2)
+    asyncio.run(m._arresto_ordinato(attesa_max=0.05, passo=0.01))   # analisi bloccata: esce comunque allo scadere
+    assert chiamate == [0, 2]

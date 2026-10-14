@@ -15,6 +15,7 @@ import json
 import time
 import uuid
 import asyncio
+import signal
 import base64
 import logging
 import statistics
@@ -1478,6 +1479,26 @@ async def watchdog_messaggi():
 # tutti i thread (dove e' bloccato) e termina il processo, Railway lo riavvia. 0 = spento.
 BLOCCO_SECONDI = float(os.environ.get("BLOCCO_SECONDI", "120") or 0)
 _battito = {"t": time.time()}
+# ARRESTO ORDINATO (14/10, richiesta dell'utente: un deploy non deve uccidere le analisi in corso). Railway manda SIGTERM e
+# aspetta RAILWAY_DEPLOYMENT_DRAINING_SECONDS prima di SIGKILL: il bot continua a lavorare (anche sui messaggi nuovi) finche'
+# le analisi in corso finiscono o passano ARRESTO_ATTESA_MAX_S, poi si disconnette. Il valore va sotto il draining di Railway.
+ARRESTO_ATTESA_MAX_S = float(os.environ.get("ARRESTO_ATTESA_MAX_S", "90"))
+_analisi_attive = {"n": 0, "arresto": False}
+
+
+async def _arresto_ordinato(attesa_max=None, passo=1.0):
+    """Su SIGTERM: attende che le analisi in corso finiscano (al massimo attesa_max secondi), poi disconnette Telethon
+    (run_until_disconnected ritorna e main chiude i client HTTP). Le serie di ricontrolli riprendono dal DB all'avvio."""
+    if _analisi_attive["arresto"]:
+        return
+    _analisi_attive["arresto"] = True
+    attesa_max = ARRESTO_ATTESA_MAX_S if attesa_max is None else attesa_max
+    t0 = time.time()
+    log.info("ARRESTO RICHIESTO (SIGTERM) | analisi_in_corso=%d | attesa_max=%.0fs", _analisi_attive["n"], attesa_max)
+    while _analisi_attive["n"] > 0 and time.time() - t0 < attesa_max:
+        await asyncio.sleep(passo)
+    log.info("ARRESTO ORDINATO | analisi_rimaste=%d | attesa=%.0fs", _analisi_attive["n"], time.time() - t0)
+    await client.disconnect()
 
 
 def processo_bloccato(ultimo_battito, adesso, soglia):
@@ -1549,8 +1570,12 @@ async def on_new_message(event):
                 url_radar = next((b.url for riga in event.message.buttons for b in riga
                                   if "vinted." in (getattr(b, "url", None) or "")), None)
             log.info("MESSAGGIO RADAR | msg_id=%s | item=%s", msg_id, _estrai_item_id_da_url(url_radar))
-            await gestisci_annuncio_radar(parse_vinted_tracker_message(togli_marcatore(text)), url_radar,
-                                          t0=t_ricevuto_bot)
+            _analisi_attive["n"] += 1
+            try:
+                await gestisci_annuncio_radar(parse_vinted_tracker_message(togli_marcatore(text)), url_radar,
+                                              t0=t_ricevuto_bot)
+            finally:
+                _analisi_attive["n"] -= 1
             return
         parsed = parse_vinted_tracker_message(text)
 
@@ -1588,8 +1613,12 @@ async def on_new_message(event):
         # dopo scrape + foto + galleria (leggeri, niente Gemini): in un burst
         # le foto arrivano subito e in coda aspetta solo l'analisi Gemini.
         # L'attesa resta visibile nei tempi della pipeline.
-        await process_listing(parsed, url, cover, msg_date=msg_date, t_ricevuto_bot=t_ricevuto_bot,
-                              stato=stato_pipeline, semaforo=_semaforo_analisi)
+        _analisi_attive["n"] += 1
+        try:
+            await process_listing(parsed, url, cover, msg_date=msg_date, t_ricevuto_bot=t_ricevuto_bot,
+                                  stato=stato_pipeline, semaforo=_semaforo_analisi)
+        finally:
+            _analisi_attive["n"] -= 1
     except Exception:
         log.error("Errore generico:\n%s", traceback.format_exc())
         if stato_pipeline.get("msg_id_galleria") is not None:
@@ -1660,6 +1689,11 @@ async def main():
         _battito["t"] = time.time()
         asyncio.get_event_loop().create_task(_battito_loop())
         _thread_blocco()
+        try:
+            _loop = asyncio.get_running_loop()
+            _loop.add_signal_handler(signal.SIGTERM, lambda: _loop.create_task(_arresto_ordinato()))
+        except (NotImplementedError, RuntimeError):
+            log.warning("Arresto ordinato non attivo: SIGTERM non intercettabile su questa piattaforma.")
         await client.run_until_disconnected()
     finally:
         await chiudi_client_http()
