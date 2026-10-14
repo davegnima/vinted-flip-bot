@@ -243,3 +243,23 @@ def test_riga_venduto_prima_del_verdetto_riceve_il_verdetto(monkeypatch):
     assert "77" not in tr._tracc_differiti and "77" not in tr._tracc_attesa_esito
     tr._tracc_scrivi_differita("77")   # il timer scaduto dopo la scrittura non duplica
     assert len([r for r in righe if r.startswith("TRACCIATO |")]) == 1
+
+
+def test_riavvio_durante_attesa_verdetto_scrive_la_riga(monkeypatch):
+    """Serie chiusa (venduto) in attesa del verdetto quando il worker riparte: la riga esce all'avvio, non si perde."""
+    import bot.tracciamento as tr
+    righe, eliminate = [], []
+    monkeypatch.setattr(tr.log, "info", lambda msg, *a: righe.append(msg % a if a else msg))
+    monkeypatch.setattr(tr.db, "elimina_serie", lambda i: eliminate.append(i))
+    monkeypatch.setattr(tr.db, "scrivi_evento", lambda *a, **k: None)
+    monkeypatch.setattr(tr.db, "carica_serie", lambda dal: [{
+        "item_id": "88", "url": "https://www.vinted.it/items/88-x", "brand": "Missoni", "prezzo": 10.0, "t0": dal + 10,
+        "offsets": [15, 30, 60, 300, 900, 3600], "storia": [(15, "attivo"), (30, "venduto")], "ctx": {"sem": "🟢"}}])
+
+    async def prova():
+        return tr.tracc_riprendi_serie()
+
+    assert asyncio.run(prova()) == 0
+    tracciati = [r for r in righe if r.startswith("TRACCIATO |")]
+    assert len(tracciati) == 1 and "classe=AFFARE" in tracciati[0] and "sem=🟢" in tracciati[0]
+    assert eliminate == ["88"]
