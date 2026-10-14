@@ -298,7 +298,7 @@ async def _tracc_serie(item_id, url, brand, prezzo, t0, offsets=None, storia=Non
                 # venduto prima che il Cervello finisse: la riga aspetta il verdetto (lo scrive _log_esito) cosi' ha esito, margine, roi
                 _tracc_differiti[item_id] = (brand, prezzo, storia)
                 try:
-                    db.elimina_serie(item_id)
+                    # la serie resta nel DB: se il worker riparte prima del verdetto, tracc_riprendi_serie scrive la riga
                     asyncio.get_running_loop().call_later(TRACC_ATTESA_ESITO_MAX_S, _tracc_scrivi_differita, item_id)
                 except Exception:
                     log.warning("TRACCIATO differito non pianificato:\n%s", traceback.format_exc())
@@ -443,6 +443,11 @@ def tracc_riprendi_serie(adesso=None):
     try:
         for r in db.carica_serie(adesso - 3700):
             item_id = r["item_id"]
+            if r["storia"] and r["storia"][-1][1] == "venduto":
+                # serie gia' chiusa (venduto) che aspettava il verdetto del bot quando il worker e' ripartito
+                _tracc_ctx[item_id] = {k: v for k, v in (r.get("ctx") or {}).items() if k != "_pref"}
+                _tracc_scrivi_finale(item_id, r["brand"], r["prezzo"], [tuple(x) for x in r["storia"]])
+                continue
             fatti = {o for o, _ in r["storia"]}
             restanti = [o for o in r["offsets"] if o not in fatti]
             if not restanti:
