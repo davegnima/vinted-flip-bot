@@ -531,7 +531,7 @@ def stima_fair_value(listing_info):
             out["semaforo"] = "🔴"
         # correzione dalla velocita' di vendita del brand (bot/velocita.py): il semaforo d'origine resta in semaforo_base
         out["semaforo_base"] = out["semaforo"]
-        out["semaforo"], out["lift_velocita"] = semaforo_corretto(out["semaforo"], brand)
+        out["semaforo"], out["lift_velocita"] = semaforo_corretto(out["semaforo"], brand, prezzo=prezzo)
     return out
 
 

@@ -131,3 +131,12 @@ def test_tool_aggiorna_velocita_conta_una_volta_e_decade(tmp_path):
     assert t.aggiorna(tab, annunci, 1.0, "2026-10-08T13:00:00Z") == 0     # niente doppio conteggio
     t.aggiorna(tab, {}, 0.5, "2026-10-08T13:00:00Z")
     assert tab["brand"]["prada"]["n"] == 0.5                              # decadimento
+
+
+def test_brand_lento_non_penalizzato_a_prezzo_basso(monkeypatch):
+    # 15/10: Acne a 12 EUR con stima verde restava rossa per il lift del brand (calcolato su capi a 40-70 EUR)
+    monkeypatch.setattr(v, "VELOCITA_ATTIVA", True)
+    assert v.semaforo_corretto("🟢", "Max Mara", TABELLA, prezzo=12)[0] == "🟢"
+    assert v.semaforo_corretto("🟢", "Max Mara", TABELLA, prezzo=40)[0] == "🟡"    # sopra la soglia il lift vale
+    assert v.semaforo_corretto("🔴", "Loro Piana", TABELLA, prezzo=12)[0] == "🟡"  # il lift dei brand veloci vale sempre
+    assert v.semaforo_corretto("🔴", "Max Mara", TABELLA, prezzo=12)[0] == "🔴"

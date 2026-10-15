@@ -26,6 +26,11 @@ VELOCITA_SOGLIA_GIALLO = float(os.environ.get("VELOCITA_SOGLIA_GIALLO") or 0)
 # a margine rapido positivo (vedi fair_value.check_skip_rosso). Oggi solo Max Mara (n ~155, lift 0,51).
 VELOCITA_LENTO_N_MIN = float(os.environ.get("VELOCITA_LENTO_N_MIN", "100"))
 VELOCITA_LENTO_LIFT = float(os.environ.get("VELOCITA_LENTO_LIFT", "0.60"))
+# Capi economici (15/10): sotto VELOCITA_PREZZO_NEUTRO il lift di un brand lento (< 1) non si applica. Il lift viene quasi tutto da
+# annunci a 40-70 EUR; a <= 20 EUR (8-14/10, 297 annunci di brand con lift < 0,8) il semaforo d'origine distingue meglio: 🟢 27% venduti
+# entro 15 min e 🟡 11%, contro 🟢 20% e 🟡 26% col semaforo corretto. Es. Acne a 12 EUR con fair value 62: era sempre 🔴 (lift 0,36),
+# mentre l'Acne a <= 20 EUR vendeva in fretta 4 volte su 13. Il lift > 1 (brand veloci) vale a ogni prezzo. 0 = spento.
+VELOCITA_PREZZO_NEUTRO = float(os.environ.get("VELOCITA_PREZZO_NEUTRO", "20"))
 _VUOTO = {"base": 0.25, "semaforo": {"🟢": 0.50, "🟡": 0.29, "🔴": 0.14}, "brand": {}}
 
 
@@ -61,12 +66,15 @@ def brand_lento(brand, dati=None):
     return VELOCITA_ATTIVA and n >= VELOCITA_LENTO_N_MIN and lift_brand(brand, dati) <= VELOCITA_LENTO_LIFT
 
 
-def semaforo_corretto(semaforo, brand, dati=None):
-    """(semaforo corretto, lift). Senza semaforo, con la correzione spenta o con il semaforo sconosciuto non cambia nulla."""
+def semaforo_corretto(semaforo, brand, dati=None, prezzo=None):
+    """(semaforo corretto, lift). Senza semaforo, con la correzione spenta o con il semaforo sconosciuto non cambia nulla.
+    Con prezzo <= VELOCITA_PREZZO_NEUTRO un lift sotto 1 non abbassa il semaforo (vedi sopra)."""
     dati = dati or _DATI
     if not VELOCITA_ATTIVA or semaforo not in dati["semaforo"]:
         return semaforo, 1.0
     lift = lift_brand(brand, dati)
+    if lift < 1 and prezzo is not None and 0 < prezzo <= VELOCITA_PREZZO_NEUTRO:
+        lift = 1.0
     punteggio = dati["semaforo"][semaforo] * lift
     verde = VELOCITA_SOGLIA_VERDE or VELOCITA_VERDE_X * dati["base"]
     giallo = VELOCITA_SOGLIA_GIALLO or VELOCITA_GIALLO_X * dati["base"]
