@@ -1,193 +1,193 @@
 {
- "aggiornato": "2026-10-14T21:59:00.386346962Z",
- "base": 0.2039,
+ "aggiornato": "2026-10-15T21:59:13.051072915Z",
+ "base": 0.2086,
  "brand": {
   "45rpm": {
-   "n": 3.46,
+   "n": 4.36,
    "veloci": 0.0
   },
   "acne studios": {
-   "n": 169.72,
-   "veloci": 11.08
+   "n": 182.63,
+   "veloci": 13.75
   },
   "alaia": {
-   "n": 7.39,
-   "veloci": 1.82
+   "n": 8.17,
+   "veloci": 2.77
   },
   "ann demeulemeester": {
-   "n": 5.45,
-   "veloci": 1.79
+   "n": 7.29,
+   "veloci": 2.74
   },
   "barena venezia": {
-   "n": 10.83,
+   "n": 10.51,
    "veloci": 0.0
   },
   "bottega veneta": {
-   "n": 15.48,
-   "veloci": 1.74
-  },
-  "brunello cucinelli": {
-   "n": 232.72,
-   "veloci": 50.31
-  },
-  "carol christian poell": {
-   "n": 0.91,
-   "veloci": 0.0
-  },
-  "claude montana": {
-   "n": 9.83,
-   "veloci": 0.0
-  },
-  "courreges": {
-   "n": 113.41,
-   "veloci": 16.22
-  },
-  "dries van noten": {
-   "n": 65.91,
-   "veloci": 10.11
-  },
-  "engineered garments": {
-   "n": 13.47,
-   "veloci": 1.0
-  },
-  "fendi": {
-   "n": 88.59,
-   "veloci": 6.07
-  },
-  "haider ackermann": {
-   "n": 15.77,
-   "veloci": 6.5
-  },
-  "helmut lang": {
-   "n": 38.49,
+   "n": 15.02,
    "veloci": 1.69
   },
-  "issey miyake": {
-   "n": 9.13,
-   "veloci": 2.6
+  "brunello cucinelli": {
+   "n": 235.74,
+   "veloci": 52.8
   },
-  "jacquemus": {
-   "n": 73.88,
-   "veloci": 18.96
-  },
-  "jean paul gaultier": {
-   "n": 131.56,
-   "veloci": 46.5
-  },
-  "junya watanabe": {
-   "n": 5.32,
-   "veloci": 1.79
-  },
-  "kapital": {
-   "n": 7.51,
-   "veloci": 0.0
-  },
-  "khaite": {
-   "n": 1.79,
-   "veloci": 0.0
-  },
-  "kiko kostadinov": {
+  "carol christian poell": {
    "n": 0.88,
    "veloci": 0.0
   },
+  "claude montana": {
+   "n": 11.54,
+   "veloci": 1.0
+  },
+  "courreges": {
+   "n": 119.01,
+   "veloci": 18.73
+  },
+  "dries van noten": {
+   "n": 73.93,
+   "veloci": 10.81
+  },
+  "engineered garments": {
+   "n": 14.07,
+   "veloci": 0.97
+  },
+  "fendi": {
+   "n": 85.93,
+   "veloci": 5.89
+  },
+  "haider ackermann": {
+   "n": 16.3,
+   "veloci": 6.3
+  },
+  "helmut lang": {
+   "n": 37.34,
+   "veloci": 1.64
+  },
+  "issey miyake": {
+   "n": 8.86,
+   "veloci": 2.52
+  },
+  "jacquemus": {
+   "n": 72.66,
+   "veloci": 18.39
+  },
+  "jean paul gaultier": {
+   "n": 145.61,
+   "veloci": 52.1
+  },
+  "junya watanabe": {
+   "n": 5.16,
+   "veloci": 1.74
+  },
+  "kapital": {
+   "n": 7.28,
+   "veloci": 0.0
+  },
+  "khaite": {
+   "n": 1.74,
+   "veloci": 0.0
+  },
+  "kiko kostadinov": {
+   "n": 0.85,
+   "veloci": 0.0
+  },
   "lemaire": {
-   "n": 9.81,
+   "n": 9.52,
    "veloci": 0.0
   },
   "loewe": {
-   "n": 24.31,
-   "veloci": 10.78
+   "n": 27.58,
+   "veloci": 11.46
   },
   "loro piana": {
-   "n": 138.89,
-   "veloci": 42.99
+   "n": 146.72,
+   "veloci": 47.7
   },
   "margiela": {
-   "n": 3.54,
-   "veloci": 1.77
+   "n": 3.43,
+   "veloci": 1.72
   },
   "marni": {
-   "n": 80.83,
-   "veloci": 11.52
+   "n": 86.41,
+   "veloci": 11.17
   },
   "max mara": {
-   "n": 610.09,
-   "veloci": 84.52
+   "n": 610.79,
+   "veloci": 83.98
   },
   "missoni": {
-   "n": 272.61,
-   "veloci": 50.88
+   "n": 291.43,
+   "veloci": 58.35
   },
   "miu miu": {
-   "n": 79.74,
-   "veloci": 36.9
+   "n": 87.35,
+   "veloci": 37.79
   },
   "mugler": {
-   "n": 24.53,
-   "veloci": 2.71
+   "n": 25.79,
+   "veloci": 3.63
   },
   "prada": {
-   "n": 543.59,
-   "veloci": 154.54
+   "n": 550.28,
+   "veloci": 158.9
   },
   "pucci": {
-   "n": 33.86,
-   "veloci": 5.68
+   "n": 38.84,
+   "veloci": 8.51
   },
   "raf simons": {
-   "n": 16.2,
-   "veloci": 6.17
+   "n": 16.71,
+   "veloci": 5.98
   },
   "rick owens": {
-   "n": 23.03,
-   "veloci": 5.37
+   "n": 27.34,
+   "veloci": 5.21
   },
   "sacai": {
-   "n": 7.2,
-   "veloci": 0.88
+   "n": 6.98,
+   "veloci": 0.85
   },
   "the attico": {
-   "n": 4.54,
+   "n": 4.4,
    "veloci": 0.0
   },
   "the row": {
-   "n": 12.69,
-   "veloci": 2.91
+   "n": 12.31,
+   "veloci": 2.82
   },
   "totême": {
-   "n": 40.75,
-   "veloci": 0.97
+   "n": 39.53,
+   "veloci": 0.94
   },
   "undercover": {
-   "n": 18.8,
-   "veloci": 0.91
+   "n": 23.24,
+   "veloci": 1.88
   },
   "vivienne westwood": {
-   "n": 56.39,
-   "veloci": 23.71
+   "n": 65.7,
+   "veloci": 26.0
   },
   "yohji yamamoto": {
-   "n": 12.86,
-   "veloci": 3.68
+   "n": 14.47,
+   "veloci": 3.57
   },
   "zegna": {
-   "n": 42.87,
-   "veloci": 2.55
+   "n": 48.58,
+   "veloci": 3.47
   }
  },
- "fino_ts": "2026-10-14T20:48:21.565049864Z",
+ "fino_ts": "2026-10-15T20:48:25.186996098Z",
  "semaforo": {
   "🔴": {
-   "n": 1733.02,
-   "veloci": 168.73
+   "n": 1723.03,
+   "veloci": 166.67
   },
   "🟡": {
-   "n": 596.68,
-   "veloci": 140.67
+   "n": 646.78,
+   "veloci": 155.45
   },
   "🟢": {
-   "n": 749.03,
-   "veloci": 318.32
+   "n": 832.56,
+   "veloci": 345.77
   }
  }
 }
