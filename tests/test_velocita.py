@@ -140,3 +140,19 @@ def test_brand_lento_non_penalizzato_a_prezzo_basso(monkeypatch):
     assert v.semaforo_corretto("🟢", "Max Mara", TABELLA, prezzo=40)[0] == "🟡"    # sopra la soglia il lift vale
     assert v.semaforo_corretto("🔴", "Loro Piana", TABELLA, prezzo=12)[0] == "🟡"  # il lift dei brand veloci vale sempre
     assert v.semaforo_corretto("🔴", "Max Mara", TABELLA, prezzo=12)[0] == "🔴"
+
+
+def test_veloce_segnalato_falso_pesa_meno_nel_credito(tmp_path):
+    import importlib.util
+    import os
+    spec = importlib.util.spec_from_file_location(
+        "aggiorna_velocita", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools", "aggiorna_velocita.py"))
+    t = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(t)
+    assert t.e_falso({"motivo": "[FALSO CONCLAMATO] etichetta"}) and t.e_falso({"legit": "probabilmente_falso"})
+    assert not t.e_falso({"motivo": "[ROSSO SICURO]", "legit": "probabilmente_autentico"})
+    annunci = {"1": {"brand": "prada", "sem": "🟢", "ts": "2026-10-16T10:00:00Z", "classe": "AFFARE", "falso": True},
+               "2": {"brand": "prada", "sem": "🟢", "ts": "2026-10-16T10:01:00Z", "classe": "AFFARE", "falso": False}}
+    tab = {}
+    t.aggiorna(tab, annunci, 1.0, "2026-10-16T12:00:00Z", peso_falso=0.25)
+    assert tab["brand"]["prada"] == {"n": 2, "veloci": 1.25}
