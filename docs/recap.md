@@ -14,6 +14,13 @@ Righe utili: `ESITO ... esito=GIA_VENDUTO`, `RICONTROLLO LAMPO` (serie 15 s, 30 
 5. Per AFFARE e MEDIO: prezzo richiesto vs fair value/target, per tarare il fair price.
 6. Con meno di ~30 AFFARE+MEDIO dirlo e riportare solo i numeri.
 
+## Veloci veri e veloci falsi (richiesto dall'utente il 17/10)
+Venduto in fretta non vuol dire affare: un falso a prezzo basso (es. Prada a 10 EUR) sparisce subito. Se l'Occhio o il Cervello hanno detto "falso", spesso avevano ragione. In ogni calcolo sui veloci separare:
+- **veloci segnalati falsi**: `legit=probabilmente_falso` o `motivo` che inizia con `[FALSO CONCLAMATO`, `[ANNUNCIO FRAUDOLENTO`, `[BRAND NON CORRISPONDENTE`, `[TESSUTO NON E' IL BRAND`, `[NON ORIGINALE` (funzione `e_falso` in `tools/aggiorna_velocita.py`). Non sono "falsi negativi" dei filtri: niente "veloci persi" per questi, e in `velocita.json` contano `PESO_FALSO` (0,25, stima dichiarata; `--peso-falso`) invece di 1;
+- **veloci confermati (riprova)**: esito COMPRA o TRATTA con `legit=probabilmente_autentico` e venduto veloce: il segnale piu' forte che il bot ci ha preso;
+- tutti gli altri (neutri; `[NESSUNA ETICHETTA VISIBILE]` e `sospetto_servono_altre_foto` non sono "falso": restano neutri).
+Recall e "veloci persi" si calcolano sui veloci veri (veloci meno segnalati falsi). Un brand con molti veloci ma quasi tutti segnalati falsi (es. Prada a prezzo basso) non e' un brand che ruota: non e' un segnale per il semaforo.
+
 ## Apprendimento dalla rotazione
 L'etichetta e' la classe di vendita (solo `venduto`), non il feedback manuale (l'utente compra ~0,5% dei COMPRA). Obiettivo: un semaforo cosi' buono da togliere quasi del tutto il Cervello e tenere il solo controllo di autenticita'. Ogni giorno:
 - tasso di rotazione (AFFARE+MEDIO, mediana, quota istantanei) per brand, categoria, condizione, fascia di prezzo, materiale, taglia, venditore, lingua del titolo, n. foto, ora e giorno; segmenti >= 30 annunci con lift e significativita';

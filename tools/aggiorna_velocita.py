@@ -7,7 +7,6 @@ l'esito finale (venduto entro 15 min = veloce; ancora invenduto a 1 h o venduto 
 risposta = non conta). I conteggi gia' presenti nel file si moltiplicano per il fattore di decadimento (i dati vecchi
 pesano meno) e si aggiungono solo gli annunci piu' recenti di `fino_ts`. Stampa un riepilogo."""
 import argparse
-import collections
 import json
 import os
 import re
@@ -25,6 +24,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from bot.fair_value import _brand_fair_value  # noqa: E402
 
 VELOCI = ("AFFARE", "MEDIO AFFARE", "PRENOTATO")   # prenotato nella prima ora = domanda alta
+# Scarti dell'Occhio/Cervello per falso (campo `motivo` di TRACCIATO) o `legit=probabilmente_falso`: un falso venduto
+# subito non e' un affare vero (17/10: Prada a 10 EUR falso, venduto in fretta). Pesa meno nel credito di velocita'.
+MOTIVI_FALSO = ("[FALSO CONCLAMATO", "[ANNUNCIO FRAUDOLENTO", "[BRAND NON CORRISPONDENTE", "[TESSUTO NON E' IL BRAND", "[NON ORIGINALE")
+PESO_FALSO = 0.25   # stima dichiarata, non misurata: regolabile con --peso-falso
+
+
+def e_falso(d):
+    """True se Occhio o Cervello hanno segnato l'annuncio come falso (riga TRACCIATO gia' in campi)."""
+    return d.get("legit") == "probabilmente_falso" or d.get("motivo", "").startswith(MOTIVI_FALSO)
 _RANGO = {"NON AFFARE": 0, "PRENOTATO": 1, "NORMALE": 2, "MEDIO AFFARE": 3, "AFFARE": 3}
 
 
@@ -51,7 +59,8 @@ def costruisci_annunci(righe):
         if "| TRACCIATO |" in m:
             d = _kv(m)
             if d.get("classe") not in (None, "-") and d.get("sem_base", "-") != "-":
-                prev[d["item"]] = {"ts": ts, "brand": d.get("brand_n") or d.get("brand", ""), "sem": d["sem_base"]}
+                prev[d["item"]] = {"ts": ts, "brand": d.get("brand_n") or d.get("brand", ""), "sem": d["sem_base"],
+                                   "falso": e_falso(d), "esito": d.get("esito", "")}
                 esiti[d["item"]] = d["classe"]
         elif "| ESITO |" in m:
             d = _kv(m)
@@ -75,11 +84,12 @@ def costruisci_annunci(righe):
     for item, p in prev.items():
         if item in esiti:
             marca = _brand_fair_value({"brand": p["brand"], "title": titoli.get(item, "")}) or p["brand"].lower()
-            out[item] = {"brand": marca, "sem": p["sem"], "ts": p["ts"], "classe": esiti[item]}
+            out[item] = {"brand": marca, "sem": p["sem"], "ts": p["ts"], "classe": esiti[item],
+                         "falso": p.get("falso", False), "esito": p.get("esito", "")}
     return out
 
 
-def aggiorna(tabella, annunci, decadimento, ultimo_ts):
+def aggiorna(tabella, annunci, decadimento, ultimo_ts, peso_falso=PESO_FALSO):
     fino = tabella.get("fino_ts") or ""
     nuovi = {i: a for i, a in annunci.items() if a["ts"] > fino and a["ts"] <= ultimo_ts}
     for sezione in ("brand", "semaforo"):
@@ -90,10 +100,11 @@ def aggiorna(tabella, annunci, decadimento, ultimo_ts):
     tabella.setdefault("semaforo", {})
     for a in nuovi.values():
         v = a["classe"] in VELOCI
+        credito = (peso_falso if a.get("falso") else 1) if v else 0   # veloce ma falso per Occhio/Cervello: credito ridotto
         for sezione, chiave in (("brand", a["brand"]), ("semaforo", a["sem"])):
             c = tabella[sezione].setdefault(chiave, {"n": 0, "veloci": 0})
             c["n"] = round(c["n"] + 1, 2)
-            c["veloci"] = round(c["veloci"] + (1 if v else 0), 2)
+            c["veloci"] = round(c["veloci"] + credito, 2)
     n = sum(c["n"] for c in tabella["semaforo"].values())
     f = sum(c["veloci"] for c in tabella["semaforo"].values())
     tabella["base"] = round(f / n, 4) if n else 0.25
@@ -107,6 +118,7 @@ def main():
     ap.add_argument("log", nargs="+")
     ap.add_argument("--out", default=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bot", "dati", "velocita.json"))
     ap.add_argument("--decadimento", type=float, default=1.0)
+    ap.add_argument("--peso-falso", type=float, default=PESO_FALSO, help="credito di un veloce segnalato falso (0-1)")
     a = ap.parse_args()
     righe = leggi_righe(a.log)
     annunci = costruisci_annunci(righe)
@@ -119,11 +131,14 @@ def main():
     # esito finale noto solo dopo 1 h: si contano gli annunci di almeno 70 minuti prima dell'ultima riga
     import datetime
     limite = (datetime.datetime.fromisoformat(ultimo[:19]) - datetime.timedelta(minutes=70)).isoformat()
-    n = aggiorna(tabella, annunci, a.decadimento, limite + "Z")
+    n = aggiorna(tabella, annunci, a.decadimento, limite + "Z", a.peso_falso)
     tabella["aggiornato"] = ultimo
     with open(a.out, "w", encoding="utf-8") as f:
         json.dump(tabella, f, ensure_ascii=False, indent=1, sort_keys=True)
     print(f"annunci aggiunti: {n}  base veloci: {tabella['base']:.1%}")
+    vf = [x for x in annunci.values() if x["classe"] in VELOCI]
+    print(f"  veloci {len(vf)}: segnalati falsi {sum(1 for x in vf if x['falso'])}, "
+          f"COMPRA/TRATTA {sum(1 for x in vf if x['esito'] in ('COMPRA', 'TRATTA') and not x['falso'])} (conferma)")
     for k, v in sorted(tabella["semaforo"].items()):
         print(f"  {k} n={v['n']:.0f} veloci={v['veloci']:.0f} ({v['veloci'] / v['n']:.0%})" if v["n"] else k)
     top = sorted(tabella["brand"].items(), key=lambda x: -x[1]["n"])[:15]
