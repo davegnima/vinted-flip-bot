@@ -118,6 +118,18 @@ def _riga_venditore_annuncio(listing_info):
     return ("👤 " + " · ".join(venditore)) if venditore else None
 
 
+def riga_query(listing_info):
+    """'🔎 Query: <nome>' con il link alla ricerca del tracker che ha trovato l'annuncio (17/10, richiesta
+    dell'utente), oppure None. Testo del link senza parentesi quadre/tonde, come per il venditore. Pura."""
+    nome, url = listing_info.get("query_name"), listing_info.get("query_url")
+    if not nome and not url:
+        return None
+    nome = re.sub(r"[\[\]()]", "", str(nome or "")).strip() or "ricerca"
+    if url:
+        return f"🔎 Query: [{nome}]({str(url).replace('(', '%28').replace(')', '%29')})"
+    return f"🔎 Query: {_escapa_markdown_legacy(nome)}"
+
+
 def _descrizione_utile(listing_info):
     """Descrizione compattata e accorciata, oppure None se non aggiunge nulla al titolo (molti venditori
     ripetono il titolo nella descrizione: la riga sarebbe un doppione)."""
@@ -161,7 +173,8 @@ def _scheda_annuncio_testo(listing_info, url, n_foto):
     righe.append("")
     riga_fv = _riga_fair_value_testo(listing_info.get("fair_value"))
     for riga in (_righe_dettagli_annuncio(listing_info), esc(riga_fv) if riga_fv else None,
-                 _riga_caricato_annuncio(listing_info), _riga_venditore_annuncio(listing_info)):
+                 _riga_caricato_annuncio(listing_info), _riga_venditore_annuncio(listing_info),
+                 riga_query(listing_info)):
         if riga:
             righe.append(riga)
     descrizione = _descrizione_utile(listing_info)
@@ -206,6 +219,8 @@ def testo_preavviso(listing_info, url=None, riga_finale=RIGA_PREAVVISO_IN_ATTESA
             righe.append(riga)
     if url:
         righe.append(f"[vedi su Vinted]({url})")
+    if riga_query(listing_info):
+        righe.append(riga_query(listing_info))
     if riga_tempi:
         righe.append(esc(riga_tempi))
     righe += ["", riga_finale]
@@ -241,7 +256,8 @@ def didascalia_verdetto(testo, limite=1024):
     testo = (testo or "").strip()
     if len(testo) <= limite:
         return testo
-    righe = testo.split("\n")
+    # la riga della ricerca (link lungo fino a ~600 caratteri) e' la prima a cadere: accorciata spezzerebbe il link
+    righe = [r for r in testo.split("\n") if not r.startswith("🔎 Query:")]
     MIN_RIGA = 140
     for _ in range(len(righe) * 2 + 5):          # numero di giri limitato: la funzione deve sempre finire
         totale = len("\n".join(righe))
@@ -703,6 +719,8 @@ def componi_messaggio_compatto(listing_info, v, verdetto, output_finale, url=Non
         righe.append(dettagli)
     righe.append(" · ".join(x.strip() for x in (
         _riga_venditore_annuncio(listing_info), _riga_caricato_annuncio(listing_info)) if x))
+    if riga_query(listing_info):
+        righe.append(riga_query(listing_info))
     if riga_fv:
         righe.append(riga_fv)
     comp = _blocco_comp(output_finale)
