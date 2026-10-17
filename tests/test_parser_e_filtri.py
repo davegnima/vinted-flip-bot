@@ -135,3 +135,10 @@ def test_url_da_bottoni_distingue_annuncio_e_ricerca():
     assert m.url_da_bottoni(bottoni, "/items/") == "https://www.vinted.it/items/9-giacca"
     assert m.url_da_bottoni(bottoni, "/catalog") == "https://www.vinted.it/catalog?brand_ids[]=1"
     assert m.url_da_bottoni(None, "/items/") is None
+
+
+def test_url_da_entita_trova_il_link_della_ricerca():
+    from types import SimpleNamespace as E
+    entita = [E(offset=0), E(url="https://www.vinted.it/catalog?brand_ids[]=1")]
+    assert m.url_da_entita(entita, "/catalog") == "https://www.vinted.it/catalog?brand_ids[]=1"
+    assert m.url_da_entita(None, "/catalog") is None

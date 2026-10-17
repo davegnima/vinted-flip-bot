@@ -356,6 +356,7 @@ from bot.parsing import (
     extract_url_from_text,
     parse_vinted_tracker_message,
     url_da_bottoni,
+    url_da_entita,
 )  # noqa: F401  (re-export)
 
 from bot.tempi import (
@@ -1581,12 +1582,14 @@ async def on_new_message(event):
         # chiave di dedup piu' affidabile, vedi _chiavi_dedup.
         # solo bottoni /items/: il secondo bottone del tracker ("🔎 Query") porta alla ricerca, non all'annuncio
         url = extract_url_from_text(text) or url_da_bottoni(event.message.buttons, "/items/")
-        parsed["query_url"] = url_da_bottoni(event.message.buttons, "/catalog")
+        parsed["query_url"] = (url_da_bottoni(event.message.buttons, "/catalog")
+                               or url_da_entita(event.message.entities, "/catalog"))
 
         # Riga di ricezione: permette di confrontare i messaggi del tracker con gli ESITO e di capire dove si perde
         # un annuncio (ricevuto ma non elaborato, oppure mai ricevuto).
-        log.info("MESSAGGIO TRACKER | msg_id=%s | item=%s | titolo=%s", msg_id, _estrai_item_id_da_url(url),
-                 (parsed.get("title") or "")[:60])
+        log.info("MESSAGGIO TRACKER | msg_id=%s | item=%s | titolo=%s | query=%s | link_query=%s", msg_id,
+                 _estrai_item_id_da_url(url), (parsed.get("title") or "")[:60], parsed.get("query_name") or "-",
+                 "si" if parsed.get("query_url") else "no")
         if e_variante_recente(parsed, url):
             log.info("MESSAGGIO SCARTATO | motivo=variante_recente_5min | msg_id=%s | item=%s | titolo=%s", msg_id,
                      _estrai_item_id_da_url(url), (parsed.get("title") or "")[:60])
