@@ -302,6 +302,9 @@ async def telegram_edit_message(chat_id, message_id, text, url_annuncio=None):
     if resp is not None and not resp.is_success:
         if "not modified" in (resp.text or ""):
             return True
+        # senza Markdown i link ([nome](url)) restano testo non cliccabile: va visto nei log
+        log.warning("editMessageText Markdown fallita -- HTTP %d: %s -- ritento senza parse_mode",
+                    resp.status_code, resp.text[:300])
         resp = await _telegram_post("editMessageText", json=payload)
         if resp is not None and not resp.is_success and "not modified" in (resp.text or ""):
             return True
@@ -356,6 +359,9 @@ async def telegram_edit_con_tastiera(chat_id, message_id, testo, tastiera=None):
     if resp is not None and not resp.is_success:
         if "not modified" in (resp.text or ""):
             return True
+        # senza Markdown i link ([nome](url)) restano testo non cliccabile: va visto nei log
+        log.warning("editMessageText Markdown fallita -- HTTP %d: %s -- ritento senza parse_mode",
+                    resp.status_code, resp.text[:300])
         resp = await _telegram_post("editMessageText", json=payload)
         if resp is not None and not resp.is_success and "not modified" in (resp.text or ""):
             return True

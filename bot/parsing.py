@@ -92,3 +92,13 @@ def url_da_bottoni(bottoni, parte):
             if "vinted." in candidato and parte in candidato:
                 return candidato
     return None
+
+
+def url_da_entita(entita, parte):
+    """Primo link del testo (entita' Telegram con url, es. il nome della ricerca scritto come link dal tracker) che
+    contiene `parte`, oppure None. Riserva di url_da_bottoni."""
+    for e in entita or []:
+        candidato = getattr(e, "url", None) or ""
+        if "vinted." in candidato and parte in candidato:
+            return candidato
+    return None
