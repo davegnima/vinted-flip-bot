@@ -561,3 +561,24 @@ def test_venditore_con_link_al_profilo():
     assert riga.startswith("👤 [anna_vintage](https://www.vinted.fr/member/49465070) · ⭐ 4,9 (12)")
     assert "[anna\\_vintage]" not in riga
     assert _riga_venditore_annuncio({"seller_login": "anna_vintage"}) == "👤 anna\\_vintage"   # senza id: niente link
+
+
+def test_riga_query_con_link_nella_scheda_e_nel_preavviso():
+    from bot.scheda import riga_query, testo_preavviso
+    info = {"title": "Giacca", "price": "40", "brand": "Prada", "query_name": "Prada (capispalla) 50",
+            "query_url": "https://www.vinted.it/catalog?brand_ids[]=3573&price_to=50"}
+    riga = riga_query(info)
+    assert riga == "🔎 Query: [Prada capispalla 50](https://www.vinted.it/catalog?brand_ids[]=3573&price_to=50)"
+    assert riga in _scheda_annuncio_testo(info, "https://www.vinted.it/items/1-x", 3)
+    assert riga in testo_preavviso(info, "https://www.vinted.it/items/1-x")
+    assert riga_query({"title": "x"}) is None
+    assert riga_query({"query_name": "solo_nome"}) == "🔎 Query: solo\\_nome"
+
+
+def test_didascalia_toglie_la_riga_query_prima_di_accorciare():
+    from bot.scheda import didascalia_verdetto
+    riga = "🔎 Query: [Prada](https://www.vinted.it/catalog?" + "brand_ids[]=1&" * 40 + ")"
+    testo = "\n".join(["✅ COMPRA", "x" * 300, riga, "y" * 300])
+    out = didascalia_verdetto(testo)
+    assert "🔎" not in out and "x" * 300 in out and "y" * 300 in out
+    assert riga in didascalia_verdetto("✅ COMPRA\n" + riga)   # sotto il limite resta

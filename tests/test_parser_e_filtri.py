@@ -119,3 +119,19 @@ def test_paese_di_produzione_incoerente_col_brand():
     assert applica_paese_al_verdetto(v2, o_mm, mm) is None and v2["legit_verdetto"] == "probabilmente_falso"
     acne = {"brand": "Acne Studios", "title": "Pull"}
     assert paese_incoerente(occhio("MADE IN CHINA", brand_letto="Acne Studios"), acne) is None   # Acne produce anche in Cina
+
+
+def test_parser_tracker_legge_la_query_e_non_la_scambia_per_titolo():
+    p = m.parse_vinted_tracker_message("🔎 Query: Prada capispalla 50\n💰 40 €\n🏷️ Prada")
+    assert p["query_name"] == "Prada capispalla 50" and p["title"] == m.TITOLO_NON_RILEVATO
+    p = m.parse_vinted_tracker_message("📌 Giacca\n💰 40 €\n🏷️ Prada\n🔎 Query: Prada capispalla 50")
+    assert p["title"] == "Giacca" and p["query_name"] == "Prada capispalla 50"
+    assert m.parse_vinted_tracker_message("📌 Giacca\n💰 40 €")["query_name"] is None
+
+
+def test_url_da_bottoni_distingue_annuncio_e_ricerca():
+    from types import SimpleNamespace as B
+    bottoni = [[B(url="https://www.vinted.it/items/9-giacca")], [B(url="https://www.vinted.it/catalog?brand_ids[]=1")]]
+    assert m.url_da_bottoni(bottoni, "/items/") == "https://www.vinted.it/items/9-giacca"
+    assert m.url_da_bottoni(bottoni, "/catalog") == "https://www.vinted.it/catalog?brand_ids[]=1"
+    assert m.url_da_bottoni(None, "/items/") is None

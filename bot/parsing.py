@@ -18,6 +18,9 @@ BRAND_REGEX = re.compile(
     re.IGNORECASE,
 )
 
+# Ricerca del tracker che ha trovato l'annuncio (17/10): riga "🔎 Query: <nome>" nel testo, link nel bottone "🔎 Query".
+QUERY_REGEX = re.compile(r"^🔎\s*Query:\s*(.+)$", re.MULTILINE)
+
 
 TITOLO_NON_RILEVATO = "Titolo non rilevato"
 
@@ -48,7 +51,7 @@ def parse_vinted_tracker_message(text):
         # parole, nuovo a emoji), cosi' non vengono scambiate per titolo.
         e_riga_prezzo = line_lower.startswith(("price", "prezzo")) or "price" in line_lower or line.startswith(("💰", "💶"))
         e_riga_brand = line_lower.startswith(("brand", "marca")) or line.startswith(("🏷️", "🛍️"))
-        if e_riga_prezzo or e_riga_brand:
+        if e_riga_prezzo or e_riga_brand or line.startswith("🔎"):
             continue
         # Rimuove QUALSIASI emoji iniziale (non solo "📌" come prima) -- il
         # bug del titolo con emoji duplicata (es. "🆕 🆕 Titolo") veniva da
@@ -66,13 +69,26 @@ def parse_vinted_tracker_message(text):
         brand = None
     if not brand:
         brand = _brand_da_titolo(title)
+    query_match = QUERY_REGEX.search(text)
     return {
         "title": title or TITOLO_NON_RILEVATO,
         "price": price_match.group(1) if price_match else None,
         "brand": brand,
+        "query_name": query_match.group(1).strip() if query_match else None,
     }
 
 
 def extract_url_from_text(text):
     match = URL_REGEX.search(text or "")
     return match.group(0) if match else None
+
+
+def url_da_bottoni(bottoni, parte):
+    """Primo URL dei bottoni del messaggio che contiene `parte` ("/items/" = annuncio, "/catalog" = ricerca del
+    tracker), oppure None. Il tracker manda due bottoni: "Open Vinted" (annuncio) e "🔎 Query" (ricerca)."""
+    for riga in bottoni or []:
+        for bottone in riga:
+            candidato = getattr(bottone, "url", None) or ""
+            if "vinted." in candidato and parte in candidato:
+                return candidato
+    return None

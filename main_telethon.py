@@ -355,6 +355,7 @@ from bot.parsing import (
     _brand_da_titolo,
     extract_url_from_text,
     parse_vinted_tracker_message,
+    url_da_bottoni,
 )  # noqa: F401  (re-export)
 
 from bot.tempi import (
@@ -1565,10 +1566,7 @@ async def on_new_message(event):
         text = event.message.message or ""
         # Radar (fase 0, solo osservazione): ricerche fuori dall'abbigliamento, smistate prima della pipeline moda.
         if e_messaggio_radar(text, event.chat_id):
-            url_radar = extract_url_from_text(text)
-            if not url_radar and event.message.buttons:
-                url_radar = next((b.url for riga in event.message.buttons for b in riga
-                                  if "vinted." in (getattr(b, "url", None) or "")), None)
+            url_radar = extract_url_from_text(text) or url_da_bottoni(event.message.buttons, "/items/")
             log.info("MESSAGGIO RADAR | msg_id=%s | item=%s", msg_id, _estrai_item_id_da_url(url_radar))
             _analisi_attive["n"] += 1
             try:
@@ -1581,13 +1579,9 @@ async def on_new_message(event):
 
         # URL estratto PRIMA del dedup (fix 2026-09-27): l'item id e' la
         # chiave di dedup piu' affidabile, vedi _chiavi_dedup.
-        url = extract_url_from_text(text)
-        if not url and event.message.buttons:
-            for row in event.message.buttons:
-                for btn in row:
-                    if "vinted." in (getattr(btn, "url", None) or ""):
-                        url = getattr(btn, "url", None)
-                        break
+        # solo bottoni /items/: il secondo bottone del tracker ("🔎 Query") porta alla ricerca, non all'annuncio
+        url = extract_url_from_text(text) or url_da_bottoni(event.message.buttons, "/items/")
+        parsed["query_url"] = url_da_bottoni(event.message.buttons, "/catalog")
 
         # Riga di ricezione: permette di confrontare i messaggi del tracker con gli ESITO e di capire dove si perde
         # un annuncio (ricevuto ma non elaborato, oppure mai ricevuto).
