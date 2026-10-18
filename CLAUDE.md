@@ -14,7 +14,7 @@ Userbot Telethon che riceve gli annunci dal tracker (`davegnima/Vinted-Notificat
 7. Niente API ne' scraping di vinted.it da parte di Claude: le pagine le scarica il bot (Claude puo' costruire URL, non visitarli).
 8. Mai chiavi, password o token in file, commit, PR o chat; se compaiono nei log non riportarli; se l'utente ne incolla una, consigliare di ruotarla.
 9. Non toccare `PROXY_LIST` / `PROXY_ESCLUSI` del worker. I proxy dei tracker (pagina /config) si copiano tra le istanze (consenso del 7/10).
-10. Ricerche: `price_to` circa meta' della rivendita veloce, mai oltre 50 EUR (spesa massima per pezzo, 8/10; radar: `RADAR_SPESA_MAX`); niente `price_from` (8/10: l'errore di prezzo a pochi euro e' l'affare; il rumore economico lo scarta il bot).
+10. Ricerche: `price_to` circa meta' della rivendita veloce, mai oltre 50 EUR (spesa massima per pezzo, 8/10; radar: `RADAR_SPESA_MAX`); niente `price_from` (8/10: l'errore di prezzo a pochi euro e' l'affare; il rumore economico lo scarta il bot). Eccezione (18/10, utente): sul tracker `vinted-radar` le ricerche con lista modelli hanno `price_to` = buy max piu' alto della lista x 1,15 e il limite vero e' il buy max di ogni modello (i modelli senza buy max restano a 50 EUR).
 11. Stime dichiarate come stime; i prezzi di rivendita si ricavano dai dati, non si inventano.
 12. Banda proxy 250 GB al mese: dopo ogni cambio di volume controllare `RIEPILOGO BANDA` (`docs/procedure/consumi.md`).
 13. Dopo ogni deploy verificare che moda e radar ricevano messaggi (`docs/procedure/controllo-deploy.md`).
