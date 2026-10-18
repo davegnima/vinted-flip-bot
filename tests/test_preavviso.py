@@ -210,8 +210,10 @@ def test_riga_scarto_con_motivo_e_link(monkeypatch):
     assert scheda.link_messaggio_chat_principale(None) is None
 
 
-def test_rosso_sicuro_salta_il_cervello():
+def test_rosso_sicuro_salta_il_cervello(monkeypatch):
+    import bot.fair_value as fv_mod
     from bot.fair_value import check_skip_rosso
+    monkeypatch.setattr(fv_mod, "SALTA_CERVELLO_ROSSO_TUTTI", False)                              # regola di prima dell'esperimento
     rosso = {"semaforo": "🔴", "conf": "media", "margine": -12, "fv": 30, "brand": "Prada", "categoria": "maglia"}
     assert check_skip_rosso({"fair_value": rosso, "price": 40})[0]
     assert not check_skip_rosso({"fair_value": rosso, "price": 60})[0]                            # sopra la soglia di prezzo
@@ -220,9 +222,26 @@ def test_rosso_sicuro_salta_il_cervello():
     assert not check_skip_rosso({"fair_value": {**rosso, "semaforo": "🟡"}, "price": 40})[0]
 
 
+def test_esperimento_ogni_rosso_salta_il_cervello(monkeypatch):
+    import bot.fair_value as fv_mod
+    from bot.fair_value import check_skip_rosso
+    monkeypatch.setattr(fv_mod, "SALTA_CERVELLO_ROSSO_TUTTI", True)
+    rosso = {"semaforo": "🔴", "conf": "bassa", "margine": 25, "fv": 80, "brand": "prada", "categoria": "maglia"}
+    ok, motivo = check_skip_rosso({"fair_value": rosso, "price": 40})
+    assert ok and motivo.startswith("[ROSSO SICURO - ESPERIMENTO]")                              # contato come SKIP_ROSSO
+    assert check_skip_rosso({"fair_value": {**rosso, "margine": None}, "price": 40})[0]           # anche senza margine
+    assert not check_skip_rosso({"fair_value": rosso, "price": 60})[0]                            # sopra la soglia di prezzo
+    assert not check_skip_rosso({"fair_value": {**rosso, "semaforo": "🟡"}, "price": 40})[0]
+    assert not check_skip_rosso({"fair_value": {**rosso, "semaforo": "🟢"}, "price": 40})[0]
+    monkeypatch.setattr(fv_mod, "SALTA_CERVELLO_ROSSO_TUTTI", False)
+    assert not check_skip_rosso({"fair_value": rosso, "price": 40})[0]                            # spento: regola di prima
+
+
 def test_rosso_di_brand_lento_salta_il_cervello_anche_a_margine_positivo(monkeypatch):
+    import bot.fair_value as fv_mod
     from bot.fair_value import check_skip_rosso
     import bot.velocita as vel
+    monkeypatch.setattr(fv_mod, "SALTA_CERVELLO_ROSSO_TUTTI", False)
     dati = {"base": 0.187, "semaforo": {"🔴": 0.1}, "brand": {"max mara": (155.0, 14.0), "zegna": (30.0, 1.0), "prada": (133.0, 37.0)}}
     vecchio = vel._DATI
     vel._DATI = dati

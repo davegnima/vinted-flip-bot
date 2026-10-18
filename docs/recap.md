@@ -21,6 +21,9 @@ Venduto in fretta non vuol dire affare: un falso a prezzo basso (es. Prada a 10 
 - tutti gli altri (neutri). `[NESSUNA ETICHETTA VISIBILE]` e `sospetto_servono_altre_foto` NON sono "falso" (richiesta dell'utente, 17/10): l'Occhio non ha potuto giudicare, quindi i veloci con quel motivo contano come veloci veri e, se scartati prima del Cervello, come veloci persi dal filtro (10-16/10: 188 annunci, 43 veloci, 0 contati falsi).
 Recall e "veloci persi" si calcolano sui veloci veri (veloci meno segnalati falsi). Un brand con molti veloci ma quasi tutti segnalati falsi (es. Prada a prezzo basso) non e' un brand che ruota: non e' un segnale per il semaforo.
 
+## Esperimento "rosso senza Cervello" (dal 18/10)
+Ogni 🔴 sotto 50 EUR salta il Cervello (`SALTA_CERVELLO_ROSSO_TUTTI`; motivo `[ROSSO SICURO - ESPERIMENTO]`, esito `SKIP_ROSSO`). Ogni mattina riportare: quanti `SKIP_ROSSO` con quel motivo, quanti veloci veri fra loro (soglia di alert: > 15%, riferimento prima dell'esperimento 9% dei 🔴 con Cervello), quali brand ricorrenti, e i COMPRA/TRATTA 🟢/🟡 del giorno (non devono calare). Con >= 30 casi decidere se tenerlo, limitarlo per brand o toglierlo.
+
 ## Apprendimento dalla rotazione
 L'etichetta e' la classe di vendita (solo `venduto`), non il feedback manuale (l'utente compra ~0,5% dei COMPRA). Obiettivo: un semaforo cosi' buono da togliere quasi del tutto il Cervello e tenere il solo controllo di autenticita'. Ogni giorno:
 - tasso di rotazione (AFFARE+MEDIO, mediana, quota istantanei) per brand, categoria, condizione, fascia di prezzo, materiale, taglia, venditore, lingua del titolo, n. foto, ora e giorno; segmenti >= 30 annunci con lift e significativita';
