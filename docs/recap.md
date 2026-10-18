@@ -25,7 +25,7 @@ Recall e "veloci persi" si calcolano sui veloci veri (veloci meno segnalati fals
 Ogni 🔴 sotto 50 EUR salta il Cervello (`SALTA_CERVELLO_ROSSO_TUTTI`; motivo `[ROSSO SICURO - ESPERIMENTO]`, esito `SKIP_ROSSO`). Ogni mattina riportare: quanti `SKIP_ROSSO` con quel motivo, quanti veloci veri fra loro (soglia di alert: > 15%, riferimento prima dell'esperimento 9% dei 🔴 con Cervello), quali brand ricorrenti, e i COMPRA/TRATTA 🟢/🟡 del giorno (non devono calare). Con >= 30 casi decidere se tenerlo, limitarlo per brand o toglierlo.
 
 ## Ritardo pubblicazione -> messaggio (dal 18/10)
-La riga TRACCIATO ha `pub_tg` (secondi da pubblicazione su Vinted al messaggio del tracker, assente se la pagina da' solo minuti). Riportare: mediana e p90, quota > 30 s, e il tasso di veloci veri per fascia (<= 10 s, 10-30 s, > 30 s). Senza questo numero non si decide se velocizzare il tracker (`STATO.md` 0ax: ogni ricerca e' gia' riletta ogni ~3 s).
+La riga TRACCIATO ha `caricato=` (testo della pagina allo scrape: 'Proprio adesso' per gli annunci freschi, non i secondi; riportare la quota di 'Proprio adesso' contro 'N minuti fa' e il tasso di veloci veri per gruppo) e `pub_tg` (secondi da pubblicazione su Vinted al messaggio del tracker, assente se la pagina da' solo minuti). Riportare: mediana e p90, quota > 30 s, e il tasso di veloci veri per fascia (<= 10 s, 10-30 s, > 30 s). Senza questo numero non si decide se velocizzare il tracker (`STATO.md` 0ax: ogni ricerca e' gia' riletta ogni ~3 s).
 
 ## Apprendimento dalla rotazione
 L'etichetta e' la classe di vendita (solo `venduto`), non il feedback manuale (l'utente compra ~0,5% dei COMPRA). Obiettivo: un semaforo cosi' buono da togliere quasi del tutto il Cervello e tenere il solo controllo di autenticita'. Ogni giorno:
