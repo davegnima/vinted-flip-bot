@@ -575,6 +575,7 @@ def _contesto_tracciato(listing_info, esito, campi):
         "colore": (str(listing_info.get("color_raw") or "")[:30] or None), "taglia": listing_info.get("size"),
         "tit": (str(listing_info.get("title") or "")[:50] or None),
         "query": (str(listing_info.get("query_name") or "")[:60] or None),   # ricerca del tracker (17/10)
+        "pub_tg": listing_info.get("pub_tg"),   # secondi fra pubblicazione su Vinted e messaggio del tracker (18/10)
         "motivo": (str(campi.get("motivo") or "")[:60].replace("|", "/") or None),
         "_prezzo": _a_float(listing_info.get("price"), None),
         "_titolo": (str(listing_info.get("title") or "")[:80] or None),   # chiavi con "_": non finiscono nella riga TRACCIATO
