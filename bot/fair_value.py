@@ -317,6 +317,11 @@ def preavviso_con_suono(stima, prezzo):
 # consultato (l'Occhio si': l'autenticita' e' gia' stata letta). Le eccezioni piu' care restano coperte dalla soglia di
 # prezzo. Spento con SALTA_CERVELLO_ROSSO=0. Gli esiti si loggano come SKIP_ROSSO per misurare i falsi negativi.
 SALTA_CERVELLO_ROSSO = os.environ.get("SALTA_CERVELLO_ROSSO", "1").strip() != "0"
+# Esperimento 18/10 (richiesto dall'utente): OGNI rosso sotto la soglia di prezzo salta il Cervello, qualunque confidenza e
+# margine rapido. Dati 10-17/10 (2.834 annunci): COMPRA/TRATTA su rosso = 277, veloci veri 11%; i rossi che qualificano
+# (margine >= 50 e ROI >= 100%) 33 in 8 giorni, veloci veri 4 (12%, contro 71% dei verdi). Misura: esiti SKIP_ROSSO con
+# motivo "[ROSSO SICURO - ESPERIMENTO]" nel TRACCIATO (veloci persi). Spento con SALTA_CERVELLO_ROSSO_TUTTI=0.
+SALTA_CERVELLO_ROSSO_TUTTI = os.environ.get("SALTA_CERVELLO_ROSSO_TUTTI", "1").strip() != "0"
 RAPPORTO_ROSSO_LENTO_PASSA = _env_float("RAPPORTO_ROSSO_LENTO_PASSA", 2.5)   # fair value/prezzo da cui il brand lento passa al Cervello
 
 
@@ -325,6 +330,9 @@ def check_skip_rosso(listing_info):
     from bot.config import GEMINI_SOGLIA_PREZZO_ALTO
     stima = listing_info.get("fair_value") or {}
     prezzo = _a_float(listing_info.get("price"), None)
+    if SALTA_CERVELLO_ROSSO_TUTTI and stima.get("semaforo") == "🔴" and prezzo is not None and prezzo < GEMINI_SOGLIA_PREZZO_ALTO:
+        return True, (f"[ROSSO SICURO - ESPERIMENTO] Stima rapida {stima.get('brand')} {stima.get('categoria')}: semaforo rosso "
+                      f"(fair value ~{stima.get('fv')} € su {prezzo:.0f} €, confidenza {stima.get('conf')}) -- Cervello non consultato.")
     if (not SALTA_CERVELLO_ROSSO or stima.get("semaforo") != "🔴" or stima.get("conf") not in ("alta", "media")
             or stima.get("margine") is None or prezzo is None or prezzo >= GEMINI_SOGLIA_PREZZO_ALTO):
         return False, None
