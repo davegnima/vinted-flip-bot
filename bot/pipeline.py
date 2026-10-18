@@ -17,7 +17,7 @@ from bot.schemas import OCCHIO_RESPONSE_SCHEMA_GEMINI
 from bot import db
 from bot.tracciamento import SKIP_GIA_VENDUTI, _log_esito, campi_annuncio, tracc_avvia_serie, tracc_registra_gia_venduto, tracc_registra_valutato
 from bot.comps_filtri import _arricchisci_brand_per_ricerca
-from bot.tempi import _calcola_tempi_pipeline, _formatta_durata, _formatta_tappe_pipeline
+from bot.tempi import parse_caricato_secondi, _calcola_tempi_pipeline, _formatta_durata, _formatta_tappe_pipeline
 from bot.testo import _escapa_markdown_legacy
 from bot.vinted_scrape import _scrapa_guardaroba_venditore, scrape_vinted_listing
 from bot.skip_report import build_skip_report, check_skip_pre_cervello
@@ -203,6 +203,15 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             "seller_top_items": scraped.get("seller_top_items") or [],
             "seller_wardrobe_debug": scraped.get("seller_wardrobe_debug") or "n/d",
         })
+        # ritardo pubblicazione -> messaggio del tracker (18/10): "Caricato N secondi fa" letto allo scrape meno il tempo
+        # trascorso dal messaggio; solo se la pagina lo da' in secondi (non grossolano). Va nella riga TRACCIATO (`pub_tg`).
+        try:
+            _, _sec_pub = _calcola_tempi_pipeline(listing_info, msg_date, t_ricevuto_bot)
+            _letto_pub = parse_caricato_secondi(listing_info.get("uploaded_text"))
+            if _sec_pub.get("pub_telegram") is not None and _letto_pub and not _letto_pub[1]:
+                listing_info["pub_tg"] = round(max(_sec_pub["pub_telegram"], 0), 1)
+        except Exception:
+            log.debug("pub_tg non calcolato", exc_info=True)
 
         # GIA' VENDUTO ALLO SCRAPE: i veri affari si chiudono in secondi (bot compratori, richiesto
         # dall'utente il 2026-10-03): se la pagina e' gia' venduta quando arriviamo, il capo era un buon
