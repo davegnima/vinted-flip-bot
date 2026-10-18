@@ -9,7 +9,7 @@ Generata da `data/radar_matrice.json` (fonti di ogni prezzo in `data/radar_matri
 - **Sotto soglia**: valgono troppo poco usati per un margine di 50 EUR: il radar li scarta. **Non spedibile**: ingombrante senza pacco normale, l'utente non fa ritiri: scartato.
 - Limiti noti: molti venduti sono aste nordeuropee (prezzo di martello, senza diritti) o eBay USA/mondo; i prezzi italiani possono essere diversi e non e' stato misurato di quanto. Le scale 1-5 sono stime.
 
-Totale 589 righe: media 255, alta 194, bassa 113, insufficiente 27; 250 con buy max, 258 sotto soglia, 12 non spedibili.
+Totale 731 righe: media 296, alta 276, bassa 114, insufficiente 45; 347 con buy max, 284 sotto soglia, 12 non spedibili.
 
 ## argento_gioielli (10)
 
@@ -211,13 +211,30 @@ Totale 589 righe: media 255, alta 194, bassa 113, insufficiente 27; 250 con buy 
 | Nintendo | GameCube giochi popolari (Zelda Wind Waker, Metroid Prime, Pikmin, Smash Bros Melee) | 18 | alta | - | 2 | 71/71 | sotto soglia |
 | Sega | Panzer Dragoon Saga (Saturn, PAL, completo) | 600 | alta | 243 | 3 | 30/30 | attivo |
 
-## fotografia (46)
+## fotografia (188)
 
 | Brand | Modello | Rivendita veloce | Affid. | Buy max | Falsi | Venduti/confronti | Stato |
 |---|---|---|---|---|---|---|---|
+| Canon | PowerShot G7 X Mark III | 790 | alta | 320 | 2 | 18/18 | attivo |
+| Canon | EF 70-200 f/2.8 L USM / IS / IS II / IS III | 710 | alta | 294 | 2 | 22/22 | attivo |
+| Canon | PowerShot G7 X Mark II | 655 | alta | 264 | 2 | 27/27 | attivo |
+| Canon | PowerShot G7 X (prima versione) | 570 | alta | 229 | 1 | 8/8 | attivo |
 | Canon | FD 50mm f/1.2 (anche L) | 320 | media | 131 | 1 | 10/10 | attivo |
+| Canon | PowerShot G9 X (prima versione) | 310 | media | 122 | 1 | 4/4 | attivo |
+| Canon | EF 70-200 f/4 L USM e L IS USM | 260 | media | 103 | 2 | 7/7 | attivo |
+| Canon | Canon New F-1 (1981, mirino AE o standard) | 220 | alta | 86 | 1 | 12/12 | attivo |
+| Canon | PowerShot G1 X (prima versione) | 195 | media | 74 | 1 | 5/5 | attivo |
+| Canon | EF 85 f/1.8 USM | 195 | alta | 77 | 1 | 18/18 | attivo |
 | Canon | FD 55mm f/1.2 (S.S.C.) | 160 | alta | 63 | 1 | 23/23 | attivo |
+| Canon | Canon F-1 (prima serie 1971 e F-1n 1976; NON New F-1) | 150 | alta | 55 | 1 | 14/14 | attivo |
+| Canon | EF 100 f/2.8 Macro USM (non L) | 150 | alta | 57 | 1 | 11/11 | attivo |
+| Canon | EF 50 f/1.4 USM | 135 | media | 49 | 1 | 7/7 | attivo |
+| Canon | Canonet QL17 G-III | 110 | alta | 37 | 1 | 18/18 | attivo |
 | Canon | Canonet QL17 G-III | 85 | alta | - | 1 | 19/19 | sotto soglia |
+| Canon | Canon AE-1 (non Program) | 70 | alta | - | 1 | 20/20 | sotto soglia |
+| Canon | Canon AE-1 Program | 70 | alta | - | 1 | 20/20 | sotto soglia |
+| Canon | Canon A-1 | 60 | alta | - | 1 | 17/17 | sotto soglia |
+| Canon | PowerShot G5 X (prima versione) | - | insufficiente | - | 1 | 2/2 | senza dati |
 | Carl Zeiss (Contax C/Y) | Planar T* 85mm f/1.4 | 285 | media | 115 | 1 | 4/4 | attivo |
 | Carl Zeiss (Contax C/Y) | Planar T* 50mm f/1.4 | 175 | media | 68 | 1 | 6/6 | attivo |
 | Carl Zeiss (Contax C/Y) | Planar T* 50mm f/1.7 | 90 | alta | - | 1 | 8/8 | sotto soglia |
@@ -225,42 +242,167 @@ Totale 589 righe: media 255, alta 194, bassa 113, insufficiente 27; 250 con buy 
 | Carl Zeiss (Contax G) | Planar T* 45mm f/2 (G) | 320 | media | 130 | 1 | 5/5 | attivo |
 | Carl Zeiss (Contax G) | Biogon T* 21mm f/2.8 (G) | 305 | media | 124 | 1 | 3/4 | attivo |
 | Carl Zeiss (Contax G) | Sonnar T* 90mm f/2.8 (G) | 200 | media | 79 | 1 | 3/8 | attivo |
+| Carl Zeiss Jena | Sonnar 135 f/3.5 (M42, MC/electric/zebra) e 135 f/2.8 | 50 | media | - | 1 | 5/5 | sotto soglia |
+| Carl Zeiss Jena | Pancolar 50 f/1.8 (M42, zebra o MC electric) | - | insufficiente | - | 1 | 2/2 | senza dati |
+| Carl Zeiss Jena | Tessar 50 f/2.8 (M42 e altri attacchi) | - | insufficiente | - | 1 | 2/2 | senza dati |
 | Contax | T3 | 1920 | media | 759 | 1 | 3/6 | attivo |
 | Contax | G2 (corpo) | 1065 | media | 431 | 1 | 7/7 | attivo |
 | Contax | T2 | 850 | media | 331 | 1 | 6/14 | attivo |
 | Contax | G1 (corpo) | 385 | media | 150 | 1 | 5/7 | attivo |
 | Contax | TVS (pellicola) | 180 | alta | 64 | 1 | 11/17 | attivo |
+| Contax | Contax Aria | 170 | media | 62 | 1 | 4/5 | attivo |
 | Contax | RTS III (corpo) | 130 | media | 44 | 1 | 3/3 | attivo |
+| Contax | T (prima versione, telemetro, Sonnar 38mm) | 95 | media | - | 1 | 5/5 | sotto soglia |
 | Contax | RTS / RTS II (corpo) | 75 | alta | - | 1 | 13/13 | sotto soglia |
+| Contax | Contax 167MT | 75 | media | - | 1 | 7/7 | sotto soglia |
 | Contax | 139 Quartz (corpo) | 60 | bassa | - | 1 | 3/3 | sotto soglia |
+| Contax | TVS II / TVS III | - | insufficiente | - | 2 | 1/1 | senza dati |
 | Fujifilm | Klasse W / Klasse S | 1130 | media | 445 | 1 | 6/7 | attivo |
+| Fujifilm | X100V | 1055 | alta | 445 | 2 | 9/9 | attivo |
+| Fujifilm | X100F | 675 | alta | 282 | 1 | 16/16 | attivo |
+| Fujifilm | X70 | 575 | media | 240 | 1 | 3/3 | attivo |
 | Fujifilm | Klasse (38mm f/2.6, originale) | 500 | media | 193 | 1 | 3/4 | attivo |
+| Fujifilm | X100S | 440 | media | 175 | 1 | 7/7 | attivo |
+| Fujifilm | X100T | 440 | alta | 182 | 1 | 8/8 | attivo |
+| Fujifilm | X-E3 (corpo) | 405 | media | 167 | 1 | 6/6 | attivo |
+| Fujifilm | X20 | 335 | media | 132 | 1 | 6/6 | attivo |
+| Fujifilm | X100 (originale, 2011; anche Black Limited Edition) | 330 | alta | 125 | 1 | 9/9 | attivo |
+| Fujifilm | Fujinon XF 56 f/1.2 R (prima versione) | 325 | media | 132 | 2 | 7/7 | attivo |
+| Fujifilm | X10 | 290 | media | 113 | 1 | 6/6 | attivo |
+| Fujifilm | Fujinon XF 35 f/1.4 R | 270 | alta | 109 | 2 | 11/11 | attivo |
+| Fujifilm | Fujinon XF 23 f/1.4 R (prima versione) | 270 | media | 109 | 2 | 7/7 | attivo |
+| Fujifilm | X-E2 / X-E2S (corpo) | 260 | media | 105 | 1 | 4/4 | attivo |
+| Fujifilm | Fujinon XF 18-55 f/2.8-4 R LM OIS | 230 | alta | 92 | 1 | 10/10 | attivo |
+| Fujifilm | X-E1 (corpo) | 220 | media | 87 | 1 | 5/5 | attivo |
+| Fujifilm | Fujinon XF 23 f/2 R WR | 210 | alta | 83 | 1 | 8/8 | attivo |
+| Fujifilm | Tiara / Tiara II (= DL Super Mini, 28mm fisso) | 15 | media | - | 1 | 4/4 | sotto soglia |
+| Fujifilm | Natura Black / Natura S (24mm f/1.9) | - | insufficiente | - | 1 | 0/0 | senza dati |
+| Fujifilm | Natura Classica (zoom 28-56) | - | insufficiente | - | 1 | 1/1 | senza dati |
+| Fujifilm | X30 | - | insufficiente | - | 1 | 2/2 | senza dati |
+| Fujifilm | XF10 | - | insufficiente | - | 1 | 0/0 | senza dati |
+| Hasselblad | Hasselblad 500C/M con obiettivo (kit tipico con Planar 80mm e magazzino A12) | 995 | alta | 403 | 1 | 26/26 | attivo |
+| Hasselblad | Carl Zeiss Planar 80 f/2.8 (C, CF, CB, CFE, CFi) | 605 | alta | 242 | 2 | 21/21 | attivo |
+| Hasselblad | Hasselblad 500C con obiettivo (kit con Planar 80mm) | 580 | alta | 232 | 1 | 17/17 | attivo |
+| Hasselblad | Hasselblad 500C/M solo corpo (anche con magazzino A12/mirino a pozzetto, senza obiettivo) | 570 | media | 227 | 1 | 7/7 | attivo |
+| Hasselblad | Hasselblad 500C solo corpo (1957-1970) | 450 | media | 178 | 1 | 6/6 | attivo |
+| Horizon | Horizon Perfekt (panoramica, obiettivo in vetro MC 28mm) | 260 | bassa | - | 1 | 0/5 | senza dati |
+| Horizon | Horizon Kompakt (panoramica, lente in plastica) | - | insufficiente | - | 1 | 1/2 | senza dati |
+| KMZ | Helios 44-2 58 f/2 (M42) | 60 | alta | - | 1 | 8/8 | sotto soglia |
+| Konica | Hexar RF (corpo, attacco M) | 555 | media | 223 | 1 | 3/3 | attivo |
+| Konica | Hexar AF (nera, Silver, Titanium/Classic) | 435 | media | 173 | 1 | 4/4 | attivo |
 | Konica | Big Mini (BM-201 / BM-301 / BM-302) | 45 | alta | - | 1 | 14/14 | sotto soglia |
+| Leica | Summicron-M 35 f/2 (v1 8 elementi, v2, v3, v4 King of Bokeh, ASPH) | 2090 | alta | 859 | 3 | 12/12 | attivo |
+| Leica | Leica M6 TTL (0.58/0.72/0.85, nera o cromata; escluse Millennium e serie speciali) | 1940 | alta | 823 | 2 | 9/9 | attivo |
+| Leica | Leica M6 (classica, 0.72/0.85/0.58; esclusa M6 TTL e le edizioni speciali) | 1755 | alta | 743 | 2 | 15/15 | attivo |
+| Leica | Leica M4 (cromata o nera cromata; escluse vernice nera, 50 Jahre, M4-2, M4-P) | 1270 | alta | 535 | 2 | 20/20 | attivo |
+| Leica | CM (Summarit 40mm) | 995 | media | 391 | 2 | 3/3 | attivo |
+| Leica | Leica M3 (cromata single/double stroke; escluse vernice nera, olive, prototipi) | 865 | alta | 350 | 3 | 20/20 | attivo |
+| Leica | Leica R6.2 (esclusa la Gold Hong Kong) | 730 | media | 304 | 1 | 4/4 | attivo |
+| Leica | Summaron 35 f/2.8 (M, con o senza occhiali; LTM rara) | 715 | alta | 300 | 2 | 9/9 | attivo |
+| Leica | Leica M2 (cromata; escluse nera vernice, M2-M/M2-R e motor) | 700 | alta | 291 | 2 | 14/14 | attivo |
 | Leica | Minilux (Summarit 40mm f/2.4) | 620 | bassa | - | 1 | 3/13 | senza dati |
+| Leica | D-Lux (Typ 109) | 465 | media | 192 | 2 | 3/3 | attivo |
+| Leica | Summicron 50 f/2 (M e LTM: collapsible, rigid, dual range, v3-v5) | 465 | alta | 179 | 3 | 12/12 | attivo |
+| Leica | Elmarit-M 90 f/2.8 (versione 1990-2008, nera o cromata) | 390 | alta | 160 | 2 | 12/12 | attivo |
+| Leica | Leica CL e Leitz Minolta CL (pellicola, 1973; NON la Leica CL digitale 2017) | 355 | alta | 138 | 2 | 15/15 | attivo |
+| Leica | Leica R6 (meccanica, 1988; esclusa R6.2) | 295 | alta | 118 | 1 | 10/10 | attivo |
 | Leica | Elmarit-R 28mm f/2.8 | 280 | alta | 114 | 1 | 27/27 | attivo |
+| Leica | Summaron 35 f/3.5 (LTM e M, anche con occhiali) | 255 | alta | 102 | 2 | 23/23 | attivo |
 | Leica | Summicron-R 90mm f/2 | 235 | alta | 94 | 1 | 15/15 | attivo |
+| Leica | Leica R5 (corpo) | 220 | alta | 82 | 1 | 12/12 | attivo |
 | Leica | Summicron-R 50mm f/2 | 215 | alta | 86 | 1 | 32/32 | attivo |
+| Leica | Elmar 50 f/3.5 (vite LTM, collapsible) | 205 | alta | 81 | 2 | 18/18 | attivo |
+| Leica | Leica R4 / R4s / R4 MOT (corpo; prezzi simili) | 145 | alta | 49 | 1 | 20/20 | attivo |
 | Leica | Mini / Mini II / Mini 3 (compatta 35mm) | 140 | alta | 49 | 1 | 12/14 | attivo |
+| Leica | Mini Zoom / Z2X (35-70) | 105 | alta | 32 | 1 | 16/16 | attivo |
+| Leica | D-Lux 7 | - | insufficiente | - | 2 | 2/2 | senza dati |
+| Leica | X1 / X2 | - | insufficiente | - | 2 | 2/2 | senza dati |
+| LOMO | LOMO LC-A originale (Minitar 1 32mm, sovietica/russa) | 35 | media | - | 2 | 4/8 | sotto soglia |
+| Mamiya | Mamiya RB67 Pro S con obiettivo Sekor C (90/127mm) | 420 | alta | 169 | 1 | 8/8 | attivo |
+| Mamiya | Mamiya 645 (1000S / Pro / Pro TL / Super) con obiettivo 80mm | 220 | alta | 82 | 1 | 17/17 | attivo |
+| Mamiya | Mamiya RB67 Pro S solo corpo (anche con dorso 120 e pozzetto) | 215 | media | 81 | 1 | 4/4 | attivo |
+| Mamiya | Mamiya 645 (1000S / Pro / Pro TL / Super) solo corpo | 200 | alta | 74 | 1 | 9/9 | attivo |
+| Mamiya | Mamiya Sekor C 80 f/2.8 (M645, anche N) | 190 | media | 75 | 1 | 7/7 | attivo |
+| Mamiya | Mamiya C330 / C220 biottica (con obiettivo, tipicamente 80mm) | 140 | alta | 51 | 1 | 24/24 | attivo |
 | Minolta | TC-1 | 905 | alta | 355 | 1 | 14/14 | attivo |
 | Minolta | CLE (telemetro M-mount) | 565 | alta | 227 | 1 | 10/17 | attivo |
+| Minolta | Minolta X-700 (escluse X-300, X-500, X-370) | 55 | alta | - | 1 | 20/20 | sotto soglia |
+| Minolta | Auto/MC Rokkor-PF 58 f/1.4 | 55 | alta | - | 1 | 11/11 | sotto soglia |
+| Minolta | MC Rokkor-PG 58 f/1.2 | - | insufficiente | - | 2 | 1/1 | senza dati |
+| Minox | Minox 35 GT / EL / ML (compatta 35mm pieghevole) | 30 | alta | - | 1 | 29/29 | sotto soglia |
 | Nikon | 28Ti | 855 | media | 347 | 1 | 8/9 | attivo |
 | Nikon | 35Ti | 565 | alta | 227 | 1 | 13/17 | attivo |
 | Nikon | Nikkor 50mm f/1.2 (AI / AI-S) | 245 | alta | 99 | 1 | 25/25 | attivo |
+| Nikon | Nikon F3 / F3 HP (escluse F3T titanio, F3P, F3 AF, edizioni) | 190 | alta | 73 | 1 | 20/20 | attivo |
 | Nikon | FE2 (corpo) | 150 | alta | 54 | 1 | 40/40 | attivo |
 | Nikon | Nikkor 55mm f/1.2 (Nikkor-S/S.C non-AI e AI) | 150 | alta | 58 | 1 | 11/11 | attivo |
+| Nikon | Nikon F2 (prisma DE-1 e Photomic, AS/SB/A; escluse F2T, F2H, F2 Data) | 150 | alta | 55 | 1 | 20/20 | attivo |
+| Nikon | AF-S Nikkor 50 f/1.4 G | 150 | alta | 57 | 1 | 12/12 | attivo |
 | Nikon | FM2 / FM2n (corpo) | 135 | alta | 50 | 1 | 40/40 | attivo |
+| Nikon | AF Nikkor 85 f/1.8 D | 115 | alta | 42 | 1 | 11/11 | attivo |
+| Nikon | Nikon FM (prima serie; NON FM2/FM2n/FM3a/FM10) | 110 | alta | 38 | 1 | 8/8 | attivo |
 | Nikon | L35AF / L35AF2 (Pikaichi) | 105 | alta | 32 | 1 | 14/14 | attivo |
 | Olympus | mju II (µ[mju:]-II) | 200 | alta | 74 | 1 | 15/23 | attivo |
 | Olympus | Pen F / FT / FV (reflex mezzo formato) | 135 | alta | 51 | 1 | 20/20 | attivo |
+| Olympus | Olympus OM-1 / OM-1 MD / OM-1n (esclusa OM-10) | 95 | alta | - | 1 | 20/20 | sotto soglia |
+| Olympus | Olympus OM-2 / OM-2n / OM-2 MD (esclusi OM-2 SP, OM-20, OM-2000) | 95 | alta | - | 1 | 20/20 | sotto soglia |
 | Olympus | mju I (µ[mju:]-1) | 80 | alta | - | 1 | 15/15 | sotto soglia |
 | Olympus | XA (telemetro, non XA2/XA3) | 70 | alta | - | 1 | 38/38 | sotto soglia |
-| Olympus | mju II Zoom (non il mju II) | - | bassa | - | - | 0/0 | sotto soglia |
+| Olympus | mju I (mju-1, 35mm f/3.5) | 70 | alta | - | 1 | 27/27 | sotto soglia |
+| Olympus | XA2 | 45 | alta | - | 1 | 21/21 | sotto soglia |
+| Olympus | mju Zoom (35-70, base) | 45 | alta | - | 1 | 10/10 | sotto soglia |
+| Olympus | Olympus Pen EE / EE-2 / EE-3 (mezzo formato, obiettivo fisso) | 40 | alta | - | 1 | 21/21 | sotto soglia |
+| Olympus | Pen EE (prima versione, mezzo formato) | 30 | alta | - | 1 | 13/13 | sotto soglia |
+| Olympus | mju II Zoom (non il mju II) | - | bassa | - | None | 0/0 | sotto soglia |
+| Pentax | Pentax 645N / 645NII corpo (AF); kit segnati in condizione | 455 | media | 180 | 1 | 7/7 | attivo |
+| Pentax | Pentax 67 / 6x7 solo corpo (con prisma) | 445 | alta | 174 | 1 | 11/11 | attivo |
+| Pentax | Pentax 67 / 6x7 con obiettivo (es. 105mm 2.4, 90mm, 75mm) | 375 | alta | 145 | 1 | 11/11 | attivo |
+| Pentax | SMC Takumar 6x7 / SMC Pentax 67 105 f/2.4 | 300 | alta | 120 | 1 | 20/20 | attivo |
+| Pentax | Pentax 645 (primo modello, manuale) corpo; include kit con obiettivo segnati in condizione | 260 | alta | 99 | 1 | 8/8 | attivo |
+| Pentax | Pentax LX (escluse Titanium e Gold) | 155 | alta | 55 | 1 | 12/12 | attivo |
+| Pentax | Q / Q7 / Q10 (con obiettivo standard) | 120 | media | 45 | 1 | 4/4 | attivo |
+| Pentax | Espio Mini / UC-1 | 115 | alta | 41 | 1 | 10/10 | attivo |
+| Pentax | Pentax MX (pellicola 1976; NON Pentax MX-1 digitale) | 70 | alta | - | 1 | 11/11 | sotto soglia |
+| Pentax | Super-Takumar 50 f/1.4 (M42, incluso 8 elementi) | 65 | alta | - | 1 | 8/8 | sotto soglia |
+| Pentax | SMC Takumar / Super-Multi-Coated Takumar 50 f/1.4 (M42) | 60 | alta | - | 1 | 10/10 | sotto soglia |
+| Pentax | Super-Takumar 55 f/1.8 (M42) | 35 | alta | - | 1 | 11/11 | sotto soglia |
+| Plaubel | Plaubel Makina 67 (Nikkor 80mm 2.8) | 1170 | media | 459 | 1 | 6/6 | attivo |
+| Polaroid | Polaroid SX-70 Land Camera pieghevole (originale, Model 2, Alpha 1; no Sonar) | 65 | alta | - | 1 | 32/32 | sotto soglia |
+| Ricoh | GR III / GR IIIx | 810 | alta | 317 | 2 | 21/21 | attivo |
+| Ricoh | GR II | 525 | media | 203 | 1 | 3/3 | attivo |
 | Ricoh | GR1 / GR1s / GR1v (pellicola) | 235 | media | 87 | 1 | 9/12 | attivo |
+| Ricoh | R1 / R1s | 195 | media | 74 | 1 | 5/5 | attivo |
+| Ricoh | GR Digital II | 135 | media | 49 | 1 | 3/3 | attivo |
+| Ricoh | GR10 | - | insufficiente | - | 1 | 0/0 | senza dati |
+| Ricoh | GR21 | - | insufficiente | - | 1 | 1/1 | senza dati |
+| Ricoh | GR Digital III | - | insufficiente | - | 1 | 2/2 | senza dati |
+| Ricoh | GR (APS-C, 2013) | - | insufficiente | - | 1 | 1/1 | senza dati |
+| Rollei | Rolleiflex 2.8F (Planar o Xenotar 80mm) | 825 | alta | 333 | 1 | 25/25 | attivo |
+| Rollei | Rolleiflex 3.5F (Planar o Xenotar 75mm) | 500 | alta | 198 | 1 | 35/35 | attivo |
+| Rollei | Rolleiflex 2.8C / 2.8D / 2.8E / 2.8E2 | 455 | alta | 180 | 1 | 24/24 | attivo |
+| Rollei | Rolleiflex 3.5E / E2 / E3 | 260 | alta | 99 | 1 | 12/12 | attivo |
+| Rollei | Rolleiflex T (Tessar o Xenar 75mm; grigio o nero) | 210 | alta | 78 | 1 | 29/29 | attivo |
 | Rollei | 35 S / 35 SE (Sonnar 40mm f/2.8) | 175 | alta | 68 | 1 | 37/40 | attivo |
 | Rollei | 35 / 35 T / 35 TE (Tessar 40mm f/3.5) | 110 | alta | 40 | 1 | 26/26 | attivo |
+| Rollei | Rolleicord V / Va / Vb (Xenar 75mm) | 100 | alta | 26 | 1 | 18/18 | attivo |
+| Sigma | 18-35 f/1.8 DC HSM Art (APS-C) | 185 | media | 71 | 1 | 6/6 | attivo |
+| Sony | RX100 VI / VII (DSC-RX100M6/M7) | 740 | media | 300 | 1 | 6/6 | attivo |
+| Sony | RX100 V / VA (DSC-RX100M5/M5A) | 525 | media | 211 | 1 | 7/7 | attivo |
+| Sony | RX100 III (DSC-RX100M3) | 355 | alta | 140 | 1 | 13/13 | attivo |
+| Sony | RX100 IV (DSC-RX100M4) | 335 | media | 132 | 1 | 3/3 | attivo |
+| Sony | FE 85 f/1.8 (SEL85F18) | 225 | alta | 90 | 1 | 10/10 | attivo |
+| Sony | RX100 (prima versione, DSC-RX100) | 165 | alta | 61 | 1 | 27/27 | attivo |
+| Sony | RX100 II (DSC-RX100M2) | 160 | alta | 59 | 1 | 13/13 | attivo |
+| Sony | RX1 / RX1R (prima serie, 24 MP) | - | insufficiente | - | 2 | 1/1 | senza dati |
+| Sony | FE 50 f/1.8 (SEL50F18F) | - | insufficiente | - | 1 | 2/2 | senza dati |
+| Voigtlander | Voigtlander Bessa R3A (Cosina, mirino 1:1, attacco M) | 1305 | media | 550 | 1 | 3/3 | attivo |
+| Voigtlander | Voigtlander Bessa R / R2 (Cosina, telemetro; R2 attacco M, R attacco a vite LTM) | 330 | media | 133 | 1 | 4/4 | attivo |
 | Yashica | T5 / T4 Super D | 315 | media | 119 | 1 | 6/16 | attivo |
 | Yashica | T4 / T4 Super / T4 D (compatta 35mm Zeiss Tessar) | 160 | media | 57 | 1 | 7/22 | attivo |
 | Yashica | Yashica-Mat 124 G (biottica 6x6) | 140 | alta | 50 | 1 | 13/13 | attivo |
+| Yashica | T3 / T3 Super (Tessar 35mm) | 60 | alta | - | 1 | 10/10 | sotto soglia |
+| Yashica | Electro 35 GSN | 25 | media | - | 1 | 5/5 | sotto soglia |
+| Zenza Bronica | Bronica SQ-A / ETRSi (prezzi in gran parte con obiettivo e dorso) | 280 | alta | 107 | 1 | 8/8 | attivo |
 
 ## golf (12)
 
