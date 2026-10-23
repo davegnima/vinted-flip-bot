@@ -11,7 +11,7 @@ I log sono enormi. Regole:
 4. Filtri utili (parole esatte nei log):
    - esiti per annuncio: `"| ESITO |"`; saltati senza messaggio: `"SKIP non inviato"`
    - errori: `Traceback`, `"Markdown fallita"`, `"FALLITA"`
-   - modelli: `"GEMINI_USO"`, `"RISERVA |"`, `"PANEL |"`, `"PANEL HTTP"`
+   - modelli: `"GEMINI_USO"`, (le righe `RISERVA |` e `PANEL |` non esistono piu' dal 23/10)
    - vendite rapide: `"RICONTROLLO LAMPO"`; preavviso push (una riga per annuncio, con semaforo, regola e caratteristiche: categoria, condizione, materiale, taglia, lingua, n. foto, venditore, ora): `"PREAVVISO |"`; tempi del preavviso (pubblicazione -> telegram -> preavviso, secondi di invio): `"PREAVVISO_INVIATO |"`; le righe `RICONTROLLO LAMPO` e `PREAVVISO` portano i `preferiti` letti dalla pagina; `PREAVVISO` ha anche `fonte_cat` (titolo, descrizione, catalogo o nessuna); le righe `ESITO` portano `item=` per incrociarle con `PREAVVISO` e `RICONTROLLO LAMPO`
    - banda proxy: `"RIEPILOGO BANDA"`
    - radar fase 0: `"RADAR |"` (visitati), `"RADAR SCARTO |"` (scartati al livello 1), `"MESSAGGIO RADAR"`; i ricontrolli radar hanno `esito=RADAR_L1_*` nelle righe `RICONTROLLO LAMPO` (da tenere fuori dal recap moda)

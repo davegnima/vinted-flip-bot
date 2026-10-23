@@ -8,7 +8,7 @@
 1. Leggere i nomi con `list-variables` (i valori dei segreti non sono leggibili e non servono).
 2. `set-variables` solo per la chiave interessata; non toccare `PROXY_LIST` / `PROXY_ESCLUSI` del worker.
 3. Controllare il deploy con `list-deployments` (stato, orario) o con `"Vinted Oracle avviato"` nei log.
-4. Verificare l'effetto con una riga di log specifica della funzione (per esempio `Riserva a pagamento ATTIVA`, `RADAR PAUSA |`).
+4. Verificare l'effetto con una riga di log specifica della funzione (per esempio `RADAR PAUSA |`).
 5. Se la variabile e' nuova, aggiungere il nome a `.env.example` e una riga a `docs/pipeline.md`.
 
 **Output.** Variabile cambiata (solo nome e valore non segreto), deploy partito alle hh:mm, riga di log che conferma l'effetto.
@@ -18,4 +18,4 @@
 - Deploy riuscito e riga di log vista?
 - Variabile documentata in `.env.example`?
 
-**Esempio reale.** 4-6/10: `RISERVA_CERVELLO_MODELLI` e `PANEL_CERVELLO_MODELLI` con i modelli Cerebras, NVIDIA e OpenRouter; poi righe `RISERVA |` con quei modelli nei log.
+**Esempio reale.** 4-6/10: `PREAVVISO_GIALLO_PREZZO_MAX` a 15; poi la riga `PREAVVISO |` con `regola=giallo_economico` nei log.

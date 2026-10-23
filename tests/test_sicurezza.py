@@ -53,7 +53,7 @@ def test_env_example_ha_solo_nomi_non_valori():
 
 
 def test_nessuna_chiave_nelle_url_delle_richieste():
-    for rel in ("bot/gemini_api.py", "bot/openai_api.py", "bot/panel.py", "bot/riserva_llm.py"):
+    for rel in ("bot/gemini_api.py", "bot/openai_api.py"):
         codice = open(os.path.join(RADICE, rel), encoding="utf-8").read()
         senza_commenti = "\n".join(r for r in codice.split("\n") if not r.strip().startswith("#"))
         assert not re.search(r"[?&]key=\{|[?&]api_key=\{", senza_commenti), f"{rel}: chiave nella URL (finirebbe nei log)"

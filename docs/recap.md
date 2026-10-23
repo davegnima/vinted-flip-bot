@@ -57,7 +57,7 @@ Riferimento 7-8/10 (263 annunci con esito, in-sample, "leave one out" per il bra
 Una riga per brand con >= 3 annunci: analizzati, esiti, margine e ROI medi dei COMPRA/TRATTA, quanti qualificano (margine >= 50 EUR e ROI >= 100%), classi con recall e precisione, spariti a parte, preavvisi, falsi/sospetti. Chiudere con 3-5 brand su cui agire. Campioni < 5 annunci vanno segnalati. Se `PANEL |` ha dati, indicare chi diverge dal PRIMARIO.
 
 ## Modelli e quota (solo piani gratuiti)
-Per ogni modello (PRIMARIO, riserva `RISERVA |`, pannello `PANEL |`): n chiamate, % ok, errori per tipo, latenza mediana/p90, quota gratuita usata (Gemini 500 al giorno per account sui Flash Lite; OpenRouter :free 50 al giorno), allineamento con la realta'. Ranking e instradamento consigliato per Occhio e Cervello. Conteggio delle richieste a pagamento (`PAGAMENTO`) e spesa stimata.
+Per ogni modello Gemini (righe `GEMINI_USO`; riserva e pannello tolti il 23/10): n chiamate, % ok, errori per tipo, latenza mediana/p90, quota gratuita usata (Gemini 500 al giorno per account sui Flash Lite; OpenRouter :free 50 al giorno), allineamento con la realta'. Ranking e instradamento consigliato per Occhio e Cervello.
 
 ## Come rispondere
 Recap in chat, in italiano, breve, con numeri, effort e rischio, in ordine di priorita'. Obiettivo: brand con margine >= 50 EUR e ROI >= 100% senza troppi falsi. L'utente cerca eccezioni: non proporre tetti al ROI, proporre stime piu' accurate.

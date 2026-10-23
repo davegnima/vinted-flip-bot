@@ -15,7 +15,6 @@
 **Formato**: una frase di sintesi; finestra e filtro dichiarati; tabella o 3-6 righe di numeri; esempi concreti; problemi e cosa e' gia' stato fatto; prossimi passi (max 3). Campione piccolo: dirlo.
 
 **Esempi reali (7/10)**
-- "La chiave a pagamento e' attiva?": filtro `"Riserva a pagamento" OR "PAGAMENTO"`, `limit` 5 -> `Riserva a pagamento ATTIVA`, 16 richieste fino alle 15:10 UTC.
 - Radar 12:54-16:18 UTC: 957 promossi su ~1250; ~20 GB/giorno di proxy -> corretto subito (prezzo minimo, ricontrolli 3 invece di 6). Valore: LEGO Star Wars/Technic con numero di set (Imperial Star Destroyer 75 EUR gia' venduto alla prima lettura); Alessi e minifigure vendono ma a 5-20 EUR.
 
 **Controllo finale**
