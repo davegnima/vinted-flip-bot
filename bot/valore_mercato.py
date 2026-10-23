@@ -22,6 +22,11 @@ QUOTA_NUOVO_USATO = 0.60
 MIN_COMPARABILI = 4
 _RE_RIGA = re.compile(r"^\s*-\s*(.+?)\s+[—-]\s+€\s*([\d.,]+)\s*$")
 _RE_NUOVO = re.compile(r"\b(nuov[oai]|sigillat[oai]|cartellino|mai usat[oai]|mai aperto|new|neuf|neu|bnwt|nwt)\b", re.I)
+# Parti, ricambi e accessori: un annuncio che le cita non e' l'oggetto intero e non va confrontato con gli interi.
+_RE_PEZZO = re.compile(
+    r"\b(quadrant[ei]|cinturin[oi]|maglia|maglie|bracciale ricambio|mouvement|movimento|lunetta|corona|vetro ricambio|ricambi?|"
+    r"pezz[oi] di ricambio|per ricambi|per pezzi|guasto|rotto|difettos[oa]|scatola vuota|box vuot[oa]|solo scatola|libretto|manuale|"
+    r"istruzioni|custodia|cover|cavo|caricabatterie|filtro|spazzola|testina|ugello|batteria|sacchett[oi])\b", re.I)
 _PAROLE_VUOTE = {"vendo", "vendesi", "usato", "usata", "ottime", "ottimo", "buone", "condizioni", "perfette", "perfetto",
                  "come", "nuovo", "nuova", "originale", "con", "per", "di", "il", "la", "in", "e", "a", "da", "del", "della"}
 
@@ -43,6 +48,32 @@ def parse_comp(testo):
 def solo_usato(comps):
     """Toglie i comparabili che dichiarano di essere nuovi: il loro prezzo non e' una rivendita da usato."""
     return [(t, p) for t, p in comps if not _RE_NUOVO.search(t)]
+
+
+def e_un_pezzo(titolo):
+    """Prima parola di ricambio/accessorio nel titolo, None se sembra l'oggetto intero. Pura."""
+    m = _RE_PEZZO.search(titolo or "")
+    return m.group(0).lower() if m else None
+
+
+def _parole(testo):
+    return {w for w in re.findall(r"[\w]+", (testo or "").lower()) if len(w) > 2 and w not in _PAROLE_VUOTE}
+
+
+def comparabili_simili(comps, query, brand=None, soglia=0.6):
+    """Tiene i comparabili interi (niente pezzi) i cui titoli contengono almeno `soglia` delle parole della ricerca (marca esclusa).
+
+    Il motore di Vinted e' largo: cercando 'omega quadrante seamaster' restituisce orologi interi. Senza questo filtro
+    il quadrante a 35 EUR sembrerebbe un affare rispetto a orologi da 700 EUR."""
+    chiave = _parole(query) - _parole(brand)
+    out = []
+    for t, p in comps:
+        if e_un_pezzo(t):
+            continue
+        if chiave and len(chiave & _parole(t)) / len(chiave) < soglia:
+            continue
+        out.append((t, p))
+    return out
 
 
 def query_comp(titolo, brand=None, max_parole=6):

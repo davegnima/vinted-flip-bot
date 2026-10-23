@@ -1,0 +1,674 @@
+[
+{
+"nome": "C5 Game Boy Micro",
+"url": "https://www.vinted.it/catalog?search_text=game+boy+micro&price_to=80&currency=EUR&order=newest_first"
+},
+{
+"nome": "S27 PSP Go",
+"url": "https://www.vinted.it/catalog?search_text=psp+go&price_to=50&currency=EUR&order=newest_first"
+},
+{
+"nome": "S28 New 3DS XL",
+"url": "https://www.vinted.it/catalog?search_text=new+3ds+xl&price_to=110&currency=EUR&order=newest_first"
+},
+{
+"nome": "S31 Walkman WM-D6C",
+"url": "https://www.vinted.it/catalog?search_text=walkman+d6c&price_to=50&currency=EUR&order=newest_first"
+},
+{
+"nome": "S32 Walkman DD",
+"url": "https://www.vinted.it/catalog?search_text=walkman+dd&price_to=60&currency=EUR&order=newest_first"
+},
+{
+"nome": "S33 Sennheiser HD 600",
+"url": "https://www.vinted.it/catalog?search_text=sennheiser+hd+600&price_to=70&currency=EUR&order=newest_first"
+},
+{
+"nome": "S34 Sennheiser HD 650",
+"url": "https://www.vinted.it/catalog?search_text=sennheiser+hd+650&price_to=70&currency=EUR&order=newest_first"
+},
+{
+"nome": "S36 Technics 1200",
+"url": "https://www.vinted.it/catalog?search_text=technics+1200&price_to=180&currency=EUR&order=newest_first"
+},
+{
+"nome": "S41 Louis Poulsen",
+"url": "https://www.vinted.it/catalog?search_text=louis+poulsen&price_to=240&currency=EUR&order=newest_first"
+},
+{
+"nome": "S45 Seiko 6139",
+"url": "https://www.vinted.it/catalog?search_text=seiko+6139&price_to=130&currency=EUR&order=newest_first"
+},
+{
+"nome": "S46 Montblanc 146 149",
+"url": "https://www.vinted.it/catalog?search_text=montblanc+14&price_to=110&currency=EUR&order=newest_first"
+},
+{
+"nome": "S50 Carhartt Detroit",
+"url": "https://www.vinted.it/catalog?search_text=carhartt+detroit&catalog%5B%5D=4&catalog%5B%5D=2050&price_to=50&currency=EUR&order=newest_first"
+},
+{
+"nome": "S47a Arcteryx Beta",
+"url": "https://www.vinted.it/catalog?search_text=arc+teryx+beta&catalog%5B%5D=4&catalog%5B%5D=2050&price_to=110&currency=EUR&order=newest_first"
+},
+{
+"nome": "S47b Arcteryx Alpha",
+"url": "https://www.vinted.it/catalog?search_text=arc+teryx+alpha&catalog%5B%5D=4&catalog%5B%5D=2050&price_to=130&currency=EUR&order=newest_first"
+},
+{
+"nome": "S47c Arcteryx Atom",
+"url": "https://www.vinted.it/catalog?search_text=arc+teryx+atom&catalog%5B%5D=4&catalog%5B%5D=2050&price_to=50&currency=EUR&order=newest_first"
+},
+{
+"nome": "S49 TNF Nuptse 1996",
+"url": "https://www.vinted.it/catalog?search_text=nuptse+1996&catalog%5B%5D=4&catalog%5B%5D=2050&price_to=60&currency=EUR&order=newest_first"
+},
+{
+"nome": "F1 Analogiche",
+"url": "https://www.vinted.it/catalog?catalog%5B%5D=3076&price_to=950&currency=EUR&order=newest_first"
+},
+{
+"nome": "F2 Obiettivi",
+"url": "https://www.vinted.it/catalog?catalog%5B%5D=3061&price_to=990&currency=EUR&order=newest_first"
+},
+{
+"nome": "F3 Compatte digitali",
+"url": "https://www.vinted.it/catalog?catalog%5B%5D=3075&price_to=520&currency=EUR&order=newest_first"
+},
+{
+"nome": "G2 Lampade design",
+"url": "https://www.vinted.it/catalog?catalog%5B%5D=3836&catalog%5B%5D=3838&catalog%5B%5D=3839&price_to=320&currency=EUR&order=newest_first"
+},
+{
+"nome": "G3 Audio",
+"url": "https://www.vinted.it/catalog?catalog%5B%5D=3690&catalog%5B%5D=3680&price_to=110&currency=EUR&order=newest_first"
+},
+{
+"nome": "G5 Argento gioielli",
+"url": "https://www.vinted.it/catalog?catalog%5B%5D=21&catalog%5B%5D=95&price_to=240&currency=EUR&order=newest_first"
+},
+{
+"nome": "G6 Golf",
+"url": "https://www.vinted.it/catalog?catalog%5B%5D=4470&price_to=180&currency=EUR&order=newest_first"
+},
+{
+"nome": "G7 Collezionismo",
+"url": "https://www.vinted.it/catalog?catalog%5B%5D=97&catalog%5B%5D=5294&price_to=130&currency=EUR&order=newest_first"
+},
+{
+"nome": "G1a Pokemon",
+"url": "https://www.vinted.it/catalog?search_text=pokemon&catalog%5B%5D=3026&catalog%5B%5D=3025&catalog%5B%5D=3027&price_to=170&currency=EUR&order=newest_first"
+},
+{
+"nome": "G1b Game Boy",
+"url": "https://www.vinted.it/catalog?search_text=game+boy&catalog%5B%5D=3026&catalog%5B%5D=3025&catalog%5B%5D=3027&price_to=330&currency=EUR&order=newest_first"
+},
+{
+"nome": "G1c Zelda",
+"url": "https://www.vinted.it/catalog?search_text=zelda&catalog%5B%5D=3026&catalog%5B%5D=3025&catalog%5B%5D=3027&price_to=100&currency=EUR&order=newest_first"
+},
+{
+"nome": "G1d Game & Watch",
+"url": "https://www.vinted.it/catalog?search_text=game+watch&catalog%5B%5D=3026&catalog%5B%5D=3025&catalog%5B%5D=3027&price_to=90&currency=EUR&order=newest_first"
+},
+{
+"nome": "G1e 3DS",
+"url": "https://www.vinted.it/catalog?search_text=3ds&catalog%5B%5D=3026&catalog%5B%5D=3025&catalog%5B%5D=3027&price_to=190&currency=EUR&order=newest_first"
+},
+{
+"nome": "G1f Super Nintendo",
+"url": "https://www.vinted.it/catalog?search_text=super+nintendo&catalog%5B%5D=3026&catalog%5B%5D=3025&catalog%5B%5D=3027&price_to=110&currency=EUR&order=newest_first"
+},
+{
+"nome": "G1g SNES",
+"url": "https://www.vinted.it/catalog?search_text=snes&catalog%5B%5D=3026&catalog%5B%5D=3025&catalog%5B%5D=3027&price_to=110&currency=EUR&order=newest_first"
+},
+{
+"nome": "G1h N64",
+"url": "https://www.vinted.it/catalog?search_text=n64&catalog%5B%5D=3026&catalog%5B%5D=3025&catalog%5B%5D=3027&price_to=130&currency=EUR&order=newest_first"
+},
+{
+"nome": "G1i Nintendo 64",
+"url": "https://www.vinted.it/catalog?search_text=nintendo+64&catalog%5B%5D=3026&catalog%5B%5D=3025&catalog%5B%5D=3027&price_to=130&currency=EUR&order=newest_first"
+},
+{
+"nome": "G1j GameCube",
+"url": "https://www.vinted.it/catalog?search_text=gamecube&catalog%5B%5D=3026&catalog%5B%5D=3025&catalog%5B%5D=3027&price_to=80&currency=EUR&order=newest_first"
+},
+{
+"nome": "G1k Saturn",
+"url": "https://www.vinted.it/catalog?search_text=saturn&catalog%5B%5D=3026&catalog%5B%5D=3025&catalog%5B%5D=3027&price_to=280&currency=EUR&order=newest_first"
+},
+{
+"nome": "G4a Loewe",
+"url": "https://www.vinted.it/catalog?search_text=loewe&catalog%5B%5D=158&catalog%5B%5D=156&price_to=170&currency=EUR&order=newest_first"
+},
+{
+"nome": "G4b Bottega Veneta",
+"url": "https://www.vinted.it/catalog?search_text=bottega+veneta&catalog%5B%5D=158&catalog%5B%5D=156&price_to=170&currency=EUR&order=newest_first"
+},
+{
+"nome": "G4c Mulberry",
+"url": "https://www.vinted.it/catalog?search_text=mulberry&catalog%5B%5D=158&catalog%5B%5D=156&price_to=170&currency=EUR&order=newest_first"
+},
+{
+"nome": "H Lego star wars",
+"url": "https://www.vinted.it/catalog?search_text=star+wars&catalog%5B%5D=1767&brand_ids%5B%5D=89162&price_to=340&currency=EUR&order=newest_first"
+},
+{
+"nome": "H Lego technic",
+"url": "https://www.vinted.it/catalog?search_text=technic&catalog%5B%5D=1767&brand_ids%5B%5D=89162&price_to=340&currency=EUR&order=newest_first"
+},
+{
+"nome": "H Lego ucs",
+"url": "https://www.vinted.it/catalog?search_text=ucs&catalog%5B%5D=1767&brand_ids%5B%5D=89162&price_to=340&currency=EUR&order=newest_first"
+},
+{
+"nome": "H Lego modular",
+"url": "https://www.vinted.it/catalog?search_text=modular&catalog%5B%5D=1767&brand_ids%5B%5D=89162&price_to=340&currency=EUR&order=newest_first"
+},
+{
+"nome": "H Lego ideas",
+"url": "https://www.vinted.it/catalog?search_text=ideas&catalog%5B%5D=1767&brand_ids%5B%5D=89162&price_to=340&currency=EUR&order=newest_first"
+},
+{
+"nome": "H Lego creator expert",
+"url": "https://www.vinted.it/catalog?search_text=creator+expert&catalog%5B%5D=1767&brand_ids%5B%5D=89162&price_to=340&currency=EUR&order=newest_first"
+},
+{
+"nome": "H Lego harry potter",
+"url": "https://www.vinted.it/catalog?search_text=harry+potter&catalog%5B%5D=1767&brand_ids%5B%5D=89162&price_to=340&currency=EUR&order=newest_first"
+},
+{
+"nome": "H Lego ninjago",
+"url": "https://www.vinted.it/catalog?search_text=ninjago&catalog%5B%5D=1767&brand_ids%5B%5D=89162&price_to=340&currency=EUR&order=newest_first"
+},
+{
+"nome": "H Lego marvel",
+"url": "https://www.vinted.it/catalog?search_text=marvel&catalog%5B%5D=1767&brand_ids%5B%5D=89162&price_to=340&currency=EUR&order=newest_first"
+},
+{
+"nome": "H Lego city",
+"url": "https://www.vinted.it/catalog?search_text=city&catalog%5B%5D=1767&brand_ids%5B%5D=89162&price_to=340&currency=EUR&order=newest_first"
+},
+{
+"nome": "H Arredo cassina",
+"url": "https://www.vinted.it/catalog?search_text=cassina&price_to=120&currency=EUR&order=newest_first"
+},
+{
+"nome": "H Arredo kartell",
+"url": "https://www.vinted.it/catalog?search_text=kartell&price_to=120&currency=EUR&order=newest_first"
+},
+{
+"nome": "H Arredo vitra",
+"url": "https://www.vinted.it/catalog?search_text=vitra&price_to=120&currency=EUR&order=newest_first"
+},
+{
+"nome": "H Arredo zanotta",
+"url": "https://www.vinted.it/catalog?search_text=zanotta&price_to=120&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa smeg",
+"url": "https://www.vinted.it/catalog?search_text=smeg&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa kitchenaid",
+"url": "https://www.vinted.it/catalog?search_text=kitchenaid&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa le creuset",
+"url": "https://www.vinted.it/catalog?search_text=le+creuset&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa staub",
+"url": "https://www.vinted.it/catalog?search_text=staub&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa dyson",
+"url": "https://www.vinted.it/catalog?search_text=dyson&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa thermomix",
+"url": "https://www.vinted.it/catalog?search_text=thermomix&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa iittala",
+"url": "https://www.vinted.it/catalog?search_text=iittala&catalog%5B%5D=1958&catalog%5B%5D=1959&catalog%5B%5D=1960&catalog%5B%5D=1961&catalog%5B%5D=2006&catalog%5B%5D=2007&catalog%5B%5D=2008&catalog%5B%5D=2009&catalog%5B%5D=2010&catalog%5B%5D=2011&catalog%5B%5D=1940&catalog%5B%5D=1957&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa richard ginori",
+"url": "https://www.vinted.it/catalog?search_text=ginori&catalog%5B%5D=1958&catalog%5B%5D=1959&catalog%5B%5D=1960&catalog%5B%5D=1961&catalog%5B%5D=2006&catalog%5B%5D=2007&catalog%5B%5D=2008&catalog%5B%5D=2009&catalog%5B%5D=2010&catalog%5B%5D=2011&catalog%5B%5D=1940&catalog%5B%5D=1957&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa venini",
+"url": "https://www.vinted.it/catalog?search_text=venini&catalog%5B%5D=1940&catalog%5B%5D=1957&catalog%5B%5D=2008&catalog%5B%5D=2009&catalog%5B%5D=2010&catalog%5B%5D=2011&catalog%5B%5D=1964&catalog%5B%5D=3836&catalog%5B%5D=3837&catalog%5B%5D=3838&catalog%5B%5D=3839&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa murano",
+"url": "https://www.vinted.it/catalog?search_text=murano&catalog%5B%5D=1940&catalog%5B%5D=1957&catalog%5B%5D=2008&catalog%5B%5D=2009&catalog%5B%5D=2010&catalog%5B%5D=2011&catalog%5B%5D=1964&catalog%5B%5D=3836&catalog%5B%5D=3837&catalog%5B%5D=3838&catalog%5B%5D=3839&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa royal copenhagen",
+"url": "https://www.vinted.it/catalog?search_text=royal+copenhagen&catalog%5B%5D=1958&catalog%5B%5D=1959&catalog%5B%5D=1960&catalog%5B%5D=1961&catalog%5B%5D=2006&catalog%5B%5D=2007&catalog%5B%5D=2008&catalog%5B%5D=2009&catalog%5B%5D=2010&catalog%5B%5D=2011&catalog%5B%5D=1940&catalog%5B%5D=1957&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa arabia finland",
+"url": "https://www.vinted.it/catalog?search_text=arabia&catalog%5B%5D=1958&catalog%5B%5D=1959&catalog%5B%5D=1960&catalog%5B%5D=1961&catalog%5B%5D=2006&catalog%5B%5D=2007&catalog%5B%5D=2008&catalog%5B%5D=2009&catalog%5B%5D=2010&catalog%5B%5D=2011&catalog%5B%5D=1940&catalog%5B%5D=1957&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa bitossi",
+"url": "https://www.vinted.it/catalog?search_text=bitossi&catalog%5B%5D=1940&catalog%5B%5D=1959&catalog%5B%5D=1960&catalog%5B%5D=1961&catalog%5B%5D=1957&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa tom dixon",
+"url": "https://www.vinted.it/catalog?search_text=tom+dixon&catalog%5B%5D=3836&catalog%5B%5D=3837&catalog%5B%5D=3838&catalog%5B%5D=3839&catalog%5B%5D=1957&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa herman miller",
+"url": "https://www.vinted.it/catalog?search_text=herman+miller&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa eames",
+"url": "https://www.vinted.it/catalog?search_text=eames&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa kartell",
+"url": "https://www.vinted.it/catalog?search_text=kartell&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa flos",
+"url": "https://www.vinted.it/catalog?search_text=flos&catalog%5B%5D=3836&catalog%5B%5D=3837&catalog%5B%5D=3838&catalog%5B%5D=3839&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa artemide",
+"url": "https://www.vinted.it/catalog?search_text=artemide&catalog%5B%5D=3836&catalog%5B%5D=3837&catalog%5B%5D=3838&catalog%5B%5D=3839&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO elettronica bose",
+"url": "https://www.vinted.it/catalog?search_text=bose&catalog%5B%5D=3678&catalog%5B%5D=3681&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO elettronica sonos",
+"url": "https://www.vinted.it/catalog?search_text=sonos&catalog%5B%5D=3681&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO elettronica airpods max",
+"url": "https://www.vinted.it/catalog?search_text=airpods+max&catalog%5B%5D=3678&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO elettronica airpods pro",
+"url": "https://www.vinted.it/catalog?search_text=airpods+pro&catalog%5B%5D=3678&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO elettronica ipad",
+"url": "https://www.vinted.it/catalog?search_text=ipad&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO elettronica macbook",
+"url": "https://www.vinted.it/catalog?search_text=macbook&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO elettronica apple watch",
+"url": "https://www.vinted.it/catalog?search_text=apple+watch&catalog%5B%5D=3035&catalog%5B%5D=3004&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO elettronica switch oled",
+"url": "https://www.vinted.it/catalog?search_text=switch+oled&catalog%5B%5D=3025&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO elettronica steam deck",
+"url": "https://www.vinted.it/catalog?search_text=steam+deck&catalog%5B%5D=3025&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO elettronica ps vita",
+"url": "https://www.vinted.it/catalog?search_text=ps+vita&catalog%5B%5D=3025&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO elettronica gopro",
+"url": "https://www.vinted.it/catalog?search_text=gopro&catalog%5B%5D=3074&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO elettronica dji",
+"url": "https://www.vinted.it/catalog?search_text=dji&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO elettronica garmin",
+"url": "https://www.vinted.it/catalog?search_text=garmin&catalog%5B%5D=3035&catalog%5B%5D=3004&catalog%5B%5D=3031&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO elettronica sony wh 1000xm",
+"url": "https://www.vinted.it/catalog?search_text=sony+wh+1000xm&catalog%5B%5D=3678&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO elettronica bang olufsen",
+"url": "https://www.vinted.it/catalog?search_text=bang+olufsen&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO elettronica instax",
+"url": "https://www.vinted.it/catalog?search_text=instax&catalog%5B%5D=3076&catalog%5B%5D=3075&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO elettronica leica",
+"url": "https://www.vinted.it/catalog?search_text=leica&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO sport shimano",
+"url": "https://www.vinted.it/catalog?search_text=shimano&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO sport campagnolo",
+"url": "https://www.vinted.it/catalog?search_text=campagnolo&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO sport salomon",
+"url": "https://www.vinted.it/catalog?search_text=salomon&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO sport black diamond",
+"url": "https://www.vinted.it/catalog?search_text=black+diamond&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO sport petzl",
+"url": "https://www.vinted.it/catalog?search_text=petzl&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO sport burton",
+"url": "https://www.vinted.it/catalog?search_text=burton&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO sport oakley",
+"url": "https://www.vinted.it/catalog?search_text=oakley&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO sport titleist",
+"url": "https://www.vinted.it/catalog?search_text=titleist&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO sport scotty cameron",
+"url": "https://www.vinted.it/catalog?search_text=scotty+cameron&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO sport babolat",
+"url": "https://www.vinted.it/catalog?search_text=babolat&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO giochi pokemon carte",
+"url": "https://www.vinted.it/catalog?search_text=pokemon&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO giochi lego",
+"url": "https://www.vinted.it/catalog?search_text=lego&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO giochi game boy",
+"url": "https://www.vinted.it/catalog?search_text=game+boy&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO giochi nintendo 64",
+"url": "https://www.vinted.it/catalog?search_text=nintendo+64&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO musica fender",
+"url": "https://www.vinted.it/catalog?search_text=fender&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO musica gibson",
+"url": "https://www.vinted.it/catalog?search_text=gibson&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO musica korg",
+"url": "https://www.vinted.it/catalog?search_text=korg&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO musica moog",
+"url": "https://www.vinted.it/catalog?search_text=moog&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO musica technics",
+"url": "https://www.vinted.it/catalog?search_text=technics&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO musica marantz",
+"url": "https://www.vinted.it/catalog?search_text=marantz&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO musica revox",
+"url": "https://www.vinted.it/catalog?search_text=revox&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO occhiali persol",
+"url": "https://www.vinted.it/catalog?search_text=persol&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO occhiali ray ban",
+"url": "https://www.vinted.it/catalog?search_text=ray+ban&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO occhiali oliver peoples",
+"url": "https://www.vinted.it/catalog?search_text=oliver+peoples&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO occhiali cazal",
+"url": "https://www.vinted.it/catalog?search_text=cazal&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO occhiali matsuda",
+"url": "https://www.vinted.it/catalog?search_text=matsuda&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO occhiali moscot",
+"url": "https://www.vinted.it/catalog?search_text=moscot&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO bijoux chanel orecchini",
+"url": "https://www.vinted.it/catalog?search_text=chanel&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO bijoux dior orecchini",
+"url": "https://www.vinted.it/catalog?search_text=dior&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO bijoux ysl orecchini",
+"url": "https://www.vinted.it/catalog?search_text=ysl&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO bijoux lacroix",
+"url": "https://www.vinted.it/catalog?search_text=lacroix&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa christofle",
+"url": "https://www.vinted.it/catalog?search_text=christofle&catalog%5B%5D=1950&catalog%5B%5D=1951&catalog%5B%5D=1952&catalog%5B%5D=1970&catalog%5B%5D=1961&catalog%5B%5D=1958&catalog%5B%5D=1960&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa cristofle",
+"url": "https://www.vinted.it/catalog?search_text=cristofle&catalog%5B%5D=1950&catalog%5B%5D=1951&catalog%5B%5D=1952&catalog%5B%5D=1970&catalog%5B%5D=1961&catalog%5B%5D=1958&catalog%5B%5D=1960&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa christofle set posate",
+"url": "https://www.vinted.it/catalog?search_text=Christofle+set+posate&catalog%5B%5D=1950&catalog%5B%5D=1951&catalog%5B%5D=1970&catalog%5B%5D=1952&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa cutipol goa",
+"url": "https://www.vinted.it/catalog?search_text=Cutipol+goa&catalog%5B%5D=1950&catalog%5B%5D=1951&catalog%5B%5D=1970&catalog%5B%5D=1952&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa sambonet gio ponti",
+"url": "https://www.vinted.it/catalog?search_text=Sambonet+gio+ponti&catalog%5B%5D=1950&catalog%5B%5D=1951&catalog%5B%5D=1970&catalog%5B%5D=1952&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa hermès posacenere",
+"url": "https://www.vinted.it/catalog?search_text=Herm%C3%A8s+posacenere&catalog%5B%5D=1941&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa hermès svuotatasche",
+"url": "https://www.vinted.it/catalog?search_text=Herm%C3%A8s+svuotatasche&catalog%5B%5D=1941&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa ginori 1735 oriente italiano",
+"url": "https://www.vinted.it/catalog?search_text=Ginori+1735+oriente+italiano&catalog%5B%5D=1958&catalog%5B%5D=1959&catalog%5B%5D=1960&catalog%5B%5D=1961&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa baccarat bicchieri",
+"url": "https://www.vinted.it/catalog?search_text=Baccarat+bicchieri&catalog%5B%5D=2006&catalog%5B%5D=2007&catalog%5B%5D=2008&catalog%5B%5D=2009&catalog%5B%5D=2010&catalog%5B%5D=2011&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa baccarat vaso",
+"url": "https://www.vinted.it/catalog?search_text=Baccarat+vaso&catalog%5B%5D=1940&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa lalique vaso",
+"url": "https://www.vinted.it/catalog?search_text=Lalique+vaso&catalog%5B%5D=1940&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa missoni home plaid",
+"url": "https://www.vinted.it/catalog?search_text=Missoni+Home+plaid&catalog%5B%5D=1925&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa missoni home cuscino",
+"url": "https://www.vinted.it/catalog?search_text=Missoni+Home+cuscino&catalog%5B%5D=1974&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa frette lenzuola",
+"url": "https://www.vinted.it/catalog?search_text=Frette+lenzuola&catalog%5B%5D=1942&catalog%5B%5D=1943&catalog%5B%5D=1944&catalog%5B%5D=1945&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa fornasetti candela",
+"url": "https://www.vinted.it/catalog?search_text=Fornasetti+candela&catalog%5B%5D=1957&catalog%5B%5D=1956&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa fornasetti piatto",
+"url": "https://www.vinted.it/catalog?search_text=Fornasetti+piatto&catalog%5B%5D=1958&catalog%5B%5D=1959&catalog%5B%5D=1960&catalog%5B%5D=1961&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa cire trudon candela",
+"url": "https://www.vinted.it/catalog?search_text=Cire+Trudon+candela&catalog%5B%5D=1957&catalog%5B%5D=1956&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO casa diptyque candela",
+"url": "https://www.vinted.it/catalog?search_text=Diptyque+candela&catalog%5B%5D=1957&catalog%5B%5D=1956&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO profumi tom ford oud wood",
+"url": "https://www.vinted.it/catalog?search_text=Tom+Ford+oud+wood&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO profumi tom ford tobacco vanille",
+"url": "https://www.vinted.it/catalog?search_text=Tom+Ford+tobacco+vanille&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO profumi creed aventus",
+"url": "https://www.vinted.it/catalog?search_text=Creed+aventus&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO profumi creed silver mountain water",
+"url": "https://www.vinted.it/catalog?search_text=Creed+silver+mountain+water&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO profumi maison francis kurkdjian baccarat rouge 540",
+"url": "https://www.vinted.it/catalog?search_text=Maison+Francis+Kurkdjian+baccarat+rouge+540&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO profumi byredo gypsy water",
+"url": "https://www.vinted.it/catalog?search_text=Byredo+gypsy+water&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO profumi byredo bal d afrique",
+"url": "https://www.vinted.it/catalog?search_text=Byredo+bal+d+afrique&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO profumi le labo santal 33",
+"url": "https://www.vinted.it/catalog?search_text=Le+Labo+santal+33&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO profumi jo malone profumo",
+"url": "https://www.vinted.it/catalog?search_text=Jo+Malone+profumo&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO profumi diptyque profumo",
+"url": "https://www.vinted.it/catalog?search_text=Diptyque+profumo&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO accessori omega seamaster",
+"url": "https://www.vinted.it/catalog?search_text=Omega+seamaster&catalog%5B%5D=97&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO accessori omega speedmaster",
+"url": "https://www.vinted.it/catalog?search_text=Omega+speedmaster&catalog%5B%5D=97&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO accessori cartier tank",
+"url": "https://www.vinted.it/catalog?search_text=Cartier+tank&catalog%5B%5D=22&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO accessori tudor black bay",
+"url": "https://www.vinted.it/catalog?search_text=Tudor+black+bay&catalog%5B%5D=97&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO accessori zenith el primero",
+"url": "https://www.vinted.it/catalog?search_text=Zenith+el+primero&catalog%5B%5D=97&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO bambini stokke tripp trapp",
+"url": "https://www.vinted.it/catalog?search_text=Stokke+tripp+trapp&catalog%5B%5D=1504&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO bambini bugaboo cameleon 3",
+"url": "https://www.vinted.it/catalog?search_text=Bugaboo+cameleon+3&catalog%5B%5D=1612&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO bambini cybex priam",
+"url": "https://www.vinted.it/catalog?search_text=Cybex+priam&catalog%5B%5D=1612&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO bambini babyzen yoyo",
+"url": "https://www.vinted.it/catalog?search_text=Babyzen+yoyo&catalog%5B%5D=1612&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO bambini philips avent baby monitor",
+"url": "https://www.vinted.it/catalog?search_text=Philips+Avent+baby+monitor&catalog%5B%5D=1682&catalog%5B%5D=1683&catalog%5B%5D=1684&catalog%5B%5D=1685&catalog%5B%5D=1686&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO bambini medela tiralatte swing",
+"url": "https://www.vinted.it/catalog?search_text=Medela+tiralatte+swing&catalog%5B%5D=1682&catalog%5B%5D=1683&catalog%5B%5D=1684&catalog%5B%5D=1685&catalog%5B%5D=1686&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO accessori the bridge cartella pelle",
+"url": "https://www.vinted.it/catalog?search_text=The+Bridge+cartella+pelle&catalog%5B%5D=2963&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO accessori piquadro zaino computer",
+"url": "https://www.vinted.it/catalog?search_text=Piquadro+zaino+computer&catalog%5B%5D=246&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO accessori freitag zaino",
+"url": "https://www.vinted.it/catalog?search_text=Freitag+zaino&catalog%5B%5D=246&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO accessori filson borsa tracolla",
+"url": "https://www.vinted.it/catalog?search_text=Filson+borsa+tracolla&catalog%5B%5D=247&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO accessori montblanc meisterstuck",
+"url": "https://www.vinted.it/catalog?search_text=Montblanc+meisterstuck&catalog%5B%5D=99&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO accessori pelikan souveran",
+"url": "https://www.vinted.it/catalog?search_text=Pelikan+souveran&catalog%5B%5D=99&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO accessori aurora penna 88",
+"url": "https://www.vinted.it/catalog?search_text=Aurora+penna+88&catalog%5B%5D=99&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO giochi heroquest scatola base",
+"url": "https://www.vinted.it/catalog?search_text=HeroQuest+scatola+base&catalog%5B%5D=2321&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO giochi gloomhaven gioco scatola",
+"url": "https://www.vinted.it/catalog?search_text=Gloomhaven+gioco+scatola&catalog%5B%5D=2321&price_to=150&currency=EUR&order=newest_first"
+},
+{
+"nome": "STUDIO giochi starquest scatola base",
+"url": "https://www.vinted.it/catalog?search_text=StarQuest+scatola+base&catalog%5B%5D=2321&price_to=150&currency=EUR&order=newest_first"
+}
+]
