@@ -22,6 +22,16 @@ MAPPA={  # nome ricerca -> (parola di ricerca, id catalogo)
  'STUDIO elettronica gopro':('gopro',[3074]),
  'STUDIO elettronica polaroid':('polaroid',[3076,3075]),
  'STUDIO elettronica instax':('instax',[3076,3075]),
+ 'STUDIO casa richard ginori':('ginori',[1958, 1959, 1960, 1961, 2006, 2007, 2008, 2009, 2010, 2011, 1940, 1957]),
+ 'STUDIO casa royal copenhagen':('royal copenhagen',[1958, 1959, 1960, 1961, 2006, 2007, 2008, 2009, 2010, 2011, 1940, 1957]),
+ 'STUDIO casa arabia finland':('arabia',[1958, 1959, 1960, 1961, 2006, 2007, 2008, 2009, 2010, 2011, 1940, 1957]),
+ 'STUDIO casa iittala':('iittala',[1958, 1959, 1960, 1961, 2006, 2007, 2008, 2009, 2010, 2011, 1940, 1957]),
+ 'STUDIO casa bitossi':('bitossi',[1940, 1959, 1960, 1961, 1957]),
+ 'STUDIO casa venini':('venini',[1940, 1957, 2008, 2009, 2010, 2011, 1964, 3836, 3837, 3838, 3839]),
+ 'STUDIO casa murano':('murano',[1940, 1957, 2008, 2009, 2010, 2011, 1964, 3836, 3837, 3838, 3839]),
+ 'STUDIO casa tom dixon':('tom dixon',[3836, 3837, 3838, 3839, 1957]),
+ 'STUDIO casa flos':('flos',[3836, 3837, 3838, 3839]),
+ 'STUDIO casa artemide':('artemide',[3836, 3837, 3838, 3839]),
 }
 def leggi():
     t=urllib.request.urlopen(B+'/queries',timeout=120).read().decode()
