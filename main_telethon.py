@@ -44,6 +44,7 @@ from bot.db import DB_FILE
 from bot.gemini_stato import ripristina_stato_gemini
 from bot.tracciamento import importa_tracciamento_jsonl, tracc_riprendi_serie
 from bot.feedback import parse_risposta, registra_feedback, registra_nota, ciclo_callback, _contesti, _ctx_item
+from bot.radar_v2 import ombra as radar_v2_ombra
 from bot.radar import RADAR_CHAT_IDS, radar_in_pausa, e_messaggio_radar, gestisci_annuncio_radar, risolvi_gruppo_radar, togli_marcatore
 from bot.costanti import (
     BRAND_BLOCKLIST,
@@ -1571,8 +1572,9 @@ async def on_new_message(event):
             log.info("MESSAGGIO RADAR | msg_id=%s | item=%s", msg_id, _estrai_item_id_da_url(url_radar))
             _analisi_attive["n"] += 1
             try:
-                await gestisci_annuncio_radar(parse_vinted_tracker_message(togli_marcatore(text)), url_radar,
-                                              t0=t_ricevuto_bot)
+                parsed_radar = parse_vinted_tracker_message(togli_marcatore(text))
+                asyncio.create_task(radar_v2_ombra(parsed_radar, url_radar))
+                await gestisci_annuncio_radar(parsed_radar, url_radar, t0=t_ricevuto_bot)
             finally:
                 _analisi_attive["n"] -= 1
             return
