@@ -1,6 +1,5 @@
 import main_telethon as m
 from bot import gemini_stato as gs
-from bot import panel as pn
 
 
 def test_consolida_target():
@@ -41,38 +40,12 @@ def test_margine_e_roi_coerenti():
     assert r["margine"] is not None and r["roi"] is not None and r["margine"] > 0
 
 
-def test_estrai_target_da_testo_llm():
-    import main_telethon as m
-    assert m.estrai_target_da_testo_llm('```json\n{"prezzo_target_vendita_eur": 120}\n```') == 120.0
-    assert m.estrai_target_da_testo_llm('{"prezzo_target_vendita_eur": 0}') is None
-    assert m.estrai_target_da_testo_llm('{"prezzo_target_vendita_eur": true}') is None
-    assert m.estrai_target_da_testo_llm("niente json") is None
-    assert m.estrai_target_da_testo_llm(None) is None
 
 
-def test_estrai_json_da_testo_llm():
-    import main_telethon as m
-    assert m.estrai_json_da_testo_llm('ecco:\n```json\n{"a": 1}\n```') == {"a": 1}
-    assert m.estrai_json_da_testo_llm("[1,2]") is None
-    assert m.estrai_json_da_testo_llm("{rotto") is None
 
 
-def test_panel_tetto_orario(monkeypatch):
-    import main_telethon as m
-    monkeypatch.setattr(pn, "PANEL_MAX_ANNUNCI_ORA", 2)
-    monkeypatch.setattr(pn, "_panel_ingressi", [])
-    assert m._panel_ammesso(1000) and m._panel_ammesso(1001)
-    assert not m._panel_ammesso(1002)
-    assert m._panel_ammesso(1000 + 3601)   # la finestra scorre
 
 
-def test_riga_panel_occhio_senza_collisioni(caplog):
-    import logging
-    import main_telethon as m
-    o, problemi = m.valida_payload_occhio({"verdetto_legit": "probabilmente_autentico", "modello_riconosciuto": "giacca X", "motivo_sintetico": "font | etichetta ok"})
-    with caplog.at_level(logging.INFO):
-        m._riga_panel("occhio", "1", "Prada", "PRIMARIO", True, 0, **m._campi_occhio_panel(o, problemi))
-    assert "PANEL | occhio | 1 | Prada | PRIMARIO | ok" in caplog.text and "capo=giacca X" in caplog.text and "motivo_legit=font / etichetta ok" in caplog.text and "legit=probabilmente_autentico" in caplog.text
 
 
 def test_prompt_cervello_compatto_contiene_tutte_le_chiavi():
@@ -83,21 +56,6 @@ def test_prompt_cervello_compatto_contiene_tutte_le_chiavi():
     assert len(p) < len(m.GEMINI_CERVELLO_SYSTEM_PROMPT) / 3
 
 
-def test_panel_scelta_modelli_rotazione_pausa_ed_esclusione_principale(monkeypatch):
-    import main_telethon as m
-    monkeypatch.setattr(pn, "_panel_pausa", {})
-    monkeypatch.setattr(pn, "_panel_giro", {"occhio": 0, "cervello": 0})
-    lista = [f"gemini/{m.GEMINI_MODEL_CERVELLO}", "a/1", "b/2@c", "c/3", "d/4"]
-    monkeypatch.setattr(pn, "PANEL_MODELLI_PER_ANNUNCIO", 0)
-    assert m.panel_scegli_modelli("cervello", lista, adesso=100) == ["a/1", "b/2@c", "c/3", "d/4"]   # niente modello principale
-    monkeypatch.setattr(pn, "PANEL_MODELLI_PER_ANNUNCIO", 2)
-    assert m.panel_scegli_modelli("cervello", lista, adesso=100) == ["a/1", "b/2@c"]
-    assert m.panel_scegli_modelli("cervello", lista, adesso=100) == ["c/3", "d/4"]
-    assert m.panel_scegli_modelli("cervello", lista, adesso=100) == ["a/1", "b/2@c"]                 # giro completo
-    m._panel_segna_errore("a/1", "http429", adesso=100)                                                # quota finita
-    monkeypatch.setattr(pn, "PANEL_MODELLI_PER_ANNUNCIO", 0)
-    assert "a/1" not in m.panel_scegli_modelli("cervello", lista, adesso=100 + 60)
-    assert "a/1" in m.panel_scegli_modelli("cervello", lista, adesso=100 + 31 * 60)                    # pausa scaduta
 
 
 def test_cascata_gemini_scala_per_modello_quando_la_quota_finisce(monkeypatch):
@@ -205,44 +163,7 @@ def test_cascata_fascia_alta_con_fallback_alla_base(monkeypatch):
     assert "occ-top" in gs.tutti_i_modelli_cascata()
 
 
-def test_pausa_del_pannello_segue_il_reset_dichiarato_dal_provider():
-    sec = pn.secondi_reset_da_corpo
-    assert sec('{"reset_seconds":20796,"retry_after":"x"}') == 20796
-    assert sec("[mistral/x] [429]: upstream error (reset after 3s)") == 3
-    assert sec("Rate limit reached ... (reset after 4m 40s)") == 280
-    assert sec("Please try again in 5m23.568s. Need more tokens?") == 5 * 60 + 23.568
-    assert sec("errore generico") is None
-    pn._panel_reset_s["x/1"] = 3
-    pn._panel_segna_errore("x/1", "http429", adesso=1000)
-    assert pn._panel_pausa["x/1"] == 1000 + 10                  # minimo 10 s, non i 30 minuti fissi
-    pn._panel_segna_errore("y/2", "http429", adesso=1000)       # nessun tempo dichiarato: pausa standard
-    assert pn._panel_pausa["y/2"] == 1000 + pn.PANEL_PAUSA_QUOTA_MIN * 60
 
-def test_riserva_scala_sui_modelli_in_ordine_e_salta_quelli_in_pausa(monkeypatch):
-    import asyncio
-    import bot.riserva_llm as rl
-    chiamati = []
-
-    async def finta(modello, system, contenuto, max_tokens):
-        chiamati.append(modello)
-        if modello == "a/uno":
-            return None, 5, "http429"
-        if modello == "b/due":
-            return "non e' json", 5, None
-        return '{"prezzo_target_vendita_eur": 80}', 5, None
-
-    monkeypatch.setattr(rl, "_panel_chiama", finta)
-    monkeypatch.setattr(rl, "_panel_pausa", {})
-    monkeypatch.setattr(pn, "_panel_pausa", rl._panel_pausa)
-    lista = ["a/uno", "b/due@c", "c/tre"]
-    ok = lambda d: d.get("prezzo_target_vendita_eur", 0) > 0
-    d, modello = asyncio.run(rl._prova_in_ordine("cervello", lista, lambda c: "sys", "u", 100, ok))
-    assert modello == "c/tre" and d["prezzo_target_vendita_eur"] == 80
-    assert chiamati == ["a/uno", "b/due", "c/tre"]                      # il suffisso @c non arriva al gateway
-    assert "a/uno" in rl._panel_pausa                                     # il 429 mette il modello in pausa
-    chiamati.clear()
-    asyncio.run(rl._prova_in_ordine("cervello", lista, lambda c: "sys", "u", 100, ok))
-    assert chiamati == ["b/due", "c/tre"]                                 # a/uno e' in pausa: salta al successivo
 
 
 def test_cascata_gemini_esaurita_solo_se_tutti_i_modelli_sono_senza_quota(monkeypatch):
@@ -255,10 +176,6 @@ def test_cascata_gemini_esaurita_solo_se_tutti_i_modelli_sono_senza_quota(monkey
     assert gs.gemini_cascata_esaurita("occhio") is True
 
 
-def test_reset_del_provider_vale_anche_per_i_modelli_con_suffisso_compatto():
-    pn._panel_reset_s["x/9"] = 3
-    pn._panel_segna_errore("x/9@c", "http429", adesso=500)
-    assert pn._panel_pausa["x/9@c"] == 500 + 10
 
 
 def test_compra_capo_sottoprezzato():

@@ -371,6 +371,55 @@ def descrivi_pagina_leggera(html_pagina):
             f"parole={[p for p in _PAROLE_BLOCCO if p in basso] or 'nessuna'} testi={visibili!r}")
 
 
+def _estrai_foto_da_json_item(testo_json):
+    """Foto di un annuncio dalla risposta JSON di /api/v2/items/{id} (funzione
+    pura, nessuna rete). Ritorna {photo_id: url} nell'ordine della risposta, {}
+    se il JSON non ha la lista 'photos'. Preferisce full_size_url, poi url."""
+    try:
+        dati = json.loads(testo_json)
+    except Exception:
+        return {}
+    if not isinstance(dati, dict):
+        return {}
+    item = dati.get("item") if isinstance(dati.get("item"), dict) else dati
+    out = {}
+    for f in item.get("photos") or []:
+        if not isinstance(f, dict):
+            continue
+        url_foto = f.get("full_size_url") or f.get("url")
+        if not isinstance(url_foto, str):
+            continue
+        m = re.search(r'https://images\d?\.vinted\.net/t/([a-zA-Z0-9_]+)/', url_foto)
+        if m:
+            out.setdefault(m.group(1), url_foto)
+    return out
+
+
+async def _foto_da_api_vinted(url):
+    """Fallback (21/10): quando la pagina annuncio arriva senza foto (shell
+    JavaScript di ~19 KB con status 200, osservata su decine di proxy diversi),
+    chiede i dati dell'annuncio all'endpoint JSON /api/v2/items/{id}. Ritorna
+    {photo_id: url}, {} se non riesce. Non solleva eccezioni."""
+    m = re.search(r'/items/(\d+)', url or "")
+    if not m:
+        return {}
+    id_item = m.group(1)
+    try:
+        resp = await _vinted_get_con_retry(
+            f"https://www.vinted.it/api/v2/items/{id_item}", timeout=15, max_retries=2,
+            headers_extra={"Accept": "application/json"})
+    except Exception:
+        log.warning("FOTO API | item=%s errore di rete:\n%s", id_item, traceback.format_exc())
+        return {}
+    if resp is None:
+        log.info("FOTO API | item=%s nessuna risposta", id_item)
+        return {}
+    foto = _estrai_foto_da_json_item(resp.text)
+    log.info("FOTO API | item=%s status=%s foto=%d proxy=%s",
+             id_item, resp.status_code, len(foto), getattr(resp, "_proxy_etichetta", "?"))
+    return foto
+
+
 async def scrape_vinted_listing(url, includi_guardaroba=True):
     result = {
         "photo_urls": [], "cover_photo_id": None, "size": None, "condition": None, "description": None,
@@ -439,6 +488,15 @@ async def scrape_vinted_listing(url, includi_guardaroba=True):
             best_url_by_photo_id = foto_complete
 
         result["photo_urls"] = list(best_url_by_photo_id.values())[:MAX_GALLERY_PHOTOS]
+
+        if not result["photo_urls"]:
+            # FIX 2026-10-21: da ~23/09 la pagina HTML arriva come shell senza
+            # foto per la maggior parte delle richieste (vedi DIAGNOSTICA sotto).
+            # Il JSON dell'annuncio ha ancora le foto: si usa come fallback, il
+            # percorso HTML resta quello di prima.
+            foto_api = await _foto_da_api_vinted(url)
+            if foto_api:
+                result["photo_urls"] = list(foto_api.values())[:MAX_GALLERY_PHOTOS]
 
         # --- diagnostica temporanea (aggiunta 2026-09-24, utente): dal
         # 23/09 pomeriggio TUTTI gli scrape restituiscono 0 foto pur senza

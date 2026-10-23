@@ -24,6 +24,9 @@ Recall e "veloci persi" si calcolano sui veloci veri (veloci meno segnalati fals
 ## Esperimento "rosso senza Cervello" (dal 18/10)
 Ogni 🔴 sotto 50 EUR salta il Cervello (`SALTA_CERVELLO_ROSSO_TUTTI`; motivo `[ROSSO SICURO - ESPERIMENTO]`, esito `SKIP_ROSSO`). Ogni mattina riportare: quanti `SKIP_ROSSO` con quel motivo, quanti veloci veri fra loro (soglia di alert: > 15%, riferimento prima dell'esperimento 9% dei 🔴 con Cervello), quali brand ricorrenti, e i COMPRA/TRATTA 🟢/🟡 del giorno (non devono calare). Con >= 30 casi decidere se tenerlo, limitarlo per brand o toglierlo.
 
+## Ritardo pubblicazione -> messaggio (dal 18/10)
+La riga TRACCIATO ha `caricato=` (testo della pagina allo scrape: 'Proprio adesso' per gli annunci freschi, non i secondi; riportare la quota di 'Proprio adesso' contro 'N minuti fa' e il tasso di veloci veri per gruppo) e `pub_tg` (secondi da pubblicazione su Vinted al messaggio del tracker, assente se la pagina da' solo minuti). Riportare: mediana e p90, quota > 30 s, e il tasso di veloci veri per fascia (<= 10 s, 10-30 s, > 30 s). Senza questo numero non si decide se velocizzare il tracker (`STATO.md` 0ax: ogni ricerca e' gia' riletta ogni ~3 s).
+
 ## Apprendimento dalla rotazione
 L'etichetta e' la classe di vendita (solo `venduto`), non il feedback manuale (l'utente compra ~0,5% dei COMPRA). Obiettivo: un semaforo cosi' buono da togliere quasi del tutto il Cervello e tenere il solo controllo di autenticita'. Ogni giorno:
 - tasso di rotazione (AFFARE+MEDIO, mediana, quota istantanei) per brand, categoria, condizione, fascia di prezzo, materiale, taglia, venditore, lingua del titolo, n. foto, ora e giorno; segmenti >= 30 annunci con lift e significativita';
@@ -54,7 +57,7 @@ Riferimento 7-8/10 (263 annunci con esito, in-sample, "leave one out" per il bra
 Una riga per brand con >= 3 annunci: analizzati, esiti, margine e ROI medi dei COMPRA/TRATTA, quanti qualificano (margine >= 50 EUR e ROI >= 100%), classi con recall e precisione, spariti a parte, preavvisi, falsi/sospetti. Chiudere con 3-5 brand su cui agire. Campioni < 5 annunci vanno segnalati. Se `PANEL |` ha dati, indicare chi diverge dal PRIMARIO.
 
 ## Modelli e quota (solo piani gratuiti)
-Per ogni modello (PRIMARIO, riserva `RISERVA |`, pannello `PANEL |`): n chiamate, % ok, errori per tipo, latenza mediana/p90, quota gratuita usata (Gemini 500 al giorno per account sui Flash Lite; OpenRouter :free 50 al giorno), allineamento con la realta'. Ranking e instradamento consigliato per Occhio e Cervello. Conteggio delle richieste a pagamento (`PAGAMENTO`) e spesa stimata.
+Per ogni modello Gemini (righe `GEMINI_USO`; riserva e pannello tolti il 23/10): n chiamate, % ok, errori per tipo, latenza mediana/p90, quota gratuita usata (Gemini 500 al giorno per account sui Flash Lite; OpenRouter :free 50 al giorno), allineamento con la realta'. Ranking e instradamento consigliato per Occhio e Cervello.
 
 ## Come rispondere
 Recap in chat, in italiano, breve, con numeri, effort e rischio, in ordine di priorita'. Obiettivo: brand con margine >= 50 EUR e ROI >= 100% senza troppi falsi. L'utente cerca eccezioni: non proporre tetti al ROI, proporre stime piu' accurate.

@@ -263,3 +263,16 @@ def test_riavvio_durante_attesa_verdetto_scrive_la_riga(monkeypatch):
     tracciati = [r for r in righe if r.startswith("TRACCIATO |")]
     assert len(tracciati) == 1 and "classe=AFFARE" in tracciati[0] and "sem=🟢" in tracciati[0]
     assert eliminate == ["88"]
+
+
+def test_riga_tracciato_porta_il_ritardo_pubblicazione_messaggio():
+    from bot.tracciamento import _contesto_tracciato
+    ctx = _contesto_tracciato({"title": "x", "price": "10", "pub_tg": 12.4}, "COMPRA", {})
+    assert ctx["pub_tg"] == 12.4
+    assert "pub_tg" not in _contesto_tracciato({"title": "x", "price": "10"}, "COMPRA", {})   # non letto: assente
+
+
+def test_riga_tracciato_porta_il_caricato_della_pagina():
+    from bot.tracciamento import _contesto_tracciato
+    ctx = _contesto_tracciato({"title": "x", "price": "10", "uploaded_text": "Proprio adesso, Spedizione, da 0,00 €"}, "COMPRA", {})
+    assert ctx["caricato"] == "Proprio adesso"
