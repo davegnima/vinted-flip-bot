@@ -268,14 +268,6 @@ def test_fascia_alta_solo_con_stima_solida():
     assert ruoli_gemini(60, {**verde, "conf": "bassa"})[0]
 
 
-def test_fattori_target_riserva_e_campioni():
-    from bot.riserva_llm import fattore_target_riserva
-    from bot.verdetto import CERVELLO_CAMPIONI_EXTRA
-    assert fattore_target_riserva("mistral/ministral-14b-2512@c") == 1.0
-    assert fattore_target_riserva("groq/openai/gpt-oss-120b@c") == 0.95
-    assert fattore_target_riserva("groq/openai/gpt-oss-20b@c") == 0.55
-    assert fattore_target_riserva("altro/modello") == 1.0
-    assert CERVELLO_CAMPIONI_EXTRA == 1
 
 
 def test_preavviso_con_riga_dei_tempi(monkeypatch):
@@ -290,17 +282,6 @@ def test_preavviso_con_riga_dei_tempi(monkeypatch):
     assert esito["riga_tempi"] == "⏱ totale 12s" and esito["tipo"] == "album"
 
 
-def test_pausa_gemini_dopo_429(monkeypatch):
-    from bot import riserva_llm as r
-    r._gemini_pausa_fino.clear()
-    assert not r.gemini_in_pausa("cervello")
-    assert not r.segna_gemini_in_pausa_se_429("cervello", "errore 500 generico")
-    assert r.segna_gemini_in_pausa_se_429("cervello", "Client error '429 Too Many Requests' for url ...")
-    assert r.gemini_in_pausa("cervello") and not r.gemini_in_pausa("occhio")
-    monkeypatch.setattr(r, "GEMINI_PAUSA_429_SECONDI", -1)
-    r.segna_gemini_in_pausa_se_429("occhio", "429")
-    assert not r.gemini_in_pausa("occhio")     # scaduta: Gemini si riprova
-    r._gemini_pausa_fino.clear()
 
 
 def test_cascata_esaurita_conta_anche_i_modelli_esclusi(monkeypatch):
@@ -314,48 +295,8 @@ def test_cascata_esaurita_conta_anche_i_modelli_esclusi(monkeypatch):
     assert not g.gemini_cascata_esaurita("cervello")
 
 
-def test_pagamento_ultima_riserva_e_tetto(monkeypatch):
-    import asyncio
-    import bot.riserva_llm as rl
-    monkeypatch.setattr(rl, "GEMINI_CHIAVE_PAGAMENTO", "chiave-finta")
-    monkeypatch.setattr(rl, "EXTRA_LLM_URL", "http://gw")
-    monkeypatch.setattr(rl, "PAGAMENTO_MAX_RICHIESTE_GIORNO", 2)
-    rl._pagamento_conteggio.update(giorno=None, n=0)
-    rl._riserva_lenta_fino.clear(); rl._latenze_riserva.clear(); rl._panel_pausa.clear()
-    voce = rl.PREFISSO_PAGAMENTO + rl.GEMINI_MODELLO_PAGAMENTO
-    assert rl.lista_con_pagamento("cervello", ["a/uno"]) == ["a/uno", voce]          # in coda
-    chiamati = []
-
-    async def finta(modello, system, contenuto, max_tokens, uso=None, url=None, chiave=None):
-        chiamati.append((modello, bool(url)))
-        return (None, 5, "http429") if modello == "a/uno" else ('{"prezzo_target_vendita_eur": 80}', 5, None)
-    monkeypatch.setattr(rl, "_panel_chiama", finta)
-    ok = lambda d: d.get("prezzo_target_vendita_eur", 0) > 0
-    d, m = asyncio.run(rl._prova_in_ordine("cervello", ["a/uno"], lambda c: "s", "u", 100, ok))
-    assert m == voce and chiamati[-1] == (rl.GEMINI_MODELLO_PAGAMENTO, True)         # gratuito fallito -> pagamento
-    # tetto giornaliero
-    rl._panel_pausa.clear()
-    asyncio.run(rl._prova_in_ordine("cervello", ["a/uno"], lambda c: "s", "u", 100, ok))
-    rl._panel_pausa.clear()
-    assert not rl.pagamento_disponibile()
-    assert rl.lista_con_pagamento("cervello", ["a/uno"]) == ["a/uno"]
-    rl.db.salva_pagamento(rl._pagamento_conteggio["giorno"], 0)   # il contatore e' nel DB di test condiviso
-    rl._pagamento_conteggio.update(giorno=None, n=0); rl._panel_pausa.clear()
 
 
-def test_riserva_lenta_passa_prima_dal_pagamento(monkeypatch):
-    import bot.riserva_llm as rl
-    monkeypatch.setattr(rl, "GEMINI_CHIAVE_PAGAMENTO", "chiave-finta")
-    monkeypatch.setattr(rl, "EXTRA_LLM_URL", "http://gw")
-    rl._pagamento_conteggio.update(giorno=None, n=0)
-    rl._riserva_lenta_fino.clear(); rl._latenze_riserva.clear()
-    voce = rl.PREFISSO_PAGAMENTO + rl.GEMINI_MODELLO_PAGAMENTO
-    assert not rl.registra_latenza_riserva("occhio", 25000, adesso=1000)
-    assert not rl.registra_latenza_riserva("occhio", 30000, adesso=1001)
-    assert rl.registra_latenza_riserva("occhio", 28000, adesso=1002)                 # mediana 28 s > 20 s
-    assert rl.lista_con_pagamento("occhio", ["a/uno"], adesso=1003) == [voce, "a/uno"]
-    assert rl.lista_con_pagamento("occhio", ["a/uno"], adesso=1002 + rl.RISERVA_LENTA_PAUSA_S + 1) == ["a/uno", voce]
-    rl._riserva_lenta_fino.clear()
 
 def test_tempi_da_caricato_con_testo_relativo():
     from datetime import datetime, timezone

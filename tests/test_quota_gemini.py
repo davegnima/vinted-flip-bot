@@ -88,8 +88,6 @@ def test_timeout_di_fila_mettono_la_fase_in_pausa(monkeypatch):
     assert gs.gemini_segna_timeout("cervello")              # il secondo di fila: pausa
     assert gs.gemini_in_pausa_timeout("cervello") and not gs.gemini_in_pausa_timeout("occhio")
     gs.gemini_timeout_azzera("occhio")
-    from bot import riserva_llm
-    assert riserva_llm.gemini_in_pausa("cervello")
 
 
 def test_chiama_gemini_dopo_due_timeout_smette_di_ritentare(monkeypatch):
@@ -117,13 +115,3 @@ def test_chiama_gemini_dopo_due_timeout_smette_di_ritentare(monkeypatch):
     assert len(chiamate) == 2          # dopo 2 timeout di fila la fase e' in pausa: niente altri tentativi
 
 
-def test_stato_riserva_a_pagamento_spiega_perche_e_spenta(monkeypatch):
-    from bot import riserva_llm as r
-    monkeypatch.setattr(r, "GEMINI_CHIAVE_PAGAMENTO", "chiave-a-pagamento")
-    assert r.stato_pagamento()[0]
-    monkeypatch.setattr(r, "GEMINI_CHIAVE_PAGAMENTO", "")
-    monkeypatch.setattr(r, "GEMINI_API_KEY", "")
-    assert r.stato_pagamento() == (False, "GEMINI_API_KEY e' vuota")
-    monkeypatch.setattr(r, "GEMINI_API_KEY", "k1")
-    ok, motivo = r.stato_pagamento()
-    assert not ok and "anche in GEMINI_API_KEYS" in motivo

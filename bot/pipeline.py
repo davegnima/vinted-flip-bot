@@ -10,7 +10,6 @@ from bot.scheda import richiede_etichetta, invia_richiesta_etichetta, ANALISI_GE
 from bot.verdetto import CERVELLO_CAMPIONI_EXTRA, _a_float, _estrai_item_id_da_url, _estrai_prezzi_da_pool_ricerca, _riepilogo_comp_per_fonte, calcola_verdetto, classifica_provenienza_comp, consolida_target_cervello, render_messaggio_verdetto, valida_payload_cervello
 from bot.config import GEMINI_SOGLIA_PREZZO_ALTO, TELEGRAM_ALERT_CHAT_ID, CERVELLO_PROVIDER, DEBUG_CONFRONTO_COMP_TELEGRAM, OCCHIO_OUTPUT_JSON, RAFFREDDAMENTO_SERPER_SECONDI, SERPER_API_KEY, SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO, SOGLIA_MARGINE_ASSOLUTO_NOTIFICA, TELEGRAM_OWNER_CHAT_ID, _serper_fallimenti_consecutivi, _serper_notifica_esaurimento_inviata, _serper_timestamp_ultimo_fallimento
 from bot.feedback import proponi_controllo, rischio_falso_da_scarto, rischio_falso_da_verdetto, contesto_annuncio
-from bot.panel import EXTRA_LLM_URL, PANEL_CERVELLO_MODELLI, PANEL_OCCHIO_MODELLI, _bg_task, panel_cervello, panel_occhio
 from bot.fair_value import FAIR_VALUE_FILTRA, check_skip_rosso, catalogo_impara, check_skip_fair_value, fv_registra_gemini, fv_registra_rapida, stima_fair_value, valuta_preavviso, preavviso_con_suono, PREAVVISO_LAMPO
 from bot.prompts import GEMINI_CERVELLO_SYSTEM_PROMPT, GEMINI_OCCHI_SYSTEM_PROMPT, GEMINI_OCCHI_SYSTEM_PROMPT_JSON
 from bot.schemas import OCCHIO_RESPONSE_SCHEMA_GEMINI
@@ -23,7 +22,6 @@ from bot.vinted_scrape import _scrapa_guardaroba_venditore, scrape_vinted_listin
 from bot.skip_report import build_skip_report, check_skip_pre_cervello
 from bot.filtri import check_skip_pre_gemini
 from bot.gemini_api import chiama_gemini, chiama_gemini_cervello_forzato
-from bot.riserva_llm import cervello_con_riserva, occhio_con_riserva
 from bot.openai_api import chiama_openai_cervello_forzato
 from bot.foto import download_image_bytes
 from bot.categorie import estrai_categoria_da_titolo
@@ -454,9 +452,9 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
     occhio_json = None
     problemi_occhio = []
     if OCCHIO_OUTPUT_JSON:
-        output_grezzo, costo_occhi, _ = await occhio_con_riserva(
-            GEMINI_OCCHI_SYSTEM_PROMPT_JSON, user_text_occhi, photo_bytes_list, ruolo_occhio,
-            OCCHIO_RESPONSE_SCHEMA_GEMINI)
+        output_grezzo, costo_occhi, _ = await chiama_gemini(
+            GEMINI_OCCHI_SYSTEM_PROMPT_JSON, user_text_occhi, photo_bytes_list, grounding=False,
+            response_schema=OCCHIO_RESPONSE_SCHEMA_GEMINI, ruolo=ruolo_occhio)
         try:
             occhio_json, problemi_occhio = valida_payload_occhio(json.loads(output_grezzo))
             output_occhi = render_occhio_da_json(occhio_json, problemi_occhio)
@@ -478,9 +476,6 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             GEMINI_OCCHI_SYSTEM_PROMPT, user_text_occhi, photo_bytes_list, grounding=False, ruolo=ruolo_occhio)
     costo_totale += costo_occhi
     t_tappe.append(("occhio", time.time()))
-    if EXTRA_LLM_URL and PANEL_OCCHIO_MODELLI:
-        _bg_task(panel_occhio(_estrai_item_id_da_url(url), listing_info.get("brand"), user_text_occhi,
-                              photo_bytes_list, occhio_json, problemi_occhio))
 
     # Prezzo del prodotto: base di OGNI calcolo economico a valle.
     prezzo_prodotto = _a_float(listing_info.get("price"), None)
@@ -647,7 +642,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
 
         chiama_cervello = (
             chiama_openai_cervello_forzato if CERVELLO_PROVIDER == "openai"
-            else partial(cervello_con_riserva, chiama_gemini_cervello_forzato, ruolo_cervello)
+            else partial(chiama_gemini_cervello_forzato, ruolo=ruolo_cervello)
         )
         # Mappa URL delle ricerche on-demand (Punto 3 esteso il 2026-09-25):
         # riempita IN PLACE da chiama_cervello mentre elabora le eventuali
@@ -718,9 +713,6 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
                 legit_cervello = v.get("legit_verdetto")
                 verdetto_calcolato = calcola_verdetto(v, prezzo_prodotto)
             t_tappe.append(("campioni_target", time.time()))
-        if EXTRA_LLM_URL and PANEL_CERVELLO_MODELLI:
-            _bg_task(panel_cervello(item_id_annuncio, brand_per_ricerca, user_text_cervello, prezzo_prodotto,
-                                    v, verdetto_calcolato))
         decisione = verdetto_calcolato["decisione"]
         urgenza = verdetto_calcolato["urgenza"]
         output_finale = render_messaggio_verdetto(
@@ -746,7 +738,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             target=f"{v['prezzo_target_vendita_eur']:.0f}" if isinstance(v.get("prezzo_target_vendita_eur"), (int, float)) else None,
             n_comp=len(verdetto_calcolato["comp_usati"]),
             campioni=campioni_target, instabile="si" if stima_instabile else None,
-            tier="alto" if tier_alto else "base", tier_da=tier_da, riserva=v.get("_riserva"),
+            tier="alto" if tier_alto else "base", tier_da=tier_da,
         )
         tracc_registra_valutato(
             listing_info, url, decisione,
