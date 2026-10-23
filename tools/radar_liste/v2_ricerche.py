@@ -15,6 +15,15 @@ V2=[ # nome, testo, brand (nome o None), catalog, tetto
  ('V2 airpods pro','airpods pro',None,[3678],50),('V2 sony cuffie','','sony',[3678],50),('V2 switch oled','switch oled',None,[3025],50),
  ('V2 montblanc penne','','montblanc',[5456],50),('V2 omega uomo','','omega',[97],50),('V2 omega donna','','omega',[22],50),
  ('V2 stokke seggioloni','','stokke',[3450],50),('V2 babyzen','','babyzen',[1612],50),('V2 bugaboo','','bugaboo',[1612],50),
+ ('V2 artemide','','artemide',LAMP,50),('V2 flos','','flos',LAMP,50),('V2 kartell','','kartell',LAMP,50),('V2 rosenthal','','rosenthal',STOV,50),
+ ('V2 venini','','venini',[],50),('V2 zwilling','','zwilling',[3507,3508,3510],50),('V2 alessi','','alessi',STOV+[3862],50),
+ ('V2 sonos','','sonos',[3695,3682,3697,3678],50),('V2 bang olufsen','','bang olufsen',[3694,3695,3678,3701],50),
+ ('V2 technics','','technics',[3701],50),('V2 marantz','','marantz',[3699,3694],50),('V2 leica','','leica',[3075,3076],50),
+ ('V2 fujifilm','','fujifilm',[3075,3076],50),('V2 dji','','dji',[3723,3074],50),('V2 gopro','','gopro',[3074],50),
+ ('V2 garmin','','garmin',[3035,3004],50),('V2 bose','','bose',[3678,3695],50),('V2 sennheiser','','sennheiser',[3678],50),
+ ('V2 apple airpods','','apple',[3678],50),('V2 makita','','makita',[3875],50),('V2 festool','','festool',[],50),
+ ('V2 milwaukee','','milwaukee',[3875],50),('V2 dewalt','','dewalt',[3875],50),('V2 nuna','','nuna',[1612],50),('V2 joolz','','joolz',[1612],50),
+ ('V2 ghd','','ghd',[3766],50),('V2 longines','','longines',[97,22],50),('V2 tudor','','tudor',[97,22],50),('V2 games workshop','','games workshop',[4883],50),
 ]
 def get(p): return urllib.request.urlopen(B+p,timeout=120).read().decode()
 def post(p,d=None): return urllib.request.urlopen(urllib.request.Request(B+p,data=urllib.parse.urlencode(d or {}).encode(),method='POST'),timeout=120)
