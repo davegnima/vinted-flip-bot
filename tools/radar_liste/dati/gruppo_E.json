@@ -1,0 +1,5212 @@
+[
+ {
+  "brand": "Leica",
+  "modello": "Summicron 50 f/2 (M e LTM: collapsible, rigid, dual range, v3-v5)",
+  "chiavi": [
+   "summicron 50",
+   "summicron 5cm",
+   "summicron m 50",
+   "summicron 50 2"
+  ],
+  "brand_chiavi": [
+   "leica",
+   "leitz",
+   "ernst leitz",
+   "leitz wetzlar"
+  ],
+  "spedizione_eur": 6,
+  "fragile": true,
+  "ingombrante": false,
+  "rischio_falsi": 3,
+  "rischio_guasti": 3,
+  "riconoscibile_da_foto": 3,
+  "domanda": 5,
+  "segni_autenticita": "Nome Summicron inciso sull'anello frontale, matricola Leitz a 6-7 cifre, Wetzlar/Canada/Germany; il collapsible ha barilotto rientrante.",
+  "note": "Prezzo molto variabile per versione: collapsible e rigid da 250-500 GBP, v4/v5 recenti 600-1000 EUR, black paint e rari da collezione (esclusi). Difetti tipici: graffi da pulizia sul collapsible (vetro tenero), foschia, separazione lenti.",
+  "comp": [
+   {
+    "prezzo_eur": 246,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "https://www.flintsauctions.com/auction/lot/lot-12---a-leica-summicron-5cm-f2-camera-lens/?lot=52987&au=120",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-09",
+    "titolo": "A Leica Summicron 5cm f/2 Camera Lens",
+    "prezzo_originale": "£210"
+   },
+   {
+    "prezzo_eur": 426,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/278265571918",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Leica Summicron 50mm F2 Collapsible Very Clean!",
+    "prezzo_originale": "£364"
+   },
+   {
+    "prezzo_eur": 467,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/800150354779",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "[MINT+++] Leica Leitz Summicron 5cm 50mm f/2 Collapsible Lens L39 LTM Lens JAPAN",
+    "prezzo_originale": "$540"
+   },
+   {
+    "prezzo_eur": 468,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/278249951096",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Leica Summicron 50mm F2 Collapsible Very Clean!",
+    "prezzo_originale": "£400"
+   },
+   {
+    "prezzo_eur": 328,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-08",
+    "titolo": "A Leitz Wetzlar f/2 5cm Collapsible Summicron Lens",
+    "prezzo_originale": "£280"
+   },
+   {
+    "prezzo_eur": 410,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-08",
+    "titolo": "A Leica Summicron 5cm f/2 Camera Lens",
+    "prezzo_originale": "£350"
+   },
+   {
+    "prezzo_eur": 741,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/257653023788",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Used Leica M 50mm F2 Summicron M Lens 11818",
+    "prezzo_originale": "£633"
+   },
+   {
+    "prezzo_eur": 490,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/257633179236",
+    "condizione": "usato, vedi titolo, con scatola",
+    "data": "2026-07",
+    "titolo": "Leica SUMMICRON 50mm F2 Dual Range Lens M3 w/  Hood Used Original box & Pamphlet",
+    "prezzo_originale": "$566"
+   },
+   {
+    "prezzo_eur": 865,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/204025389460",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "[💥MINT w/Caps] Leica Ernst Leitz GmbH Summicron 5cm 50mm F/2 L39 LTM  Screw ⇨JP",
+    "prezzo_originale": "$1,000"
+   },
+   {
+    "prezzo_eur": 830,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/127803402105",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": ":[EX+++] Leica SUMMICRON 50mm f/2 Collapsible LTM L39 Screw Mount Lens (8518)",
+    "prezzo_originale": "$960"
+   },
+   {
+    "prezzo_eur": 571,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/278109342056",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-06",
+    "titolo": "Leica 50mm 5cm f2 Summicron Collapsible LTM Lens - Very Nice - Light Haze",
+    "prezzo_originale": "$660"
+   },
+   {
+    "prezzo_eur": 187,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-06",
+    "titolo": "A Leitz Wetzlar Summicron f/2 5cm Collapsible Lens",
+    "prezzo_originale": "£160"
+   },
+   {
+    "prezzo_eur": 468,
+    "tipo": "venduto",
+    "fonte": "Special Auction Services (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-05",
+    "titolo": "A Leitz Wetzlar Dual Range Summicron 5cm f/2 Lens",
+    "prezzo_originale": "£400"
+   },
+   {
+    "prezzo_eur": 526,
+    "tipo": "venduto",
+    "fonte": "Special Auction Services (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-05",
+    "titolo": "A Leitz Wetzlar Summicron 50mm f/2 Lens",
+    "prezzo_originale": "£450"
+   },
+   {
+    "prezzo_eur": 702,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-04",
+    "titolo": "A Leitz Summicron 'Thorium' f/2 50mm Lens",
+    "prezzo_originale": "£600"
+   },
+   {
+    "prezzo_eur": 644,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-04",
+    "titolo": "A Leitz Summicron 'Thorium' f/2 50mm Lens",
+    "prezzo_originale": "£550"
+   },
+   {
+    "prezzo_eur": 644,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-04",
+    "titolo": "A Leitz Summicron 'Thorium' f/2 50mm Lens",
+    "prezzo_originale": "£550"
+   },
+   {
+    "prezzo_eur": 410,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-04",
+    "titolo": "A Leitz Summicron f/2 50mm 'Dual Range' Lens",
+    "prezzo_originale": "£350"
+   },
+   {
+    "prezzo_eur": 307,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/167691665551",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-01",
+    "titolo": "Leica 50mm Summicron  Collapsible f/2 Lens in Leica Screw Mount M39 LTM L39",
+    "prezzo_originale": "$355"
+   },
+   {
+    "prezzo_eur": 211,
+    "tipo": "venduto",
+    "fonte": "Special Auction Services (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-11",
+    "titolo": "A Leitz Wetzlar Summicron 5cm f/2 lens",
+    "prezzo_originale": "£180"
+   },
+   {
+    "prezzo_eur": 760,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-11",
+    "titolo": "A Leitz Summicron 'Thorium' f/2 50mm Lens",
+    "prezzo_originale": "£650"
+   },
+   {
+    "prezzo_eur": 562,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-11",
+    "titolo": "A Leitz Summicron f/2 50mm Lens",
+    "prezzo_originale": "£480"
+   },
+   {
+    "prezzo_eur": 445,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-11",
+    "titolo": "A Leitz Summicron f/2 50mm Lens",
+    "prezzo_originale": "£380"
+   },
+   {
+    "prezzo_eur": 491,
+    "tipo": "venduto",
+    "fonte": "Chiswick Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-10",
+    "titolo": "A Leitz 5cm f/2 Rigid Summicron Lens",
+    "prezzo_originale": "£420"
+   },
+   {
+    "prezzo_eur": 292,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-04",
+    "titolo": "A Leitz Wetzlar Summicron f/2 50mm Lens",
+    "prezzo_originale": "£250"
+   },
+   {
+    "prezzo_eur": 339,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-04",
+    "titolo": "A Leitz Wetzlar Summicron f/2 5cm Lens",
+    "prezzo_originale": "£290"
+   },
+   {
+    "prezzo_eur": 725,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-04",
+    "titolo": "A Leitz Summicron f/2 50mm Lens",
+    "prezzo_originale": "£620"
+   },
+   {
+    "prezzo_eur": 760,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-04",
+    "titolo": "A Leitz Summicron f/2 50mm Lens",
+    "prezzo_originale": "£650"
+   },
+   {
+    "prezzo_eur": 351,
+    "tipo": "venduto",
+    "fonte": "Chiswick Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-03",
+    "titolo": "Leica 5cm f2 Dual Range Summicron Lens & Goggles.",
+    "prezzo_originale": "£300"
+   },
+   {
+    "prezzo_eur": 538,
+    "tipo": "venduto",
+    "fonte": "Chiswick Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-03",
+    "titolo": "A Leitz 50mm f/2 Summicron Lens",
+    "prezzo_originale": "£460"
+   },
+   {
+    "prezzo_eur": 316,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-03",
+    "titolo": "A Leitz Wetzlar Summicron f/2 5cm Lens",
+    "prezzo_originale": "£270"
+   },
+   {
+    "prezzo_eur": 468,
+    "tipo": "venduto",
+    "fonte": "Tennants (martello) via cameraworth",
+    "url": "https://auctions.tennants.co.uk/auction/lot/?lot=2520548&au=14203",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-01",
+    "titolo": "Leitz Summicron f2 50mm Lens",
+    "prezzo_originale": "£400"
+   },
+   {
+    "prezzo_eur": 644,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2024-11",
+    "titolo": "A Leitz Summicron f/2 50mm Lens",
+    "prezzo_originale": "£550"
+   },
+   {
+    "prezzo_eur": 1112,
+    "tipo": "venduto",
+    "fonte": "Harper Field (martello) via cameraworth",
+    "url": "https://bid.harperfield.co.uk/past-auctions/srstr10147/lot-details/ad00b329-a9f2-4277-92d7-b1f6015727f3",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2024-10",
+    "titolo": "Leitz Summicron screw mount f=5cm 1:2 camera lens, serial number 1606569, circa 1958, with Leica",
+    "prezzo_originale": "£950"
+   },
+   {
+    "prezzo_eur": 538,
+    "tipo": "venduto",
+    "fonte": "Special Auction Services (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2024-10",
+    "titolo": "Leitz Wetzlar Summicron 50mm f/2 Dual Range Lens",
+    "prezzo_originale": "£460"
+   }
+  ]
+ },
+ {
+  "brand": "Leica",
+  "modello": "Summicron-M 35 f/2 (v1 8 elementi, v2, v3, v4 King of Bokeh, ASPH)",
+  "chiavi": [
+   "summicron 35",
+   "summicron m 35",
+   "summicron 35 2"
+  ],
+  "brand_chiavi": [
+   "leica",
+   "leitz",
+   "ernst leitz",
+   "leitz wetzlar"
+  ],
+  "spedizione_eur": 6,
+  "fragile": true,
+  "ingombrante": false,
+  "rischio_falsi": 3,
+  "rischio_guasti": 2,
+  "riconoscibile_da_foto": 3,
+  "domanda": 5,
+  "segni_autenticita": "Anello frontale con Summicron e matricola; v1 8 elementi ha anello zigrinato, a volte occhiali per M3; codici 11308/11309/11310/11879/11882/11673.",
+  "note": "Forte variabilita': v2/v3 Canada 700-1500 EUR, v4 KOB 2000-3500 EUR, v1 8 elementi 1900-2600 EUR; black paint da collezione esclusi. Non confondere con Summicron-R 35 (molto piu' economico) ne' Summaron 35.",
+  "comp": [
+   {
+    "prezzo_eur": 1915,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/407106319165",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-10",
+    "titolo": "Leica 11108 35mm f2 Summicron Lens Chrome v.I 8-Element *Read notes #982",
+    "prezzo_originale": "$2,214"
+   },
+   {
+    "prezzo_eur": 2336,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/227498043946",
+    "condizione": "usato, vedi titolo, con scatola",
+    "data": "2026-08",
+    "titolo": "Leica Summicron-M 35mm f/2 11310 lens. Original box and accessories. Excellent!",
+    "prezzo_originale": "$2,700"
+   },
+   {
+    "prezzo_eur": 1873,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/407162820945",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Leica Summicron-M 35mm F/2 ASPH E39 Lens Black, 6-Bit, 11673 with Caps and Hood",
+    "prezzo_originale": "£1,601"
+   },
+   {
+    "prezzo_eur": 3287,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/398331887368",
+    "condizione": "usato, vedi titolo, con scatola",
+    "data": "2026-08",
+    "titolo": "[MINT] Leica Summicron M 35mm f2 Lens 7 elements 11310 Germany KOB from JAPAN",
+    "prezzo_originale": "$3,800"
+   },
+   {
+    "prezzo_eur": 2634,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/227481266607",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Leitz Leica 35mm f/2 Summicron-M Lens v.4 IV Black Germany King of Bokeh 11310",
+    "prezzo_originale": "£2,251"
+   },
+   {
+    "prezzo_eur": 2850,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/287505356826",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "LEICA 35MM F2 SUMMICRON-M E39 4TH V 11310 LATE # GERMANY LENS KING OF BOKEH NICE",
+    "prezzo_originale": "$3,295"
+   },
+   {
+    "prezzo_eur": 994,
+    "tipo": "venduto",
+    "fonte": "Special Auction Services (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-08",
+    "titolo": "A Leitz Wetzlar Summicron 35mm f/2 Lens",
+    "prezzo_originale": "£850"
+   },
+   {
+    "prezzo_eur": 2296,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/147436754418",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Leica 35mm f/2 Summicron-M V4 \"King of Bokeh\" 11310 Lens 6-Bit (#786) *USED*",
+    "prezzo_originale": "£1,962"
+   },
+   {
+    "prezzo_eur": 3521,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/358445056048",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "[MINT w/Hood] Leica Leitz Summicron-M 35mm f2 V4 King of Bokeh Lens E39 JAPAN",
+    "prezzo_originale": "$4,070"
+   },
+   {
+    "prezzo_eur": 2590,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/147270520490",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Leica 11308 35mm f2 Summicron Lens Chrome v.I 8-Element #480",
+    "prezzo_originale": "$2,994"
+   },
+   {
+    "prezzo_eur": 2547,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/147407052873",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Leica 11308 35mm f2 Summicron Lens Chrome v.I 8-Element #797",
+    "prezzo_originale": "$2,944"
+   },
+   {
+    "prezzo_eur": 1246,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/278035066462",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "LEITZ LEICA SUMMICRON-M 35mm f/2 11309 v2 Canada 6-Element",
+    "prezzo_originale": "$1,440"
+   },
+   {
+    "prezzo_eur": 1053,
+    "tipo": "venduto",
+    "fonte": "Special Auction Services (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-05",
+    "titolo": "A Leitz Canada Summicron 35mm f/2 Lens",
+    "prezzo_originale": "£900"
+   },
+   {
+    "prezzo_eur": 959,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-04",
+    "titolo": "A Leitz Summicron f/2 35mm Lens",
+    "prezzo_originale": "£820"
+   },
+   {
+    "prezzo_eur": 679,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata, con scatola",
+    "data": "2025-06",
+    "titolo": "A Leitz Summicron f/2 35mm Lens",
+    "prezzo_originale": "£580"
+   },
+   {
+    "prezzo_eur": 1521,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata, con scatola",
+    "data": "2025-04",
+    "titolo": "A Leitz Summicron f/2 35mm Lens",
+    "prezzo_originale": "£1,300"
+   },
+   {
+    "prezzo_eur": 1030,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-04",
+    "titolo": "A Leitz Summicron f/2 35mm Lens",
+    "prezzo_originale": "£880"
+   },
+   {
+    "prezzo_eur": 2574,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-04",
+    "titolo": "A Leitz Summicron f/2 35mm Lens",
+    "prezzo_originale": "£2,200"
+   },
+   {
+    "prezzo_eur": 1638,
+    "tipo": "venduto",
+    "fonte": "Chiswick Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-03",
+    "titolo": "A Leitz 35mm f/2 Summicron Lens",
+    "prezzo_originale": "£1,400"
+   },
+   {
+    "prezzo_eur": 796,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-03",
+    "titolo": "A Leitz Canada Summicron f/2 35mm Lens and Goggles",
+    "prezzo_originale": "£680"
+   },
+   {
+    "prezzo_eur": 2000,
+    "tipo": "venduto",
+    "fonte": "Leitz Photographica Auction (martello) via cameraworth",
+    "url": "https://www.leitz-auction.com/en/Summicron-2-35mm-chrome-11308-first-batch/A01069",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2024-11",
+    "titolo": "Summicron 2/35mm chrome 11308 first batch",
+    "prezzo_originale": "€2,000"
+   },
+   {
+    "prezzo_eur": 936,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2024-11",
+    "titolo": "A Leitz Summicron f/2 35mm Lens",
+    "prezzo_originale": "£800"
+   },
+   {
+    "prezzo_eur": 1404,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2024-11",
+    "titolo": "A Leitz Summicron f/2 35mm Lens",
+    "prezzo_originale": "£1,200"
+   },
+   {
+    "prezzo_eur": 1755,
+    "tipo": "venduto",
+    "fonte": "Special Auction Services (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2024-10",
+    "titolo": "A Leitz Canada Summicron 35mm f/2 Lens",
+    "prezzo_originale": "£1,500"
+   }
+  ]
+ },
+ {
+  "brand": "Leica",
+  "modello": "Elmarit-M 90 f/2.8 (versione 1990-2008, nera o cromata)",
+  "chiavi": [
+   "elmarit m 90",
+   "elmarit 90 2 8",
+   "elmarit m 90mm"
+  ],
+  "brand_chiavi": [
+   "leica",
+   "leitz",
+   "ernst leitz",
+   "leitz wetzlar"
+  ],
+  "spedizione_eur": 6,
+  "fragile": true,
+  "ingombrante": false,
+  "rischio_falsi": 2,
+  "rischio_guasti": 2,
+  "riconoscibile_da_foto": 3,
+  "domanda": 3,
+  "segni_autenticita": "Scritta Elmarit-M 1:2.8/90 e matricola sull'anello frontale, paraluce estraibile; codici 11807/11808.",
+  "note": "Da non confondere con il vecchio Elmarit 90 (1959-74, 50-250 GBP alle aste) e il Tele-Elmarit 90 (piu' corto, 150-300 GBP). Difetti: foschia, graffi sul paraluce.",
+  "comp": [
+   {
+    "prezzo_eur": 822,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/206480957135",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Leica Blk 90mm f2.8 Elmarit-M 11807 6 Bit M Lens+Case/Caps f/Leica M1-M11 Mint-",
+    "prezzo_originale": "$950"
+   },
+   {
+    "prezzo_eur": 714,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/407135499753",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "[Top MINT+] Leica Elmarit M 90mm f/2.8 E46 Black 11807 2nd Late Model Lens JAPAN",
+    "prezzo_originale": "$825"
+   },
+   {
+    "prezzo_eur": 345,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/267727597854",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Leica Leitz Elmarit M 90mm F2.8 chrome lens",
+    "prezzo_originale": "£295"
+   },
+   {
+    "prezzo_eur": 709,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/366548513065",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "[Top Mint w/Cap/Filter] Leica 90mm f2.8 Elmarit-M Black E46 MF Lens From JAPAN",
+    "prezzo_originale": "$820"
+   },
+   {
+    "prezzo_eur": 735,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/206415559718",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Leica 90mm f2.8 Elmarit-M Black E46 Lens 11807 excellent condition",
+    "prezzo_originale": "$850"
+   },
+   {
+    "prezzo_eur": 499,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/388767969748",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Leica Elmarit-M 90mm f/2.8 - SNr: 3521142",
+    "prezzo_originale": "€499"
+   },
+   {
+    "prezzo_eur": 262,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/188651346204",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Leica M Elmarit-M 90mm f/2.8 MINT MINT Collectors Condition Set See Photo",
+    "prezzo_originale": "€262"
+   },
+   {
+    "prezzo_eur": 186,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/327260645199",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Leica Elmarit M 90mm f/2.8 E46 Camera Lens - Black",
+    "prezzo_originale": "£159"
+   },
+   {
+    "prezzo_eur": 318,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/397825968728",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-05",
+    "titolo": "[Opt MINT] Leica Elmarit M 90mm f/2.8 E39 MF Lens Silver Germany M Mount JAPAN",
+    "prezzo_originale": "£272"
+   },
+   {
+    "prezzo_eur": 468,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata, con scatola",
+    "data": "2025-10",
+    "titolo": "A Leica Elmarit-M f/2.8 90mm Lens",
+    "prezzo_originale": "£400"
+   },
+   {
+    "prezzo_eur": 760,
+    "tipo": "venduto",
+    "fonte": "Harper Field (martello) via cameraworth",
+    "url": "https://bid.harperfield.co.uk/past-auctions/srstr10147/lot-details/88532156-8006-4205-9ad2-b1f60158b9bf",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2024-10",
+    "titolo": "Leitz Elmarit-M M mount 1:2.8/90mm camera lens in titanium finish, serial number 3807031, circa",
+    "prezzo_originale": "£650"
+   },
+   {
+    "prezzo_eur": 605,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/307137548828",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Leica Elmarit-M 90mm F2.8 Lens - 6 Bit - Black",
+    "prezzo_originale": "£517"
+   },
+   {
+    "prezzo_eur": 662,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/205871451949",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Leica Elmarit-M 90mm f/2.8 Manual Focus Lens",
+    "prezzo_originale": "$765"
+   }
+  ]
+ },
+ {
+  "brand": "Leica",
+  "modello": "Elmar 50 f/3.5 (vite LTM, collapsible)",
+  "chiavi": [
+   "elmar 50 3 5",
+   "elmar 5cm",
+   "elmar 50mm 3 5"
+  ],
+  "brand_chiavi": [
+   "leica",
+   "leitz",
+   "ernst leitz",
+   "leitz wetzlar"
+  ],
+  "spedizione_eur": 6,
+  "fragile": true,
+  "ingombrante": false,
+  "rischio_falsi": 2,
+  "rischio_guasti": 2,
+  "riconoscibile_da_foto": 3,
+  "domanda": 3,
+  "segni_autenticita": "Barilotto rientrante con fermo, scritta Leitz Elmar f=5cm 1:3.5 e matricola; versioni con scala rossa (red scale) valgono un po' di piu'.",
+  "note": "Non confondere con Elmar 50 f/2.8 (piu' recente, simile) ne' con Elmar-M moderno. Alle aste UK 60-200 GBP, eBay 150-300 GBP; nickel anni 30 piu' variabile. Difetti tipici: foschia, graffi da pulizia.",
+  "comp": [
+   {
+    "prezzo_eur": 180,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/237113918945",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-10",
+    "titolo": "Leica M 50mm f3.5 3.5 elmar standard LENS 118 serial",
+    "prezzo_originale": "€180"
+   },
+   {
+    "prezzo_eur": 206,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/318786522785",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-09",
+    "titolo": "Leitz Elmar 50mm f/3.5 Lens 1940's Vintage Leica M39  Mount Collapsible",
+    "prezzo_originale": "£176"
+   },
+   {
+    "prezzo_eur": 383,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/800596101783",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-09",
+    "titolo": "Red Scale[N MINT] Leica Leitz Elmar 5cm 50mm f3.5 L39 LTM Collapsible Lens Japan",
+    "prezzo_originale": "£327"
+   },
+   {
+    "prezzo_eur": 208,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/188872343764",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-09",
+    "titolo": "Vintage Leica LEITZ ELMAR 50mm f3.5 Lens EXC Cond M39 Collapsible Germany",
+    "prezzo_originale": "£178"
+   },
+   {
+    "prezzo_eur": 211,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/188693508142",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Leitz Elmar 50mm f/3.5 Lens 1933 Vintage Leica M39 LTM Mount Collapsible Germany",
+    "prezzo_originale": "£180"
+   },
+   {
+    "prezzo_eur": 263,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/147263924662",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Leica 5cm 50mm f3.5 Leitz Elmar Collapsible M39 LTM Lens Red Scale *Read #000",
+    "prezzo_originale": "$304"
+   },
+   {
+    "prezzo_eur": 152,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-08",
+    "titolo": "A Leitz Wetzlar Elmar f/3.5 5cm Collapsible Lens",
+    "prezzo_originale": "£130"
+   },
+   {
+    "prezzo_eur": 303,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/147448010388",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Red Scale \"NEAR MINT\" Leica Leitz Elmar 5cm 50mm f/3.5 L39 LTM Collapsible Lens",
+    "prezzo_originale": "$350"
+   },
+   {
+    "prezzo_eur": 240,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/800266436766",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Leica Elmar 50mm F/3.5 | Leica L39 LTM | Leitz | item1",
+    "prezzo_originale": "€240"
+   },
+   {
+    "prezzo_eur": 135,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/257622843334",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Leitz Elmar 50mm f/3.5. Leica M39 LTM Mount. Collapsible",
+    "prezzo_originale": "£115"
+   },
+   {
+    "prezzo_eur": 236,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/318596792561",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "[Exc+5]Leica Leitz Elmar 50mm 5cm f/3.5 Collapsible LTM L39 Screw Mount JAPAN",
+    "prezzo_originale": "$273"
+   },
+   {
+    "prezzo_eur": 285,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/398148062154",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "[Vintage MINT] Leica Elmar L 5cm 50mm f/3.5 LTM L39 Screw Mount Lens From JAPAN",
+    "prezzo_originale": "$330"
+   },
+   {
+    "prezzo_eur": 303,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/158043311112",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Leica Elmar  50mm 1:3.5 ( 5cm F3.5 ) Collapsible... Leitz Leica LTM mount ...",
+    "prezzo_originale": "$350"
+   },
+   {
+    "prezzo_eur": 242,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/178259505456",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Rare! [ Near MINT+] Leica Leitz Elmar 5cm 50mm f3.5 L39 LTM Lens From JAPAN #089",
+    "prezzo_originale": "$280"
+   },
+   {
+    "prezzo_eur": 358,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/188561290676",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "【N MINT+++ 】Leica Elmar L 5cm 50mm f/3.5 LTM L39 Leica L Screw Mount Lens",
+    "prezzo_originale": "$414"
+   },
+   {
+    "prezzo_eur": 138,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/127943713324",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-06",
+    "titolo": "Leica Leitz Elmar 5cm 50mm f/3.5 Collapsible LTM Lens SN 644893 Germany V33",
+    "prezzo_originale": "$160"
+   },
+   {
+    "prezzo_eur": 70,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-06",
+    "titolo": "A Leitz Wetzlar Elmar f/3.5 50mm Collapsible Lens",
+    "prezzo_originale": "£60"
+   },
+   {
+    "prezzo_eur": 246,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-04",
+    "titolo": "A Leitz Elmar f/3.5 50mm Lens",
+    "prezzo_originale": "£210"
+   },
+   {
+    "prezzo_eur": 175,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/236661739518",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-04",
+    "titolo": "Leica ltm m39 50mm nickel elmar f3.5 screw standard 5cm f3.5 lens 1931 l8",
+    "prezzo_originale": "€175"
+   },
+   {
+    "prezzo_eur": 330,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/326986838795",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-02",
+    "titolo": "Leitz Elmar 50mm f/3.5 Lens L39 Mount Collapsible – Serviced",
+    "prezzo_originale": "£282"
+   },
+   {
+    "prezzo_eur": 82,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-01",
+    "titolo": "A Leica Elmar 5cm f/3.5 Collapsible Lens",
+    "prezzo_originale": "£70"
+   },
+   {
+    "prezzo_eur": 152,
+    "tipo": "venduto",
+    "fonte": "Special Auction Services (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-11",
+    "titolo": "A Leitz Wetzlar 5cm f/3.5 Elmar lens",
+    "prezzo_originale": "£130"
+   },
+   {
+    "prezzo_eur": 94,
+    "tipo": "venduto",
+    "fonte": "Special Auction Services (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-05",
+    "titolo": "A Leitz Elmar 5cm f/3.5 Lens",
+    "prezzo_originale": "£80"
+   },
+   {
+    "prezzo_eur": 82,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-04",
+    "titolo": "A Leitz Wetzlar Elmar f/3.5 5cm Collapsible Lens",
+    "prezzo_originale": "£70"
+   },
+   {
+    "prezzo_eur": 70,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-04",
+    "titolo": "A Leitz Wetzlar Elmar f/3.5 5cm Collapsible Lens",
+    "prezzo_originale": "£60"
+   },
+   {
+    "prezzo_eur": 199,
+    "tipo": "venduto",
+    "fonte": "Chiswick Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-03",
+    "titolo": "A Leitz 5cm f/3.5 Collapsible LTM Elmar Lens",
+    "prezzo_originale": "£170"
+   },
+   {
+    "prezzo_eur": 82,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-03",
+    "titolo": "A Leitz Wetzlar f/3.5 50mm Elmar Lens",
+    "prezzo_originale": "£70"
+   },
+   {
+    "prezzo_eur": 88,
+    "tipo": "venduto",
+    "fonte": "Harper Field (martello) via cameraworth",
+    "url": "https://bid.harperfield.co.uk/past-auctions/srstr10150/lot-details/5346afe9-f108-40e4-8445-b274011ba166",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-02",
+    "titolo": "Leitz Elmar 5cm 1:3.5 lens, serial number 543055, circa 1940, with rear cap, three filters, lens",
+    "prezzo_originale": "£75"
+   },
+   {
+    "prezzo_eur": 152,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2024-10",
+    "titolo": "A Leitz Wetzlar Elmar f/3.5 50mm Collapsible Lens",
+    "prezzo_originale": "£130"
+   }
+  ]
+ },
+ {
+  "brand": "Leica",
+  "modello": "Summaron 35 f/3.5 (LTM e M, anche con occhiali)",
+  "chiavi": [
+   "summaron 35 3 5",
+   "summaron 3 5cm",
+   "summaron 35mm 3 5"
+  ],
+  "brand_chiavi": [
+   "leica",
+   "leitz",
+   "ernst leitz",
+   "leitz wetzlar"
+  ],
+  "spedizione_eur": 6,
+  "fragile": true,
+  "ingombrante": false,
+  "rischio_falsi": 2,
+  "rischio_guasti": 2,
+  "riconoscibile_da_foto": 3,
+  "domanda": 3,
+  "segni_autenticita": "Scritta Summaron f=3,5cm 1:3.5, matricola Leitz; versione M per M3 con occhiali (goggles).",
+  "note": "La versione f/2.8 vale circa il doppio: controllare la luminosita'. Difetti: foschia, graffi da pulizia.",
+  "comp": [
+   {
+    "prezzo_eur": 211,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "https://www.flintsauctions.com/auction/lot/lot-11---a-leitz-wetzlar-summaron-f35-35cm-lens-with-goggles/?lot=53257&au=120",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-09",
+    "titolo": "A Leitz Wetzlar Summaron f/3.5 3.5cm Lens With Goggles",
+    "prezzo_originale": "£180"
+   },
+   {
+    "prezzo_eur": 260,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/257721179424",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-09",
+    "titolo": "Ernest Leitz Leica Summaron 3.5cm 35mm f/3.5 Camera Lens",
+    "prezzo_originale": "$300"
+   },
+   {
+    "prezzo_eur": 476,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/307100170578",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "#US Seller# Leica SUMMARON 3.5cm 35mm f3.5 M Mount Lens",
+    "prezzo_originale": "$550"
+   },
+   {
+    "prezzo_eur": 300,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/168606092227",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Leitz Leica Summaron 35mm f3.5 wide angle lens M39 L39 LTM feet scale Germany",
+    "prezzo_originale": "€300"
+   },
+   {
+    "prezzo_eur": 332,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/206301219641",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Leica M 3.5cm (35mm) f3.5 Summaron Lens w/Goggles Eyes #826",
+    "prezzo_originale": "$384"
+   },
+   {
+    "prezzo_eur": 248,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/147386100305",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Leica 35mm f3.5 Summaron M39 Lens (3.5cm) #678",
+    "prezzo_originale": "$287"
+   },
+   {
+    "prezzo_eur": 248,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/206359184780",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Leica 35mm f3.5 Summaron M39 Lens (3.5cm) #472",
+    "prezzo_originale": "$287"
+   },
+   {
+    "prezzo_eur": 398,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/168331756129",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "[1-Yr Warranty] Leica Leitz Summaron 35mm f/3.5 M39 Screw Mount Lens From JAPAN",
+    "prezzo_originale": "$460"
+   },
+   {
+    "prezzo_eur": 356,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/267741673715",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Leica SUMMARON 3.5cm (35mm) f/3.5 M Mount Lens #1178612",
+    "prezzo_originale": "$411"
+   },
+   {
+    "prezzo_eur": 248,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/407013547496",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Leica 35mm f3.5 Summaron M39 Lens (3.5cm) #418",
+    "prezzo_originale": "$287"
+   },
+   {
+    "prezzo_eur": 432,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/168572947531",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Leica Summaron 3.5cm 35mm F/3.5 M Mount Lens Beautiful Condition with Caps",
+    "prezzo_originale": "$500"
+   },
+   {
+    "prezzo_eur": 545,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/327026197712",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Leica Summaron 3.5cm F3.5 35MM Lens Screw Mount + Bubble",
+    "prezzo_originale": "£466"
+   },
+   {
+    "prezzo_eur": 272,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/147307437079",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Leica 35mm f3.5 Summaron M39 Lens (3.5cm) *Read notes #324",
+    "prezzo_originale": "$315"
+   },
+   {
+    "prezzo_eur": 639,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/157967597804",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "[Mint] Leica Leitz Summaron 3.5cm 35mm f/3.5 M Mount Lens w/Goggles from Japan",
+    "prezzo_originale": "$739"
+   },
+   {
+    "prezzo_eur": 265,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/147386070143",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Leica 35mm f3.5 Summaron M39 Lens (3.5cm) #147",
+    "prezzo_originale": "$306"
+   },
+   {
+    "prezzo_eur": 426,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/127958088338",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Leica Summaron 35mm f3.5 LTM Lens E39 Filter 1958 with caps s/n 1639042 Serviced",
+    "prezzo_originale": "£364"
+   },
+   {
+    "prezzo_eur": 562,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/157973251936",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "[MINT w/ Goggles] Leica Summaron M 3.5cm 35mm F3.5 Lens for M Mount JAPAN",
+    "prezzo_originale": "$650"
+   },
+   {
+    "prezzo_eur": 186,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/306510481413",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "M39 Leitz Wetzlar Leica Summaron f=3.5cm 35mm 1:3.5 Lens",
+    "prezzo_originale": "€186"
+   },
+   {
+    "prezzo_eur": 234,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/287388690272",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-06",
+    "titolo": "Leitz Summaron 35mm f3.5 LTM Leica Screw Mount Lens + Bubble - SKA0521",
+    "prezzo_originale": "£200"
+   },
+   {
+    "prezzo_eur": 497,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/277854275940",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-06",
+    "titolo": "1954 Leitz Leica Summaron 35mm f3.5 M-mount Camera Lens - 35mm Framelines Ex/c",
+    "prezzo_originale": "£425"
+   },
+   {
+    "prezzo_eur": 360,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/198242950039",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-06",
+    "titolo": "Leica M 35mm f3.5 Summaron Wide Angle (Read Description)",
+    "prezzo_originale": "£308"
+   },
+   {
+    "prezzo_eur": 198,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/366452342859",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-06",
+    "titolo": "Leica Leitz Wetzlar Summaron 3.5cm 35mm f/3.5 LTM M39 Screw Mount Lens w/ Cap",
+    "prezzo_originale": "£169"
+   },
+   {
+    "prezzo_eur": 257,
+    "tipo": "venduto",
+    "fonte": "Special Auction Services (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-05",
+    "titolo": "A Leitz Wetzlar Summaron 3.5cm f/3.5 Lens",
+    "prezzo_originale": "£220"
+   },
+   {
+    "prezzo_eur": 269,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-04",
+    "titolo": "A Leitz Wetzlar Summaron f/3.5 3.5cm Lens",
+    "prezzo_originale": "£230"
+   },
+   {
+    "prezzo_eur": 257,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-01",
+    "titolo": "A Leitz Wetzlar Summaron f/3.5 3.5cm Lens",
+    "prezzo_originale": "£220"
+   },
+   {
+    "prezzo_eur": 304,
+    "tipo": "venduto",
+    "fonte": "David Duggleby (martello) via cameraworth",
+    "url": "https://www.davidduggleby.com/auctions/2567/?returnItemNo=159127",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-12",
+    "titolo": "Leitz Summaron M mount f=3.5cm 1:3.5 camera lens with goggles for Leica M3, serial number ...",
+    "prezzo_originale": "£260"
+   },
+   {
+    "prezzo_eur": 187,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-09",
+    "titolo": "A Leitz Wetzlar Summaron f/3.5 3.5cm lens",
+    "prezzo_originale": "£160"
+   },
+   {
+    "prezzo_eur": 246,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-08",
+    "titolo": "A Leitz Summaron f/3.5 35mm Lens",
+    "prezzo_originale": "£210"
+   },
+   {
+    "prezzo_eur": 281,
+    "tipo": "venduto",
+    "fonte": "Chiswick Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-07",
+    "titolo": "A Leitz 3.5cm f/3.5 Summaron Lens",
+    "prezzo_originale": "£240"
+   },
+   {
+    "prezzo_eur": 222,
+    "tipo": "venduto",
+    "fonte": "Special Auction Services (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-05",
+    "titolo": "A Leitz Wetzlar Summaron 3.5cm f/3.5 lens",
+    "prezzo_originale": "£190"
+   },
+   {
+    "prezzo_eur": 211,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-04",
+    "titolo": "A Leitz Wetzlar Summaron f/3.5 3.5cm Lens",
+    "prezzo_originale": "£180"
+   },
+   {
+    "prezzo_eur": 257,
+    "tipo": "venduto",
+    "fonte": "Chiswick Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-03",
+    "titolo": "A Leitz 3.5cm f/3.5 Summaron LTM Lens",
+    "prezzo_originale": "£220"
+   },
+   {
+    "prezzo_eur": 199,
+    "tipo": "venduto",
+    "fonte": "Chiswick Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-03",
+    "titolo": "A Leitz 3.5cm f/3.5 Summaron LTM Lens",
+    "prezzo_originale": "£170"
+   },
+   {
+    "prezzo_eur": 234,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata, con scatola",
+    "data": "2024-11",
+    "titolo": "A Leitz Summaron f/3.5 35mm Lens",
+    "prezzo_originale": "£200"
+   },
+   {
+    "prezzo_eur": 176,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2024-10",
+    "titolo": "A Leitz-Wetzlar Summaron f/3.5 3.5cm lens",
+    "prezzo_originale": "£150"
+   },
+   {
+    "prezzo_eur": 281,
+    "tipo": "venduto",
+    "fonte": "Special Auction Services (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2024-10",
+    "titolo": "A Leitz Wetzlar Summaron 3.5cm f/3.5 Lens",
+    "prezzo_originale": "£240"
+   }
+  ]
+ },
+ {
+  "brand": "Leica",
+  "modello": "Summaron 35 f/2.8 (M, con o senza occhiali; LTM rara)",
+  "chiavi": [
+   "summaron 35 2 8",
+   "summaron 2 8",
+   "summaron 35mm 2 8"
+  ],
+  "brand_chiavi": [
+   "leica",
+   "leitz",
+   "ernst leitz",
+   "leitz wetzlar"
+  ],
+  "spedizione_eur": 6,
+  "fragile": true,
+  "ingombrante": false,
+  "rischio_falsi": 2,
+  "rischio_guasti": 2,
+  "riconoscibile_da_foto": 3,
+  "domanda": 3,
+  "segni_autenticita": "Scritta Summaron 1:2.8/35 e matricola; codici 11106 (occhiali, SIMOW), 11306.",
+  "note": "Non confondere con f/3.5 (meta' prezzo). Esclusi esemplari con fungo o difetti dichiarati.",
+  "comp": [
+   {
+    "prezzo_eur": 992,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/128082651890",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-09",
+    "titolo": "Leica Summaron 35mm f/2.8 LTM Screw Mount Lens 1960 – Serviced",
+    "prezzo_originale": "£848"
+   },
+   {
+    "prezzo_eur": 692,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/318748753242",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "[MINT] Leica Leitz Wetzlar Summaron 35mm f2.8 M Lens for M3 From JAPAN",
+    "prezzo_originale": "$800"
+   },
+   {
+    "prezzo_eur": 753,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/127910734335",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "[Near MINT] Leica 35mm f2.8 Summaron for M3 Leitz Wetzlar Lens w/Eyes From JAPAN",
+    "prezzo_originale": "$870"
+   },
+   {
+    "prezzo_eur": 1077,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/188571318113",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Leica 35mm f/2.8 Summaron Lens - m2 m3 m4 m5 m6 m7",
+    "prezzo_originale": "$1,245"
+   },
+   {
+    "prezzo_eur": 625,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/358696303150",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-06",
+    "titolo": "Leitz Wetzlar Screw-In LTM/M39 Mount Lens, Summaron 35 mm f/2.8 wide-angle",
+    "prezzo_originale": "£534"
+   },
+   {
+    "prezzo_eur": 818,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/257555996020",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-06",
+    "titolo": "Leica 35mm F2.8 Summaron Leica M Mount Lens Chrome. Lovely Example",
+    "prezzo_originale": "£699"
+   },
+   {
+    "prezzo_eur": 1207,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/298343332877",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-06",
+    "titolo": "LEICA LEITZ 35MM SUMMARON F2.8 11306 M M2 M4 6 ELEMENT LENS +CAP EARLY STEEL RIM",
+    "prezzo_originale": "$1,395"
+   },
+   {
+    "prezzo_eur": 1079,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/177882633395",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-05",
+    "titolo": "Leica Leitz Wetzlar Summaron 35mm f/2.8 Goggle Lens Yr 60 Silver M-Mount w/ Case",
+    "prezzo_originale": "£922"
+   },
+   {
+    "prezzo_eur": 374,
+    "tipo": "venduto",
+    "fonte": "Tennants (martello) via cameraworth",
+    "url": "https://auctions.tennants.co.uk/auction/lot/?lot=2580375&au=14329",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-05",
+    "titolo": "Leitz Summaron f2.8 35mm Lens",
+    "prezzo_originale": "£320"
+   },
+   {
+    "prezzo_eur": 702,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-04",
+    "titolo": "A Leitz Summaron f/2.8 35mm Lens",
+    "prezzo_originale": "£600"
+   },
+   {
+    "prezzo_eur": 725,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-11",
+    "titolo": "A Leitz Summaron f/2.8 35mm Lens",
+    "prezzo_originale": "£620"
+   },
+   {
+    "prezzo_eur": 491,
+    "tipo": "venduto",
+    "fonte": "Chiswick Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-10",
+    "titolo": "A Leitz 35mm f/2.8 Summaron Lens",
+    "prezzo_originale": "£420"
+   },
+   {
+    "prezzo_eur": 760,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-04",
+    "titolo": "A Leitz Summaron f/2.8 35mm Lens",
+    "prezzo_originale": "£650"
+   },
+   {
+    "prezzo_eur": 608,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2024-10",
+    "titolo": "A Leitz Wetzlar Summaron f/2.8 35mm Camera Lens",
+    "prezzo_originale": "£520"
+   },
+   {
+    "prezzo_eur": 644,
+    "tipo": "venduto",
+    "fonte": "Special Auction Services (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2024-10",
+    "titolo": "A Leitz Wetzlar Summaron 35mm f/2.8 Lens",
+    "prezzo_originale": "£550"
+   }
+  ]
+ },
+ {
+  "brand": "Pentax",
+  "modello": "Super-Takumar 50 f/1.4 (M42, incluso 8 elementi)",
+  "chiavi": [
+   "super takumar 50 1 4",
+   "super takumar 1 4 50",
+   "super-takumar 50mm f1 4"
+  ],
+  "brand_chiavi": [
+   "pentax",
+   "asahi",
+   "asahi pentax",
+   "takumar"
+  ],
+  "spedizione_eur": 6,
+  "fragile": true,
+  "ingombrante": false,
+  "rischio_falsi": 1,
+  "rischio_guasti": 2,
+  "riconoscibile_da_foto": 4,
+  "domanda": 4,
+  "segni_autenticita": "Scritta Super-Takumar 1:1.4/50 sull'anello frontale, attacco a vite M42, interruttore Auto/Manual.",
+  "note": "Vetro al torio: ingiallisce (si corregge con UV). La prima versione 8 elementi vale il doppio (150-220 EUR). Non confondere con SMC Takumar e SMC Pentax-M/A (baionetta K).",
+  "comp": [
+   {
+    "prezzo_eur": 47,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-08",
+    "titolo": "An Asahi Opt. Co. Super-Takumar 50mm f/1.4 V2 Camera Lens",
+    "prezzo_originale": "£40"
+   },
+   {
+    "prezzo_eur": 92,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/398194996849",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Pentax Super Takumar 50mm M42 f/1.4 Lens",
+    "prezzo_originale": "£79"
+   },
+   {
+    "prezzo_eur": 51,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/178359500162",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Asahi Super-Takumar 50mm F/1.4 Manual Focus Camera Lens Mechanically Working",
+    "prezzo_originale": "£44"
+   },
+   {
+    "prezzo_eur": 225,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/136981333342",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "[Rare 8-Element] Pentax Super Takumar 50mm f/1.4 M42 Lens a7 III Sample Japan",
+    "prezzo_originale": "$260"
+   },
+   {
+    "prezzo_eur": 65,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/158141472072",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Pentax Super Takumar 50mm f/1.4 M42 With Cap",
+    "prezzo_originale": "$75"
+   },
+   {
+    "prezzo_eur": 48,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/236985636392",
+    "condizione": "usato, vedi titolo, con scatola",
+    "data": "2026-08",
+    "titolo": "Asahi Super Takumar 50mm f1.4 normal lens, slight signs of use",
+    "prezzo_originale": "$55"
+   },
+   {
+    "prezzo_eur": 106,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/336691040449",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Pentax Super-Takumar 50mm f1.4 M42 mount lens, caps, Mint-",
+    "prezzo_originale": "$122"
+   },
+   {
+    "prezzo_eur": 173,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/407107831528",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "[Near MINT] 8 Elements Pentax Super Takumar 50mm f1.4 Lens M42 From JAPAN",
+    "prezzo_originale": "$200"
+   },
+   {
+    "prezzo_eur": 94,
+    "tipo": "venduto",
+    "fonte": "Special Auction Services (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-03",
+    "titolo": "An Asahi Super Takumar 50mm f/1.4 Lens",
+    "prezzo_originale": "£80"
+   },
+   {
+    "prezzo_eur": 78,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 26 offerte)",
+    "url": "https://www.tradera.com/item/1000211/751997045/pentax-super-takumar-50mm-f1-4",
+    "condizione": "molto buono",
+    "data": "2026-09",
+    "titolo": "Pentax Super-Takumar 50mm f1.4",
+    "prezzo_originale": "862 SEK"
+   }
+  ]
+ },
+ {
+  "brand": "Pentax",
+  "modello": "SMC Takumar / Super-Multi-Coated Takumar 50 f/1.4 (M42)",
+  "chiavi": [
+   "smc takumar 50 1 4",
+   "super multi coated takumar 50",
+   "takumar 50 1 4"
+  ],
+  "brand_chiavi": [
+   "pentax",
+   "asahi",
+   "asahi pentax",
+   "takumar"
+  ],
+  "spedizione_eur": 6,
+  "fragile": true,
+  "ingombrante": false,
+  "rischio_falsi": 1,
+  "rischio_guasti": 2,
+  "riconoscibile_da_foto": 4,
+  "domanda": 4,
+  "segni_autenticita": "Scritta SMC Takumar o Super-Multi-Coated Takumar 1:1.4/50, M42.",
+  "note": "Ingiallimento da torio comune. Valori bassi (40-110 EUR): margine possibile solo sotto 25-30 EUR.",
+  "comp": [
+   {
+    "prezzo_eur": 64,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/147468931413",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Pentax SMC Takumar 50mm F1.4 Manual FocusLens M42/Pentax Screw  7646076",
+    "prezzo_originale": "£55"
+   },
+   {
+    "prezzo_eur": 105,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/336713296530",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Pentax SMC Takumar 50mm f1.4 M42 Fast Prime Lens - Yellow Radioactive Glass",
+    "prezzo_originale": "£90"
+   },
+   {
+    "prezzo_eur": 86,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/147454391363",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "PENTAX SMC TAKUMAR 50mm F1.4 M42 lens Asahi",
+    "prezzo_originale": "$100"
+   },
+   {
+    "prezzo_eur": 78,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/136622435434",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "[Excellent+5] Pentax SMC Takumar 50mm f/1.4 M42 Lens Golden Coating Japan",
+    "prezzo_originale": "$90"
+   },
+   {
+    "prezzo_eur": 104,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/127198656079",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "[NEAR MINT] Pentax Super Multi Coated SMC Takumar 50mm F/1.4 MF Lens Japan #18",
+    "prezzo_originale": "$120"
+   },
+   {
+    "prezzo_eur": 82,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/147387799432",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "[NEAR MINT] Pentax  SMC Takumar 50mm F/1.4 MF Lens Japan #5　【1Day Shipping】",
+    "prezzo_originale": "$95"
+   },
+   {
+    "prezzo_eur": 41,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/398216104765",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "PENTAX SMC TAKUMAR 50mm F1.4 M42 Lens",
+    "prezzo_originale": "$47"
+   },
+   {
+    "prezzo_eur": 41,
+    "tipo": "venduto",
+    "fonte": "Special Auction Services (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-07",
+    "titolo": "An Asahi Super Multi Coated Takumar 50mm f/1.4 Lens",
+    "prezzo_originale": "£35"
+   },
+   {
+    "prezzo_eur": 58,
+    "tipo": "venduto",
+    "fonte": "Special Auction Services (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-01",
+    "titolo": "An Asahi Super Multi Coated Takumar 50mm f/1.4 Lens",
+    "prezzo_originale": "£50"
+   },
+   {
+    "prezzo_eur": 48,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 3 offerte)",
+    "url": "https://www.tradera.com/item/1000211/748628697/asahi-pentax-super-multi-coated-takumar-50mm-f-1-4-m42",
+    "condizione": "buono",
+    "data": "2026-09",
+    "titolo": "Asahi Pentax Super-Multi-Coated Takumar 50mm f/1.4 – M42",
+    "prezzo_originale": "535 SEK"
+   },
+   {
+    "prezzo_eur": 63,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000211/738788224/smc-takumar-50mm-f-1-4-m42-fattning",
+    "condizione": "discreto",
+    "data": "2026-07",
+    "titolo": "SMC Takumar 50mm f:1.4 M42 fattning",
+    "prezzo_originale": "700 SEK"
+   },
+   {
+    "prezzo_eur": 45,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 0 offerte)",
+    "url": "https://www.tradera.com/item/1000211/746874478/super-multi-coated-takumar-50mm-f1-4-asahi-pentax",
+    "condizione": "buono",
+    "data": "2026-09",
+    "titolo": "Super-Multi-Coated Takumar 50mm f1,4 Asahi pentax",
+    "prezzo_originale": "500 SEK"
+   }
+  ]
+ },
+ {
+  "brand": "Pentax",
+  "modello": "Super-Takumar 55 f/1.8 (M42)",
+  "chiavi": [
+   "super takumar 55 1 8",
+   "takumar 55 1 8",
+   "super-takumar 55mm"
+  ],
+  "brand_chiavi": [
+   "pentax",
+   "asahi",
+   "asahi pentax",
+   "takumar"
+  ],
+  "spedizione_eur": 6,
+  "fragile": true,
+  "ingombrante": false,
+  "rischio_falsi": 1,
+  "rischio_guasti": 2,
+  "riconoscibile_da_foto": 4,
+  "domanda": 3,
+  "segni_autenticita": "Scritta Super-Takumar 1:1.8/55, M42; molto comune nei kit Spotmatic.",
+  "note": "Valore basso (20-45 EUR): quasi mai margine da 50 EUR. Auto-Takumar e SMC simili. La versione zebra Auto-Takumar costa di piu'.",
+  "comp": [
+   {
+    "prezzo_eur": 45,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 1 offerte)",
+    "url": "https://www.tradera.com/item/1000211/745021090/asahi-pentax-super-takumar-55mm-f-1-8-m42",
+    "condizione": "buono",
+    "data": "2026-08",
+    "titolo": "Asahi Pentax Super Takumar 55mm f/1.8 M42",
+    "prezzo_originale": "499 SEK"
+   },
+   {
+    "prezzo_eur": 33,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 11 offerte)",
+    "url": "https://www.tradera.com/item/1000211/736292261/asahi-super-takumar-55mm-1-1-8-m42-skruvfattning",
+    "condizione": "molto buono",
+    "data": "2026-06",
+    "titolo": "Asahi Super-Takumar 55mm 1:1.8 - M42 skruvfattning",
+    "prezzo_originale": "370 SEK"
+   },
+   {
+    "prezzo_eur": 40,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta/compralo subito, 0 offerte)",
+    "url": "https://www.tradera.com/item/1000211/752775798/asahi-pentax-super-takumar-55mm-f-1-8",
+    "condizione": "buono",
+    "data": "2026-09",
+    "titolo": "Asahi Pentax Super-Takumar 55mm f/1.8",
+    "prezzo_originale": "450 SEK"
+   },
+   {
+    "prezzo_eur": 40,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 1 offerte)",
+    "url": "https://www.tradera.com/item/1000211/751947255/asahi-pentax-super-takumar-55mm-f-1-8",
+    "condizione": "buono",
+    "data": "2026-09",
+    "titolo": "Asahi Pentax Super-Takumar 55mm f/1.8",
+    "prezzo_originale": "450 SEK"
+   },
+   {
+    "prezzo_eur": 54,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000211/752356471/super-takumar-55mm-f-1-8",
+    "condizione": "discreto",
+    "data": "2026-10",
+    "titolo": "Super Takumar 55mm f/1.8",
+    "prezzo_originale": "600 SEK"
+   },
+   {
+    "prezzo_eur": 43,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta/compralo subito, 0 offerte)",
+    "url": "https://www.tradera.com/item/1000211/751974475/asahi-pentax-super-takumar-55mm-f1-8",
+    "condizione": "molto buono",
+    "data": "2026-09",
+    "titolo": "Asahi Pentax Super-Takumar 55mm f1.8",
+    "prezzo_originale": "477 SEK"
+   },
+   {
+    "prezzo_eur": 36,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta/compralo subito, 0 offerte)",
+    "url": "https://www.tradera.com/item/1000211/737820675/asahi-pentax-super-takumar-55mm-f1-8",
+    "condizione": "molto buono",
+    "data": "2026-06",
+    "titolo": "Asahi Pentax Super-Takumar 55mm f1.8",
+    "prezzo_originale": "399 SEK"
+   },
+   {
+    "prezzo_eur": 40,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta/compralo subito, 0 offerte)",
+    "url": "https://www.tradera.com/item/1000211/742915292/asahi-pentax-super-takumar-55mm-f1-8",
+    "condizione": "molto buono",
+    "data": "2026-08",
+    "titolo": "Asahi Pentax Super-Takumar 55mm f1.8",
+    "prezzo_originale": "444 SEK"
+   },
+   {
+    "prezzo_eur": 18,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta/compralo subito, 1 offerte)",
+    "url": "https://www.tradera.com/item/1000211/737629811/pentax-asahi-super-takumar-55mm-f-1-8",
+    "condizione": "discreto",
+    "data": "2026-07",
+    "titolo": "Pentax Asahi Super-Takumar 55mm f/1.8",
+    "prezzo_originale": "200 SEK"
+   },
+   {
+    "prezzo_eur": 18,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 1 offerte)",
+    "url": "https://www.tradera.com/item/1000211/741465416/pentax-asahi-super-takumar-55mm-f-1-8",
+    "condizione": "discreto",
+    "data": "2026-07",
+    "titolo": "Pentax Asahi Super-Takumar 55mm f/1.8",
+    "prezzo_originale": "200 SEK"
+   },
+   {
+    "prezzo_eur": 29,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta/compralo subito, 3 offerte)",
+    "url": "https://www.tradera.com/item/1000211/749368134/asahi-pentax-smc-takumar-55mm-f-1-8-m42",
+    "condizione": "buono",
+    "data": "2026-09",
+    "titolo": "Asahi Pentax SMC Takumar 55mm f/1.8 – M42",
+    "prezzo_originale": "320 SEK"
+   }
+  ]
+ },
+ {
+  "brand": "Minolta",
+  "modello": "MC Rokkor-PG 58 f/1.2",
+  "chiavi": [
+   "rokkor 58 1 2",
+   "rokkor-pg 58",
+   "mc rokkor 58mm f1 2",
+   "58mm f1 2 minolta"
+  ],
+  "brand_chiavi": [
+   "minolta",
+   "rokkor"
+  ],
+  "spedizione_eur": 6,
+  "fragile": true,
+  "ingombrante": false,
+  "rischio_falsi": 2,
+  "rischio_guasti": 2,
+  "riconoscibile_da_foto": 4,
+  "domanda": 4,
+  "segni_autenticita": "Scritta MC Rokkor-PG 1:1.2 f=58mm, lente frontale molto grande, attacco SR (MC/MD).",
+  "note": "Solo 1 vendita verificata trovata: prezzo poco sicuro. Non confondere con 58 f/1.4 (5-10 volte meno). Difetti: foschia, graffi.",
+  "comp": [
+   {
+    "prezzo_eur": 322,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/326698183468",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-06",
+    "titolo": "Minolta MC Rokkor-PG 58mm f/1.2 Lens - MD Mount - Ultra Fast",
+    "prezzo_originale": "£275"
+   }
+  ]
+ },
+ {
+  "brand": "Minolta",
+  "modello": "Auto/MC Rokkor-PF 58 f/1.4",
+  "chiavi": [
+   "rokkor 58 1 4",
+   "rokkor-pf 58",
+   "rokkor pf 58mm",
+   "mc rokkor 58"
+  ],
+  "brand_chiavi": [
+   "minolta",
+   "rokkor"
+  ],
+  "spedizione_eur": 6,
+  "fragile": true,
+  "ingombrante": false,
+  "rischio_falsi": 1,
+  "rischio_guasti": 2,
+  "riconoscibile_da_foto": 4,
+  "domanda": 3,
+  "segni_autenticita": "Scritta Rokkor-PF 1:1.4 f=58mm, attacco SR.",
+  "note": "Valore basso (30-85 EUR). Non confondere con 58 f/1.2 (molto piu' caro). Esclusi esemplari danneggiati.",
+  "comp": [
+   {
+    "prezzo_eur": 71,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/398320750716",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-09",
+    "titolo": "Minolta MC Rokkor-PF 58mm f/1.4 Manual Focus Prime Lens - Clean, Vintage MC II",
+    "prezzo_originale": "$82"
+   },
+   {
+    "prezzo_eur": 72,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/800479014305",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-09",
+    "titolo": "Minolta MC- Rokkor PF- 58mm 1:1.4 -",
+    "prezzo_originale": "€72"
+   },
+   {
+    "prezzo_eur": 94,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/237029211790",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-09",
+    "titolo": "Minolta 58mm f/1.4 MC Rokkor-PF Fast Prime Lens with/ Caps + Filter, MD Mount",
+    "prezzo_originale": "£80"
+   },
+   {
+    "prezzo_eur": 36,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/147386103079",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-09",
+    "titolo": "Minolta Auto Rokkor PF 58mm f/1.4  Fixed/Prime Standard Lens #B57",
+    "prezzo_originale": "$42"
+   },
+   {
+    "prezzo_eur": 42,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/358850637016",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Minolta Rokkor-PF 58mm f/1.4 MF Lens Minolta MC MD Mount Light Haze #563",
+    "prezzo_originale": "$48"
+   },
+   {
+    "prezzo_eur": 54,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 6 offerte)",
+    "url": "https://www.tradera.com/item/1000211/740767314/minolta-rokkor-58mm-f-1-4-auto-pf",
+    "condizione": "buono",
+    "data": "2026-07",
+    "titolo": "Minolta Rokkor 58mm F/1,4 Auto PF",
+    "prezzo_originale": "600 SEK"
+   },
+   {
+    "prezzo_eur": 63,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta/compralo subito, 0 offerte)",
+    "url": "https://www.tradera.com/item/1000211/751275313/minolta-mc-rokkor-pf-58mm-f1-4-objektiv",
+    "condizione": "buono",
+    "data": "2026-09",
+    "titolo": "Minolta MC Rokkor-PF 58mm f1.4 objektiv",
+    "prezzo_originale": "700 SEK"
+   },
+   {
+    "prezzo_eur": 135,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 0 offerte)",
+    "url": "https://www.tradera.com/item/1000211/744543025/minolta-auto-rokkor-pf-58mm-f-1-4-objektiv",
+    "condizione": "molto buono",
+    "data": "2026-08",
+    "titolo": "Minolta Auto Rokkor-PF 58mm f/1.4 objektiv",
+    "prezzo_originale": "1500 SEK"
+   },
+   {
+    "prezzo_eur": 82,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 8 offerte)",
+    "url": "https://www.tradera.com/item/1000211/746592195/minolta-mc-rokkor-pf-1-1-4-f-58mm-objektiv",
+    "condizione": "buono",
+    "data": "2026-08",
+    "titolo": "Minolta MC Rokkor-PF 1:1.4 f=58mm objektiv",
+    "prezzo_originale": "914 SEK"
+   },
+   {
+    "prezzo_eur": 52,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 21 offerte)",
+    "url": "https://www.tradera.com/item/1000211/748854703/minolta-mc-rokkor-pf-1-1-4-f-58mm-objektiv",
+    "condizione": "discreto",
+    "data": "2026-09",
+    "titolo": "Minolta MC Rokkor-PF 1:1.4 f=58mm objektiv",
+    "prezzo_originale": "575 SEK"
+   },
+   {
+    "prezzo_eur": 86,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 1 offerte)",
+    "url": "https://www.tradera.com/item/1000211/750305946/minolta-mc-rokkor-pf-1-1-4-f-58-mm-objektiv",
+    "condizione": "buono",
+    "data": "2026-09",
+    "titolo": "Minolta MC Rokkor-PF 1:1.4 f=58 mm objektiv",
+    "prezzo_originale": "950 SEK"
+   }
+  ]
+ },
+ {
+  "brand": "Pentax",
+  "modello": "SMC Takumar 6x7 / SMC Pentax 67 105 f/2.4",
+  "chiavi": [
+   "pentax 67 105",
+   "takumar 6x7 105",
+   "105mm f2 4 pentax",
+   "pentax 6x7 105"
+  ],
+  "brand_chiavi": [
+   "pentax",
+   "asahi",
+   "asahi pentax",
+   "takumar"
+  ],
+  "spedizione_eur": 8,
+  "fragile": true,
+  "ingombrante": false,
+  "rischio_falsi": 1,
+  "rischio_guasti": 2,
+  "riconoscibile_da_foto": 4,
+  "domanda": 4,
+  "segni_autenticita": "Scritta Takumar 6x7 o SMC Pentax 67 1:2.4/105, baionetta 67 grande.",
+  "note": "Late model SMC Pentax 67 vale circa il doppio delle Takumar (500-850 EUR contro 250-400). Ingiallimento possibile sulle Takumar.",
+  "comp": [
+   {
+    "prezzo_eur": 318,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/117409129071",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-09",
+    "titolo": "[MINT] PENTAX SMC Takumar 6x7 105mm f2.4 Standard Lens for 67 II Body From JAPAN",
+    "prezzo_originale": "£272"
+   },
+   {
+    "prezzo_eur": 859,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/336737247922",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Late [ Top Mint w/Hood ] SMC Pentax 67 105mm f2.4 Lens For 6x7 67 II From JAPAN",
+    "prezzo_originale": "£734"
+   },
+   {
+    "prezzo_eur": 727,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/398104332954",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Late Model [Almost Unused] SMC Pentax 67 105mm f2.4 Lens For 6x7 67II From JAPAN",
+    "prezzo_originale": "$840"
+   },
+   {
+    "prezzo_eur": 692,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/206328227188",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Late Model [MINT] SMC PENTAX 67 105mm f/2.4 MF Lens for 6x7 67II From JAPAN",
+    "prezzo_originale": "$800"
+   },
+   {
+    "prezzo_eur": 718,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/800196163505",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Late Model [Top MINT] SMC PENTAX 67 105mm f2.4 Lens for 6x7 67 II From JAPAN",
+    "prezzo_originale": "$830"
+   },
+   {
+    "prezzo_eur": 275,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/137583736377",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "[NEAR MINT] Pentax Super Takumar 6x7 105mm f2.4 Standard Lens From JAPAN",
+    "prezzo_originale": "$318"
+   },
+   {
+    "prezzo_eur": 368,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/307093007777",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "PENTAX SMC TAKUMAR 6x7 105mm f/2.4 for 6x7 / 67 / 67II",
+    "prezzo_originale": "$426"
+   },
+   {
+    "prezzo_eur": 606,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/406683571845",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Pentax SMC Pentax 67 105mm f/2.4 Late Model MF Lens 6x7 67 II *Excellent+5 #4910",
+    "prezzo_originale": "$700"
+   },
+   {
+    "prezzo_eur": 692,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/398225928632",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Late Model 【N Mint】 SMC Pentax 67 105mm f/2.4 Lens for 6x7 67 II from Japan #240",
+    "prezzo_originale": "$800"
+   },
+   {
+    "prezzo_eur": 476,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/398230455625",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "No Yellow [N MINT+++/ Hood] PENTAX SMC Takumar 6x7 105mm f2.4 Lens for 6x7 67 II",
+    "prezzo_originale": "$550"
+   },
+   {
+    "prezzo_eur": 303,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/406983129941",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "[Near MINT] Pentax SMC Takumar 6x7 105mm f2.4 Lens For 6x7 67 67II From JAPAN",
+    "prezzo_originale": "$350"
+   },
+   {
+    "prezzo_eur": 346,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/168567554649",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "[ Near Mint ] PENTAX SMC Takumar 6x7 105mm F2.4 MF Lens For 67 67II From JAPAN",
+    "prezzo_originale": "$400"
+   },
+   {
+    "prezzo_eur": 285,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/318286076416",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "No Yellow [Near MINT] Pentax 105mm F2.4 SMC Takumar For 67 6x7 Lens From Japan",
+    "prezzo_originale": "$330"
+   },
+   {
+    "prezzo_eur": 751,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/137546086781",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Late 8707xxx [Top MINT+++] SMC Pentax 67 105mm f2.4 Standard Lens 6x7 67 II JP",
+    "prezzo_originale": "£642"
+   },
+   {
+    "prezzo_eur": 342,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/407051939862",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "[N MINT] PENTAX SMC Takumar 6x7 105mm f/2.4 Standard Lens for 67 II From JAPAN",
+    "prezzo_originale": "£292"
+   },
+   {
+    "prezzo_eur": 99,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-07",
+    "titolo": "An Asahi Super-Multi-Coated Takumar 6x7 f/2.4 105mm Lens",
+    "prezzo_originale": "£85"
+   },
+   {
+    "prezzo_eur": 294,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/366442489146",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-06",
+    "titolo": "[Near Mint] Pentax Super Takumar 6x7 105mm f2.4 Standard Lens From JAPAN",
+    "prezzo_originale": "$340"
+   },
+   {
+    "prezzo_eur": 303,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/358443870873",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-06",
+    "titolo": "[N MINT+++]  Pentax Super Takumar 6x7 67 II 105mm f/2.4 Standard Lens JAPAN 357",
+    "prezzo_originale": "$350"
+   },
+   {
+    "prezzo_eur": 240,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/206332406109",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-06",
+    "titolo": "Pentax 67 105mm f2.4 Super Takumar Lens 6x7 *Read #306",
+    "prezzo_originale": "$278"
+   },
+   {
+    "prezzo_eur": 294,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/358688645278",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-06",
+    "titolo": "EXCELLENT PENTAX Super Takumar 6x7 105mm F/2.4 For PENTAX 67 Prime Lens",
+    "prezzo_originale": "$340"
+   },
+   {
+    "prezzo_eur": 164,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-06",
+    "titolo": "An SMC Pentax 67 f/2.4 105mm Lens",
+    "prezzo_originale": "£140"
+   },
+   {
+    "prezzo_eur": 269,
+    "tipo": "venduto",
+    "fonte": "Cullens of Surrey (martello) via cameraworth",
+    "url": "https://auctions.cullensofsurrey.co.uk/catalogue/lot/18b11f347be8501f37e16044b314bcdd/3bb700f725ca82bfcefb7be9cfca17b6/cullens-new-years-sale-cameras-and-photography-includ-lot-43/",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-01",
+    "titolo": "Pentax 67 105mm f/2.4 SMC Lens with Jessop 67mm MC-18 Filter",
+    "prezzo_originale": "£230"
+   }
+  ]
+ },
+ {
+  "brand": "Hasselblad",
+  "modello": "Carl Zeiss Planar 80 f/2.8 (C, CF, CB, CFE, CFi)",
+  "chiavi": [
+   "planar 80 2 8",
+   "hasselblad 80mm",
+   "planar cf 80",
+   "planar 80mm"
+  ],
+  "brand_chiavi": [
+   "hasselblad",
+   "carl zeiss",
+   "zeiss"
+  ],
+  "spedizione_eur": 8,
+  "fragile": true,
+  "ingombrante": false,
+  "rischio_falsi": 2,
+  "rischio_guasti": 3,
+  "riconoscibile_da_foto": 4,
+  "domanda": 4,
+  "segni_autenticita": "Scritta Carl Zeiss Planar 2.8/80 T*, attacco V Hasselblad, otturatore centrale Compur/Prontor.",
+  "note": "C cromato e C T* nero 400-800 EUR; CF/CFE 600-1100 EUR. Otturatore da verificare (C spesso lento). Escluse le versioni F per 2000/200 senza otturatore.",
+  "comp": [
+   {
+    "prezzo_eur": 1903,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/198703501390",
+    "condizione": "usato, vedi titolo, con scatola",
+    "data": "2026-10",
+    "titolo": "Overhauled [ TOP MINT ] Hasselblad Carl Zeiss Planar CFE 80mm F2.8 T* From JAPAN",
+    "prezzo_originale": "$2,200"
+   },
+   {
+    "prezzo_eur": 909,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/206614534553",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-10",
+    "titolo": "HASSELBLAD ZEISS CFE PLANAR T* 80MM 2.8 LENS",
+    "prezzo_originale": "$1,051"
+   },
+   {
+    "prezzo_eur": 1103,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/206591191859",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-10",
+    "titolo": "HASSELBLAD ZEISS CFE PLANAR T* 80MM 2.8 LENS",
+    "prezzo_originale": "$1,275"
+   },
+   {
+    "prezzo_eur": 649,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/800501228341",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Hasselblad Planar T* 80mm f/2.8 CF - SNr: 7079390",
+    "prezzo_originale": "€649"
+   },
+   {
+    "prezzo_eur": 684,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/358720998797",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "[Top MINT] Hasselblad Carl Zeiss C Planar 80mm F2.8 Black Lens Chrome From JAPAN",
+    "prezzo_originale": "£585"
+   },
+   {
+    "prezzo_eur": 404,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/407127523201",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Hasselblad 80mm f2.8 Zeiss Planar C Lens Chrome *Read notes #926",
+    "prezzo_originale": "$467"
+   },
+   {
+    "prezzo_eur": 631,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/127956139688",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "【N MINT w/ Hood】 Hasselblad Carl Zeiss Planar C 80mm f/2.8 Lens 500CM From JAPAN",
+    "prezzo_originale": "$730"
+   },
+   {
+    "prezzo_eur": 825,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/336720319443",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Hasselblad 80mm f2.8 Planar C T Star EXC+++++ US Seller",
+    "prezzo_originale": "$954"
+   },
+   {
+    "prezzo_eur": 521,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/257600675243",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Hasselblad 80mm f2.8 Planar CT* lens, see description",
+    "prezzo_originale": "£445"
+   },
+   {
+    "prezzo_eur": 606,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/800236136731",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "[Near MINT] Hasselblad Carl Zeiss Planar C 80mm f/2.8 Chrome Silver From JAPAN",
+    "prezzo_originale": "$700"
+   },
+   {
+    "prezzo_eur": 606,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/188700993999",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "[Top MINT] Hasselblad Carl Zeiss Planar T* C 80mm f/2.8 Black Lens From JAPAN",
+    "prezzo_originale": "$700"
+   },
+   {
+    "prezzo_eur": 952,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/257635759685",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "[ MINT w/ Case Hood ] Hasselblad Carl Zeiss Planar CB 80mm f/2.8 T* V Mount Lens",
+    "prezzo_originale": "$1,100"
+   },
+   {
+    "prezzo_eur": 986,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/267723999501",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Vintage Hasselblad Carl Zeiss T* Planar C 80mm F2.8 lens, Hood front cap",
+    "prezzo_originale": "$1,140"
+   },
+   {
+    "prezzo_eur": 651,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/407032925625",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "[MINT w/Hood] Hasselblad Carl Zeiss C Planar 80mm f/2.8 T* Black Lens From JAPAN",
+    "prezzo_originale": "£556"
+   },
+   {
+    "prezzo_eur": 735,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/407090182181",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "[Optical MINT w/ Hood] Hasselblad Zeiss Planar T* C 80mm f/2.8 Lens From Japan",
+    "prezzo_originale": "$850"
+   },
+   {
+    "prezzo_eur": 521,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/257596061892",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Hasselblad 80mm f2.8 Planar C lens",
+    "prezzo_originale": "£445"
+   },
+   {
+    "prezzo_eur": 545,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/236959277162",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Hasselblad C Planar 2,8/80 T* Carl Zeiss Black f/2,8 80mm Standard Lens",
+    "prezzo_originale": "$630"
+   },
+   {
+    "prezzo_eur": 778,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/206395045274",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "[Top MINT w/Hood]  Hasselblad Carl Zeiss Planar C 80mm f/2.8 T* Lens From Japan",
+    "prezzo_originale": "$900"
+   },
+   {
+    "prezzo_eur": 761,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/127950161660",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Rare Chrome T* [Exc+5] Hasselblad Carl Zeiss C Planar 80mm f/2.8 Lens From JAPAN",
+    "prezzo_originale": "$880"
+   },
+   {
+    "prezzo_eur": 328,
+    "tipo": "venduto",
+    "fonte": "Chiswick Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-07",
+    "titolo": "Hasselblad 80mm f2.8 Planar Prontor CF Lens.",
+    "prezzo_originale": "£280"
+   },
+   {
+    "prezzo_eur": 1170,
+    "tipo": "venduto",
+    "fonte": "Tennants (martello) via cameraworth",
+    "url": "https://auctions.tennants.co.uk/auction/lot/?lot=2534080&au=14241",
+    "condizione": "asta, condizione non dichiarata, con scatola",
+    "data": "2025-05",
+    "titolo": "Hasselblad Carl Zeiss T* Planar f2.8 80mm Lens",
+    "prezzo_originale": "£1,000"
+   },
+   {
+    "prezzo_eur": 538,
+    "tipo": "venduto",
+    "fonte": "Chiswick Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-03",
+    "titolo": "A Carl Zeiss 80mm f/2.8 Planar CF T* Lens",
+    "prezzo_originale": "£460"
+   },
+   {
+    "prezzo_eur": 374,
+    "tipo": "venduto",
+    "fonte": "Harper Field (martello) via cameraworth",
+    "url": "https://bid.harperfield.co.uk/past-auctions/srstr10147/lot-details/21a36cd7-6aa7-4d22-a8ef-b1f601620ee5",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2024-10",
+    "titolo": "Carl Zeiss Planar 1:2.8 f=80mm T* lens to suit Hasselblad medium format camera, serial number",
+    "prezzo_originale": "£320"
+   }
+  ]
+ },
+ {
+  "brand": "Mamiya",
+  "modello": "Mamiya Sekor C 80 f/2.8 (M645, anche N)",
+  "chiavi": [
+   "mamiya 645 80",
+   "sekor c 80",
+   "mamiya 80mm 2 8",
+   "sekor 80 2 8"
+  ],
+  "brand_chiavi": [
+   "mamiya"
+  ],
+  "spedizione_eur": 6,
+  "fragile": true,
+  "ingombrante": false,
+  "rischio_falsi": 1,
+  "rischio_guasti": 2,
+  "riconoscibile_da_foto": 4,
+  "domanda": 3,
+  "segni_autenticita": "Scritta Mamiya-Sekor C 1:2.8 f=80mm, baionetta M645.",
+  "note": "La versione AF per 645AF vale un po' di piu' (150-250 GBP). Non confondere con 80/2.8 per RB67/TLR.",
+  "comp": [
+   {
+    "prezzo_eur": 208,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/820027705809",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-09",
+    "titolo": "[MINT] Mamiya Sekor C 80mm F/2.8 M645 1000S Super Pro TL From JAPAN",
+    "prezzo_originale": "$240"
+   },
+   {
+    "prezzo_eur": 104,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/377465706347",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-09",
+    "titolo": "Mamiya Sekor C 80mm f/2.8 N Manual Focus Lens for 645 {58} (Without Caps)",
+    "prezzo_originale": "$120"
+   },
+   {
+    "prezzo_eur": 290,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/277753850537",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-09",
+    "titolo": "Mamiya 645 Sekor C 2.8/80 N Standard Lens f/2.8 80mm Lens",
+    "prezzo_originale": "€290"
+   },
+   {
+    "prezzo_eur": 185,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/327300718165",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "[EXCELLENT] MAMIYA-SEKOR C 80MM F2.8 N FOR M645, SUPER, PRO, TL, FUJIFILM GFX",
+    "prezzo_originale": "£158"
+   },
+   {
+    "prezzo_eur": 189,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/407121093088",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Mamiya 645 80mm f2.8 Sekor C Lens M645 #107",
+    "prezzo_originale": "$218"
+   },
+   {
+    "prezzo_eur": 189,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/147483762409",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Mamiya 645 80mm f2.8 Sekor C Lens M645 #872",
+    "prezzo_originale": "$218"
+   },
+   {
+    "prezzo_eur": 207,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/227463256446",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Mamiya Sekor C 80mm F2.8 Lens For M645 - Great Shape! W/ UV Filter & Focus Gear",
+    "prezzo_originale": "$239"
+   },
+   {
+    "prezzo_eur": 117,
+    "tipo": "venduto",
+    "fonte": "Chiswick Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-10",
+    "titolo": "A Mamiya Sekor Blue Dot 80mm f/2.8 Lens",
+    "prezzo_originale": "£100"
+   }
+  ]
+ },
+ {
+  "brand": "Carl Zeiss Jena",
+  "modello": "Sonnar 135 f/3.5 (M42, MC/electric/zebra) e 135 f/2.8",
+  "chiavi": [
+   "sonnar 135",
+   "sonnar 3 5 135",
+   "mc sonnar 135"
+  ],
+  "brand_chiavi": [
+   "carl zeiss jena",
+   "zeiss jena",
+   "aus jena",
+   "czj",
+   "zeiss"
+  ],
+  "spedizione_eur": 8,
+  "fragile": true,
+  "ingombrante": false,
+  "rischio_falsi": 1,
+  "rischio_guasti": 2,
+  "riconoscibile_da_foto": 4,
+  "domanda": 2,
+  "segni_autenticita": "Scritta Carl Zeiss Jena (o aus JENA) Sonnar 3.5/135, M42.",
+  "note": "Valore basso (40-70 EUR): margine quasi impossibile. I Sonnar 135/2.8 Contax (Zeiss ovest) valgono simile o poco piu'. Esclusa versione cine modificata.",
+  "comp": [
+   {
+    "prezzo_eur": 47,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-11",
+    "titolo": "A Carl Zeiss Sonnar 135mm f/2.8 Camera Lens",
+    "prezzo_originale": "£40"
+   },
+   {
+    "prezzo_eur": 99,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-03",
+    "titolo": "A Carl Zeiss Sonnar f/2.8 135mm Lens",
+    "prezzo_originale": "£85"
+   },
+   {
+    "prezzo_eur": 54,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000213/748545495/carl-zeiss-jena-sonnar-135mm-f-3-5-m42-zebra-vintage-objektiv",
+    "condizione": "buono",
+    "data": "2026-09",
+    "titolo": "Carl Zeiss Jena Sonnar 135mm f/3.5 M42 Zebra Vintage Objektiv",
+    "prezzo_originale": "600 SEK"
+   },
+   {
+    "prezzo_eur": 44,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000213/742720928/carl-zeiss-135mm-f3-5-jena-ddr-mc-sonnar",
+    "condizione": "molto buono",
+    "data": "2026-08",
+    "titolo": "Carl Zeiss 135mm f3.5 Jena DDR MC Sonnar",
+    "prezzo_originale": "490 SEK"
+   },
+   {
+    "prezzo_eur": 54,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000213/739098425/carl-zeiss-jena-mc-electric-sonnar-3-5-135-objektiv",
+    "condizione": "buono",
+    "data": "2026-08",
+    "titolo": "Carl Zeiss Jena MC electric Sonnar 3.5/135 objektiv",
+    "prezzo_originale": "595 SEK"
+   },
+   {
+    "prezzo_eur": 50,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 1 offerte)",
+    "url": "https://www.tradera.com/item/1000213/741325994/carl-zeiss-sonnar-135mm-f-2-8-contax-mf",
+    "condizione": "discreto",
+    "data": "2026-07",
+    "titolo": "CARL ZEISS SONNAR 135mm f/2,8 CONTAX MF",
+    "prezzo_originale": "555 SEK"
+   },
+   {
+    "prezzo_eur": 66,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta/compralo subito, 1 offerte)",
+    "url": "https://www.tradera.com/item/1000213/741310798/carl-zeiss-sonnar-2-8-135-objektiv",
+    "condizione": "buono",
+    "data": "2026-07",
+    "titolo": "Carl Zeiss Sonnar 2.8/135 objektiv",
+    "prezzo_originale": "738 SEK"
+   }
+  ]
+ },
+ {
+  "brand": "Carl Zeiss Jena",
+  "modello": "Pancolar 50 f/1.8 (M42, zebra o MC electric)",
+  "chiavi": [
+   "pancolar 50",
+   "pancolar 1 8",
+   "pancolar 50 1 8"
+  ],
+  "brand_chiavi": [
+   "carl zeiss jena",
+   "zeiss jena",
+   "aus jena",
+   "czj",
+   "zeiss"
+  ],
+  "spedizione_eur": 6,
+  "fragile": true,
+  "ingombrante": false,
+  "rischio_falsi": 1,
+  "rischio_guasti": 2,
+  "riconoscibile_da_foto": 4,
+  "domanda": 3,
+  "segni_autenticita": "Scritta Carl Zeiss Jena DDR Pancolar 1.8/50 o auto, M42.",
+  "note": "Poche vendite trovate (2): prezzo poco sicuro, circa 100-105 EUR in Svezia. Alcune versioni hanno vetro al torio (ingiallito).",
+  "comp": [
+   {
+    "prezzo_eur": 105,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 11 offerte)",
+    "url": "https://www.tradera.com/item/1000211/749188419/carl-zeiss-jena-ddr-pancolar-1-8-50-mc-electric-m42",
+    "condizione": "molto buono",
+    "data": "2026-09",
+    "titolo": "Carl Zeiss Jena DDR Pancolar 1.8/50 MC Electric m42",
+    "prezzo_originale": "1172 SEK"
+   },
+   {
+    "prezzo_eur": 104,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000211/747262878/carl-zeiss-jena-pancolar-50mm-f-1-8-electric-m42",
+    "condizione": "buono",
+    "data": "2026-09",
+    "titolo": "Carl Zeiss Jena Pancolar 50mm f/1.8 Electric – M42",
+    "prezzo_originale": "1150 SEK"
+   }
+  ]
+ },
+ {
+  "brand": "Carl Zeiss Jena",
+  "modello": "Tessar 50 f/2.8 (M42 e altri attacchi)",
+  "chiavi": [
+   "tessar 50 2 8",
+   "tessar 2 8 50",
+   "tessar 50mm"
+  ],
+  "brand_chiavi": [
+   "carl zeiss jena",
+   "zeiss jena",
+   "aus jena",
+   "czj",
+   "zeiss"
+  ],
+  "spedizione_eur": 6,
+  "fragile": true,
+  "ingombrante": false,
+  "rischio_falsi": 1,
+  "rischio_guasti": 2,
+  "riconoscibile_da_foto": 4,
+  "domanda": 1,
+  "segni_autenticita": "Scritta Carl Zeiss Jena Tessar 2.8/50.",
+  "note": "Conferma: vale poco (circa 35-40 EUR quando venduto). Spesso montato su Contaflex/Praktica, venduto con il corpo.",
+  "comp": [
+   {
+    "prezzo_eur": 36,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 0 offerte)",
+    "url": "https://www.tradera.com/item/1000215/751751517/sallsynt-carl-zeiss-jena-tessar-2-8-50-m42-mount-vintage-klassiker-",
+    "condizione": "buono",
+    "data": "2026-09",
+    "titolo": "Sällsynt Carl Zeiss Jena Tessar 2.8/50 – M42 Mount (Vintage Klassiker)",
+    "prezzo_originale": "400 SEK"
+   },
+   {
+    "prezzo_eur": 39,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 7 offerte)",
+    "url": "https://www.tradera.com/item/1000215/741235896/sallsynt-carl-zeiss-jena-tessar-2-8-50-m42-mount-vintage-klassiker-",
+    "condizione": "buono",
+    "data": "2026-07",
+    "titolo": "Sällsynt Carl Zeiss Jena Tessar 2.8/50 – M42 Mount (Vintage Klassiker)",
+    "prezzo_originale": "435 SEK"
+   }
+  ]
+ },
+ {
+  "brand": "Canon",
+  "modello": "EF 70-200 f/4 L USM e L IS USM",
+  "chiavi": [
+   "70-200 f4 l",
+   "70-200 4l",
+   "ef 70-200 4",
+   "70-200mm f 4 l"
+  ],
+  "brand_chiavi": [
+   "canon"
+  ],
+  "spedizione_eur": 8,
+  "fragile": true,
+  "ingombrante": false,
+  "rischio_falsi": 2,
+  "rischio_guasti": 2,
+  "riconoscibile_da_foto": 4,
+  "domanda": 4,
+  "segni_autenticita": "Obiettivo bianco con anello rosso, scritta Canon Zoom Lens EF 70-200mm 1:4 L USM (IS).",
+  "note": "Senza IS 200-270 EUR, IS 230-400 EUR, IS II 700-900 EUR (escluso). Non confondere con 70-200 f/2.8 (piu' grande).",
+  "comp": [
+   {
+    "prezzo_eur": 269,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/137597417085",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 70-200mm F4 L USM",
+    "prezzo_originale": "£230"
+   },
+   {
+    "prezzo_eur": 432,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/358920544531",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 70-200mm f/4 L IS USM Zoom Lens [Near Mint w/Hood] Fast Shipping Japan",
+    "prezzo_originale": "$500"
+   },
+   {
+    "prezzo_eur": 388,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/398262239276",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "[TOP MINT] Canon EF 70-200mm f/4 L IS USM Lens with ET-74 Hood Caps from Japan",
+    "prezzo_originale": "£332"
+   },
+   {
+    "prezzo_eur": 403,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/306584116012",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 70-200mm F/4 L IS USM Telephoto Lens US STOCK #11185",
+    "prezzo_originale": "$466"
+   },
+   {
+    "prezzo_eur": 319,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/267745649119",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 70-200mm F/4 L IS USM Lens - NO HOOD",
+    "prezzo_originale": "£273"
+   },
+   {
+    "prezzo_eur": 234,
+    "tipo": "venduto",
+    "fonte": "Special Auction Services (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-11",
+    "titolo": "A Canon EF 70-200mm f/4 L IS USM Lens",
+    "prezzo_originale": "£200"
+   },
+   {
+    "prezzo_eur": 234,
+    "tipo": "venduto",
+    "fonte": "Tennants (martello) via cameraworth",
+    "url": "https://auctions.tennants.co.uk/auction/lot/?lot=2547117&au=14268",
+    "condizione": "asta, condizione non dichiarata, con scatola",
+    "data": "2025-10",
+    "titolo": "Canon EF f4L 70-200mm IS USM Lens",
+    "prezzo_originale": "£200"
+   },
+   {
+    "prezzo_eur": 199,
+    "tipo": "venduto",
+    "fonte": "David Duggleby (martello) via cameraworth",
+    "url": "https://www.davidduggleby.com/auctions/2331/?returnItemNo=111617",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2024-10",
+    "titolo": "Canon Ultrasonic EF 70-200mm 1:4 L USM zoom lens serial no. 304444, together with a Canon ...",
+    "prezzo_originale": "£170"
+   }
+  ]
+ },
+ {
+  "brand": "Canon",
+  "modello": "EF 70-200 f/2.8 L USM / IS / IS II / IS III",
+  "chiavi": [
+   "70-200 2 8",
+   "70-200 f2 8 l",
+   "70-200mm 2 8 is",
+   "70-200 2 8l"
+  ],
+  "brand_chiavi": [
+   "canon"
+  ],
+  "spedizione_eur": 10,
+  "fragile": true,
+  "ingombrante": false,
+  "rischio_falsi": 2,
+  "rischio_guasti": 2,
+  "riconoscibile_da_foto": 4,
+  "domanda": 5,
+  "segni_autenticita": "Bianco con anello rosso, scritta EF 70-200mm 1:2.8 L (IS, IS II, IS III) USM.",
+  "note": "Versioni: senza IS 300-400 EUR, IS 300-600, IS II 600-900, IS III 900-1400. Le aste UK (Flints, SAS) battono molto meno di eBay. Controllare la scritta della versione.",
+  "comp": [
+   {
+    "prezzo_eur": 1094,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/189041960544",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-10",
+    "titolo": "Canon EF 70-200mm f/2.8L IS II USM Lens ,Filter, Hood, Case Box",
+    "prezzo_originale": "£935"
+   },
+   {
+    "prezzo_eur": 591,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/227565862833",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-10",
+    "titolo": "Excellent Canon EF 70-200mm f/2.8 L IS USM Telephoto Zoom Lens EF Mount w/ Hood",
+    "prezzo_originale": "£505"
+   },
+   {
+    "prezzo_eur": 584,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/128002278385",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 70-200mm F/2.8 EF IS L USM Lens",
+    "prezzo_originale": "£499"
+   },
+   {
+    "prezzo_eur": 701,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/236997147610",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 70-200mm  F/2.8 L IS II USM Lens",
+    "prezzo_originale": "£599"
+   },
+   {
+    "prezzo_eur": 878,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/128017440044",
+    "condizione": "usato, vedi titolo, con scatola",
+    "data": "2026-08",
+    "titolo": "Canon EF 70-200mm F2.8 L MK II IS USM Lens Boxed in Mint Condition",
+    "prezzo_originale": "£750"
+   },
+   {
+    "prezzo_eur": 813,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/147491533942",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "[ Near MINT w/ case ] Canon EF 70-200mm F/2.8 L IS II USM Lens #25056",
+    "prezzo_originale": "£695"
+   },
+   {
+    "prezzo_eur": 724,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/158127993611",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 70-200mm  F/2.8 L IS II USM Lens",
+    "prezzo_originale": "£619"
+   },
+   {
+    "prezzo_eur": 386,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/198547657278",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 70-200mm f2.8L USM zoom lens in excellent condition.",
+    "prezzo_originale": "£330"
+   },
+   {
+    "prezzo_eur": 843,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/168589685933",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 70-200mm f/2.8L IS II (Mark 2) USM Lens",
+    "prezzo_originale": "$975"
+   },
+   {
+    "prezzo_eur": 865,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/147428454821",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "[Top MINT w/ Case] Canon EF 70-200mm f/2.8 L IS II USM AF Zoom Lens From JAPAN",
+    "prezzo_originale": "$1,000"
+   },
+   {
+    "prezzo_eur": 865,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/407118860798",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 70-200mm F/2.8L IS II USM Telephoto Lens (USA MODEL)",
+    "prezzo_originale": "$1,000"
+   },
+   {
+    "prezzo_eur": 1375,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/267742994151",
+    "condizione": "usato, vedi titolo, con scatola",
+    "data": "2026-08",
+    "titolo": "Canon EF 70-200mm f/2.8L IS III USM - Stunning Condition with Original Packaging",
+    "prezzo_originale": "£1,175"
+   },
+   {
+    "prezzo_eur": 843,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/398150833093",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon Lens EF 70-200mm F/2.8L IS II USM Telephoto (Hood & Bag included)",
+    "prezzo_originale": "$975"
+   },
+   {
+    "prezzo_eur": 908,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/147474371943",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 70-200mm f/2.8L IS II Telephoto Zoom Lens USM with Lens Hood",
+    "prezzo_originale": "$1,050"
+   },
+   {
+    "prezzo_eur": 935,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/800401378045",
+    "condizione": "usato, vedi titolo, con scatola",
+    "data": "2026-07",
+    "titolo": "Canon EF 70-200mm f/2.8L IS III USM - Great Condition, Perfect Working Order",
+    "prezzo_originale": "£799"
+   },
+   {
+    "prezzo_eur": 1275,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/318538025931",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Canon EF 70-200mm f/2.8L IS III USM White Lens",
+    "prezzo_originale": "£1,090"
+   },
+   {
+    "prezzo_eur": 1023,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/800335673108",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Canon EF 70-200mm f/2.8L Is III USM Lens",
+    "prezzo_originale": "£874"
+   },
+   {
+    "prezzo_eur": 1399,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/198483654890",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Canon EF 70-200mm f/2.8L IS III USM Camera Lens",
+    "prezzo_originale": "£1,196"
+   },
+   {
+    "prezzo_eur": 1403,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/800284081611",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Canon EF 70-200mm f/2.8L IS III USM - Great Condition, Perfect Working Order",
+    "prezzo_originale": "£1,199"
+   },
+   {
+    "prezzo_eur": 257,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata, con scatola",
+    "data": "2026-06",
+    "titolo": "A Canon EF L IS USM f/2.8 70-200mm Camera Lens",
+    "prezzo_originale": "£220"
+   },
+   {
+    "prezzo_eur": 281,
+    "tipo": "venduto",
+    "fonte": "Special Auction Services (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-05",
+    "titolo": "A Canon EF 70-200mm f/2.8 L IS II USM Lens",
+    "prezzo_originale": "£240"
+   },
+   {
+    "prezzo_eur": 304,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-03",
+    "titolo": "A Canon EF L USM f/2.8 70-200mm Lens",
+    "prezzo_originale": "£260"
+   },
+   {
+    "prezzo_eur": 211,
+    "tipo": "venduto",
+    "fonte": "Special Auction Services (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-01",
+    "titolo": "A Canon EF 70-200mm f/2.8 L Ultrasonic Lens.",
+    "prezzo_originale": "£180"
+   },
+   {
+    "prezzo_eur": 328,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-11",
+    "titolo": "A Canon EF L IS f/2.8 70-200mm Lens",
+    "prezzo_originale": "£280"
+   },
+   {
+    "prezzo_eur": 292,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata, con scatola",
+    "data": "2025-09",
+    "titolo": "A Canon EF f/2.8L 70-200mm IS USM Lens",
+    "prezzo_originale": "£250"
+   },
+   {
+    "prezzo_eur": 468,
+    "tipo": "venduto",
+    "fonte": "Harper Field (martello) via cameraworth",
+    "url": "https://bid.harperfield.co.uk/past-auctions/srstr10150/lot-details/a0a49ef1-987f-43e9-a5a7-b274011bfca9",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-02",
+    "titolo": "Canon EF 70-200mm 1:2.8 L IS II USM digital SLR camera lens, with hood, front and rear caps and",
+    "prezzo_originale": "£400"
+   },
+   {
+    "prezzo_eur": 374,
+    "tipo": "venduto",
+    "fonte": "Harper Field (martello) via cameraworth",
+    "url": "https://bid.harperfield.co.uk/past-auctions/srstr10150/lot-details/efc9280e-5acb-4c75-9729-b274011c06a0",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-02",
+    "titolo": "Canon EF 70-200mm 1:2.8 L USM digital SLR camera lens, with hood, front and rear caps and tripod",
+    "prezzo_originale": "£320"
+   },
+   {
+    "prezzo_eur": 351,
+    "tipo": "venduto",
+    "fonte": "David Duggleby (martello) via cameraworth",
+    "url": "https://www.davidduggleby.com/auctions/2331/?returnItemNo=111600",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2024-10",
+    "titolo": "Canon EF 70-200mm 1:2.8 L IS Ultrasonic zoom lens, serial no. 236345, with Canon ET-86 len...",
+    "prezzo_originale": "£300"
+   }
+  ]
+ },
+ {
+  "brand": "Canon",
+  "modello": "EF 50 f/1.4 USM",
+  "chiavi": [
+   "ef 50 1 4",
+   "canon 50mm 1 4 usm",
+   "50mm f 1 4 usm"
+  ],
+  "brand_chiavi": [
+   "canon"
+  ],
+  "spedizione_eur": 6,
+  "fragile": true,
+  "ingombrante": false,
+  "rischio_falsi": 1,
+  "rischio_guasti": 3,
+  "riconoscibile_da_foto": 4,
+  "domanda": 4,
+  "segni_autenticita": "Scritta Canon Lens EF 50mm 1:1.4 Ultrasonic.",
+  "note": "Difetto tipico: messa a fuoco bloccata (meccanica fragile dopo urti). Non confondere con FD/FL 50 f/1.4 manuali (30-130 EUR).",
+  "comp": [
+   {
+    "prezzo_eur": 146,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/167959762906",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 50mm f/1.4 USM Prime Lens - Great Condition",
+    "prezzo_originale": "£125"
+   },
+   {
+    "prezzo_eur": 104,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/287497195894",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 50mm f/1.4 USM Fixed Lens, UV protective filter and Lens Caps",
+    "prezzo_originale": "$120"
+   },
+   {
+    "prezzo_eur": 164,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/178366602836",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "[Almost Unused] Canon EF 50mm f/1.4 USM AF Standard Prime Lens From JAPAN # 2020",
+    "prezzo_originale": "$190"
+   },
+   {
+    "prezzo_eur": 151,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/157924998437",
+    "condizione": "usato, vedi titolo, con scatola",
+    "data": "2026-08",
+    "titolo": "Canon EF 50mm f/1.4 USM Lens - open box",
+    "prezzo_originale": "$175"
+   },
+   {
+    "prezzo_eur": 161,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/147470594807",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Canon EOS EF 50mm f/1.4 USM PRIME CLEAN lens for EOS Elan A2 T8 T7 90D 7D 5D 1D",
+    "prezzo_originale": "$186"
+   },
+   {
+    "prezzo_eur": 139,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/287412611551",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Canon EF 50mm f/1.4 USM Lens w/Hood Caps From Japan 2935846",
+    "prezzo_originale": "$161"
+   },
+   {
+    "prezzo_eur": 70,
+    "tipo": "venduto",
+    "fonte": "Special Auction Services (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-05",
+    "titolo": "A Canon EF 50mm f/1.4 Ultrasonic Lens",
+    "prezzo_originale": "£60"
+   },
+   {
+    "prezzo_eur": 70,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-03",
+    "titolo": "A Canon EF USM f/1.4 50mm Lens",
+    "prezzo_originale": "£60"
+   },
+   {
+    "prezzo_eur": 117,
+    "tipo": "venduto",
+    "fonte": "Tennants (martello) via cameraworth",
+    "url": "https://auctions.tennants.co.uk/auction/lot/?lot=2547118&au=14268",
+    "condizione": "asta, condizione non dichiarata, con scatola",
+    "data": "2025-10",
+    "titolo": "Canon EF F1.4 50mm USM Lens",
+    "prezzo_originale": "£100"
+   },
+   {
+    "prezzo_eur": 99,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-05",
+    "titolo": "A Canon EF f/1.4 50mm Ultrasonic Lens",
+    "prezzo_originale": "£85"
+   }
+  ]
+ },
+ {
+  "brand": "Canon",
+  "modello": "EF 85 f/1.8 USM",
+  "chiavi": [
+   "ef 85 1 8",
+   "canon 85mm 1 8",
+   "85mm f 1 8 usm"
+  ],
+  "brand_chiavi": [
+   "canon"
+  ],
+  "spedizione_eur": 6,
+  "fragile": true,
+  "ingombrante": false,
+  "rischio_falsi": 1,
+  "rischio_guasti": 2,
+  "riconoscibile_da_foto": 4,
+  "domanda": 4,
+  "segni_autenticita": "Scritta Canon Lens EF 85mm 1:1.8 Ultrasonic, anello di fuoco gommato.",
+  "note": "Molto liquido. Aste UK 80-150 GBP, eBay 150-250 GBP. Esclusi open box e ricambi.",
+  "comp": [
+   {
+    "prezzo_eur": 266,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/407102405370",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 85mm f1.8 USM Lens #886",
+    "prezzo_originale": "$307"
+   },
+   {
+    "prezzo_eur": 196,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/377410866854",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon Ef 85mm F/1.8 Usm Telephoto Lens - Black",
+    "prezzo_originale": "$227"
+   },
+   {
+    "prezzo_eur": 227,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/307084587481",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 85mm f/1.8 USM",
+    "prezzo_originale": "$263"
+   },
+   {
+    "prezzo_eur": 260,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/358898352904",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 85mm F/1.8 USM Portrait Wedding Lens",
+    "prezzo_originale": "$300"
+   },
+   {
+    "prezzo_eur": 199,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/287487377734",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "[MINT] Canon EF 85mm f/1.8 USM Portrait AF Camera Lens EF Mount From JAPAN",
+    "prezzo_originale": "$230"
+   },
+   {
+    "prezzo_eur": 195,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/398253477362",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 85mm f/1.8 USM Lens for Canon EF Mount",
+    "prezzo_originale": "$225"
+   },
+   {
+    "prezzo_eur": 251,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/307106207380",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 85mm f/1.8 USM Near Mint Fast Lens Prime Tested Working Sharp #3645_i",
+    "prezzo_originale": "$290"
+   },
+   {
+    "prezzo_eur": 173,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/377406422179",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 85mm f/1.8 USM Ultrasonic Lens",
+    "prezzo_originale": "$200"
+   },
+   {
+    "prezzo_eur": 266,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/407100698944",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 85mm f1.8 USM Lens #463",
+    "prezzo_originale": "$307"
+   },
+   {
+    "prezzo_eur": 173,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/287497193464",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 85mm F/1.8 USM Fixed Lens with UV protective filter, Lens Caps",
+    "prezzo_originale": "$200"
+   },
+   {
+    "prezzo_eur": 182,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/307109054054",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 85mm f/1.8 Ultrasonic USM Autofocus Ultrasonic Lens",
+    "prezzo_originale": "$210"
+   },
+   {
+    "prezzo_eur": 250,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/407120677475",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 85mm f1.8 USM Lens #398",
+    "prezzo_originale": "$289"
+   },
+   {
+    "prezzo_eur": 195,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/327295002182",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 85mm f/1.8 USM Lens for Canon EF Mount",
+    "prezzo_originale": "$225"
+   },
+   {
+    "prezzo_eur": 216,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/306977326961",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 85mm f/1.8 USM Lens - Fast Free Shipping",
+    "prezzo_originale": "$250"
+   },
+   {
+    "prezzo_eur": 172,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/198404871405",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 85mm F/1.8 USM Telephoto Lens with filter",
+    "prezzo_originale": "$199"
+   },
+   {
+    "prezzo_eur": 225,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/117333069024",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Used Canon EF 85mm f/1.8 USM Lens (#87681479CM)",
+    "prezzo_originale": "$260"
+   },
+   {
+    "prezzo_eur": 229,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/377388072603",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 85mm F/1.8 USM (Canon EF mount) #66",
+    "prezzo_originale": "$265"
+   },
+   {
+    "prezzo_eur": 233,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/178207414005",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 85mm f/1.8 USM Lens - plus Caps",
+    "prezzo_originale": "$269"
+   },
+   {
+    "prezzo_eur": 94,
+    "tipo": "venduto",
+    "fonte": "Special Auction Services (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-11",
+    "titolo": "A Canon EF 85mm f/1.8 Ultrasonic Lens",
+    "prezzo_originale": "£80"
+   },
+   {
+    "prezzo_eur": 152,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-09",
+    "titolo": "A Canon EF Ultrasonic f/1.8 85mm AF Lens",
+    "prezzo_originale": "£130"
+   },
+   {
+    "prezzo_eur": 176,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata, con scatola",
+    "data": "2025-08",
+    "titolo": "A Canon EF 1f/1.8 85mm USM Lens",
+    "prezzo_originale": "£150"
+   }
+  ]
+ },
+ {
+  "brand": "Canon",
+  "modello": "EF 100 f/2.8 Macro USM (non L)",
+  "chiavi": [
+   "ef 100 2 8 macro",
+   "canon 100mm macro",
+   "100mm f2 8 macro usm"
+  ],
+  "brand_chiavi": [
+   "canon"
+  ],
+  "spedizione_eur": 6,
+  "fragile": true,
+  "ingombrante": false,
+  "rischio_falsi": 1,
+  "rischio_guasti": 2,
+  "riconoscibile_da_foto": 4,
+  "domanda": 4,
+  "segni_autenticita": "Scritta Canon Macro Lens EF 100mm 1:2.8 USM, scala ingrandimenti sul barilotto.",
+  "note": "La versione L IS USM vale circa il doppio (300-600 EUR). Esclusi esemplari con fungo.",
+  "comp": [
+   {
+    "prezzo_eur": 152,
+    "tipo": "venduto",
+    "fonte": "Special Auction Services (martello) via cameraworth",
+    "url": "https://www.specialauctionservices.com/auction/lot/lot-46---a-canon-ef-100mm-f28-macro-usm-lens/?lot=110362&au=187",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-09",
+    "titolo": "A Canon EF 100mm f/2.8 Macro USM Lens",
+    "prezzo_originale": "£130"
+   },
+   {
+    "prezzo_eur": 256,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/168602807999",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 100mm F/2.8 USM Macro Auto Focus Lens Working w/ Original Lens Caps",
+    "prezzo_originale": "£219"
+   },
+   {
+    "prezzo_eur": 246,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/117343346485",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 100mm F2.8 Macro AF Prime Lens with Lens Caps",
+    "prezzo_originale": "£210"
+   },
+   {
+    "prezzo_eur": 184,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/178372652471",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 100mm F/2.8 USM Macro Auto Focus Lens Working w/ Original Lens Caps",
+    "prezzo_originale": "£157"
+   },
+   {
+    "prezzo_eur": 263,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/206472493234",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 100mm F2.8 Macro USM Lens [Excellent+5] #8138",
+    "prezzo_originale": "£225"
+   },
+   {
+    "prezzo_eur": 234,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/398259839782",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 100mm F2.8 Macro USM Autofocus Prime Lens Front & Rear Lens Caps",
+    "prezzo_originale": "£200"
+   },
+   {
+    "prezzo_eur": 220,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/255921017494",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 100mm f/2.8 USM Macro Lens for Canon EOS Autofocus Full Frame",
+    "prezzo_originale": "£188"
+   },
+   {
+    "prezzo_eur": 245,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/318660599980",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon 100mm F/2.8 EF USM MACRO Auto Focus Lens - Mint",
+    "prezzo_originale": "£209"
+   },
+   {
+    "prezzo_eur": 114,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/158105048754",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Canon EF 100mm f/2.8 USM Macro Autofocus Camera Lens w/ Cap",
+    "prezzo_originale": "€114"
+   },
+   {
+    "prezzo_eur": 136,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/158105049163",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Canon EF 100mm F2.8 Macro Autofocus Camera Lens Working",
+    "prezzo_originale": "€136"
+   },
+   {
+    "prezzo_eur": 117,
+    "tipo": "venduto",
+    "fonte": "Special Auction Services (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-11",
+    "titolo": "A Canon Macro EF 100mm f/2.8 Ultrasonic Lens",
+    "prezzo_originale": "£100"
+   },
+   {
+    "prezzo_eur": 129,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-09",
+    "titolo": "A Canon EF USM f/2.8 100mm Macro Lens",
+    "prezzo_originale": "£110"
+   },
+   {
+    "prezzo_eur": 99,
+    "tipo": "venduto",
+    "fonte": "David Duggleby (martello) via cameraworth",
+    "url": "https://www.davidduggleby.com/auctions/2331/?returnItemNo=111612",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2024-10",
+    "titolo": "Canon Ultrasonic Macro EF 100mm 1:2.8 lens serial no. 63900365, with Canon EW-65II lens ho...",
+    "prezzo_originale": "£85"
+   },
+   {
+    "prezzo_eur": 140,
+    "tipo": "venduto",
+    "fonte": "Special Auction Services (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2024-10",
+    "titolo": "A Canon EF 100mm f/2.8 Macro USM Lens",
+    "prezzo_originale": "£120"
+   }
+  ]
+ },
+ {
+  "brand": "Nikon",
+  "modello": "AF-S Nikkor 50 f/1.4 G",
+  "chiavi": [
+   "af-s 50 1 4",
+   "50mm 1 4g",
+   "nikkor 50 1 4 g",
+   "50 f1 4 g"
+  ],
+  "brand_chiavi": [
+   "nikon",
+   "nikkor"
+  ],
+  "spedizione_eur": 6,
+  "fragile": true,
+  "ingombrante": false,
+  "rischio_falsi": 1,
+  "rischio_guasti": 2,
+  "riconoscibile_da_foto": 4,
+  "domanda": 4,
+  "segni_autenticita": "Scritta AF-S Nikkor 50mm 1:1.4G, senza ghiera diaframmi.",
+  "note": "Non confondere con AF 50 f/1.4 D (70-130 EUR) ne' Z 50 f/1.4. Esclusi open box.",
+  "comp": [
+   {
+    "prezzo_eur": 151,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/198557535489",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Nikon AF-S NIKKOR 50mm f/1.4 G standard prime Nikon F mount lens with hood",
+    "prezzo_originale": "$175"
+   },
+   {
+    "prezzo_eur": 187,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/407126592537",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "[N.MINT] Nikon AF-S FX NIKKOR 50mm F/1.4G From JAPAN v3126",
+    "prezzo_originale": "$216"
+   },
+   {
+    "prezzo_eur": 172,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/267729844626",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Mint Nikon AF-S FX NIKKOR 50mm F/1.4G Standard Prime Lens F-mount Full Frame",
+    "prezzo_originale": "$199"
+   },
+   {
+    "prezzo_eur": 172,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/158122703614",
+    "condizione": "usato, vedi titolo, con scatola",
+    "data": "2026-08",
+    "titolo": "Nikon AF-S NIKKOR 50mm f/1.4G Lens FX Prime w/ Box & Manual ProMaster UV",
+    "prezzo_originale": "$199"
+   },
+   {
+    "prezzo_eur": 176,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/278247903178",
+    "condizione": "usato, vedi titolo, con scatola",
+    "data": "2026-08",
+    "titolo": "Nikon AF-S 50mm F1.4 G Autofocus Prime Lens Boxed Refurbished +12Month Guarantee",
+    "prezzo_originale": "£150"
+   },
+   {
+    "prezzo_eur": 181,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/267737365843",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Nikon AF-S Nikkor 50mm f/1.4G Lens \"LIKE NEW\"",
+    "prezzo_originale": "£155"
+   },
+   {
+    "prezzo_eur": 99,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/327293065089",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Nikon AF-S Nikkor 50mm f/1.4 G AF-S Mount Prime fixed Camera Lens",
+    "prezzo_originale": "£85"
+   },
+   {
+    "prezzo_eur": 164,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/398169908772",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Nikon AF-S 50mm F1.4 G Autofocus Prime Lens  Rear Lens Cap",
+    "prezzo_originale": "£140"
+   },
+   {
+    "prezzo_eur": 98,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/178339834330",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Nikon AF-S Nikkor 50mm F/1.4 G Auto Focus Camera Lens Working w/ Accessories",
+    "prezzo_originale": "£84"
+   },
+   {
+    "prezzo_eur": 128,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/298534299219",
+    "condizione": "usato, vedi titolo, con scatola",
+    "data": "2026-08",
+    "titolo": "Nikon AF-S NIKKOR 50mm f/1.4 G Lens With original box and manuals",
+    "prezzo_originale": "£109"
+   },
+   {
+    "prezzo_eur": 190,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/236971754180",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Nikon AF-S NIKKOR 50mm F/1.4 G SWM Lens [MINT] #Z-10122",
+    "prezzo_originale": "$220"
+   },
+   {
+    "prezzo_eur": 153,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/236907476251",
+    "condizione": "usato, vedi titolo, con scatola",
+    "data": "2026-07",
+    "titolo": "Nikon Nikkor AF-S 50mm F/1.4g Lens with Hood Brand New In Box",
+    "prezzo_originale": "£131"
+   }
+  ]
+ },
+ {
+  "brand": "Nikon",
+  "modello": "AF Nikkor 85 f/1.8 D",
+  "chiavi": [
+   "af 85 1 8 d",
+   "85mm 1 8d",
+   "nikkor 85 1 8 d",
+   "85 f1 8d"
+  ],
+  "brand_chiavi": [
+   "nikon",
+   "nikkor"
+  ],
+  "spedizione_eur": 6,
+  "fragile": true,
+  "ingombrante": false,
+  "rischio_falsi": 1,
+  "rischio_guasti": 2,
+  "riconoscibile_da_foto": 4,
+  "domanda": 3,
+  "segni_autenticita": "Scritta AF Nikkor 85mm 1:1.8 D, ghiera diaframmi presente.",
+  "note": "AF-S 85 f/1.8 G vale un po' di piu' (150-250 EUR); Z 85 molto di piu'.",
+  "comp": [
+   {
+    "prezzo_eur": 82,
+    "tipo": "venduto",
+    "fonte": "Special Auction Services (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-08",
+    "titolo": "A Nikon AF Nikkor 85mm f/1.8D Lens",
+    "prezzo_originale": "£70"
+   },
+   {
+    "prezzo_eur": 175,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/298558509891",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Nikon AF Nikkor 85mm f/1.8D Portrait Lens Near Mint Tested",
+    "prezzo_originale": "€175"
+   },
+   {
+    "prezzo_eur": 186,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/407084009910",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "[MINT w/Hood] Nikon AF Nikkor 85mm f/1.8D Portrait Prime Lens From JAPAN",
+    "prezzo_originale": "$215"
+   },
+   {
+    "prezzo_eur": 88,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-08",
+    "titolo": "A Nikon AF Nikkor f/1.8 85mm Lens",
+    "prezzo_originale": "£75"
+   },
+   {
+    "prezzo_eur": 216,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/318635325769",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-08",
+    "titolo": "Tested [Top MINT] Nikon AF Nikkor 85mm f1.8 D Portrait Lens F Mount From JAPAN",
+    "prezzo_originale": "$250"
+   },
+   {
+    "prezzo_eur": 151,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/178332123109",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Nikon AF NIKKOR 85mm f/1.8D Prime Auto Focus Telephoto Lens w/ HN-23 Metal Hood",
+    "prezzo_originale": "$175"
+   },
+   {
+    "prezzo_eur": 95,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/257651413268",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Nikon NIKKOR 85mm f/1.8D AF-D Prime Lens",
+    "prezzo_originale": "$110"
+   },
+   {
+    "prezzo_eur": 69,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.com/itm/336715379943",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "Nikon AF NIKKOR 85mm f/1.8D Lens Nikon F Mount Auto/Manual 62mm w/ HN-23",
+    "prezzo_originale": "$80"
+   },
+   {
+    "prezzo_eur": 117,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/336650582696",
+    "condizione": "usato, vedi titolo, con scatola",
+    "data": "2026-07",
+    "titolo": "Nikon AF Nikkor 85mm f/1.8D Lens Boxed + Hood. READ DESCRIPTION. .",
+    "prezzo_originale": "£100"
+   },
+   {
+    "prezzo_eur": 181,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/206437924169",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "[Near MINT w/ Hood] Nikon AF NIKKOR 85mm f/1.8 D Portrait Lens From JAPAN",
+    "prezzo_originale": "£155"
+   },
+   {
+    "prezzo_eur": 208,
+    "tipo": "venduto",
+    "fonte": "eBay venduto via cameraworth",
+    "url": "https://www.ebay.co.uk/itm/327244388418",
+    "condizione": "usato, vedi titolo",
+    "data": "2026-07",
+    "titolo": "[MINT] Nikon AF Nikkor 85mm f/1.8 D Fast Portrait Lens Nikon F Mount From Japan",
+    "prezzo_originale": "£178"
+   },
+   {
+    "prezzo_eur": 64,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-06",
+    "titolo": "A Nikon AF Nikkor f/1.8 85mm Lens",
+    "prezzo_originale": "£55"
+   },
+   {
+    "prezzo_eur": 105,
+    "tipo": "venduto",
+    "fonte": "Tennants (martello) via cameraworth",
+    "url": "https://auctions.tennants.co.uk/auction/lot/?lot=2582410&au=14329",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2026-05",
+    "titolo": "Nikon Nikkor AF f1.8D 85mm Lens",
+    "prezzo_originale": "£90"
+   },
+   {
+    "prezzo_eur": 129,
+    "tipo": "venduto",
+    "fonte": "Flints Auctions (martello) via cameraworth",
+    "url": "",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2025-05",
+    "titolo": "ANikon AF-Nikkor f/1.8 85mm Lens",
+    "prezzo_originale": "£110"
+   },
+   {
+    "prezzo_eur": 129,
+    "tipo": "venduto",
+    "fonte": "Harper Field (martello) via cameraworth",
+    "url": "https://bid.harperfield.co.uk/past-auctions/srstr10147/lot-details/420429a0-b49f-41ab-909e-b1f60151786e",
+    "condizione": "asta, condizione non dichiarata",
+    "data": "2024-10",
+    "titolo": "Nikon AF Nikkor 85mm 1:1.8 D SLR camera lens, serial number 441020, with HN-23 hood, L37c filter and",
+    "prezzo_originale": "£110"
+   }
+  ]
+ },
+ {
+  "brand": "Fujifilm",
+  "modello": "Fujinon XF 35 f/1.4 R",
+  "chiavi": [
+   "xf 35 1 4",
+   "xf 35mm f1 4",
+   "fujinon 35 1 4"
+  ],
+  "brand_chiavi": [
+   "fujifilm",
+   "fuji",
+   "fujinon"
+  ],
+  "spedizione_eur": 6,
+  "fragile": true,
+  "ingombrante": false,
+  "rischio_falsi": 2,
+  "rischio_guasti": 2,
+  "riconoscibile_da_foto": 4,
+  "domanda": 5,
+  "segni_autenticita": "Scritta Fujinon Aspherical Lens Super EBC XF 35mm 1:1.4 R, paraluce rettangolare.",
+  "note": "Non confondere con XF 35 f/2 WR (simile prezzo, 200-300 EUR). Molte vendite Tradera da un solo negozio.",
+  "comp": [
+   {
+    "prezzo_eur": 305,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000211/740871542/fujifilm-fujinon-xf-35mm-f1-4-r-objektiv-fuji-35-mm",
+    "condizione": "molto buono",
+    "data": "2026-07",
+    "titolo": "Fujifilm Fujinon XF 35mm F1.4 R Objektiv Fuji 35 mm",
+    "prezzo_originale": "3390 SEK"
+   },
+   {
+    "prezzo_eur": 315,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000211/736020562/fujifilm-fujinon-xf-35mm-f1-4-r-objektiv-fuji-35-mm",
+    "condizione": "buono",
+    "data": "2026-06",
+    "titolo": "Fujifilm Fujinon XF 35mm F1.4 R Objektiv Fuji 35 mm",
+    "prezzo_originale": "3500 SEK"
+   },
+   {
+    "prezzo_eur": 323,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000211/747516619/fujifilm-fujinon-xf-35mm-f1-4-r-objektiv-fuji-35-mm",
+    "condizione": "buono",
+    "data": "2026-08",
+    "titolo": "Fujifilm Fujinon XF 35mm F1.4 R Objektiv Fuji 35 mm",
+    "prezzo_originale": "3590 SEK"
+   },
+   {
+    "prezzo_eur": 270,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000211/751269033/fujifilm-fujinon-xf-35mm-f1-4-r-objektiv-fuji-35-mm",
+    "condizione": "buono",
+    "data": "2026-10",
+    "titolo": "Fujifilm Fujinon XF 35mm F1.4 R Objektiv Fuji 35 mm",
+    "prezzo_originale": "3000 SEK"
+   },
+   {
+    "prezzo_eur": 315,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000211/739633788/fujifilm-fujinon-xf-35mm-f1-4-r-objektiv-fuji-35-mm",
+    "condizione": "buono",
+    "data": "2026-08",
+    "titolo": "Fujifilm Fujinon XF 35mm F1.4 R Objektiv Fuji 35 mm",
+    "prezzo_originale": "3500 SEK"
+   },
+   {
+    "prezzo_eur": 324,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000211/745750845/fujifilm-fujinon-xf-35mm-f1-4-r-objektiv-fuji-35-mm",
+    "condizione": "buono",
+    "data": "2026-08",
+    "titolo": "Fujifilm Fujinon XF 35mm F1.4 R Objektiv Fuji 35 mm",
+    "prezzo_originale": "3600 SEK"
+   },
+   {
+    "prezzo_eur": 270,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000211/752237101/fujifilm-fujinon-xf-35mm-f1-4-r-objektiv-fuji-35-mm",
+    "condizione": "discreto",
+    "data": "2026-10",
+    "titolo": "Fujifilm Fujinon XF 35mm F1.4 R Objektiv Fuji 35 mm",
+    "prezzo_originale": "3000 SEK"
+   },
+   {
+    "prezzo_eur": 284,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 20 offerte)",
+    "url": "https://www.tradera.com/item/1000211/739672421/fujifilm-xf-35mm-f-1-4-r",
+    "condizione": "discreto",
+    "data": "2026-07",
+    "titolo": "Fujifilm XF 35mm f/1.4 R",
+    "prezzo_originale": "3150 SEK"
+   },
+   {
+    "prezzo_eur": 320,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 29 offerte)",
+    "url": "https://www.tradera.com/item/1000211/746216638/fujinon-xf-35mm-f-1-4-r",
+    "condizione": "buono",
+    "data": "2026-08",
+    "titolo": "Fujinon XF 35mm f/1.4 R",
+    "prezzo_originale": "3550 SEK"
+   },
+   {
+    "prezzo_eur": 213,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 38 offerte)",
+    "url": "https://www.tradera.com/item/1000211/741545536/fujifilm-fujinon-xf-35mm-f-1-4-r",
+    "condizione": "discreto",
+    "data": "2026-08",
+    "titolo": "Fujifilm Fujinon XF 35mm f/1.4 R",
+    "prezzo_originale": "2372 SEK"
+   },
+   {
+    "prezzo_eur": 128,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta/compralo subito, 10 offerte)",
+    "url": "https://www.tradera.com/item/302004/742349008/fujifilm-fujinon-xf-35mm-f-1-4-r-legendariskt-portrattglas-i-bra-bruksskick",
+    "condizione": "discreto",
+    "data": "2026-08",
+    "titolo": "Fujifilm Fujinon XF 35mm f/1.4 R – Legendariskt porträttglas i bra bruksskick",
+    "prezzo_originale": "1420 SEK"
+   }
+  ]
+ },
+ {
+  "brand": "Fujifilm",
+  "modello": "Fujinon XF 23 f/1.4 R (prima versione)",
+  "chiavi": [
+   "xf 23 1 4",
+   "xf 23mm f1 4",
+   "fujinon 23 1 4"
+  ],
+  "brand_chiavi": [
+   "fujifilm",
+   "fuji",
+   "fujinon"
+  ],
+  "spedizione_eur": 6,
+  "fragile": true,
+  "ingombrante": false,
+  "rischio_falsi": 2,
+  "rischio_guasti": 2,
+  "riconoscibile_da_foto": 4,
+  "domanda": 4,
+  "segni_autenticita": "Scritta XF 23mm 1:1.4 R, ghiera fuoco a frizione con scala distanze.",
+  "note": "La versione R LM WR (2021) vale circa 450-480 EUR. Non confondere con XF 23 f/2 e f/2.8 o Viltrox/Sigma 23 1.4.",
+  "comp": [
+   {
+    "prezzo_eur": 306,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta/compralo subito, 0 offerte)",
+    "url": "https://www.tradera.com/item/1000211/753969789/fujifilm-fujinon-xf-23mm-f-1-4-r-mycket-fint-skick-",
+    "condizione": "molto buono",
+    "data": "2026-10",
+    "titolo": "Fujifilm Fujinon XF 23mm f/1.4 R - Mycket fint skick!",
+    "prezzo_originale": "3400 SEK"
+   },
+   {
+    "prezzo_eur": 270,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000212/739780868/fujiflim-xf-23mm-f1-4r",
+    "condizione": "buono",
+    "data": "2026-07",
+    "titolo": "Fujiflim XF 23mm F1.4R",
+    "prezzo_originale": "3000 SEK"
+   },
+   {
+    "prezzo_eur": 256,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 47 offerte)",
+    "url": "https://www.tradera.com/item/1000211/746696217/fujifilm-fujinon-xf-23mm-f-1-4-super-ebc",
+    "condizione": "buono",
+    "data": "2026-08",
+    "titolo": "Fujifilm Fujinon XF 23mm F/1.4 Super EBC",
+    "prezzo_originale": "2850 SEK"
+   },
+   {
+    "prezzo_eur": 292,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000212/744159172/fujinon-xf-23mm-f1-4-r-lens",
+    "condizione": "molto buono",
+    "data": "2026-08",
+    "titolo": "Fujinon XF 23mm F1.4 R Lens",
+    "prezzo_originale": "3250 SEK"
+   },
+   {
+    "prezzo_eur": 360,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000211/741854136/fujifilm-fujinon-xf-23mm-f1-4-r-objektiv-fuji-23-mm-f-1-4",
+    "condizione": "buono",
+    "data": "2026-09",
+    "titolo": "Fujifilm Fujinon XF 23mm F1.4 R Objektiv Fuji 23 mm f/1.4",
+    "prezzo_originale": "4000 SEK"
+   },
+   {
+    "prezzo_eur": 315,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000211/745749846/fujifilm-fujinon-xf-23mm-f1-4-r-objektiv-fuji-23-mm-f-1-4",
+    "condizione": "buono",
+    "data": "2026-09",
+    "titolo": "Fujifilm Fujinon XF 23mm F1.4 R Objektiv Fuji 23 mm f/1.4",
+    "prezzo_originale": "3500 SEK"
+   },
+   {
+    "prezzo_eur": 270,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000212/739648496/fujifilm-fujinon-xf-23mm-f-1-4r-objektiv",
+    "condizione": "buono",
+    "data": "2026-07",
+    "titolo": "Fujifilm Fujinon XF 23mm f/1.4R - Objektiv",
+    "prezzo_originale": "3000 SEK"
+   }
+  ]
+ },
+ {
+  "brand": "Fujifilm",
+  "modello": "Fujinon XF 23 f/2 R WR",
+  "chiavi": [
+   "xf 23 2",
+   "xf 23mm f2",
+   "fujinon 23 f2 wr"
+  ],
+  "brand_chiavi": [
+   "fujifilm",
+   "fuji",
+   "fujinon"
+  ],
+  "spedizione_eur": 6,
+  "fragile": true,
+  "ingombrante": false,
+  "rischio_falsi": 1,
+  "rischio_guasti": 2,
+  "riconoscibile_da_foto": 4,
+  "domanda": 4,
+  "segni_autenticita": "Scritta XF 23mm 1:2 R WR, obiettivo piccolo e affusolato.",
+  "note": "Prezzo stabile 200-300 EUR. Non confondere con 23 f/1.4.",
+  "comp": [
+   {
+    "prezzo_eur": 198,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 7 offerte)",
+    "url": "https://www.tradera.com/item/1000212/739233049/fujinon-xf-23mm-f-2-r-wr",
+    "condizione": "buono",
+    "data": "2026-07",
+    "titolo": "Fujinon XF 23mm f/2 R WR",
+    "prezzo_originale": "2200 SEK"
+   },
+   {
+    "prezzo_eur": 207,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000212/754058731/fujifilm-xf-23mm-f2-r-wr-objektiv-toppskick-",
+    "condizione": "molto buono",
+    "data": "2026-10",
+    "titolo": "Fujifilm XF 23mm F2 R WR objektiv (Toppskick)",
+    "prezzo_originale": "2300 SEK"
+   },
+   {
+    "prezzo_eur": 297,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000211/733372941/fujifilm-fujinon-xf-23mm-f2-r-wr-objektiv-fuji-23",
+    "condizione": "buono",
+    "data": "2026-07",
+    "titolo": "Fujifilm Fujinon XF 23mm F2 R WR Objektiv Fuji 23",
+    "prezzo_originale": "3299 SEK"
+   },
+   {
+    "prezzo_eur": 217,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 56 offerte)",
+    "url": "https://www.tradera.com/item/1000212/744607342/fujinon-xf-23mm-f-2-r-wr-vidvinkel-objektiv-till-fujifilm",
+    "condizione": "molto buono",
+    "data": "2026-08",
+    "titolo": "Fujinon XF 23mm f/2 R WR vidvinkel-objektiv till Fujifilm",
+    "prezzo_originale": "2408 SEK"
+   },
+   {
+    "prezzo_eur": 288,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000212/741079727/fujifilm-fujinon-xf-23mm-f-2-r-wr-objektiv",
+    "condizione": "molto buono",
+    "data": "2026-07",
+    "titolo": "Fujifilm Fujinon XF 23mm f/2 R WR - Objektiv",
+    "prezzo_originale": "3200 SEK"
+   },
+   {
+    "prezzo_eur": 257,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta/compralo subito, 0 offerte)",
+    "url": "https://www.tradera.com/item/1000212/748055485/fujifilm-fujinon-xf-23-2-23mm-f2-r-wr-lens-for-fuji-x-mount",
+    "condizione": "molto buono",
+    "data": "2026-09",
+    "titolo": "Fujifilm Fujinon XF 23/2 23mm F2 R WR Lens for Fuji X Mount",
+    "prezzo_originale": "2860 SEK"
+   },
+   {
+    "prezzo_eur": 257,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta/compralo subito, 0 offerte)",
+    "url": "https://www.tradera.com/item/1000212/747215147/fujifilm-fujinon-xf-23-2-23mm-f2-r-wr-lens-for-fuji-x-mount",
+    "condizione": "molto buono",
+    "data": "2026-08",
+    "titolo": "Fujifilm Fujinon XF 23/2 23mm F2 R WR Lens for Fuji X Mount",
+    "prezzo_originale": "2860 SEK"
+   },
+   {
+    "prezzo_eur": 202,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 36 offerte)",
+    "url": "https://www.tradera.com/item/1000211/737901827/fujinon-xf23mmf2-r-wr-objektiv",
+    "condizione": "molto buono",
+    "data": "2026-07",
+    "titolo": "Fujinon XF23mmF2 R WR objektiv",
+    "prezzo_originale": "2240 SEK"
+   }
+  ]
+ },
+ {
+  "brand": "Fujifilm",
+  "modello": "Fujinon XF 18-55 f/2.8-4 R LM OIS",
+  "chiavi": [
+   "xf 18-55",
+   "18-55 2 8-4",
+   "fujinon 18-55"
+  ],
+  "brand_chiavi": [
+   "fujifilm",
+   "fuji",
+   "fujinon"
+  ],
+  "spedizione_eur": 6,
+  "fragile": true,
+  "ingombrante": false,
+  "rischio_falsi": 1,
+  "rischio_guasti": 2,
+  "riconoscibile_da_foto": 4,
+  "domanda": 4,
+  "segni_autenticita": "Scritta XF 18-55mm 1:2.8-4 R LM OIS; spesso in kit con X-T.",
+  "note": "Molto diffuso come obiettivo kit: offerta ampia, 175-290 EUR. Non confondere con XC 15-45/16-50 (economici).",
+  "comp": [
+   {
+    "prezzo_eur": 282,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 11 offerte)",
+    "url": "https://www.tradera.com/item/1000211/747780114/fujifilm-xf-18-55mm-f2-8-4-r-lm-ois",
+    "condizione": "molto buono",
+    "data": "2026-09",
+    "titolo": "Fujifilm XF 18-55mm F2.8-4 R LM OIS",
+    "prezzo_originale": "3133 SEK"
+   },
+   {
+    "prezzo_eur": 261,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 1 offerte)",
+    "url": "https://www.tradera.com/item/302004/746184441/fujifilm-xf-18-55mm-f-2-8-4-r-lm-ois-zoomobjektiv",
+    "condizione": "molto buono",
+    "data": "2026-08",
+    "titolo": "Fujifilm XF 18-55mm f/2.8-4 R LM OIS Zoomobjektiv",
+    "prezzo_originale": "2899 SEK"
+   },
+   {
+    "prezzo_eur": 225,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta/compralo subito, 0 offerte)",
+    "url": "https://www.tradera.com/item/1000211/741547773/fujifilm-xf-18-55mm-f-2-8-4-r-lm-ois",
+    "condizione": "discreto",
+    "data": "2026-07",
+    "titolo": "Fujifilm XF 18-55mm f/2.8-4 R LM OIS",
+    "prezzo_originale": "2500 SEK"
+   },
+   {
+    "prezzo_eur": 176,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1407/739083532/fujinon-xf-18-55mm-f-2-8-4-r-lm-ois",
+    "condizione": "buono",
+    "data": "2026-07",
+    "titolo": "Fujinon XF 18-55mm f/2.8-4 R LM OIS",
+    "prezzo_originale": "1950 SEK"
+   },
+   {
+    "prezzo_eur": 261,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 30 offerte)",
+    "url": "https://www.tradera.com/item/1000211/741067049/fujifilm-fujinon-xf-18-55mm-f-2-8-4-r-lm-ois",
+    "condizione": "molto buono",
+    "data": "2026-08",
+    "titolo": "Fujifilm Fujinon XF 18-55mm f/2,8-4 R LM OIS",
+    "prezzo_originale": "2900 SEK"
+   },
+   {
+    "prezzo_eur": 265,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 1 offerte)",
+    "url": "https://www.tradera.com/item/1000211/741434048/fujifilm-xf-18-55mm-f-2-8-4-r-lm-ois",
+    "condizione": "molto buono",
+    "data": "2026-07",
+    "titolo": "Fujifilm XF 18-55mm f/2.8-4 R LM OIS",
+    "prezzo_originale": "2949 SEK"
+   },
+   {
+    "prezzo_eur": 269,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000211/752237175/fujifilm-fujinon-xf-18-55mm-f2-8-4-r-lm-ois-fuji-18-55-kitbojektiv",
+    "condizione": "buono",
+    "data": "2026-09",
+    "titolo": "Fujifilm Fujinon XF 18-55mm f2.8-4 R LM OIS Fuji 18-55 Kitbojektiv",
+    "prezzo_originale": "2990 SEK"
+   },
+   {
+    "prezzo_eur": 234,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000211/740437032/fujifilm-fujinon-xf-18-55mm-f2-8-4-r-lm-ois-fuji-18-55-kitbojektiv",
+    "condizione": "buono",
+    "data": "2026-07",
+    "titolo": "Fujifilm Fujinon XF 18-55mm f2.8-4 R LM OIS Fuji 18-55 Kitbojektiv",
+    "prezzo_originale": "2600 SEK"
+   },
+   {
+    "prezzo_eur": 220,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000211/752237180/fujifilm-fujinon-xf-18-55mm-f2-8-4-r-lm-ois-fuji-18-55-kitbojektiv",
+    "condizione": "discreto",
+    "data": "2026-09",
+    "titolo": "Fujifilm Fujinon XF 18-55mm f2.8-4 R LM OIS Fuji 18-55 Kitbojektiv",
+    "prezzo_originale": "2450 SEK"
+   },
+   {
+    "prezzo_eur": 288,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000211/743911356/fujifilm-fujinon-xf-18-55mm-f-2-8-4-r-lm-ois-objektiv",
+    "condizione": "molto buono",
+    "data": "2026-08",
+    "titolo": "Fujifilm Fujinon XF 18-55mm f/2.8-4 R LM OIS - Objektiv",
+    "prezzo_originale": "3200 SEK"
+   }
+  ]
+ },
+ {
+  "brand": "Fujifilm",
+  "modello": "Fujinon XF 56 f/1.2 R (prima versione)",
+  "chiavi": [
+   "xf 56 1 2",
+   "xf 56mm f1 2",
+   "fujinon 56 1 2"
+  ],
+  "brand_chiavi": [
+   "fujifilm",
+   "fuji",
+   "fujinon"
+  ],
+  "spedizione_eur": 6,
+  "fragile": true,
+  "ingombrante": false,
+  "rischio_falsi": 2,
+  "rischio_guasti": 2,
+  "riconoscibile_da_foto": 4,
+  "domanda": 4,
+  "segni_autenticita": "Scritta XF 56mm 1:1.2 R, grosso con paraluce tondo.",
+  "note": "La versione R WR (2022) vale 500-560 EUR; APD piu' rara. Non confondere con Viltrox/Sigma 56.",
+  "comp": [
+   {
+    "prezzo_eur": 351,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000211/736012987/fujifilm-xf-56mm-f1-2r-objektiv",
+    "condizione": "buono",
+    "data": "2026-06",
+    "titolo": "Fujifilm XF 56mm F1.2R objektiv",
+    "prezzo_originale": "3901 SEK"
+   },
+   {
+    "prezzo_eur": 351,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000213/735243733/fujifilm-fujinon-xf-56mm-1-1-2-r",
+    "condizione": "molto buono",
+    "data": "2026-06",
+    "titolo": "Fujifilm Fujinon XF 56mm 1:1.2 R",
+    "prezzo_originale": "3901 SEK"
+   },
+   {
+    "prezzo_eur": 423,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000211/746099758/fujifilm-fujinon-xf-56mm-f-1-2-r",
+    "condizione": "molto buono",
+    "data": "2026-10",
+    "titolo": "Fujifilm Fujinon XF 56mm f/1.2 R",
+    "prezzo_originale": "4700 SEK"
+   },
+   {
+    "prezzo_eur": 300,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000211/752982972/fuji-xf-56mm-f-1-2-r",
+    "condizione": "molto buono",
+    "data": "2026-09",
+    "titolo": "Fuji XF 56mm f/1.2 R",
+    "prezzo_originale": "3328 SEK"
+   },
+   {
+    "prezzo_eur": 325,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 62 offerte)",
+    "url": "https://www.tradera.com/item/1000211/736045971/fujifilm-fujinon-xf-56mm-f-1-2-r",
+    "condizione": "buono",
+    "data": "2026-06",
+    "titolo": "Fujifilm Fujinon XF 56mm f/1.2 R",
+    "prezzo_originale": "3609 SEK"
+   },
+   {
+    "prezzo_eur": 382,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 0 offerte)",
+    "url": "https://www.tradera.com/item/1000213/742449302/fujifilm-super-ebc-xf-56mm-f-1-2-r-for-fujifilm-x",
+    "condizione": "molto buono",
+    "data": "2026-08",
+    "titolo": "Fujifilm Super EBC XF 56mm f/1.2 R för Fujifilm X",
+    "prezzo_originale": "4250 SEK"
+   },
+   {
+    "prezzo_eur": 315,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta/compralo subito, 1 offerte)",
+    "url": "https://www.tradera.com/item/1000211/745800383/xf-fujinon-56-1-2-r",
+    "condizione": "molto buono",
+    "data": "2026-08",
+    "titolo": "XF fujinon 56 1.2 R",
+    "prezzo_originale": "3500 SEK"
+   }
+  ]
+ },
+ {
+  "brand": "Sigma",
+  "modello": "18-35 f/1.8 DC HSM Art (APS-C)",
+  "chiavi": [
+   "sigma 18-35",
+   "18-35 1 8",
+   "18-35mm art"
+  ],
+  "brand_chiavi": [
+   "sigma"
+  ],
+  "spedizione_eur": 8,
+  "fragile": true,
+  "ingombrante": false,
+  "rischio_falsi": 1,
+  "rischio_guasti": 2,
+  "riconoscibile_da_foto": 4,
+  "domanda": 4,
+  "segni_autenticita": "Scritta Sigma 18-35mm 1:1.8 DC HSM, logo A (Art) argento, attacco Canon/Nikon/Sony A/Pentax.",
+  "note": "Pesante (810 g). Prezzo dipende poco dall'attacco. Escluso il Cine 18-35 T2.",
+  "comp": [
+   {
+    "prezzo_eur": 61,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 9 offerte)",
+    "url": "https://www.tradera.com/item/1000212/743515715/sigma-18-35mm-f1-8-dc-art-a-mount",
+    "condizione": "molto buono",
+    "data": "2026-08",
+    "titolo": "Sigma 18-35mm F1.8 DC Art A-Mount",
+    "prezzo_originale": "680 SEK"
+   },
+   {
+    "prezzo_eur": 238,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 42 offerte)",
+    "url": "https://www.tradera.com/item/1000212/746003599/sigma-18-35mm-f1-8-dc-hsm-art-objektiv-for-nikon",
+    "condizione": "molto buono",
+    "data": "2026-09",
+    "titolo": "Sigma 18-35mm F1.8 DC HSM Art objektiv för Nikon",
+    "prezzo_originale": "2650 SEK"
+   },
+   {
+    "prezzo_eur": 314,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000212/750239405/sigma-18-35mm-f1-8-dc-hsm-art-canon-ef-s-fint-skick",
+    "condizione": "molto buono",
+    "data": "2026-09",
+    "titolo": "Sigma 18-35mm F1.8 DC HSM Art – Canon EF-S – fint skick",
+    "prezzo_originale": "3490 SEK"
+   },
+   {
+    "prezzo_eur": 148,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta/compralo subito, 11 offerte)",
+    "url": "https://www.tradera.com/item/140203/737928154/sigma-18-35mm",
+    "condizione": "molto buono",
+    "data": "2026-07",
+    "titolo": "SIGMA 18-35mm",
+    "prezzo_originale": "1640 SEK"
+   },
+   {
+    "prezzo_eur": 226,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta/compralo subito, 1 offerte)",
+    "url": "https://www.tradera.com/item/1000211/740584825/sigma-18-35mm-1-1-8-dc-ø72-objektiv-for-canon",
+    "condizione": "molto buono",
+    "data": "2026-07",
+    "titolo": "Sigma 18-35mm 1:1.8 DC Ø72 objektiv för Canon",
+    "prezzo_originale": "2515 SEK"
+   },
+   {
+    "prezzo_eur": 378,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000212/750019811/sigma-18-35mm-1-1-8-dc-hsm-art-objektiv-canon-ef",
+    "condizione": "buono",
+    "data": "2026-10",
+    "titolo": "Sigma 18-35mm 1:1.8 DC HSM Art-objektiv Canon EF",
+    "prezzo_originale": "4200 SEK"
+   }
+  ]
+ },
+ {
+  "brand": "Sony",
+  "modello": "FE 50 f/1.8 (SEL50F18F)",
+  "chiavi": [
+   "fe 50 1 8",
+   "sel50f18f",
+   "sony 50mm 1 8 fe"
+  ],
+  "brand_chiavi": [
+   "sony"
+  ],
+  "spedizione_eur": 6,
+  "fragile": true,
+  "ingombrante": false,
+  "rischio_falsi": 1,
+  "rischio_guasti": 2,
+  "riconoscibile_da_foto": 3,
+  "domanda": 3,
+  "segni_autenticita": "Scritta FE 1.8/50 sul barilotto, attacco E full frame.",
+  "note": "Poche vendite trovate (2): poco sicuro, ~115-125 EUR. Non confondere con E 50 f/1.8 OSS APS-C (simile prezzo) ne' FE 50 f/1.4.",
+  "comp": [
+   {
+    "prezzo_eur": 125,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 1 offerte)",
+    "url": "https://www.tradera.com/item/1000211/750570642/sony-fe-50-f1-8",
+    "condizione": "molto buono",
+    "data": "2026-09",
+    "titolo": "Sony fe 50 f1.8",
+    "prezzo_originale": "1391 SEK"
+   },
+   {
+    "prezzo_eur": 117,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000211/739861989/sony-fe-50-1-8",
+    "condizione": "buono",
+    "data": "2026-07",
+    "titolo": "Sony FE 50/1.8",
+    "prezzo_originale": "1299 SEK"
+   }
+  ]
+ },
+ {
+  "brand": "Sony",
+  "modello": "FE 85 f/1.8 (SEL85F18)",
+  "chiavi": [
+   "fe 85 1 8",
+   "sel85f18",
+   "sony 85mm 1 8"
+  ],
+  "brand_chiavi": [
+   "sony"
+  ],
+  "spedizione_eur": 6,
+  "fragile": true,
+  "ingombrante": false,
+  "rischio_falsi": 1,
+  "rischio_guasti": 2,
+  "riconoscibile_da_foto": 3,
+  "domanda": 4,
+  "segni_autenticita": "Scritta FE 1.8/85, pulsante focus hold e selettore AF/MF.",
+  "note": "Non confondere con FE 85 f/1.4 GM (molto piu' caro).",
+  "comp": [
+   {
+    "prezzo_eur": 234,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000213/742370604/sony-fe-85mm-f1-8-objektiv",
+    "condizione": "molto buono",
+    "data": "2026-07",
+    "titolo": "Sony FE 85mm F1.8 objektiv",
+    "prezzo_originale": "2600 SEK"
+   },
+   {
+    "prezzo_eur": 261,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000213/742865933/sony-fe-85mm-f1-8-objektiv",
+    "condizione": "molto buono",
+    "data": "2026-08",
+    "titolo": "Sony FE 85mm F1.8 objektiv",
+    "prezzo_originale": "2900 SEK"
+   },
+   {
+    "prezzo_eur": 211,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta/compralo subito, 8 offerte)",
+    "url": "https://www.tradera.com/item/1000213/744664828/sony-fe-85mm-f-1-8-objektiv",
+    "condizione": "buono",
+    "data": "2026-08",
+    "titolo": "Sony FE 85mm f/1.8 objektiv",
+    "prezzo_originale": "2348 SEK"
+   },
+   {
+    "prezzo_eur": 252,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 20 offerte)",
+    "url": "https://www.tradera.com/item/1000213/736560391/sony-fe-85mm-1-8",
+    "condizione": "molto buono",
+    "data": "2026-06",
+    "titolo": "Sony FE 85mm 1.8",
+    "prezzo_originale": "2800 SEK"
+   },
+   {
+    "prezzo_eur": 297,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 12 offerte)",
+    "url": "https://www.tradera.com/item/1000213/750063554/sony-fe-85mm-f-1-8",
+    "condizione": "buono",
+    "data": "2026-09",
+    "titolo": "Sony FE 85mm f/1,8",
+    "prezzo_originale": "3300 SEK"
+   },
+   {
+    "prezzo_eur": 180,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 1 offerte)",
+    "url": "https://www.tradera.com/item/1000213/754456767/sony-fe-85mm-f-1-8-sel85f18-objektiv",
+    "condizione": "buono",
+    "data": "2026-10",
+    "titolo": "Sony FE 85mm f/1.8 (SEL85F18) objektiv",
+    "prezzo_originale": "2000 SEK"
+   },
+   {
+    "prezzo_eur": 297,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta/compralo subito, 0 offerte)",
+    "url": "https://www.tradera.com/item/1000213/744131482/sony-fe-85mm-f-1-8-objektiv-i-nyskick-sel85f18-",
+    "condizione": "molto buono",
+    "data": "2026-08",
+    "titolo": "Sony FE 85mm f/1.8 objektiv i nyskick (SEL85F18)",
+    "prezzo_originale": "3300 SEK"
+   },
+   {
+    "prezzo_eur": 251,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000213/747146342/sony-fe-85mm-f-1-8-skarpt-portrattobjektiv-i-fint-skick-",
+    "condizione": "molto buono",
+    "data": "2026-09",
+    "titolo": "Sony FE 85mm f/1.8 | Skarpt porträttobjektiv i fint skick!",
+    "prezzo_originale": "2791 SEK"
+   },
+   {
+    "prezzo_eur": 194,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 4 offerte)",
+    "url": "https://www.tradera.com/item/1000213/744802622/sony-fe-85mm-f-1-8-skarpt-portrattobjektiv-i-fint-skick-",
+    "condizione": "molto buono",
+    "data": "2026-08",
+    "titolo": "Sony FE 85mm f/1.8 | Skarpt porträttobjektiv i fint skick!",
+    "prezzo_originale": "2157 SEK"
+   },
+   {
+    "prezzo_eur": 230,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 72 offerte)",
+    "url": "https://www.tradera.com/item/1000213/744866385/sony-fe-85mm-f-1-8",
+    "condizione": "molto buono",
+    "data": "2026-08",
+    "titolo": "Sony FE 85mm f/1.8",
+    "prezzo_originale": "2551 SEK"
+   }
+  ]
+ },
+ {
+  "brand": "KMZ",
+  "modello": "Helios 44-2 58 f/2 (M42)",
+  "chiavi": [
+   "helios 44-2",
+   "helios 44 2",
+   "helios 44"
+  ],
+  "brand_chiavi": [
+   "helios",
+   "kmz",
+   "mmz",
+   "zenit"
+  ],
+  "spedizione_eur": 6,
+  "fragile": true,
+  "ingombrante": false,
+  "rischio_falsi": 1,
+  "rischio_guasti": 1,
+  "riconoscibile_da_foto": 5,
+  "domanda": 3,
+  "segni_autenticita": "Scritta HELIOS-44-2 2/58 e logo fabbrica, M42; prodotto in milioni.",
+  "note": "Conferma: vale poco (40-90 EUR in Svezia; in Italia spesso meno). Le versioni 13 lamelle e 44M sono simili. Mai margine da 50 EUR salvo errori di prezzo a pochi euro.",
+  "comp": [
+   {
+    "prezzo_eur": 59,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 24 offerte)",
+    "url": "https://www.tradera.com/item/1000211/748215191/helios-44-2-58mm-f2",
+    "condizione": "discreto",
+    "data": "2026-09",
+    "titolo": "Helios 44-2 58mm f2",
+    "prezzo_originale": "652 SEK"
+   },
+   {
+    "prezzo_eur": 48,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 18 offerte)",
+    "url": "https://www.tradera.com/item/1000211/736712362/kmz-helios-44-2",
+    "condizione": "buono",
+    "data": "2026-06",
+    "titolo": "KMZ Helios 44-2",
+    "prezzo_originale": "528 SEK"
+   },
+   {
+    "prezzo_eur": 63,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000211/741569537/helios-44-2-kmz-f2-58",
+    "condizione": "discreto",
+    "data": "2026-07",
+    "titolo": "HELIOS-44-2 KMZ f2/58",
+    "prezzo_originale": "700 SEK"
+   },
+   {
+    "prezzo_eur": 54,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta/compralo subito, 45 offerte)",
+    "url": "https://www.tradera.com/item/1000211/750021770/helios-44-2-mmz-58mm-f2-m39",
+    "condizione": "molto buono",
+    "data": "2026-09",
+    "titolo": "Helios-44-2 MMZ 58mm f2 m39",
+    "prezzo_originale": "604 SEK"
+   },
+   {
+    "prezzo_eur": 63,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 1 offerte)",
+    "url": "https://www.tradera.com/item/1000211/743252167/helios-44-2-58mm-f-2",
+    "condizione": "buono",
+    "data": "2026-08",
+    "titolo": "Helios 44-2 58mm f/2",
+    "prezzo_originale": "699 SEK"
+   },
+   {
+    "prezzo_eur": 80,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 3 offerte)",
+    "url": "https://www.tradera.com/item/1000211/737897943/helios-44-2-kmz-58mm-f-2",
+    "condizione": "molto buono",
+    "data": "2026-07",
+    "titolo": "Helios 44-2 KMZ 58mm f/2",
+    "prezzo_originale": "884 SEK"
+   },
+   {
+    "prezzo_eur": 90,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (compralo subito)",
+    "url": "https://www.tradera.com/item/1000211/745181700/helios-44-2-58mm-vintage-objektiv-fran-kmz",
+    "condizione": "molto buono",
+    "data": "2026-08",
+    "titolo": "Helios 44-2 58mm Vintage Objektiv från KMZ",
+    "prezzo_originale": "1000 SEK"
+   },
+   {
+    "prezzo_eur": 74,
+    "tipo": "venduto",
+    "fonte": "Tradera venduto (asta, 8 offerte)",
+    "url": "https://www.tradera.com/item/302004/736824191/helios-44-2-58mm-f-2-m42-vintageobjektiv-sovjetunionen-testat-fungerar-virvlande-bokeh",
+    "condizione": "buono",
+    "data": "2026-06",
+    "titolo": "Helios 44-2 58mm f/2 M42 Vintageobjektiv Sovjetunionen Testat Fungerar Virvlande Bokeh",
+    "prezzo_originale": "826 SEK"
+   }
+  ]
+ }
+]
