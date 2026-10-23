@@ -1,0 +1,18 @@
+{
+ "_nota": "ID marchio Vinted letti dagli URL vinted.it/.com gia' indicizzati (ricerca web, 23/10); non verificati visitando Vinted. Formato URL: brand_ids[]=<id>",
+ "marchi": {
+  "dyson": 291992, "christofle": 207986, "sambonet": 2072679, "richard ginori": 771646,
+  "baccarat": 33263, "lalique": 33917, "iittala": 1166438, "le creuset": 448540,
+  "smeg": 1320089, "kitchenaid": 684905, "omega": 194842, "montblanc": 229142,
+  "stokke": 288126, "bugaboo": 300092, "babyzen": 309757, "sony": 113926
+ },
+ "non_trovati": ["staub", "thermomix", "vorwerk", "apple"],
+ "categorie": {
+  "posate_set": 1950, "forchette": 1951, "cucchiai": 1952, "coltelli_tavola": 1970,
+  "stoviglie": [1958, 1959, 1960, 1961], "bicchieri": [2006, 2007, 2008, 2009, 2010, 2011],
+  "vasi": 1940, "padelle": 3508, "pentole": 3507, "forno_arrosto": 3510, "bollitori": 3479,
+  "tostapane": 3481, "macchine_caffe": 3492, "robot_cucina": 3503, "impastatrici": 3501,
+  "passeggini": 1612, "seggioloni": 3450, "penne": 5456, "cuffie": 3678, "console": 3025,
+  "orologi_uomo": 97, "orologi_donna": 22, "arricciacapelli": 3767, "piastre": 3766, "ventilatori": 3529
+ }
+}
