@@ -51,3 +51,18 @@ def test_valuta_tetto_nuovo_abbassa():
 
 def test_valuta_senza_stima():
     assert valuta(10, None)["motivo"] == "pochi_comparabili"
+
+
+def test_pezzi_e_ricambi():
+    from bot.valore_mercato import e_un_pezzo
+    assert e_un_pezzo("Quadrante Omega Seamaster Cosmic") == "quadrante"
+    assert e_un_pezzo("Mouvement Omega Seamaster quartz") == "mouvement"
+    assert e_un_pezzo("Omega Seamaster automatico 41 mm") is None
+
+
+def test_comparabili_simili_tolgono_pezzi_e_fuori_tema():
+    from bot.valore_mercato import comparabili_simili
+    comps = [("Omega Seamaster Cosmic automatic orologio", 700.0), ("Quadrante Omega Seamaster Cosmic", 30.0),
+             ("Omega Constellation donna", 500.0)]
+    out = comparabili_simili(comps, "omega seamaster cosmic automatic", "omega")
+    assert out == [("Omega Seamaster Cosmic automatic orologio", 700.0)]

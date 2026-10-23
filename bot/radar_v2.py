@@ -15,7 +15,7 @@ from bot.comps import _cerca_vinted_testo_diretto_con_fallback_serper
 from bot.logger import log
 from bot.radar import RADAR_SPESA_MAX, parola_vietata, radar_in_pausa
 from bot.verdetto import _a_float, _estrai_item_id_da_url
-from bot.valore_mercato import parse_comp, query_comp, solo_usato, stima_mercato, valuta
+from bot.valore_mercato import comparabili_simili, e_un_pezzo, parse_comp, query_comp, solo_usato, stima_mercato, valuta
 # ---- fine import ----
 
 RADAR_V2_OMBRA = os.environ.get("RADAR_V2_OMBRA", "0").strip() in ("1", "true", "si")
@@ -44,7 +44,7 @@ def _entro_il_tetto(adesso=None):
     return True
 
 
-async def _prezzi_simili(testo, titolo, prezzo):
+async def _prezzi_simili(testo, titolo, prezzo, brand=None):
     """(prezzi richiesti di annunci simili usati, n grezzi, dalla_cache) o (None, 0, False) se non disponibile."""
     adesso = time.time()
     voce = _cache.get(testo)
@@ -57,7 +57,7 @@ async def _prezzi_simili(testo, titolo, prezzo):
     if not ok:
         return None, 0, False
     comps = parse_comp(risposta)
-    usati = [(t, p) for t, p in solo_usato(comps) if not (t == titolo and abs(p - prezzo) < 0.01)]
+    usati = [(t, p) for t, p in comparabili_simili(solo_usato(comps), testo, brand) if not (t == titolo and abs(p - prezzo) < 0.01)]
     prezzi = [p for _, p in usati]
     _cache[testo] = (adesso, prezzi, len(comps))
     return prezzi, len(comps), False
@@ -84,8 +84,12 @@ async def ombra(parsed, url):
         if vietata:
             db.scrivi_evento("radar_v2", item_id, brand, {**base, "ok": False, "motivo": "parola_vietata:" + vietata})
             return
+        pezzo = e_un_pezzo(titolo)
+        if pezzo:
+            db.scrivi_evento("radar_v2", item_id, brand, {**base, "ok": False, "motivo": "pezzo_o_accessorio:" + pezzo})
+            return
         testo = query_comp(titolo, brand)
-        prezzi, n_grezzi, dalla_cache = await _prezzi_simili(testo, titolo, prezzo)
+        prezzi, n_grezzi, dalla_cache = await _prezzi_simili(testo, titolo, prezzo, brand)
         if prezzi is None:
             db.scrivi_evento("radar_v2", item_id, brand, {**base, "ok": False, "motivo": "comparabili_non_disponibili", "q": testo})
             return
