@@ -149,6 +149,21 @@ for _k,_v in {'dyson':'stander,staender,station,base,pouch,support,custodia,rica
   'shimano':'piston,pistons,pistoncini,chaine,catena,kette,chain','campagnolo':'piston,pistons,chaine,catena,kette'}.items():
     ACC[_k]=(ACC.get(_k,'')+','+_v).strip(',')
 ACC_GEN+=['geen origineel','nicht original','non originale','non original','no original','pas original','starter pack','bacelets']
+# 23/10, 4 giorni di dati (tools/radar_liste, r23): accessori, ricambi, libri e giochi che passavano ancora per modello
+EXTRA23={
+ 'airpods pro':'hoesje,hoesjes,kartons,bakje,alleen,oplaadcase,ohrhorer,left,right,destra,sinistra,esquerdo,direito,apenas,caixa,capa,burga,repuestos,repuesto,ersatz,pieces,boites,boite,vides,leer,vuoto,vacio,ricambio,ricambi,pour pieces,per ricambi',
+ 'airpods max':'hoesje,schutz,schutzcase,bolsa,rigida,capa,porte,sacoche,estuche',
+ 'switch oled':'sacoche,sac,sac a dos,bolsa,maleta,maletin,estuche,cases,coque,mando,mandos,manette,manettes,joypad,joycon,joycons,controle,kit,visore,vr,casque,ladedock,vetrino,glas,folie,film,jeux,giochi,juego,juegos,jogo,gioco,fc24,fc25,fifa,konix,hori,nyxi,nexigo,orzly,steelplay,turtle beach,pokemon,mario kart,zelda',
+ 'dyson':'accessori,pezzi,pieces,teile,ersatzteile,repuestos,ricambi,ricambio,moteur,motore,bloc,opzetstuk,mondstuk,boquilla,borstel,cepillo,kammaufsatz,lockenaufsatz,burstenaufsatz,koffer,reisetasche,aufbewahrung,wandhalter,halter,houder,dok,serbatoio,contenitore,bac,asta,prolunga,estacion de carga,ciclone,ciclon,cyclone,diffuser,fluffy,laser,submarine,pettine,peine,gentilair,flyaway,power pack,rullo,rollen,dweil,coni,cono,barrel,ssb,smoothing,tool,ergänzung',
+ 'thermomix':'bolsa,sac,sacoche,trolley,gerätetasche,carcasa,cle,clé,livres,livre,libro,libros,rezeptbuch,buch,boek,joint,juicer,exprimidor,spiralizer,entsafter,cutter,gemuseschneider,pelador,peeler,kartoffelpeeler,couteaux,messer,despiece,vaso,bol,base,module,tabla,support,accessori,accessoires,pretrissage,recettes,rezept,tapa,mariposa,mariposas,cuchilla,cuchillas,vervangmes,mes,topf,boccale,ricettario,bimby accessori',
+ 'dji':'braco,brazo,bras,bovenkap,behuizing,extension,estensori,stativ,seal,dichtung,wide,poignee,griff,radiocommande,galleggiante,mochila,maletin,maleta,schede,rs mini,rs 3,mikro,mic',
+ 'shimano':'bobine,mulinello,moulinet,canna,rod,carrete,spinning,pesca,fishing,angeln,cappellino,berretto,casquette,gorra,mutze,radtrikot,trikot,maglia,jersey,cuissard,gilet,giacca,jacke,felpa,t shirt',
+ 'campagnolo':'cappellino,berretto,casquette,gorra,mutze,radtrikot,trikot,maglia,jersey,cuissard,giacca,jacke,felpa,t shirt,spilla',
+ 'fender':'book,boek,livre,libro,buch,revue,reference,decal,saddle,copripotenziometri,perillas,mecanique,rock band,wii,ps3,ps4,xbox,nintendo,lego,spilla,micros,micro,bareknuckle,set micro,jazz bass player',
+ 'babolat':'borsone,sac,raquetero,bag,sacca,jr25,jr26',
+ '3ds':'carcasa,scocca,scocche,housing,daughterboard,tasti,pennino,pennini,lente,joystick,circle pad,bigben,subsonic,stand,bildschirm,cartouche,starterpack,bigband',
+ 'carhartt':'longsleeve,polo,wip,tee shirts,tee shirt,pull,stussy,dearborn,organic'}
+for _k,_v in EXTRA23.items(): ACC[_k]=(ACC.get(_k,'')+','+_v).strip(',')
 def accessori(L,brand,chiave,gen=True):
     extra=[f"per {brand}",f"pour {brand}",f"für {brand}",f"for {brand}","compatibile","compatible","kompatibel"]+(ACC_GEN if gen else [])+[x for x in (ACC.get(chiave,'')+','+ACC.get(brand,'')).split(',') if x]
     out={}
