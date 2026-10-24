@@ -30,7 +30,14 @@ OSS=[ # osservazione fuori moda (24/10): categorie larghe, nessun brand, tetto 5
  ('V2 OSS fumetti manga','',None,[5425],50),('V2 OSS libri universitari','universitari',None,[5426],50),('V2 OSS giochi da tavolo','',None,[4881],50),
 ]
 def get(p): return urllib.request.urlopen(B+p,timeout=120).read().decode()
-def post(p,d=None): return urllib.request.urlopen(urllib.request.Request(B+p,data=urllib.parse.urlencode(d or {}).encode(),method='POST'),timeout=120)
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self,*a,**k): return None
+_APRI=urllib.request.build_opener(_NoRedirect)
+def post(p,d=None):
+    try: return _APRI.open(urllib.request.Request(B+p,data=urllib.parse.urlencode(d or {}).encode(),method='POST'),timeout=120)
+    except urllib.error.HTTPError as e:
+        if e.code not in (302,303): raise
+        return e
 if '--salva' in sys.argv:
     out=[]
     for m in re.finditer(r'action="/update_query/(\d+)"(.*?)</form>',get('/queries'),flags=re.S):
