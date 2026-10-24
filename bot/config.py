@@ -67,25 +67,6 @@ VINTED_REFRESH_TOKEN = os.environ.get("VINTED_REFRESH_TOKEN", "").strip()
 # codice, non perche' ci si aspetti che torni utile.
 VISUAL_SEARCH_ATTIVA = os.environ.get("VISUAL_SEARCH_ATTIVA", "false").strip().lower() == "true"
 
-# CERVELLO_PROVIDER: "gemini" (default, comportamento storico) oppure
-# "openai" per usare GPT-4o-mini al posto di Gemini-3.8-flash sul solo step
-# Cervello (verdetto/margine/ROI). L'Occhio (legit-check visivo) resta
-# SEMPRE Gemini in entrambi i casi -- non e' toccato da questo flag: un
-# test A/B su 12+ item reali (Set 2026-09) ha mostrato che Gemini resta
-# nettamente piu' affidabile su OCR di etichette e rischio di dettagli
-# allucinati, mentre sul solo ragionamento testuale (stesso identico input
-# occhio) GPT-4o-mini e' risultato comparabile in qualita' e ~5x piu' veloce.
-# Cambiare provider non richiede modifiche al codice: basta questa env var,
-# quindi si puo' tornare a Gemini all'istante (senza deploy) se qualcosa si
-# comporta male in produzione.
-CERVELLO_PROVIDER = os.environ.get("CERVELLO_PROVIDER", "gemini").strip().lower()
-if CERVELLO_PROVIDER not in ("gemini", "openai"):
-    raise ValueError(f"CERVELLO_PROVIDER deve essere 'gemini' o 'openai', ricevuto: '{CERVELLO_PROVIDER}'")
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-if CERVELLO_PROVIDER == "openai" and not OPENAI_API_KEY:
-    raise ValueError("CERVELLO_PROVIDER=openai richiede OPENAI_API_KEY nell'ambiente.")
-
-
 # DEBUG_CONFRONTO_COMP_TELEGRAM: quando True, aggiunge in fondo a OGNI
 # messaggio Telegram (non solo quelli corretti) un blocco con i prezzi
 # effettivamente presenti nei dati di ricerca ricevuti dal cervello per
@@ -144,14 +125,6 @@ PREZZO_OCCHIO_OUTPUT = 2.50
 PREZZO_CERVELLO_INPUT = PREZZO_OCCHIO_INPUT
 PREZZO_CERVELLO_OUTPUT = PREZZO_OCCHIO_OUTPUT
 PREZZO_GROUNDING_PER_QUERY = 14 / 1000
-
-# Cervello alternativo via OpenAI (attivo solo con CERVELLO_PROVIDER=openai).
-# Prezzi per milione di token, verificare su https://openai.com/api/pricing/
-# se cambiano.
-OPENAI_MODEL_CERVELLO = "gpt-4o-mini"
-OPENAI_API_URL_CERVELLO = "https://api.openai.com/v1/chat/completions"
-PREZZO_CERVELLO_OPENAI_INPUT = 0.15
-PREZZO_CERVELLO_OPENAI_OUTPUT = 0.60
 
 MAX_GALLERY_PHOTOS = 10
 
