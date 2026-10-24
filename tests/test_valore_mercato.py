@@ -66,3 +66,7 @@ def test_comparabili_simili_tolgono_pezzi_e_fuori_tema():
              ("Omega Constellation donna", 500.0)]
     out = comparabili_simili(comps, "omega seamaster cosmic automatic", "omega")
     assert out == [("Omega Seamaster Cosmic automatic orologio", 700.0)]
+
+
+def test_query_comp_al_massimo_quattro_parole():
+    assert query_comp("Cocotte Le Creuset ceramica smaltata arancione 24 cm", "Le Creuset") == "le creuset cocotte ceramica"
