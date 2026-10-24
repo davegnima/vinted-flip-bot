@@ -8,7 +8,7 @@ from functools import partial
 
 from bot.scheda import richiede_etichetta, invia_richiesta_etichetta, ANALISI_GEMINI_ATTIVA, STATO_ANALISI_COMPLETATA, STATO_ANALISI_INTERROTTA, _PermessoAnalisi, _aggiorna_stato_scheda, _invia_galleria_anticipata, _invia_risultato_telegram, aggiorna_preavviso, invia_galleria_dopo_lampo, invia_preavviso, riga_scarto_preavviso, componi_testi_verdetto
 from bot.verdetto import CERVELLO_CAMPIONI_EXTRA, _a_float, _estrai_item_id_da_url, _estrai_prezzi_da_pool_ricerca, _riepilogo_comp_per_fonte, calcola_verdetto, classifica_provenienza_comp, consolida_target_cervello, render_messaggio_verdetto, valida_payload_cervello
-from bot.config import GEMINI_SOGLIA_PREZZO_ALTO, TELEGRAM_ALERT_CHAT_ID, CERVELLO_PROVIDER, DEBUG_CONFRONTO_COMP_TELEGRAM, OCCHIO_OUTPUT_JSON, RAFFREDDAMENTO_SERPER_SECONDI, SERPER_API_KEY, SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO, SOGLIA_MARGINE_ASSOLUTO_NOTIFICA, TELEGRAM_OWNER_CHAT_ID, _serper_fallimenti_consecutivi, _serper_notifica_esaurimento_inviata, _serper_timestamp_ultimo_fallimento
+from bot.config import GEMINI_SOGLIA_PREZZO_ALTO, TELEGRAM_ALERT_CHAT_ID, DEBUG_CONFRONTO_COMP_TELEGRAM, OCCHIO_OUTPUT_JSON, RAFFREDDAMENTO_SERPER_SECONDI, SERPER_API_KEY, SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO, SOGLIA_MARGINE_ASSOLUTO_NOTIFICA, TELEGRAM_OWNER_CHAT_ID, _serper_fallimenti_consecutivi, _serper_notifica_esaurimento_inviata, _serper_timestamp_ultimo_fallimento
 from bot.feedback import proponi_controllo, rischio_falso_da_scarto, rischio_falso_da_verdetto, contesto_annuncio
 from bot.fair_value import FAIR_VALUE_FILTRA, check_skip_rosso, catalogo_impara, check_skip_fair_value, fv_registra_gemini, fv_registra_rapida, stima_fair_value, valuta_preavviso, preavviso_con_suono, PREAVVISO_LAMPO
 from bot.prompts import GEMINI_CERVELLO_SYSTEM_PROMPT, GEMINI_OCCHI_SYSTEM_PROMPT, GEMINI_OCCHI_SYSTEM_PROMPT_JSON
@@ -22,7 +22,6 @@ from bot.vinted_scrape import _scrapa_guardaroba_venditore, scrape_vinted_listin
 from bot.skip_report import build_skip_report, check_skip_pre_cervello
 from bot.filtri import check_skip_pre_gemini
 from bot.gemini_api import chiama_gemini, chiama_gemini_cervello_forzato
-from bot.openai_api import chiama_openai_cervello_forzato
 from bot.foto import download_image_bytes
 from bot.categorie import estrai_categoria_da_titolo
 from bot.logger import log
@@ -640,14 +639,11 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
                 "cerca_comp_prezzo per ottenere comp reali prima di rispondere."
             )
 
-        chiama_cervello = (
-            chiama_openai_cervello_forzato if CERVELLO_PROVIDER == "openai"
-            else partial(chiama_gemini_cervello_forzato, ruolo=ruolo_cervello)
-        )
+        chiama_cervello = partial(chiama_gemini_cervello_forzato, ruolo=ruolo_cervello)
         # Mappa URL delle ricerche on-demand (Punto 3 esteso il 2026-09-25):
         # riempita IN PLACE da chiama_cervello mentre elabora le eventuali
         # chiamate a cerca_comp_prezzo -- vedi mappa_url_ricerche_extra in
-        # chiama_gemini_cervello_forzato/chiama_openai_cervello_forzato.
+        # chiama_gemini_cervello_forzato.
         mappa_url_ricerche_extra = {}
         verdetto_json, errore_cervello, costo_cervello, n_query_grounding, ricerche_extra_raw = await chiama_cervello(
             GEMINI_CERVELLO_SYSTEM_PROMPT, user_text_cervello, forza_ricerca=forza_ricerca,

@@ -61,21 +61,16 @@ from bot.costanti import (
 from bot.schemas import (
     CATEGORIE_CAPO_ENUM,
     CERVELLO_RESPONSE_SCHEMA,
-    CERVELLO_RESPONSE_SCHEMA_OPENAI,
     OCCHIO_RESPONSE_SCHEMA,
     OCCHIO_RESPONSE_SCHEMA_GEMINI,
     _rimuovi_maxitems_da_array_di_oggetti,
-    _schema_gemini_to_openai,
 )  # noqa: F401  (re-export)
 
 from bot.prompts import (
-    CERVELLO_PROMPT_COMPATTO,
     GEMINI_CERVELLO_SYSTEM_PROMPT,
     GEMINI_OCCHI_SYSTEM_PROMPT,
     GEMINI_OCCHI_SYSTEM_PROMPT_JSON,
     _costruisci_prompt_occhio_json,
-    _schema_scheletro,
-    prompt_cervello_compatto,
 )  # noqa: F401  (re-export)
 
 from bot.logger import (
@@ -89,7 +84,6 @@ from bot.logger import (
 from bot.config import (
     BOT_VERSION,
     BRAND_ESCLUSI_ALERT_CHIEDI_FOTO,
-    CERVELLO_PROVIDER,
     COMMISSIONE_PROTEZIONE_FISSA,
     COMMISSIONE_PROTEZIONE_PCT,
     COMP_DA_MEMORIA_AMMESSI,
@@ -102,12 +96,7 @@ from bot.config import (
     MAX_ANALISI_PARALLELE,
     MAX_GALLERY_PHOTOS,
     OCCHIO_OUTPUT_JSON,
-    OPENAI_API_KEY,
-    OPENAI_API_URL_CERVELLO,
-    OPENAI_MODEL_CERVELLO,
     PREZZO_CERVELLO_INPUT,
-    PREZZO_CERVELLO_OPENAI_INPUT,
-    PREZZO_CERVELLO_OPENAI_OUTPUT,
     PREZZO_CERVELLO_OUTPUT,
     PREZZO_GROUNDING_PER_QUERY,
     PREZZO_OCCHIO_INPUT,
@@ -476,14 +465,6 @@ from bot.gemini_api import (
     costo_gemini_token,
 )  # noqa: F401  (re-export)
 
-from bot.openai_api import (
-    OPENAI_CERVELLO_TOOL,
-    OPENAI_RESPONSE_FORMAT_CERVELLO,
-    _chiama_openai_raw,
-    chiama_openai_cervello_forzato,
-    costo_openai_token,
-)  # noqa: F401  (re-export)
-
 from bot.vinted_search import (
     _estrai_articoli_vinted,
     _risolvi_search_by_image_id,
@@ -628,7 +609,7 @@ from bot.pipeline import (
 # non li scrive affatto: li calcola calcola_verdetto() in Python dai dati
 # strutturati, quindi non esiste piu' l'errore da correggere. La domanda
 # diagnostica che questo flag doveva risolvere (perche' le reti
-# intervenivano sul 94% degli item con CERVELLO_PROVIDER=openai contro lo
+# intervenivano sul 94% degli item con il Cervello OpenAI, tolto il 23/10, contro lo
 # 0% con Gemini) resta senza risposta ed e' diventata priva di oggetto: le
 # reti intervenivano sul FORMATO del testo, e quel formato non c'e' piu'.
 # La variabile d'ambiente puo' restare impostata su Railway senza alcun
@@ -636,7 +617,7 @@ from bot.pipeline import (
 #
 # Vecchia documentazione del flag, conservata per contesto storico:
 # RETI_SICUREZZA_ATTIVE: interruttore diagnostico temporaneo. Log di
-# produzione del 18-19/09/2026 hanno mostrato che con CERVELLO_PROVIDER=openai
+# produzione del 18-19/09/2026 hanno mostrato che col Cervello OpenAI (tolto il 23/10)
 # le reti di sicurezza post-processing (verifica_ancoraggio_prezzo_comp,
 # verifica_comp_citati_sono_reali, forza_soglia_minima_compra,
 # converti_tratta_senza_obiettivo_valido, declassa_urgenza_se_borderline,
@@ -811,20 +792,6 @@ from bot.pipeline import (
                          # uguale a prima, il caso "serve una seconda ricerca"
                          # costa quanto il vecchio fallback ma con una
                          # ricerca vera al posto del rifiuto secco.
-
-
-# ---------------------------------------------------------------------------
-# CERVELLO OPENAI CON FUNCTION CALLING (equivalente GPT-4o-mini)
-# ---------------------------------------------------------------------------
-# Stessa logica del cervello Gemini sopra (multi-round di ricerca via
-# cerca_serper_mirata, poi verdetto testuale finale), ma nel formato Chat
-# Completions di OpenAI. Molto piu' semplice del gemello Gemini perche'
-# "tool_choice": "required" e' vincolante in modo affidabile in OpenAI -- non
-# servono i workaround osservati con Gemini (mode "NONE" dichiarato sempre,
-# fallback senza tools, diagnostica su testo vuoto): qui un tool_choice
-# esplicito basta, e un messaggio senza tool_calls e' sempre una risposta
-# testuale vera. Stessa firma di ritorno (testo, costo_totale, n_query_extra)
-# della funzione Gemini, per restare intercambiabile nel punto di chiamata.
 
 
 # ---------------------------------------------------------------------------
@@ -1608,7 +1575,7 @@ async def main():
         log.warning("Versioni delle dipendenze non leggibili:\n%s", traceback.format_exc())
     log.info(
         "Cervello: %s (output JSON strutturato) · comp da memoria del modello: %s",
-        OPENAI_MODEL_CERVELLO if CERVELLO_PROVIDER == "openai" else GEMINI_MODEL_CERVELLO,
+        GEMINI_MODEL_CERVELLO,
         "ammessi" if COMP_DA_MEMORIA_AMMESSI else "esclusi dal calcolo",
     )
     log.info(

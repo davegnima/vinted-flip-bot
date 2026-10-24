@@ -48,16 +48,6 @@ def test_margine_e_roi_coerenti():
 
 
 
-def test_prompt_cervello_compatto_contiene_tutte_le_chiavi():
-    import main_telethon as m
-    p = m.prompt_cervello_compatto()
-    for k in m.CERVELLO_RESPONSE_SCHEMA_OPENAI["properties"]:
-        assert k + ":" in p
-    assert len(p) < len(m.GEMINI_CERVELLO_SYSTEM_PROMPT) / 3
-
-
-
-
 def test_cascata_gemini_scala_per_modello_quando_la_quota_finisce(monkeypatch):
     import main_telethon as m
     monkeypatch.setattr(gs, "GEMINI_CASCATA", ["m-top", "m-mid", "m-lite"])
