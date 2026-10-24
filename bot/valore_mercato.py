@@ -76,7 +76,7 @@ def comparabili_simili(comps, query, brand=None, soglia=0.6):
     return out
 
 
-def query_comp(titolo, brand=None, max_parole=6):
+def query_comp(titolo, brand=None, max_parole=4):
     """Testo di ricerca: marca + prime parole significative del titolo (niente 'usato', 'ottime condizioni'...)."""
     parole = [w for w in re.findall(r"[\w'’]+", (titolo or "").lower()) if w not in _PAROLE_VUOTE]
     if brand:
