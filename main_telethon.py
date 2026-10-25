@@ -44,7 +44,7 @@ from bot.db import DB_FILE
 from bot.gemini_stato import ripristina_stato_gemini
 from bot.tracciamento import importa_tracciamento_jsonl, tracc_riprendi_serie
 from bot.feedback import parse_risposta, registra_feedback, registra_nota, ciclo_callback, _contesti, _ctx_item
-from bot.radar_v2 import ombra as radar_v2_ombra
+from bot.radar_v2 import analizza as radar_v2_analizza
 from bot.radar import RADAR_CHAT_IDS, radar_in_pausa, e_messaggio_radar, gestisci_annuncio_radar, risolvi_gruppo_radar, togli_marcatore
 from bot.costanti import (
     BRAND_BLOCKLIST,
@@ -1507,8 +1507,15 @@ async def on_new_message(event):
             _analisi_attive["n"] += 1
             try:
                 parsed_radar = parse_vinted_tracker_message(togli_marcatore(text))
-                asyncio.create_task(radar_v2_ombra(parsed_radar, url_radar))
-                await gestisci_annuncio_radar(parsed_radar, url_radar, t0=t_ricevuto_bot)
+                v2_radar = await radar_v2_analizza(parsed_radar, url_radar)
+                # Foto gia' allegata dal tracker al messaggio: niente pagina in piu' da scaricare.
+                foto_radar = None
+                if event.message.photo:
+                    try:
+                        foto_radar = await event.message.download_media(file=bytes)
+                    except Exception:
+                        log.warning("RADAR FOTO | download non riuscito per msg_id=%s", msg_id)
+                await gestisci_annuncio_radar(parsed_radar, url_radar, t0=t_ricevuto_bot, v2=v2_radar, foto=foto_radar)
             finally:
                 _analisi_attive["n"] -= 1
             return

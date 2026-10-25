@@ -4,6 +4,7 @@ in vendita adesso (valore_mercato) e REGISTRA il verdetto; non manda messaggi. P
 Attivo con RADAR_V2_OMBRA=1. Log `RADAR V2 OMBRA |` ed evento `radar_v2` nel DB. Tetto di sicurezza: RADAR_V2_MAX_GIORNO ricerche
 di comparabili al giorno (le stime si riusano per RADAR_V2_CACHE_ORE ore, per marca e testo).
 """
+import json
 import os
 import time
 import asyncio
@@ -12,9 +13,11 @@ from urllib.parse import quote
 
 from bot import db
 from bot.comps import _cerca_vinted_testo_diretto_con_fallback_serper
+from bot.jev import giudica
 from bot.logger import log
 from bot.radar import RADAR_SPESA_MAX, parola_vietata, radar_in_pausa
 from bot.verdetto import _a_float, _estrai_item_id_da_url
+from bot.vinted_scrape import scrape_vinted_listing
 from bot.valore_mercato import comparabili_simili, e_un_pezzo, parse_comp, query_comp, solo_usato, stima_mercato, valuta
 # ---- fine import ----
 
@@ -29,8 +32,20 @@ _conteggio = {"giorno": None, "n": 0}
 _sem = asyncio.Semaphore(RADAR_V2_PARALLELO)
 
 
-def url_comparabili(testo):
-    return f"https://www.vinted.it/catalog?search_text={quote(testo)}&order=newest_first"
+_MARCHI_ID = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "dati", "brand_ids.json"))).get("marchi", {})
+
+
+def id_marchio(brand):
+    """Id Vinted del marchio dalla tabella (es. 'dyson' -> 291992), o None se non c'e'."""
+    return _MARCHI_ID.get((brand or "").strip().lower())
+
+
+def url_comparabili(testo, catalogo=None, brand=None):
+    """Ricerca dei simili su Vinted: parole chiave + categoria (catalog[]) + marchio (brand_ids[]), quando noti.
+    Senza categoria una ricerca di 'ricoh r1' pesca qualsiasi fotocamera (25/10)."""
+    categoria = f"&catalog[]={catalogo}" if catalogo else ""
+    marchio = f"&brand_ids[]={id_marchio(brand)}" if id_marchio(brand) else ""
+    return f"https://www.vinted.it/catalog?search_text={quote(testo)}{categoria}{marchio}&order=newest_first"
 
 
 def _entro_il_tetto(adesso=None):
@@ -44,27 +59,44 @@ def _entro_il_tetto(adesso=None):
     return True
 
 
-async def _prezzi_simili(testo, titolo, prezzo, brand=None):
+async def _catalogo_annuncio(url):
+    """Id della categoria Vinted dell'annuncio (dalla sua pagina), o None se la pagina non si legge."""
+    try:
+        pagina = await scrape_vinted_listing(url, includi_guardaroba=False)
+        return pagina.get("catalog_id")
+    except Exception:  # noqa: BLE001 - senza categoria la ricerca resta solo sul testo
+        return None
+
+
+async def _prezzi_simili(testo, titolo, prezzo, brand=None, catalogo=None):
     """(prezzi richiesti di annunci simili usati, n grezzi, dalla_cache) o (None, 0, False) se non disponibile."""
     adesso = time.time()
-    voce = _cache.get(testo)
+    chiave = (testo, catalogo)
+    voce = _cache.get(chiave)
     if voce and adesso - voce[0] < RADAR_V2_CACHE_ORE * 3600:
         return voce[1], voce[2], True
     if not _entro_il_tetto(adesso):
         return None, 0, False
     async with _sem:
-        risposta, ok, _mappa = await _cerca_vinted_testo_diretto_con_fallback_serper(url_comparabili(testo))
+        risposta, ok, _mappa = await _cerca_vinted_testo_diretto_con_fallback_serper(url_comparabili(testo, catalogo, brand))
     if not ok:
         return None, 0, False
     comps = parse_comp(risposta)
     usati = [(t, p) for t, p in comparabili_simili(solo_usato(comps), testo, brand) if not (t == titolo and abs(p - prezzo) < 0.01)]
     prezzi = [p for _, p in usati]
-    _cache[testo] = (adesso, prezzi, len(comps))
+    _cache[chiave] = (adesso, prezzi, len(comps))
     return prezzi, len(comps), False
 
 
-async def ombra(parsed, url):
-    """Valuta in silenzio un annuncio del radar e registra il verdetto. Mai messaggi, mai eccezioni verso il chiamante."""
+def _rosso(motivo, n=0):
+    """Risultato per un annuncio scartato: il messaggio mostra comunque il motivo dei comparabili."""
+    return {"semaforo": "rosso", "rivendita": None, "margine": None, "roi": None, "n": n, "motivo": motivo,
+            "jev": None, "jev_conf": None}
+
+
+async def analizza(parsed, url):
+    """Valuta un annuncio del radar con i comparabili, chiede il giudizio di Jev e registra il verdetto.
+    Ritorna dict {semaforo, rivendita, margine, roi, n, jev, jev_conf} o None. Mai eccezioni verso il chiamante."""
     if not RADAR_V2_OMBRA or radar_in_pausa():
         return
     try:
@@ -83,25 +115,31 @@ async def ombra(parsed, url):
         vietata = parola_vietata(titolo)
         if vietata:
             db.scrivi_evento("radar_v2", item_id, brand, {**base, "ok": False, "motivo": "parola_vietata:" + vietata})
-            return
+            return _rosso("parola_vietata:")
         pezzo = e_un_pezzo(titolo)
         if pezzo:
             db.scrivi_evento("radar_v2", item_id, brand, {**base, "ok": False, "motivo": "pezzo_o_accessorio:" + pezzo})
-            return
+            return _rosso("pezzo_o_accessorio:")
         testo = query_comp(titolo, brand)
         if len(testo.split()) < 2:
             # titolo di una parola ("Dyson"): il modello non si capisce, i comparabili sarebbero ricambi e accessori
             db.scrivi_evento("radar_v2", item_id, brand, {**base, "ok": False, "motivo": "titolo_generico", "q": testo})
-            return
-        prezzi, n_grezzi, dalla_cache = await _prezzi_simili(testo, titolo, prezzo, brand)
+            return _rosso("titolo_generico")
+        catalogo = await _catalogo_annuncio(url)
+        prezzi, n_grezzi, dalla_cache = await _prezzi_simili(testo, titolo, prezzo, brand, catalogo)
         if prezzi is None:
             db.scrivi_evento("radar_v2", item_id, brand, {**base, "ok": False, "motivo": "comparabili_non_disponibili", "q": testo})
-            return
+            return _rosso("comparabili_non_disponibili")
         v = valuta(prezzo, stima_mercato(prezzi, min_n=2))
         dati = {**base, "q": testo, "n_grezzi": n_grezzi, "n_usati": len(prezzi), "cache": dalla_cache, **v}
         log.info("RADAR V2 OMBRA | item=%s | semaforo=%s | ok=%s | motivo=%s | prezzo=%s | rivendita=%s | margine=%s | roi=%s | n=%s | aff=%s | q=%s | titolo=%s",
                  item_id, v["semaforo"], v["ok"], v["motivo"], prezzo, v.get("rivendita"), v.get("margine"), v.get("roi"), len(prezzi),
                  v.get("affidabilita"), testo, titolo[:60])
-        db.scrivi_evento("radar_v2", item_id, brand, dati)
+        jev, jev_conf = await asyncio.to_thread(giudica, titolo, prezzo, prezzi, v.get("rivendita"))
+        if jev:
+            log.info("RADAR V2 JEV | item=%s | giudizio=%s | confidenza=%s | titolo=%s", item_id, jev, jev_conf, titolo[:60])
+        db.scrivi_evento("radar_v2", item_id, brand, {**dati, "jev": jev, "jev_conf": jev_conf})
+        return {"semaforo": v.get("semaforo"), "rivendita": v.get("rivendita"), "margine": v.get("margine"),
+                "roi": v.get("roi"), "n": len(prezzi), "motivo": v.get("motivo"), "jev": jev, "jev_conf": jev_conf}
     except Exception:
         log.warning("Radar v2 ombra: annuncio non valutato:\n%s", traceback.format_exc())
