@@ -97,10 +97,10 @@ async def ombra(parsed, url):
         if prezzi is None:
             db.scrivi_evento("radar_v2", item_id, brand, {**base, "ok": False, "motivo": "comparabili_non_disponibili", "q": testo})
             return
-        v = valuta(prezzo, stima_mercato(prezzi))
+        v = valuta(prezzo, stima_mercato(prezzi, min_n=2))
         dati = {**base, "q": testo, "n_grezzi": n_grezzi, "n_usati": len(prezzi), "cache": dalla_cache, **v}
-        log.info("RADAR V2 OMBRA | item=%s | ok=%s | motivo=%s | prezzo=%s | rivendita=%s | margine=%s | roi=%s | n=%s | aff=%s | q=%s | titolo=%s",
-                 item_id, v["ok"], v["motivo"], prezzo, v.get("rivendita"), v.get("margine"), v.get("roi"), len(prezzi),
+        log.info("RADAR V2 OMBRA | item=%s | semaforo=%s | ok=%s | motivo=%s | prezzo=%s | rivendita=%s | margine=%s | roi=%s | n=%s | aff=%s | q=%s | titolo=%s",
+                 item_id, v["semaforo"], v["ok"], v["motivo"], prezzo, v.get("rivendita"), v.get("margine"), v.get("roi"), len(prezzi),
                  v.get("affidabilita"), testo, titolo[:60])
         db.scrivi_evento("radar_v2", item_id, brand, dati)
     except Exception:
