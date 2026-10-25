@@ -97,6 +97,7 @@ async def cerca_serper_mirata(query):
         resp.raise_for_status()
         results = resp.json()
     except Exception as e:
+        _log_errore_serper(f"cerca_serper_mirata '{query[:60]}'", eccezione=e)
         return f"Ricerca fallita: {e}", {}
     lines = []
     mappa_url = {}
@@ -124,6 +125,16 @@ async def cerca_serper_mirata(query):
         log.info("cerca_serper_mirata: scartate %d righe di rumore (snippet vuoto/placeholder o valuta non comparabile) per query '%s'.", scartate, query)
     testo = "\n".join(lines) if lines else "Nessun risultato trovato per questa query."
     return testo, mappa_url
+
+
+def _log_errore_serper(contesto, resp=None, eccezione=None):
+    """Registra la causa di un fallimento Serper (25/10): codice HTTP e inizio del corpo della risposta, oppure
+    l'eccezione. Serve a distinguere crediti esauriti (401/402/403/429) da rete o timeout nei log. Non logga la chiave."""
+    if resp is not None:
+        log.warning("SERPER FALLITO | %s | HTTP %s | corpo=%s", contesto, resp.status_code,
+                    (resp.text or "")[:200].replace("\n", " "))
+    else:
+        log.warning("SERPER FALLITO | %s | eccezione=%s", contesto, str(eccezione)[:200])
 
 
 def _e_errore_crediti_serper(resp):
