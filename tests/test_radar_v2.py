@@ -61,3 +61,12 @@ def test_jev_senza_chiave_non_chiama_nulla(monkeypatch):
     monkeypatch.setattr(jev, "JEV_GIUDICE", True)
     monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
     assert jev.giudica("x", 10, [20], 30) == (None, None)
+
+
+def test_righe_v2_mostra_sempre_il_motivo():
+    from bot import radar
+    riga = radar._righe_v2({"semaforo": "rosso", "rivendita": None, "n": 1, "motivo": "pochi_comparabili"})
+    assert riga == ["Comparabili 🔴: pochi_comparabili (1 simili)"]
+    assert radar._righe_v2({"semaforo": "rosso", "rivendita": None, "n": 0, "motivo": "titolo_generico"})[0].endswith("(0 simili)")
+    from bot.radar_v2 import _rosso
+    assert _rosso("parola_vietata:x")["semaforo"] == "rosso"
