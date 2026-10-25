@@ -232,6 +232,18 @@ def _rimuovi_comp_autoreferenziale(testo_comp_vinted, titolo_annuncio):
     return "\n".join(righe_filtrate)
 
 
+def campione_pagina_vinted(html_content, lunghezza=900):
+    """Campione del markup di una pagina catalogo Vinted per capire perche' il parser non trova articoli (25/10).
+    Conta i marcatori tipici e riporta un tratto attorno al primo link di annuncio. Pura: solo per i log."""
+    testo = html_content or ""
+    primo = testo.find("/items/")
+    if primo < 0:
+        primo = testo.find("alt=")
+    tratto = testo[max(0, primo - 200):max(0, primo - 200) + lunghezza] if primo >= 0 else testo[:lunghezza]
+    marcatori = {m: testo.count(m) for m in ('alt="', "/items/", "data-testid", "catalog-item", "item-box", "__NEXT_DATA__")}
+    return {"len": len(testo), "marcatori": marcatori, "tratto": " ".join(tratto.split())}
+
+
 def _estrai_articoli_da_alt_vinted(html_content, max_articoli=15):
     """Estrae righe 'titolo — prezzo' dagli attributi alt= delle immagini
     prodotto nell'HTML grezzo di una pagina catalogo Vinted (vedi
