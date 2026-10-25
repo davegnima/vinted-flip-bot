@@ -6,7 +6,7 @@ import traceback
 from functools import partial
 
 
-from bot.scheda import richiede_etichetta, invia_richiesta_etichetta, ANALISI_GEMINI_ATTIVA, STATO_ANALISI_COMPLETATA, STATO_ANALISI_INTERROTTA, _PermessoAnalisi, _aggiorna_stato_scheda, _invia_galleria_anticipata, _invia_risultato_telegram, aggiorna_preavviso, invia_galleria_dopo_lampo, invia_preavviso, riga_scarto_preavviso, componi_testi_verdetto
+from bot.scheda import avviso_solo_semaforo, testo_avviso_solo_semaforo, richiede_etichetta, invia_richiesta_etichetta, ANALISI_GEMINI_ATTIVA, STATO_ANALISI_COMPLETATA, STATO_ANALISI_INTERROTTA, _PermessoAnalisi, _aggiorna_stato_scheda, _invia_galleria_anticipata, _invia_risultato_telegram, aggiorna_preavviso, invia_galleria_dopo_lampo, invia_preavviso, riga_scarto_preavviso, componi_testi_verdetto
 from bot.verdetto import CERVELLO_CAMPIONI_EXTRA, _a_float, _estrai_item_id_da_url, _estrai_prezzi_da_pool_ricerca, _riepilogo_comp_per_fonte, calcola_verdetto, classifica_provenienza_comp, consolida_target_cervello, render_messaggio_verdetto, valida_payload_cervello
 from bot.config import GEMINI_SOGLIA_PREZZO_ALTO, TELEGRAM_ALERT_CHAT_ID, DEBUG_CONFRONTO_COMP_TELEGRAM, OCCHIO_OUTPUT_JSON, RAFFREDDAMENTO_SERPER_SECONDI, SERPER_API_KEY, SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO, SOGLIA_MARGINE_ASSOLUTO_NOTIFICA, TELEGRAM_OWNER_CHAT_ID, _serper_fallimenti_consecutivi, _serper_notifica_esaurimento_inviata, _serper_timestamp_ultimo_fallimento
 from bot.feedback import proponi_controllo, rischio_falso_da_scarto, rischio_falso_da_verdetto, contesto_annuncio
@@ -677,6 +677,13 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
                 f"_Costo comunque sostenuto: ${costo_totale:.4f}_",
                 reply_to=msg_id_galleria,
             )
+            if avviso_solo_semaforo(listing_info):
+                # 🟢 senza Cervello: l'affare potenziale non si perde, parte l'avviso dal solo semaforo (nel gruppo, sul
+                # preavviso se c'e', altrimenti come messaggio nuovo con suono)
+                testo_sem = testo_avviso_solo_semaforo(listing_info, url, msg_id_galleria)
+                if not await aggiorna_preavviso(stato, url, testo_verdetto=testo_sem):
+                    await telegram_send_message(TELEGRAM_ALERT_CHAT_ID or TELEGRAM_OWNER_CHAT_ID, testo_sem)
+                log.info("AVVISO SOLO SEMAFORO | item=%s | prezzo=%s", _estrai_item_id_da_url(url), listing_info.get("price"))
             return
 
         v, problemi = valida_payload_cervello(verdetto_json)

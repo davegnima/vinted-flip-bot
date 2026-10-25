@@ -249,6 +249,30 @@ def riga_scarto_preavviso(motivo, msg_id=None, interrotta=False):
     return testa + (f"\n[messaggio originale nell'altra chat]({link})" if link else "")
 
 
+RIGA_SOLO_SEMAFORO = "⚠️ Cervello non disponibile: avviso dal solo semaforo (stima rapida, non verificata)"
+
+
+def avviso_solo_semaforo(listing_info):
+    """True se il Cervello e' fallito ma il semaforo della stima rapida e' 🟢: l'annuncio va comunque segnalato. Pura."""
+    return ((listing_info.get("fair_value") or {}).get("semaforo")) == "🟢"
+
+
+def testo_avviso_solo_semaforo(listing_info, url=None, msg_id=None):
+    """Messaggio per il 🟢 senza verdetto (Cervello fallito): testata con semaforo, margine rapido, prezzo e brand, titolo,
+    fair value rapido, link e avvertenza che manca la verifica. Pura."""
+    esc = _escapa_markdown_legacy
+    fv = listing_info.get("fair_value") or {}
+    marca = "🟢 " + (f"~+{fv['margine']:.0f} € · " if fv.get("margine") is not None else "")
+    righe = [marca + "*" + (_testa_prezzo_brand(listing_info) or "") + "*", esc(listing_info.get("title") or "Annuncio"),
+             esc(_riga_fair_value_testo(fv) or "")]
+    righe = [r for r in righe if r]
+    if url:
+        righe.append(f"[vedi su Vinted]({url})")
+    link = link_messaggio_chat_principale(msg_id)
+    righe += ["", RIGA_SOLO_SEMAFORO] + ([f"[messaggio originale nell'altra chat]({link})"] if link else [])
+    return "\n".join(righe)
+
+
 def didascalia_verdetto(testo, limite=1024):
     """Riduce il messaggio del verdetto alla didascalia di una foto (max 1024, limite di Telegram): se non ci sta accorcia le
     righe piu' lunghe (analisi, dubbi: troncate con "…") e tiene tutte le altre, cosi' restano esito, prezzi, dettagli e fair
