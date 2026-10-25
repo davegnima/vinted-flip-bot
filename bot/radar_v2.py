@@ -94,7 +94,7 @@ def _rosso(motivo, n=0):
             "jev": None, "jev_conf": None}
 
 
-async def analizza(parsed, url):
+async def analizza(parsed, url, foto=None):
     """Valuta un annuncio del radar con i comparabili, chiede il giudizio di Jev e registra il verdetto.
     Ritorna dict {semaforo, rivendita, margine, roi, n, jev, jev_conf} o None. Mai eccezioni verso il chiamante."""
     if not RADAR_V2_OMBRA or radar_in_pausa():
@@ -135,7 +135,9 @@ async def analizza(parsed, url):
         log.info("RADAR V2 OMBRA | item=%s | semaforo=%s | ok=%s | motivo=%s | prezzo=%s | rivendita=%s | margine=%s | roi=%s | n=%s | aff=%s | q=%s | titolo=%s",
                  item_id, v["semaforo"], v["ok"], v["motivo"], prezzo, v.get("rivendita"), v.get("margine"), v.get("roi"), len(prezzi),
                  v.get("affidabilita"), testo, titolo[:60])
-        jev, jev_conf = await asyncio.to_thread(giudica, titolo, prezzo, prezzi, v.get("rivendita"))
+        # Prova foto (25/10): la foto va a Jev solo con semaforo verde, per tenere basso il costo (vedi bot/jev.py).
+        foto_jev = foto if v.get("semaforo") == "verde" else None
+        jev, jev_conf = await asyncio.to_thread(giudica, titolo, prezzo, prezzi, v.get("rivendita"), foto_jev)
         if jev:
             log.info("RADAR V2 JEV | item=%s | giudizio=%s | confidenza=%s | titolo=%s", item_id, jev, jev_conf, titolo[:60])
         db.scrivi_evento("radar_v2", item_id, brand, {**dati, "jev": jev, "jev_conf": jev_conf})
