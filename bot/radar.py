@@ -306,27 +306,53 @@ def semaforo_radar(prezzo, buy_max):
     return "🟡" if prezzo <= buy_max * rm.RADAR_TOLLERANZA_BUY_MAX else "🔴"
 
 
-async def _manda_semaforo_radar(item_id, titolo, prezzo, url, modello, buy_max):
+# Filtro sul rumore (25/10): con RADAR_SOLO_VERDI=1 arrivano solo gli annunci con comparabili 🟢.
+RADAR_SOLO_VERDI = os.environ.get("RADAR_SOLO_VERDI", "0").strip() in ("1", "true", "si")
+
+
+def _righe_v2(v2):
+    """Righe extra del messaggio: semaforo dei comparabili e giudizio di Jev (se presenti)."""
+    if not v2:
+        return []
+    righe = []
+    if v2.get("semaforo"):
+        righe.append(f"Comparabili {v2['semaforo']}: rivendita {v2.get('rivendita')} € · margine {v2.get('margine')} € "
+                     f"· ROI {v2.get('roi')}% · {v2.get('n')} simili")
+    if v2.get("jev"):
+        righe.append(f"Jev: {v2['jev']} (confidenza {v2.get('jev_conf')})")
+    return righe
+
+
+def _da_mandare(v2):
+    return not RADAR_SOLO_VERDI or (bool(v2) and v2.get("semaforo") == "🟢")
+
+
+async def _manda_semaforo_radar(item_id, titolo, prezzo, url, modello, buy_max, v2=None):
+    if not _da_mandare(v2):
+        return
     try:
         luce = semaforo_radar(prezzo, buy_max)
-        testo = (f"{luce} {modello} | {prezzo:g} € (buy max {buy_max:g} €)\n"
-                 f"{titolo[:100]}\n{url}")
+        testo = "\n".join([f"{luce} {modello} | {prezzo:g} € (buy max {buy_max:g} €)", titolo[:100]]
+                          + _righe_v2(v2) + [url])
         await telegram_send_message(TELEGRAM_OWNER_CHAT_ID, testo, disable_notification=True)
         log.info("RADAR SEMAFORO | item=%s | %s | modello=%s | prezzo=%s | buy_max=%s", item_id, luce, modello, prezzo, buy_max)
     except Exception:
         log.warning("Radar: semaforo non inviato per %s:\n%s", item_id, traceback.format_exc())
 
 
-async def _manda_annuncio_senza_modello(item_id, titolo, prezzo, url):
+async def _manda_annuncio_senza_modello(item_id, titolo, prezzo, url, v2=None):
+    if not _da_mandare(v2):
+        return
     try:
-        testo = f"🔎 senza modello | {prezzo:g} €\n{titolo[:100]}\n{url}" if prezzo is not None else f"🔎 senza modello\n{titolo[:100]}\n{url}"
+        intestazione = f"🔎 senza modello | {prezzo:g} €" if prezzo is not None else "🔎 senza modello"
+        testo = "\n".join([intestazione, titolo[:100]] + _righe_v2(v2) + [url])
         await telegram_send_message(TELEGRAM_OWNER_CHAT_ID, testo, disable_notification=True)
         log.info("RADAR SENZA MODELLO | item=%s | prezzo=%s | titolo=%s", item_id, prezzo, titolo[:60])
     except Exception:
         log.warning("Radar: annuncio senza modello non inviato per %s:\n%s", item_id, traceback.format_exc())
 
 
-async def gestisci_annuncio_radar(parsed, url, t0=None):
+async def gestisci_annuncio_radar(parsed, url, t0=None, v2=None):
     """Fase 0: classifica, filtra, visita la pagina se serve, registra. Mai messaggi, mai AI."""
     global _radar_pausa_saltati
     if not RADAR_ATTIVO:
@@ -352,10 +378,10 @@ async def gestisci_annuncio_radar(parsed, url, t0=None):
     modello = (riga.get("id") or riga.get("modello")) if riga else None
     bm = riga.get("buy_max") if riga else None
     if RADAR_MOSTRA_TUTTI and modello and bm and prezzo is not None:
-        await _manda_semaforo_radar(item_id, titolo, prezzo, url, modello, bm)
+        await _manda_semaforo_radar(item_id, titolo, prezzo, url, modello, bm, v2)
     elif RADAR_MOSTRA_TUTTI and not modello:
         # Verifica (25/10): annuncio di una lista senza modello riconosciuto: messaggio, poi il flusso di sempre.
-        await _manda_annuncio_senza_modello(item_id, titolo, prezzo, url)
+        await _manda_annuncio_senza_modello(item_id, titolo, prezzo, url, v2)
     campione = (not passa) and modulo is not None and not motivo.startswith("prezzo_sotto") and nel_campione_scarti(item_id)
     base = {"titolo": titolo[:120], "prezzo": prezzo, "modulo": modulo, "brand_radar": brand_radar,
             "tipo": tipo, "l1": "passa" if passa else "scarto", "motivo": motivo, "campione": campione,
