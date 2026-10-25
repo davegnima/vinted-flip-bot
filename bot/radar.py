@@ -306,7 +306,7 @@ def semaforo_radar(prezzo, buy_max):
     return "🟡" if prezzo <= buy_max * rm.RADAR_TOLLERANZA_BUY_MAX else "🔴"
 
 
-# Filtro sul rumore (25/10): con RADAR_SOLO_VERDI=1 arrivano solo gli annunci con comparabili 🟢.
+# Filtro sul rumore (25/10): con RADAR_SOLO_VERDI=1 arrivano solo gli annunci con semaforo verde (comparabili >= 6 e affare).
 RADAR_SOLO_VERDI = os.environ.get("RADAR_SOLO_VERDI", "0").strip() in ("1", "true", "si")
 
 
@@ -361,12 +361,12 @@ async def _manda_annuncio_senza_modello(item_id, titolo, prezzo, url, v2=None, f
     if not _da_mandare(v2):
         return
     try:
-        intestazione = f"🔎 senza modello | {prezzo:g} €" if prezzo is not None else "🔎 senza modello"
+        intestazione = f"🔎 fuori matrice | {prezzo:g} €" if prezzo is not None else "🔎 fuori matrice"
         testo = "\n".join([intestazione, titolo[:100]] + _righe_v2(v2) + [url])
         await _invia_radar(testo, foto)
-        log.info("RADAR SENZA MODELLO | item=%s | prezzo=%s | titolo=%s", item_id, prezzo, titolo[:60])
+        log.info("RADAR FUORI MATRICE | item=%s | prezzo=%s | titolo=%s", item_id, prezzo, titolo[:60])
     except Exception:
-        log.warning("Radar: annuncio senza modello non inviato per %s:\n%s", item_id, traceback.format_exc())
+        log.warning("Radar: annuncio fuori matrice non inviato per %s:\n%s", item_id, traceback.format_exc())
 
 
 async def gestisci_annuncio_radar(parsed, url, t0=None, v2=None, foto=None):

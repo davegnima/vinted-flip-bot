@@ -98,3 +98,17 @@ def test_url_comparabili_con_marchio_e_categoria():
     u = url_comparabili("dyson airwrap", 3767, "Dyson")
     assert "brand_ids[]=291992" in u and "catalog[]=3767" in u
     assert "brand_ids" not in url_comparabili("ricoh r1", 3061, "Ricoh")
+
+
+def test_annuncio_fuori_matrice_ha_intestazione_chiara(monkeypatch):
+    import asyncio
+    from bot import radar
+    inviati = []
+
+    async def finto_invia(testo, foto):
+        inviati.append(testo)
+
+    monkeypatch.setattr(radar, "RADAR_SOLO_VERDI", False)
+    monkeypatch.setattr(radar, "_invia_radar", finto_invia)
+    asyncio.run(radar._manda_annuncio_senza_modello("1", "Psp portatile", 30.0, "https://www.vinted.it/items/1", None, None))
+    assert inviati[0].startswith("🔎 fuori matrice | 30 €\nPsp portatile")
