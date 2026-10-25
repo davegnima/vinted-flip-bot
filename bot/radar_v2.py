@@ -64,6 +64,12 @@ async def _prezzi_simili(testo, titolo, prezzo, brand=None):
     return prezzi, len(comps), False
 
 
+def _rosso(motivo, n=0):
+    """Risultato per un annuncio scartato: il messaggio mostra comunque il motivo dei comparabili."""
+    return {"semaforo": "rosso", "rivendita": None, "margine": None, "roi": None, "n": n, "motivo": motivo,
+            "jev": None, "jev_conf": None}
+
+
 async def analizza(parsed, url):
     """Valuta un annuncio del radar con i comparabili, chiede il giudizio di Jev e registra il verdetto.
     Ritorna dict {semaforo, rivendita, margine, roi, n, jev, jev_conf} o None. Mai eccezioni verso il chiamante."""
@@ -85,20 +91,20 @@ async def analizza(parsed, url):
         vietata = parola_vietata(titolo)
         if vietata:
             db.scrivi_evento("radar_v2", item_id, brand, {**base, "ok": False, "motivo": "parola_vietata:" + vietata})
-            return
+            return _rosso("parola_vietata:")
         pezzo = e_un_pezzo(titolo)
         if pezzo:
             db.scrivi_evento("radar_v2", item_id, brand, {**base, "ok": False, "motivo": "pezzo_o_accessorio:" + pezzo})
-            return
+            return _rosso("pezzo_o_accessorio:")
         testo = query_comp(titolo, brand)
         if len(testo.split()) < 2:
             # titolo di una parola ("Dyson"): il modello non si capisce, i comparabili sarebbero ricambi e accessori
             db.scrivi_evento("radar_v2", item_id, brand, {**base, "ok": False, "motivo": "titolo_generico", "q": testo})
-            return
+            return _rosso("titolo_generico")
         prezzi, n_grezzi, dalla_cache = await _prezzi_simili(testo, titolo, prezzo, brand)
         if prezzi is None:
             db.scrivi_evento("radar_v2", item_id, brand, {**base, "ok": False, "motivo": "comparabili_non_disponibili", "q": testo})
-            return
+            return _rosso("comparabili_non_disponibili")
         v = valuta(prezzo, stima_mercato(prezzi, min_n=2))
         dati = {**base, "q": testo, "n_grezzi": n_grezzi, "n_usati": len(prezzi), "cache": dalla_cache, **v}
         log.info("RADAR V2 OMBRA | item=%s | semaforo=%s | ok=%s | motivo=%s | prezzo=%s | rivendita=%s | margine=%s | roi=%s | n=%s | aff=%s | q=%s | titolo=%s",
@@ -109,6 +115,6 @@ async def analizza(parsed, url):
             log.info("RADAR V2 JEV | item=%s | giudizio=%s | confidenza=%s | titolo=%s", item_id, jev, jev_conf, titolo[:60])
         db.scrivi_evento("radar_v2", item_id, brand, {**dati, "jev": jev, "jev_conf": jev_conf})
         return {"semaforo": v.get("semaforo"), "rivendita": v.get("rivendita"), "margine": v.get("margine"),
-                "roi": v.get("roi"), "n": len(prezzi), "jev": jev, "jev_conf": jev_conf}
+                "roi": v.get("roi"), "n": len(prezzi), "motivo": v.get("motivo"), "jev": jev, "jev_conf": jev_conf}
     except Exception:
         log.warning("Radar v2 ombra: annuncio non valutato:\n%s", traceback.format_exc())

@@ -315,7 +315,10 @@ def _righe_v2(v2):
     if not v2:
         return []
     righe = []
-    if v2.get("semaforo"):
+    if v2.get("rivendita") is None:
+        # nessuna stima: il motivo dice perche' (pochi simili, titolo generico, ricambio, comparabili non disponibili)
+        righe.append(f"Comparabili 🔴: {v2.get('motivo') or 'nessun dato'} ({v2.get('n') or 0} simili)")
+    elif v2.get("semaforo"):
         righe.append(f"Comparabili {v2['semaforo']}: rivendita {v2.get('rivendita')} € · margine {v2.get('margine')} € "
                      f"· ROI {v2.get('roi')}% · {v2.get('n')} simili")
     if v2.get("jev"):
