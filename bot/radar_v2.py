@@ -23,6 +23,8 @@ from bot.valore_mercato import comparabili_simili, e_un_pezzo, parse_comp, query
 # ---- fine import ----
 
 RADAR_V2_OMBRA = os.environ.get("RADAR_V2_OMBRA", "0").strip() in ("1", "true", "si")
+# Semafori per cui la foto va a Jev (25/10): di default solo il verde. Per la prova si puo' allargare, es. "verde,giallo".
+JEV_FOTO_SEMAFORI = {x.strip() for x in os.environ.get("JEV_FOTO_SEMAFORI", "verde").split(",") if x.strip()}
 RADAR_V2_MAX_GIORNO = int(os.environ.get("RADAR_V2_MAX_GIORNO", "3000") or 3000)
 RADAR_V2_CACHE_ORE = float(os.environ.get("RADAR_V2_CACHE_ORE", "6") or 6)
 RADAR_V2_PARALLELO = int(os.environ.get("RADAR_V2_PARALLELO", "2") or 2)
@@ -147,8 +149,8 @@ async def analizza(parsed, url, foto=None):
         log.info("RADAR V2 OMBRA | item=%s | semaforo=%s | ok=%s | motivo=%s | prezzo=%s | rivendita=%s | margine=%s | roi=%s | n=%s | aff=%s | q=%s | titolo=%s",
                  item_id, v["semaforo"], v["ok"], v["motivo"], prezzo, v.get("rivendita"), v.get("margine"), v.get("roi"), len(prezzi),
                  v.get("affidabilita"), testo, titolo[:60])
-        # Prova foto (25/10): la foto va a Jev solo con semaforo verde, per tenere basso il costo (vedi bot/jev.py).
-        foto_jev = foto if v.get("semaforo") == "verde" else None
+        # Prova foto (25/10): la foto va a Jev solo con i semafori di JEV_FOTO_SEMAFORI (di default il verde).
+        foto_jev = foto if v.get("semaforo") in JEV_FOTO_SEMAFORI else None
         jev, jev_conf = await asyncio.to_thread(giudica, titolo, prezzo, prezzi, v.get("rivendita"), foto_jev)
         if jev:
             log.info("RADAR V2 JEV | item=%s | giudizio=%s | confidenza=%s | titolo=%s", item_id, jev, jev_conf, titolo[:60])
