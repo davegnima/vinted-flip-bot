@@ -29,7 +29,7 @@ from bot import radar_matrice as rm
 from bot.vinted_scrape import scrape_vinted_listing
 from bot.logger import log
 from bot.config import TELEGRAM_OWNER_CHAT_ID
-from bot.telegram_api import telegram_send_message
+from bot.telegram_api import telegram_send_message, telegram_send_photo
 # ---- fine import ----
 
 RADAR_MARCATORE = os.environ.get("RADAR_MARCATORE", "📡").strip()
@@ -330,32 +330,40 @@ def _da_mandare(v2):
     return not RADAR_SOLO_VERDI or (bool(v2) and v2.get("semaforo") == "🟢")
 
 
-async def _manda_semaforo_radar(item_id, titolo, prezzo, url, modello, buy_max, v2=None):
+async def _invia_radar(testo, foto=None):
+    """Messaggio del radar al chat privato: con la foto del tracker se c'e', altrimenti solo testo."""
+    if foto:
+        await telegram_send_photo(TELEGRAM_OWNER_CHAT_ID, foto, caption=testo, disable_notification=True)
+    else:
+        await telegram_send_message(TELEGRAM_OWNER_CHAT_ID, testo, disable_notification=True)
+
+
+async def _manda_semaforo_radar(item_id, titolo, prezzo, url, modello, buy_max, v2=None, foto=None):
     if not _da_mandare(v2):
         return
     try:
         luce = semaforo_radar(prezzo, buy_max)
         testo = "\n".join([f"{luce} {modello} | {prezzo:g} € (buy max {buy_max:g} €)", titolo[:100]]
                           + _righe_v2(v2) + [url])
-        await telegram_send_message(TELEGRAM_OWNER_CHAT_ID, testo, disable_notification=True)
+        await _invia_radar(testo, foto)
         log.info("RADAR SEMAFORO | item=%s | %s | modello=%s | prezzo=%s | buy_max=%s", item_id, luce, modello, prezzo, buy_max)
     except Exception:
         log.warning("Radar: semaforo non inviato per %s:\n%s", item_id, traceback.format_exc())
 
 
-async def _manda_annuncio_senza_modello(item_id, titolo, prezzo, url, v2=None):
+async def _manda_annuncio_senza_modello(item_id, titolo, prezzo, url, v2=None, foto=None):
     if not _da_mandare(v2):
         return
     try:
         intestazione = f"🔎 senza modello | {prezzo:g} €" if prezzo is not None else "🔎 senza modello"
         testo = "\n".join([intestazione, titolo[:100]] + _righe_v2(v2) + [url])
-        await telegram_send_message(TELEGRAM_OWNER_CHAT_ID, testo, disable_notification=True)
+        await _invia_radar(testo, foto)
         log.info("RADAR SENZA MODELLO | item=%s | prezzo=%s | titolo=%s", item_id, prezzo, titolo[:60])
     except Exception:
         log.warning("Radar: annuncio senza modello non inviato per %s:\n%s", item_id, traceback.format_exc())
 
 
-async def gestisci_annuncio_radar(parsed, url, t0=None, v2=None):
+async def gestisci_annuncio_radar(parsed, url, t0=None, v2=None, foto=None):
     """Fase 0: classifica, filtra, visita la pagina se serve, registra. Mai messaggi, mai AI."""
     global _radar_pausa_saltati
     if not RADAR_ATTIVO:
@@ -381,10 +389,10 @@ async def gestisci_annuncio_radar(parsed, url, t0=None, v2=None):
     modello = (riga.get("id") or riga.get("modello")) if riga else None
     bm = riga.get("buy_max") if riga else None
     if RADAR_MOSTRA_TUTTI and modello and bm and prezzo is not None:
-        await _manda_semaforo_radar(item_id, titolo, prezzo, url, modello, bm, v2)
+        await _manda_semaforo_radar(item_id, titolo, prezzo, url, modello, bm, v2, foto)
     elif RADAR_MOSTRA_TUTTI and not modello:
         # Verifica (25/10): annuncio di una lista senza modello riconosciuto: messaggio, poi il flusso di sempre.
-        await _manda_annuncio_senza_modello(item_id, titolo, prezzo, url, v2)
+        await _manda_annuncio_senza_modello(item_id, titolo, prezzo, url, v2, foto)
     campione = (not passa) and modulo is not None and not motivo.startswith("prezzo_sotto") and nel_campione_scarti(item_id)
     base = {"titolo": titolo[:120], "prezzo": prezzo, "modulo": modulo, "brand_radar": brand_radar,
             "tipo": tipo, "l1": "passa" if passa else "scarto", "motivo": motivo, "campione": campione,
