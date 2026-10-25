@@ -114,6 +114,16 @@ def tetto_dal_nuovo(rivendita, prezzo_nuovo, quota=QUOTA_NUOVO_USATO):
     return min(rivendita, round(prezzo_nuovo * quota, 2))
 
 
+def semaforo(v):
+    """Verde: affare con almeno 6 comparabili (candidato ad avviso). Giallo: affare con 2-5 comparabili (solo osservazione, non suona). Rosso: il resto."""
+    if not v.get("ok"):
+        return "rosso"
+    n = v.get("n") or 0
+    if n >= 6:
+        return "verde"
+    return "giallo" if n >= 2 else "rosso"
+
+
 def valuta(prezzo, stima, prezzo_nuovo=None, spedizione_eur=SPEDIZIONE_STIMATA_EUR, rischio_falsi=1, rischio_guasti=1):
     """Verdetto economico di un annuncio da `prezzo` EUR. Pura.
 
@@ -121,10 +131,12 @@ def valuta(prezzo, stima, prezzo_nuovo=None, spedizione_eur=SPEDIZIONE_STIMATA_E
     Senza stima (pochi comparabili) ok e' sempre False con motivo 'pochi_comparabili'.
     """
     if not stima:
-        return {"ok": False, "motivo": "pochi_comparabili", "rivendita": None, "margine": None, "roi": None}
+        return {"ok": False, "motivo": "pochi_comparabili", "rivendita": None, "margine": None, "roi": None, "semaforo": "rosso"}
     riv = tetto_dal_nuovo(stima["rivendita"], prezzo_nuovo)
     marg, roi = margine_roi(prezzo, riv, spedizione_eur, rischio_falsi, rischio_guasti)
     ok = marg >= RADAR_MARGINE_MIN and roi >= RADAR_ROI_MIN
     motivo = "ok" if ok else ("margine_basso" if marg < RADAR_MARGINE_MIN else "roi_basso")
-    return {"ok": ok, "motivo": motivo, "rivendita": riv, "margine": marg, "roi": roi,
-            "limitato_dal_nuovo": riv < stima["rivendita"], "affidabilita": stima["affidabilita"], "n": stima["n"]}
+    v = {"ok": ok, "motivo": motivo, "rivendita": riv, "margine": marg, "roi": roi,
+         "limitato_dal_nuovo": riv < stima["rivendita"], "affidabilita": stima["affidabilita"], "n": stima["n"]}
+    v["semaforo"] = semaforo(v)
+    return v
