@@ -1,8 +1,8 @@
 # Test di Jev (TypeSafe AI) sui titoli degli annunci del radar senza modello (25/10).
 # Non fa parte del bot: scrive solo un file con le risposte, da controllare a occhio.
-# Uso: JEV_API_KEY=... python3 prova_jev.py annunci.json risposte.json
+# Uso: TYPESAFE_API_KEY=... python3 prova_jev.py annunci.json risposte.json
 #   annunci.json: [{"id": "...", "titolo": "...", "prezzo": 40.0, "candidati": ["Nikon FM2", "Leica M3", ...]}]
-# La chiave NON va scritta nel file: si legge dalla variabile d'ambiente JEV_API_KEY.
+# La chiave NON va scritta nel file: si legge dalla variabile d'ambiente TYPESAFE_API_KEY.
 import json, os, sys, urllib.request
 
 ENDPOINT = "https://api.typesafe.ai/v1/systemone"
@@ -10,11 +10,12 @@ MODELLO = "jev-latest"
 
 
 def chiedi(chiave, annuncio):
+    opzioni = annuncio["candidati"] + ["nessuno"]
     domanda = {
         "type": "choice",
-        "instructions": "Scegli il modello dell'oggetto descritto dal titolo, tra i candidati. "
+        "instructions": "Quale modello descrive il titolo? Scegli tra le opzioni. "
                         "Se il titolo non basta per riconoscerne uno, scegli 'nessuno'.",
-        "options": annuncio["candidati"] + ["nessuno"],
+        "criteria": {o: f"il modello e' {o}" for o in opzioni},
     }
     corpo = {"model": MODELLO,
              "state": f"Titolo annuncio Vinted: {annuncio['titolo']}\nPrezzo: {annuncio['prezzo']} EUR",
@@ -26,9 +27,9 @@ def chiedi(chiave, annuncio):
 
 
 def main():
-    chiave = os.environ.get("JEV_API_KEY", "").strip()
+    chiave = os.environ.get("TYPESAFE_API_KEY", "").strip()
     if not chiave:
-        sys.exit("Manca JEV_API_KEY nell'ambiente.")
+        sys.exit("Manca TYPESAFE_API_KEY nell'ambiente.")
     annunci = json.load(open(sys.argv[1]))
     risposte = []
     for a in annunci:
