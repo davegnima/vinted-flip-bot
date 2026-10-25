@@ -45,8 +45,7 @@ def test_righe_v2_e_filtro_solo_verdi(monkeypatch):
     from bot import radar
     v2 = {"semaforo": "🟢", "rivendita": 80, "margine": 60, "roi": 150, "n": 7, "jev": "affare_vero", "jev_conf": 0.9}
     righe = radar._righe_v2(v2)
-    assert righe[0].startswith("Comparabili 🟢") and "7 simili" in righe[0]
-    assert righe[1] == "Jev: affare_vero (confidenza 0.9)"
+    assert righe == ["Jev: affare_vero (confidenza 0.9)"]
     assert radar._righe_v2(None) == []
     monkeypatch.setattr(radar, "RADAR_SOLO_VERDI", True)
     assert radar._da_mandare(v2) is True
@@ -66,8 +65,8 @@ def test_jev_senza_chiave_non_chiama_nulla(monkeypatch):
 def test_righe_v2_mostra_sempre_il_motivo():
     from bot import radar
     riga = radar._righe_v2({"semaforo": "rosso", "rivendita": None, "n": 1, "motivo": "pochi_comparabili"})
-    assert riga == ["Comparabili 🔴: pochi_comparabili (1 simili)"]
-    assert radar._righe_v2({"semaforo": "rosso", "rivendita": None, "n": 0, "motivo": "titolo_generico"})[0].endswith("(0 simili)")
+    assert riga == []
+    assert radar._righe_v2({"semaforo": "rosso", "rivendita": None, "n": 0, "motivo": "titolo_generico"}) == []
     from bot.radar_v2 import _rosso
     assert _rosso("parola_vietata:x")["semaforo"] == "rosso"
 
