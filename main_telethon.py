@@ -483,6 +483,7 @@ from bot.serper_fonti import (
 )  # noqa: F401  (re-export)
 
 from bot.comps_filtri import (
+    _articoli_vinted,
     BRAND_SOTTOLINEE_DA_ESCLUDERE,
     ESCLUSIONI_FALSI_POSITIVI_CATEGORIA,
     LINEA_O_ERA_NON_UTILI_PER_RICERCA,
@@ -997,7 +998,7 @@ def _classifica_esito_visuale(status, url_finale, testo=""):
 def _conta_articoli_catalogo(html_catalogo):
     """Articoli reali nella pagina catalogo, con la stessa regex della
     ricerca comp testuale."""
-    return len(_RE_ALT_PRODOTTO_VINTED.findall(html_catalogo or ""))
+    return len(_articoli_vinted(html_catalogo))
 
 
 async def _prova_visuale_httpx(url_intermedio, headers, cookies):
