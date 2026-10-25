@@ -52,6 +52,9 @@ async def _scrape_catalogo_vinted_diretto(url):
 # 403 resta tempo per il tentativo Serper dentro il timeout complessivo della
 # fonte (TIMEOUT_FONTE_VINTED_CON_FALLBACK_SECONDI in search_comps_completo).
 TIMEOUT_SCRAPE_DIRETTO_VINTED_TESTO_SECONDI = 8
+# 25/10: due tentativi (prima uno solo, e un 403 mandava subito su Serper). Il tetto complessivo resta sotto i 25 s
+# della fonte, cosi' il fallback Serper ha ancora tempo.
+TIMEOUT_SCRAPE_DIRETTO_VINTED_TESTO_TOTALE_SECONDI = 16
 TIMEOUT_FONTE_VINTED_CON_FALLBACK_SECONDI = 25
 MARKER_NESSUN_ARTICOLO_VINTED = "Nessun articolo trovato"
 
@@ -80,8 +83,8 @@ async def _cerca_vinted_testo_diretto_con_fallback_serper(url):
     motivo_fallback = None
     try:
         resp = await asyncio.wait_for(
-            _vinted_get_con_retry(url, timeout=TIMEOUT_SCRAPE_DIRETTO_VINTED_TESTO_SECONDI, max_retries=1),
-            timeout=TIMEOUT_SCRAPE_DIRETTO_VINTED_TESTO_SECONDI + 4,
+            _vinted_get_con_retry(url, timeout=TIMEOUT_SCRAPE_DIRETTO_VINTED_TESTO_SECONDI, max_retries=2),
+            timeout=TIMEOUT_SCRAPE_DIRETTO_VINTED_TESTO_TOTALE_SECONDI,
         )
     except asyncio.TimeoutError:
         resp = None
