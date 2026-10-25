@@ -334,6 +334,7 @@ async def _invia_radar(testo, foto=None):
     """Messaggio del radar al chat privato: con la foto del tracker se c'e', altrimenti solo testo."""
     if foto:
         await telegram_send_photo(TELEGRAM_OWNER_CHAT_ID, foto, caption=testo, disable_notification=True)
+        log.info("RADAR FOTO | inviata con foto (%d KB)", len(foto) // 1024)
     else:
         await telegram_send_message(TELEGRAM_OWNER_CHAT_ID, testo, disable_notification=True)
 
