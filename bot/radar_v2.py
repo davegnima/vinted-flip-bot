@@ -4,6 +4,7 @@ in vendita adesso (valore_mercato) e REGISTRA il verdetto; non manda messaggi. P
 Attivo con RADAR_V2_OMBRA=1. Log `RADAR V2 OMBRA |` ed evento `radar_v2` nel DB. Tetto di sicurezza: RADAR_V2_MAX_GIORNO ricerche
 di comparabili al giorno (le stime si riusano per RADAR_V2_CACHE_ORE ore, per marca e testo).
 """
+import json
 import os
 import time
 import asyncio
@@ -31,11 +32,20 @@ _conteggio = {"giorno": None, "n": 0}
 _sem = asyncio.Semaphore(RADAR_V2_PARALLELO)
 
 
-def url_comparabili(testo, catalogo=None):
-    """Ricerca dei simili su Vinted. Con `catalogo` (id della categoria dell'annuncio) il risultato resta nella stessa
-    categoria: senza, una ricerca di 'ricoh r1' pesca qualsiasi fotocamera (25/10)."""
+_MARCHI_ID = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "dati", "brand_ids.json"))).get("marchi", {})
+
+
+def id_marchio(brand):
+    """Id Vinted del marchio dalla tabella (es. 'dyson' -> 291992), o None se non c'e'."""
+    return _MARCHI_ID.get((brand or "").strip().lower())
+
+
+def url_comparabili(testo, catalogo=None, brand=None):
+    """Ricerca dei simili su Vinted: parole chiave + categoria (catalog[]) + marchio (brand_ids[]), quando noti.
+    Senza categoria una ricerca di 'ricoh r1' pesca qualsiasi fotocamera (25/10)."""
     categoria = f"&catalog[]={catalogo}" if catalogo else ""
-    return f"https://www.vinted.it/catalog?search_text={quote(testo)}{categoria}&order=newest_first"
+    marchio = f"&brand_ids[]={id_marchio(brand)}" if id_marchio(brand) else ""
+    return f"https://www.vinted.it/catalog?search_text={quote(testo)}{categoria}{marchio}&order=newest_first"
 
 
 def _entro_il_tetto(adesso=None):
@@ -68,7 +78,7 @@ async def _prezzi_simili(testo, titolo, prezzo, brand=None, catalogo=None):
     if not _entro_il_tetto(adesso):
         return None, 0, False
     async with _sem:
-        risposta, ok, _mappa = await _cerca_vinted_testo_diretto_con_fallback_serper(url_comparabili(testo, catalogo))
+        risposta, ok, _mappa = await _cerca_vinted_testo_diretto_con_fallback_serper(url_comparabili(testo, catalogo, brand))
     if not ok:
         return None, 0, False
     comps = parse_comp(risposta)

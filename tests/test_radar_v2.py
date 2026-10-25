@@ -84,3 +84,11 @@ def test_url_comparabili_filtra_per_categoria():
     from bot.radar_v2 import url_comparabili
     assert "catalog[]=3061" in url_comparabili("ricoh r1", 3061)
     assert "catalog[]" not in url_comparabili("ricoh r1")
+
+
+def test_url_comparabili_con_marchio_e_categoria():
+    from bot.radar_v2 import url_comparabili, id_marchio
+    assert id_marchio("Dyson") == 291992
+    u = url_comparabili("dyson airwrap", 3767, "Dyson")
+    assert "brand_ids[]=291992" in u and "catalog[]=3767" in u
+    assert "brand_ids" not in url_comparabili("ricoh r1", 3061, "Ricoh")
