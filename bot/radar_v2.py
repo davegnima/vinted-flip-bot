@@ -12,6 +12,7 @@ from urllib.parse import quote
 
 from bot import db
 from bot.comps import _cerca_vinted_testo_diretto_con_fallback_serper
+from bot.jev import giudica
 from bot.logger import log
 from bot.radar import RADAR_SPESA_MAX, parola_vietata, radar_in_pausa
 from bot.verdetto import _a_float, _estrai_item_id_da_url
@@ -63,8 +64,9 @@ async def _prezzi_simili(testo, titolo, prezzo, brand=None):
     return prezzi, len(comps), False
 
 
-async def ombra(parsed, url):
-    """Valuta in silenzio un annuncio del radar e registra il verdetto. Mai messaggi, mai eccezioni verso il chiamante."""
+async def analizza(parsed, url):
+    """Valuta un annuncio del radar con i comparabili, chiede il giudizio di Jev e registra il verdetto.
+    Ritorna dict {semaforo, rivendita, margine, roi, n, jev, jev_conf} o None. Mai eccezioni verso il chiamante."""
     if not RADAR_V2_OMBRA or radar_in_pausa():
         return
     try:
@@ -102,6 +104,11 @@ async def ombra(parsed, url):
         log.info("RADAR V2 OMBRA | item=%s | semaforo=%s | ok=%s | motivo=%s | prezzo=%s | rivendita=%s | margine=%s | roi=%s | n=%s | aff=%s | q=%s | titolo=%s",
                  item_id, v["semaforo"], v["ok"], v["motivo"], prezzo, v.get("rivendita"), v.get("margine"), v.get("roi"), len(prezzi),
                  v.get("affidabilita"), testo, titolo[:60])
-        db.scrivi_evento("radar_v2", item_id, brand, dati)
+        jev, jev_conf = await asyncio.to_thread(giudica, titolo, prezzo, prezzi, v.get("rivendita"))
+        if jev:
+            log.info("RADAR V2 JEV | item=%s | giudizio=%s | confidenza=%s | titolo=%s", item_id, jev, jev_conf, titolo[:60])
+        db.scrivi_evento("radar_v2", item_id, brand, {**dati, "jev": jev, "jev_conf": jev_conf})
+        return {"semaforo": v.get("semaforo"), "rivendita": v.get("rivendita"), "margine": v.get("margine"),
+                "roi": v.get("roi"), "n": len(prezzi), "jev": jev, "jev_conf": jev_conf}
     except Exception:
         log.warning("Radar v2 ombra: annuncio non valutato:\n%s", traceback.format_exc())
