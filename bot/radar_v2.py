@@ -6,6 +6,7 @@ di comparabili al giorno (le stime si riusano per RADAR_V2_CACHE_ORE ore, per ma
 """
 import json
 import os
+import re
 import time
 import asyncio
 import traceback
@@ -17,7 +18,7 @@ from bot.jev import giudica
 from bot.logger import log
 from bot.radar import RADAR_SPESA_MAX, parola_vietata, radar_in_pausa
 from bot.verdetto import _a_float, _estrai_item_id_da_url
-from bot.vinted_scrape import scrape_vinted_listing
+from bot.vinted_http import _vinted_get_con_retry
 from bot.valore_mercato import comparabili_simili, e_un_pezzo, parse_comp, query_comp, solo_usato, stima_mercato, valuta
 # ---- fine import ----
 
@@ -59,11 +60,22 @@ def _entro_il_tetto(adesso=None):
     return True
 
 
+_RE_CATALOGO_ANNUNCIO = re.compile(r'/catalog/(\d+)-[a-z0-9-]+?\?referrer=item-crumbs"')
+
+
+def _catalogo_da_html(html):
+    """Id della categoria dal breadcrumb della pagina annuncio (stessa regex di scrape_vinted_listing). Pura."""
+    trovati = _RE_CATALOGO_ANNUNCIO.findall(html or "")
+    return trovati[-1] if trovati else None
+
+
 async def _catalogo_annuncio(url):
-    """Id della categoria Vinted dell'annuncio (dalla sua pagina), o None se la pagina non si legge."""
+    """Id della categoria Vinted dell'annuncio, o None se la pagina non si legge. Una sola richiesta a Vinted (25/10):
+    scrape_vinted_listing ritentava fino a 3 volte e rifaceva la pagina leggera, e con i 403 di adesso era solo rumore
+    di richieste. Senza categoria la ricerca resta sul testo."""
     try:
-        pagina = await scrape_vinted_listing(url, includi_guardaroba=False)
-        return pagina.get("catalog_id")
+        resp = await _vinted_get_con_retry(url, timeout=10, max_retries=1)
+        return _catalogo_da_html(resp.text) if resp is not None else None
     except Exception:  # noqa: BLE001 - senza categoria la ricerca resta solo sul testo
         return None
 
