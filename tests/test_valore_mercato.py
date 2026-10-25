@@ -81,3 +81,12 @@ def test_semaforo_verde_giallo_rosso():
     assert valuta(90, buono)["semaforo"] == "rosso"
     assert valuta(25, None)["semaforo"] == "rosso"
     assert semaforo({"ok": True, "n": 1}) == "rosso"
+
+
+def test_semaforo_radar_dal_buy_max():
+    from bot.radar import semaforo_radar
+    assert semaforo_radar(40, 50) == "🟢"
+    assert semaforo_radar(55, 50) == "🟡"
+    assert semaforo_radar(60, 50) == "🔴"
+    assert semaforo_radar(None, 50) is None
+    assert semaforo_radar(40, None) is None
