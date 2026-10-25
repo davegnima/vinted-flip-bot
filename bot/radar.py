@@ -310,18 +310,30 @@ def semaforo_radar(prezzo, buy_max):
 RADAR_SOLO_VERDI = os.environ.get("RADAR_SOLO_VERDI", "0").strip() in ("1", "true", "si")
 
 
+SEMAFORO_EMOJI = {"verde": "🟢", "giallo": "🟡", "rosso": "🔴"}
+
+
 def _righe_v2(v2):
-    """Righe extra del messaggio: semaforo dei comparabili e giudizio di Jev (se presenti)."""
-    if not v2:
-        return []
-    righe = []  # niente righe dei comparabili nel messaggio (richiesta dell'utente, 25/10)
+    """Righe del messaggio: comparabili (quanti e perche' zero), semaforo (solo se ci sono comparabili), giudizio Jev.
+    Il semaforo non viene dal buy max della matrice: si costruisce dai comparabili (richiesta dell'utente, 25/10)."""
+    if v2 is None:
+        return ["Comparabili: non calcolati"]
+    n = v2.get("n") or 0
+    righe = []
+    if v2.get("rivendita") is None:
+        righe.append(f"Comparabili: {n} trovati, nessuna stima ({v2.get('motivo') or 'motivo non noto'})")
+        righe.append("Semaforo: in costruzione (servono più comparabili nel tempo)")
+    else:
+        righe.append(f"Comparabili: {n} trovati · rivendita {v2.get('rivendita')} € · margine {v2.get('margine')} € "
+                     f"· ROI {v2.get('roi')}%")
+        righe.append(f"Semaforo: {SEMAFORO_EMOJI.get(v2.get('semaforo'), 'n.d.')}")
     if v2.get("jev"):
         righe.append(f"Jev: {v2['jev']} (confidenza {v2.get('jev_conf')})")
     return righe
 
 
 def _da_mandare(v2):
-    return not RADAR_SOLO_VERDI or (bool(v2) and v2.get("semaforo") == "🟢")
+    return not RADAR_SOLO_VERDI or (bool(v2) and v2.get("semaforo") == "verde")
 
 
 async def _invia_radar(testo, foto=None):
@@ -337,11 +349,10 @@ async def _manda_semaforo_radar(item_id, titolo, prezzo, url, modello, buy_max, 
     if not _da_mandare(v2):
         return
     try:
-        luce = semaforo_radar(prezzo, buy_max)
-        testo = "\n".join([f"{luce} {modello} | {prezzo:g} € (buy max {buy_max:g} €)", titolo[:100]]
+        testo = "\n".join([f"🔎 modello {modello} | {prezzo:g} € (buy max {buy_max:g} €)", titolo[:100]]
                           + _righe_v2(v2) + [url])
         await _invia_radar(testo, foto)
-        log.info("RADAR SEMAFORO | item=%s | %s | modello=%s | prezzo=%s | buy_max=%s", item_id, luce, modello, prezzo, buy_max)
+        log.info("RADAR MODELLO | item=%s | modello=%s | prezzo=%s | buy_max=%s", item_id, modello, prezzo, buy_max)
     except Exception:
         log.warning("Radar: semaforo non inviato per %s:\n%s", item_id, traceback.format_exc())
 

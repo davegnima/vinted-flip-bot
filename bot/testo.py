@@ -19,6 +19,16 @@ _RE_ALT_PRODOTTO_VINTED = re.compile(
 )
 
 
+# Markup catalogo Vinted dal 25/10/2026 (campione reale nei log, "COMPS PAGINA CAMPIONE"): titolo e prezzo non sono
+# piu' solo nell'alt= dell'immagine ma nel title= del link overlay di ogni annuncio, e la taglia non c'e' piu':
+# title="Fujifilm finepix av200, Brand: FUJIFILM, Condizioni: Buone, 40.00 €, 42.70 €"
+# Il primo prezzo e' l'ask nudo (come sopra), il secondo include le fee Vinted. Cattura (id, titolo, prezzo).
+_RE_TITOLO_PRODOTTO_VINTED = re.compile(
+    r'data-testid="product-item-id-(\d+)--overlay-link"[^>]*?\btitle="([^"]+?),\s*Brand:[^"]*?,\s*(\d+(?:[.,]\d+)?)\s*€',
+    re.IGNORECASE,
+)
+
+
 # Pattern gemello di _RE_ALT_PRODOTTO_VINTED che cattura ANCHE l'ID
 # dell'articolo (Punto 3 concordato il 2026-09-25: link cliccabili nei
 # comp, rimappati in Python al rendering finale usando titolo+prezzo come

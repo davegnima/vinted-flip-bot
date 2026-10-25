@@ -43,13 +43,16 @@ def test_ombra_spento_non_fa_nulla(monkeypatch):
 
 def test_righe_v2_e_filtro_solo_verdi(monkeypatch):
     from bot import radar
-    v2 = {"semaforo": "🟢", "rivendita": 80, "margine": 60, "roi": 150, "n": 7, "jev": "affare_vero", "jev_conf": 0.9}
-    righe = radar._righe_v2(v2)
-    assert righe == ["Jev: affare_vero (confidenza 0.9)"]
-    assert radar._righe_v2(None) == []
+    v2 = {"semaforo": "verde", "rivendita": 80, "margine": 60, "roi": 150, "n": 7, "jev": "affare_vero", "jev_conf": 0.9}
+    assert radar._righe_v2(v2) == [
+        "Comparabili: 7 trovati · rivendita 80 € · margine 60 € · ROI 150%",
+        "Semaforo: 🟢",
+        "Jev: affare_vero (confidenza 0.9)",
+    ]
+    assert radar._righe_v2(None) == ["Comparabili: non calcolati"]
     monkeypatch.setattr(radar, "RADAR_SOLO_VERDI", True)
     assert radar._da_mandare(v2) is True
-    assert radar._da_mandare({"semaforo": "🟡"}) is False
+    assert radar._da_mandare({"semaforo": "giallo"}) is False
     assert radar._da_mandare(None) is False
     monkeypatch.setattr(radar, "RADAR_SOLO_VERDI", False)
     assert radar._da_mandare(None) is True
@@ -65,8 +68,12 @@ def test_jev_senza_chiave_non_chiama_nulla(monkeypatch):
 def test_righe_v2_mostra_sempre_il_motivo():
     from bot import radar
     riga = radar._righe_v2({"semaforo": "rosso", "rivendita": None, "n": 1, "motivo": "pochi_comparabili"})
-    assert riga == []
-    assert radar._righe_v2({"semaforo": "rosso", "rivendita": None, "n": 0, "motivo": "titolo_generico"}) == []
+    assert riga == [
+        "Comparabili: 1 trovati, nessuna stima (pochi_comparabili)",
+        "Semaforo: in costruzione (servono più comparabili nel tempo)",
+    ]
+    assert radar._righe_v2({"semaforo": "rosso", "rivendita": None, "n": 0, "motivo": "titolo_generico"})[0] == \
+        "Comparabili: 0 trovati, nessuna stima (titolo_generico)"
     from bot.radar_v2 import _rosso
     assert _rosso("parola_vietata:x")["semaforo"] == "rosso"
 

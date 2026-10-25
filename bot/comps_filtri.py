@@ -4,7 +4,7 @@ import html
 
 
 from bot.costanti import CATEGORIA_KEYWORDS
-from bot.testo import _RE_ALT_PRODOTTO_VINTED, _RE_PRODOTTO_VINTED_CON_ID, _normalizza_titolo_per_dedup, _normalizza_titolo_per_link
+from bot.testo import _RE_ALT_PRODOTTO_VINTED, _RE_PRODOTTO_VINTED_CON_ID, _RE_TITOLO_PRODOTTO_VINTED, _normalizza_titolo_per_dedup, _normalizza_titolo_per_link
 from bot.logger import log
 # ---- fine import ----
 # Falsi positivi idiomatici: "dress" in "dress shirt"/"dress pants" e' un
@@ -244,6 +244,16 @@ def campione_pagina_vinted(html_content, lunghezza=900):
     return {"len": len(testo), "marcatori": marcatori, "tratto": " ".join(tratto.split())}
 
 
+def _articoli_vinted(html_content):
+    """Lista di (item_id, titolo, prezzo) di una pagina catalogo Vinted. Legge il title= del link overlay (markup dal
+    25/10/2026); se non trova nulla ripiega sull'alt= dell'immagine (markup precedente, con la taglia). id None sul ramo alt=."""
+    testo = html_content or ""
+    trovati = [(m.group(1), m.group(2), m.group(3)) for m in _RE_TITOLO_PRODOTTO_VINTED.finditer(testo)]
+    if not trovati:
+        trovati = [(None, m.group(1), m.group(2)) for m in _RE_ALT_PRODOTTO_VINTED.finditer(testo)]
+    return trovati
+
+
 def _estrai_articoli_da_alt_vinted(html_content, max_articoli=15):
     """Estrae righe 'titolo — prezzo' dagli attributi alt= delle immagini
     prodotto nell'HTML grezzo di una pagina catalogo Vinted (vedi
@@ -252,9 +262,9 @@ def _estrai_articoli_da_alt_vinted(html_content, max_articoli=15):
     articolo) cosi' il resto della pipeline (filtro autoreferenziale,
     categoria, sottolinea brand) funziona invariato su entrambe le fonti."""
     righe, visti = [], set()
-    for m in _RE_ALT_PRODOTTO_VINTED.finditer(html_content or ""):
-        titolo = html.unescape(m.group(1)).strip()
-        prezzo = m.group(2).replace(",", ".")
+    for _id, titolo_grezzo, prezzo_grezzo in _articoli_vinted(html_content):
+        titolo = html.unescape(titolo_grezzo).strip()
+        prezzo = prezzo_grezzo.replace(",", ".")
         if not titolo or len(titolo) < 3:
             continue
         chiave = (titolo[:60].lower(), prezzo)
@@ -269,6 +279,14 @@ def _estrai_articoli_da_alt_vinted(html_content, max_articoli=15):
     return "\n".join(righe)
 
 
+def _articoli_vinted_con_id(html_content):
+    """Come _articoli_vinted, ma solo gli articoli con id (link cliccabile). Ripiega sul markup con data-testid."""
+    trovati = [(m.group(1), m.group(2), m.group(3)) for m in _RE_TITOLO_PRODOTTO_VINTED.finditer(html_content or "")]
+    if not trovati:
+        trovati = [(m.group(1), m.group(2), m.group(3)) for m in _RE_PRODOTTO_VINTED_CON_ID.finditer(html_content or "")]
+    return trovati
+
+
 def _estrai_mappa_url_comp_vinted(html_content):
     """Costruisce {(titolo_normalizzato, prezzo_2f): url} dallo stesso HTML
     grezzo passato a _estrai_articoli_da_alt_vinted (vedi
@@ -279,8 +297,7 @@ def _estrai_mappa_url_comp_vinted(html_content):
     la chiave nello stesso formato ".2f" prodotto da calcola_verdetto sui
     comp validati (vedi comp['prezzo_eur'] = round(prezzo, 2))."""
     mappa = {}
-    for m in _RE_PRODOTTO_VINTED_CON_ID.finditer(html_content or ""):
-        item_id, titolo_grezzo, prezzo_grezzo = m.group(1), m.group(2), m.group(3)
+    for item_id, titolo_grezzo, prezzo_grezzo in _articoli_vinted_con_id(html_content):
         titolo = html.unescape(titolo_grezzo).strip()
         if not titolo or len(titolo) < 3:
             continue
