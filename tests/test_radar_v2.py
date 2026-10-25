@@ -70,3 +70,11 @@ def test_righe_v2_mostra_sempre_il_motivo():
     assert radar._righe_v2({"semaforo": "rosso", "rivendita": None, "n": 0, "motivo": "titolo_generico"})[0].endswith("(0 simili)")
     from bot.radar_v2 import _rosso
     assert _rosso("parola_vietata:x")["semaforo"] == "rosso"
+
+
+def test_campione_pagina_vinted_conta_i_marcatori():
+    from bot.comps_filtri import campione_pagina_vinted
+    html = '<a href="/items/123-x"><img alt="Canon AE-1 — €40"></a>' * 2
+    c = campione_pagina_vinted(html)
+    assert c["marcatori"]["/items/"] == 2 and c["marcatori"]['alt="'] == 2
+    assert "/items/123-x" in c["tratto"]
