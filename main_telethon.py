@@ -1508,7 +1508,14 @@ async def on_new_message(event):
             try:
                 parsed_radar = parse_vinted_tracker_message(togli_marcatore(text))
                 v2_radar = await radar_v2_analizza(parsed_radar, url_radar)
-                await gestisci_annuncio_radar(parsed_radar, url_radar, t0=t_ricevuto_bot, v2=v2_radar)
+                # Foto gia' allegata dal tracker al messaggio: niente pagina in piu' da scaricare.
+                foto_radar = None
+                if event.message.photo:
+                    try:
+                        foto_radar = await event.message.download_media(file=bytes)
+                    except Exception:
+                        log.warning("RADAR FOTO | download non riuscito per msg_id=%s", msg_id)
+                await gestisci_annuncio_radar(parsed_radar, url_radar, t0=t_ricevuto_bot, v2=v2_radar, foto=foto_radar)
             finally:
                 _analisi_attive["n"] -= 1
             return
