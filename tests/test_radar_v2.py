@@ -78,3 +78,9 @@ def test_campione_pagina_vinted_conta_i_marcatori():
     c = campione_pagina_vinted(html)
     assert c["marcatori"]["/items/"] == 2 and c["marcatori"]['alt="'] == 2
     assert "/items/123-x" in c["tratto"]
+
+
+def test_url_comparabili_filtra_per_categoria():
+    from bot.radar_v2 import url_comparabili
+    assert "catalog[]=3061" in url_comparabili("ricoh r1", 3061)
+    assert "catalog[]" not in url_comparabili("ricoh r1")

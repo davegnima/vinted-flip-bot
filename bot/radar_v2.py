@@ -16,6 +16,7 @@ from bot.jev import giudica
 from bot.logger import log
 from bot.radar import RADAR_SPESA_MAX, parola_vietata, radar_in_pausa
 from bot.verdetto import _a_float, _estrai_item_id_da_url
+from bot.vinted_scrape import scrape_vinted_listing
 from bot.valore_mercato import comparabili_simili, e_un_pezzo, parse_comp, query_comp, solo_usato, stima_mercato, valuta
 # ---- fine import ----
 
@@ -30,8 +31,11 @@ _conteggio = {"giorno": None, "n": 0}
 _sem = asyncio.Semaphore(RADAR_V2_PARALLELO)
 
 
-def url_comparabili(testo):
-    return f"https://www.vinted.it/catalog?search_text={quote(testo)}&order=newest_first"
+def url_comparabili(testo, catalogo=None):
+    """Ricerca dei simili su Vinted. Con `catalogo` (id della categoria dell'annuncio) il risultato resta nella stessa
+    categoria: senza, una ricerca di 'ricoh r1' pesca qualsiasi fotocamera (25/10)."""
+    categoria = f"&catalog[]={catalogo}" if catalogo else ""
+    return f"https://www.vinted.it/catalog?search_text={quote(testo)}{categoria}&order=newest_first"
 
 
 def _entro_il_tetto(adesso=None):
@@ -45,22 +49,32 @@ def _entro_il_tetto(adesso=None):
     return True
 
 
-async def _prezzi_simili(testo, titolo, prezzo, brand=None):
+async def _catalogo_annuncio(url):
+    """Id della categoria Vinted dell'annuncio (dalla sua pagina), o None se la pagina non si legge."""
+    try:
+        pagina = await scrape_vinted_listing(url, includi_guardaroba=False)
+        return pagina.get("catalog_id")
+    except Exception:  # noqa: BLE001 - senza categoria la ricerca resta solo sul testo
+        return None
+
+
+async def _prezzi_simili(testo, titolo, prezzo, brand=None, catalogo=None):
     """(prezzi richiesti di annunci simili usati, n grezzi, dalla_cache) o (None, 0, False) se non disponibile."""
     adesso = time.time()
-    voce = _cache.get(testo)
+    chiave = (testo, catalogo)
+    voce = _cache.get(chiave)
     if voce and adesso - voce[0] < RADAR_V2_CACHE_ORE * 3600:
         return voce[1], voce[2], True
     if not _entro_il_tetto(adesso):
         return None, 0, False
     async with _sem:
-        risposta, ok, _mappa = await _cerca_vinted_testo_diretto_con_fallback_serper(url_comparabili(testo))
+        risposta, ok, _mappa = await _cerca_vinted_testo_diretto_con_fallback_serper(url_comparabili(testo, catalogo))
     if not ok:
         return None, 0, False
     comps = parse_comp(risposta)
     usati = [(t, p) for t, p in comparabili_simili(solo_usato(comps), testo, brand) if not (t == titolo and abs(p - prezzo) < 0.01)]
     prezzi = [p for _, p in usati]
-    _cache[testo] = (adesso, prezzi, len(comps))
+    _cache[chiave] = (adesso, prezzi, len(comps))
     return prezzi, len(comps), False
 
 
@@ -101,7 +115,8 @@ async def analizza(parsed, url):
             # titolo di una parola ("Dyson"): il modello non si capisce, i comparabili sarebbero ricambi e accessori
             db.scrivi_evento("radar_v2", item_id, brand, {**base, "ok": False, "motivo": "titolo_generico", "q": testo})
             return _rosso("titolo_generico")
-        prezzi, n_grezzi, dalla_cache = await _prezzi_simili(testo, titolo, prezzo, brand)
+        catalogo = await _catalogo_annuncio(url)
+        prezzi, n_grezzi, dalla_cache = await _prezzi_simili(testo, titolo, prezzo, brand, catalogo)
         if prezzi is None:
             db.scrivi_evento("radar_v2", item_id, brand, {**base, "ok": False, "motivo": "comparabili_non_disponibili", "q": testo})
             return _rosso("comparabili_non_disponibili")
