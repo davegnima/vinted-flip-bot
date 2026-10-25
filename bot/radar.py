@@ -28,6 +28,8 @@ from bot import tracciamento as tr
 from bot import radar_matrice as rm
 from bot.vinted_scrape import scrape_vinted_listing
 from bot.logger import log
+from bot.config import TELEGRAM_OWNER_CHAT_ID
+from bot.telegram_api import telegram_send_message
 # ---- fine import ----
 
 RADAR_MARCATORE = os.environ.get("RADAR_MARCATORE", "📡").strip()
@@ -290,6 +292,31 @@ def radar_in_pausa(adesso=None):
     return (da <= ora < a) if da < a else (ora >= da or ora < a)
 
 
+# Verifica a occhio (25/10): ogni annuncio con un modello della matrice va al tuo chat privato col suo semaforo,
+# anche sopra il buy max (rosso). Spento con RADAR_MOSTRA_TUTTI=0.
+RADAR_MOSTRA_TUTTI = os.environ.get("RADAR_MOSTRA_TUTTI", "1").strip() not in ("0", "false", "")
+
+
+def semaforo_radar(prezzo, buy_max):
+    """Semaforo dal buy max della matrice, stessa tolleranza di radar_matrice. Pura."""
+    if prezzo is None or not buy_max or buy_max <= 0:
+        return None
+    if prezzo <= buy_max:
+        return "🟢"
+    return "🟡" if prezzo <= buy_max * rm.RADAR_TOLLERANZA_BUY_MAX else "🔴"
+
+
+async def _manda_semaforo_radar(item_id, titolo, prezzo, url, modello, buy_max):
+    try:
+        luce = semaforo_radar(prezzo, buy_max)
+        testo = (f"{luce} {modello} | {prezzo:g} € (buy max {buy_max:g} €)\n"
+                 f"{titolo[:100]}\n{url}")
+        await telegram_send_message(TELEGRAM_OWNER_CHAT_ID, testo, disable_notification=True)
+        log.info("RADAR SEMAFORO | item=%s | %s | modello=%s | prezzo=%s | buy_max=%s", item_id, luce, modello, prezzo, buy_max)
+    except Exception:
+        log.warning("Radar: semaforo non inviato per %s:\n%s", item_id, traceback.format_exc())
+
+
 async def gestisci_annuncio_radar(parsed, url, t0=None):
     """Fase 0: classifica, filtra, visita la pagina se serve, registra. Mai messaggi, mai AI."""
     global _radar_pausa_saltati
@@ -315,6 +342,8 @@ async def gestisci_annuncio_radar(parsed, url, t0=None):
     riga = rm.trova_modello(titolo, parsed.get("brand"), rm.MATRICE) if modulo else None
     modello = (riga.get("id") or riga.get("modello")) if riga else None
     bm = riga.get("buy_max") if riga else None
+    if RADAR_MOSTRA_TUTTI and modello and bm and prezzo is not None:
+        await _manda_semaforo_radar(item_id, titolo, prezzo, url, modello, bm)
     campione = (not passa) and modulo is not None and not motivo.startswith("prezzo_sotto") and nel_campione_scarti(item_id)
     base = {"titolo": titolo[:120], "prezzo": prezzo, "modulo": modulo, "brand_radar": brand_radar,
             "tipo": tipo, "l1": "passa" if passa else "scarto", "motivo": motivo, "campione": campione,
