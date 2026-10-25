@@ -6,7 +6,7 @@ from urllib.parse import quote
 from bot.config import SERPER_API_KEY, VISUAL_SEARCH_ATTIVA
 from bot.costanti import VINTED_BRAND_IDS
 from bot.vinted_http import _VINTED_COOKIES, _jwt_scaduto, _rinnova_token_vinted, _vinted_get_con_retry, _vinted_refresh_lock
-from bot.serper_base import _e_errore_crediti_serper
+from bot.serper_base import _e_errore_crediti_serper, _log_errore_serper
 from bot.logger import log
 from bot import http_clients as hc
 # ---- fine import ----
@@ -87,11 +87,13 @@ async def _risolvi_search_by_image_id_via_serper(url_intermedio):
         )
         if _e_errore_crediti_serper(resp):
             log.info("_risolvi_search_by_image_id_via_serper: Serper fallito (crediti/HTTP %d).", resp.status_code)
+            _log_errore_serper("_risolvi_search_by_image_id_via_serper", resp=resp)
             return None
         resp.raise_for_status()
         data = resp.json()
     except Exception as e:
         log.info("_risolvi_search_by_image_id_via_serper: chiamata Serper fallita: %s", e)
+        _log_errore_serper("_risolvi_search_by_image_id_via_serper", eccezione=e)
         return None
 
     # Diagnostica estesa (aggiunta dopo il primo tentativo in produzione,

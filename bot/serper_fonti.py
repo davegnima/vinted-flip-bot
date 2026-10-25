@@ -5,7 +5,7 @@ import uuid
 
 from bot.costanti import CATEGORIA_TERMINE_EN
 from bot.config import SERPER_API_KEY
-from bot.serper_base import _e_errore_crediti_serper
+from bot.serper_base import _e_errore_crediti_serper, _log_errore_serper
 from bot.vinted_search import _estrai_articoli_vinted
 from bot.testo import _normalizza_titolo_per_link
 from bot.logger import log
@@ -23,10 +23,12 @@ async def _serper_scrape_page_diretto(label, url):
             json=payload, timeout=15,
         )
         if _e_errore_crediti_serper(resp):
+            _log_errore_serper("bot/serper_fonti.py", resp=resp)
             return f"  Serper fallito (HTTP {resp.status_code}).", False
         resp.raise_for_status()
         data = resp.json()
     except Exception as e:
+        _log_errore_serper("bot/serper_fonti.py", eccezione=e)
         return f"  Scrape fallito: {e}", False
 
     if "VINTED" in label.upper():
@@ -64,10 +66,12 @@ async def _serper_batch_query_vestiaire(brand, categoria):
             json=payload, timeout=15,
         )
         if _e_errore_crediti_serper(resp):
+            _log_errore_serper("bot/serper_fonti.py", resp=resp)
             return f"  Serper fallito (HTTP {resp.status_code}).", False
         resp.raise_for_status()
         results = resp.json()
     except Exception as e:
+        _log_errore_serper("bot/serper_fonti.py", eccezione=e)
         return f"Ricerca fallita: {e}", False
 
     lines = []
@@ -383,10 +387,12 @@ async def _serper_batch_query_ebay_sold(brand, categoria, material_per_ricerca=N
             json=payload, timeout=8,
         )
         if _e_errore_crediti_serper(resp):
+            _log_errore_serper("bot/serper_fonti.py", resp=resp)
             return f"  Serper fallito (HTTP {resp.status_code}).", False
         resp.raise_for_status()
         results = resp.json()
     except Exception as e:
+        _log_errore_serper("bot/serper_fonti.py", eccezione=e)
         return f"Ricerca fallita: {e}", False
 
     lines = []
