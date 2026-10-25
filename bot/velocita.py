@@ -30,6 +30,9 @@ VELOCITA_LENTO_LIFT = float(os.environ.get("VELOCITA_LENTO_LIFT", "0.60"))
 # annunci a 40-70 EUR; a <= 20 EUR (8-14/10, 297 annunci di brand con lift < 0,8) il semaforo d'origine distingue meglio: 🟢 27% venduti
 # entro 15 min e 🟡 11%, contro 🟢 20% e 🟡 26% col semaforo corretto. Es. Acne a 12 EUR con fair value 62: era sempre 🔴 (lift 0,36),
 # mentre l'Acne a <= 20 EUR vendeva in fretta 4 volte su 13. Il lift > 1 (brand veloci) vale a ogni prezzo. 0 = spento.
+# 25/10: tra verde e giallo la correzione sbaglia verso (dati 18-24/10, n=69: i 🟡 promossi a 🟢 sono veloci veri nel 23% dei casi, i 🟢
+# retrocessi a 🟡 nel 52%; i 🟢 restati tali 38%, i 🟡 restati tali 32%). Con VELOCITA_SOLO_ROSSO=1 il lift sposta solo da/verso il 🔴.
+VELOCITA_SOLO_ROSSO = os.environ.get("VELOCITA_SOLO_ROSSO", "1").strip() == "1"
 VELOCITA_PREZZO_NEUTRO = float(os.environ.get("VELOCITA_PREZZO_NEUTRO", "20"))
 _VUOTO = {"base": 0.25, "semaforo": {"🟢": 0.50, "🟡": 0.29, "🔴": 0.14}, "brand": {}}
 
@@ -79,4 +82,6 @@ def semaforo_corretto(semaforo, brand, dati=None, prezzo=None):
     verde = VELOCITA_SOGLIA_VERDE or VELOCITA_VERDE_X * dati["base"]
     giallo = VELOCITA_SOGLIA_GIALLO or VELOCITA_GIALLO_X * dati["base"]
     nuovo = "🟢" if punteggio >= verde else "🟡" if punteggio >= giallo else "🔴"
+    if VELOCITA_SOLO_ROSSO and nuovo != "🔴" and semaforo != "🔴":
+        nuovo = semaforo
     return nuovo, round(lift, 2)

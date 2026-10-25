@@ -30,8 +30,12 @@ def test_lift_brand_veloce_lento_e_sconosciuto():
 def test_semaforo_corretto_sale_per_i_brand_veloci_e_scende_per_i_lenti(monkeypatch):
     monkeypatch.setattr(v, "VELOCITA_ATTIVA", True)
     assert v.semaforo_corretto("🔴", "Loro Piana", TABELLA)[0] == "🟡"       # 0,14 x ~2,1 = 0,29
+    assert v.semaforo_corretto("🟡", "Loro Piana", TABELLA)[0] == "🟡"      # 25/10: tra verde e giallo il lift non sposta
+    assert v.semaforo_corretto("🟢", "Max Mara", TABELLA)[0] == "🟢"        # (0,50 x ~0,56 = 0,28 darebbe 🟡)
+    monkeypatch.setattr(v, "VELOCITA_SOLO_ROSSO", False)
     assert v.semaforo_corretto("🟡", "Loro Piana", TABELLA)[0] == "🟢"
-    assert v.semaforo_corretto("🟢", "Max Mara", TABELLA)[0] == "🟡"        # 0,50 x ~0,56 = 0,28
+    assert v.semaforo_corretto("🟢", "Max Mara", TABELLA)[0] == "🟡"
+    monkeypatch.setattr(v, "VELOCITA_SOLO_ROSSO", True)
     assert v.semaforo_corretto("🔴", "Max Mara", TABELLA)[0] == "🔴"
     assert v.semaforo_corretto("🟢", "brand mai visto", TABELLA) == ("🟢", 1.0)
     assert v.semaforo_corretto(None, "Prada", TABELLA) == (None, 1.0)
@@ -137,7 +141,7 @@ def test_brand_lento_non_penalizzato_a_prezzo_basso(monkeypatch):
     # 15/10: Acne a 12 EUR con stima verde restava rossa per il lift del brand (calcolato su capi a 40-70 EUR)
     monkeypatch.setattr(v, "VELOCITA_ATTIVA", True)
     assert v.semaforo_corretto("🟢", "Max Mara", TABELLA, prezzo=12)[0] == "🟢"
-    assert v.semaforo_corretto("🟢", "Max Mara", TABELLA, prezzo=40)[0] == "🟡"    # sopra la soglia il lift vale
+    assert v.semaforo_corretto("🟢", "Max Mara", TABELLA, prezzo=40)[0] == "🟢"    # 25/10: verde/giallo non si scambiano più
     assert v.semaforo_corretto("🔴", "Loro Piana", TABELLA, prezzo=12)[0] == "🟡"  # il lift dei brand veloci vale sempre
     assert v.semaforo_corretto("🔴", "Max Mara", TABELLA, prezzo=12)[0] == "🔴"
 
@@ -156,3 +160,11 @@ def test_veloce_segnalato_falso_pesa_meno_nel_credito(tmp_path):
     tab = {}
     t.aggiorna(tab, annunci, 1.0, "2026-10-16T12:00:00Z", peso_falso=0.25)
     assert tab["brand"]["prada"] == {"n": 2, "veloci": 1.25}
+
+
+def test_correzione_non_scambia_verde_e_giallo():
+    from bot import velocita as v
+    dati = {"base": 0.2, "semaforo": {"🟢": 0.4, "🟡": 0.3, "🔴": 0.1}, "brand": {"a": {"n": 200, "veloci": 100}, "b": {"n": 200, "veloci": 4}}}
+    for brand in ("a", "b"):
+        for sem in ("🟢", "🟡"):
+            assert v.semaforo_corretto(sem, brand, dati, prezzo=40)[0] in (sem, "🔴")
