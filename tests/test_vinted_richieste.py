@@ -39,3 +39,7 @@ def test_catalogo_annuncio_senza_risposta_e_none(monkeypatch):
 def test_ricerca_diretta_ha_due_tentativi_e_tetto_sotto_la_fonte():
     assert comps.TIMEOUT_SCRAPE_DIRETTO_VINTED_TESTO_TOTALE_SECONDI < 25
     assert comps.TIMEOUT_SCRAPE_DIRETTO_VINTED_TESTO_TOTALE_SECONDI >= 2 * comps.TIMEOUT_SCRAPE_DIRETTO_VINTED_TESTO_SECONDI
+
+
+def test_foto_a_jev_solo_per_verde_di_default():
+    assert radar_v2.JEV_FOTO_SEMAFORI == {"verde"}
