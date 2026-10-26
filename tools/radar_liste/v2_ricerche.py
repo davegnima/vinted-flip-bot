@@ -2,6 +2,7 @@
 # Ogni annuncio nuovo arriva al worker, che in modalita' ombra (RADAR_V2_OMBRA=1) calcola la rivendita dagli annunci simili.
 # Uso: python3 v2_ricerche.py --salva   (salva nomi e URL delle ricerche attuali in docs/analisi/)
 #      python3 v2_ricerche.py --carica  (toglie tutte le ricerche e carica le V2)
+#      python3 v2_ricerche.py --aggiungi (aggiunge solo le OSS in osservazione, senza toccare le altre)
 import sys,os,re,html,json,urllib.request,urllib.parse
 QUI=os.path.dirname(os.path.abspath(__file__)); B='https://vinted-radar-production.up.railway.app'
 POSATE=[1950,1951,1952,1970]; STOV=[1958,1959,1960,1961]; BIC=[2006,2007,2008,2009,2010,2011]; VASI=[1940]; LAMP=[3836,3837,3838,3839]
@@ -25,8 +26,18 @@ V2=[ # nome, testo, brand (nome o None), catalog, tetto
  ('V2 milwaukee','','milwaukee',[3875],50),('V2 dewalt','','dewalt',[3875],50),('V2 nuna','','nuna',[1612],50),('V2 joolz','','joolz',[1612],50),
  ('V2 ghd','','ghd',[3766],50),('V2 longines','','longines',[97,22],50),('V2 tudor','','tudor',[97,22],50),('V2 games workshop','','games workshop',[4883],50),
 ]
+OSS=[ # osservazione fuori moda (24/10): categorie larghe, nessun brand, tetto 50; il radar valuta e registra, niente Telegram
+ ('V2 OSS fumetti manga','',None,[5425],50),('V2 OSS libri universitari','universitari',None,[5426],50),('V2 OSS giochi da tavolo','',None,[4881],50),
+]
 def get(p): return urllib.request.urlopen(B+p,timeout=120).read().decode()
-def post(p,d=None): return urllib.request.urlopen(urllib.request.Request(B+p,data=urllib.parse.urlencode(d or {}).encode(),method='POST'),timeout=120)
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self,*a,**k): return None
+_APRI=urllib.request.build_opener(_NoRedirect)
+def post(p,d=None):
+    try: return _APRI.open(urllib.request.Request(B+p,data=urllib.parse.urlencode(d or {}).encode(),method='POST'),timeout=120)
+    except urllib.error.HTTPError as e:
+        if e.code not in (302,303): raise
+        return e
 if '--salva' in sys.argv:
     out=[]
     for m in re.finditer(r'action="/update_query/(\d+)"(.*?)</form>',get('/queries'),flags=re.S):
@@ -35,6 +46,10 @@ if '--salva' in sys.argv:
         out.append({'nome':n,'url':u})
     json.dump(out,open(QUI+'/../../docs/analisi/radar-ricerche-ferme-2026-10-23.json','w'),ensure_ascii=False,indent=0)
     print(len(out),'ricerche salvate')
+if '--aggiungi' in sys.argv:
+    for nome,txt,br,cat,pt in OSS:
+        u='https://www.vinted.it/catalog?'+(f'search_text={urllib.parse.quote(txt)}&' if txt else '')+(f'brand_ids[]={B_[br]}&' if br else '')+''.join(f'catalog[]={i}&' for i in cat)+f"price_to={pt}&currency=EUR&order=newest_first"
+        post('/add_query',{'query':u,'query_name':nome}); print('ok',nome)
 if '--carica' in sys.argv:
     post('/remove_query/all'); print('tolte tutte')
     for nome,txt,br,cat,pt in V2:

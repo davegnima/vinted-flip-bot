@@ -70,3 +70,23 @@ def test_comparabili_simili_tolgono_pezzi_e_fuori_tema():
 
 def test_query_comp_al_massimo_quattro_parole():
     assert query_comp("Cocotte Le Creuset ceramica smaltata arancione 24 cm", "Le Creuset") == "le creuset cocotte ceramica"
+
+
+def test_semaforo_verde_giallo_rosso():
+    from bot.valore_mercato import semaforo, valuta
+    buono = stima_mercato([100, 105, 110, 115, 120, 125])
+    assert valuta(25, buono)["semaforo"] == "verde"
+    pochi = stima_mercato([100, 110], min_n=2)
+    assert valuta(25, pochi)["semaforo"] == "giallo"
+    assert valuta(90, buono)["semaforo"] == "rosso"
+    assert valuta(25, None)["semaforo"] == "rosso"
+    assert semaforo({"ok": True, "n": 1}) == "rosso"
+
+
+def test_semaforo_radar_dal_buy_max():
+    from bot.radar import semaforo_radar
+    assert semaforo_radar(40, 50) == "🟢"
+    assert semaforo_radar(55, 50) == "🟡"
+    assert semaforo_radar(60, 50) == "🔴"
+    assert semaforo_radar(None, 50) is None
+    assert semaforo_radar(40, None) is None

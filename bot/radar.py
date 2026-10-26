@@ -28,6 +28,8 @@ from bot import tracciamento as tr
 from bot import radar_matrice as rm
 from bot.vinted_scrape import scrape_vinted_listing
 from bot.logger import log
+from bot.config import TELEGRAM_OWNER_CHAT_ID
+from bot.telegram_api import telegram_send_message, telegram_send_photo
 # ---- fine import ----
 
 RADAR_MARCATORE = os.environ.get("RADAR_MARCATORE", "📡").strip()
@@ -290,7 +292,84 @@ def radar_in_pausa(adesso=None):
     return (da <= ora < a) if da < a else (ora >= da or ora < a)
 
 
-async def gestisci_annuncio_radar(parsed, url, t0=None):
+# Verifica a occhio (25/10): ogni annuncio con un modello della matrice va al tuo chat privato col suo semaforo,
+# anche sopra il buy max (rosso). Spento con RADAR_MOSTRA_TUTTI=0.
+RADAR_MOSTRA_TUTTI = os.environ.get("RADAR_MOSTRA_TUTTI", "1").strip() not in ("0", "false", "")
+
+
+def semaforo_radar(prezzo, buy_max):
+    """Semaforo dal buy max della matrice, stessa tolleranza di radar_matrice. Pura."""
+    if prezzo is None or not buy_max or buy_max <= 0:
+        return None
+    if prezzo <= buy_max:
+        return "🟢"
+    return "🟡" if prezzo <= buy_max * rm.RADAR_TOLLERANZA_BUY_MAX else "🔴"
+
+
+# Filtro sul rumore (25/10): con RADAR_SOLO_VERDI=1 arrivano solo gli annunci con semaforo verde (comparabili >= 6 e affare).
+RADAR_SOLO_VERDI = os.environ.get("RADAR_SOLO_VERDI", "0").strip() in ("1", "true", "si")
+
+
+SEMAFORO_EMOJI = {"verde": "🟢", "giallo": "🟡", "rosso": "🔴"}
+
+
+def _righe_v2(v2):
+    """Righe del messaggio: comparabili (quanti e perche' zero), semaforo (solo se ci sono comparabili), giudizio Jev.
+    Il semaforo non viene dal buy max della matrice: si costruisce dai comparabili (richiesta dell'utente, 25/10)."""
+    if v2 is None:
+        return ["Comparabili: non calcolati"]
+    n = v2.get("n") or 0
+    righe = []
+    if v2.get("rivendita") is None:
+        righe.append(f"Comparabili: {n} trovati, nessuna stima ({v2.get('motivo') or 'motivo non noto'})")
+        righe.append("Semaforo: in costruzione (servono più comparabili nel tempo)")
+    else:
+        righe.append(f"Comparabili: {n} trovati · rivendita {v2.get('rivendita')} € · margine {v2.get('margine')} € "
+                     f"· ROI {v2.get('roi')}%")
+        righe.append(f"Semaforo: {SEMAFORO_EMOJI.get(v2.get('semaforo'), 'n.d.')}")
+    if v2.get("jev"):
+        righe.append(f"Jev: {v2['jev']} (confidenza {v2.get('jev_conf')})")
+    return righe
+
+
+def _da_mandare(v2):
+    return not RADAR_SOLO_VERDI or (bool(v2) and v2.get("semaforo") == "verde")
+
+
+async def _invia_radar(testo, foto=None):
+    """Messaggio del radar al chat privato: con la foto del tracker se c'e', altrimenti solo testo."""
+    if foto:
+        await telegram_send_photo(TELEGRAM_OWNER_CHAT_ID, foto, caption=testo, disable_notification=True)
+        log.info("RADAR FOTO | inviata con foto (%d KB)", len(foto) // 1024)
+    else:
+        await telegram_send_message(TELEGRAM_OWNER_CHAT_ID, testo, disable_notification=True)
+
+
+async def _manda_semaforo_radar(item_id, titolo, prezzo, url, modello, buy_max, v2=None, foto=None):
+    if not _da_mandare(v2):
+        return
+    try:
+        testo = "\n".join([f"🔎 modello {modello} | {prezzo:g} € (buy max {buy_max:g} €)", titolo[:100]]
+                          + _righe_v2(v2) + [url])
+        await _invia_radar(testo, foto)
+        log.info("RADAR MODELLO | item=%s | modello=%s | prezzo=%s | buy_max=%s", item_id, modello, prezzo, buy_max)
+    except Exception:
+        log.warning("Radar: semaforo non inviato per %s:\n%s", item_id, traceback.format_exc())
+
+
+async def _manda_annuncio_senza_modello(item_id, titolo, prezzo, url, v2=None, foto=None):
+    if not _da_mandare(v2):
+        return
+    try:
+        intestazione = f"🔎 fuori matrice | {prezzo:g} €" if prezzo is not None else "🔎 fuori matrice"
+        testo = "\n".join([intestazione, titolo[:100]] + _righe_v2(v2) + [url])
+        await _invia_radar(testo, foto)
+        log.info("RADAR FUORI MATRICE | item=%s | prezzo=%s | titolo=%s", item_id, prezzo, titolo[:60])
+    except Exception:
+        log.warning("Radar: annuncio fuori matrice non inviato per %s:\n%s", item_id, traceback.format_exc())
+
+
+async def gestisci_annuncio_radar(parsed, url, t0=None, v2=None, foto=None):
     """Fase 0: classifica, filtra, visita la pagina se serve, registra. Mai messaggi, mai AI."""
     global _radar_pausa_saltati
     if not RADAR_ATTIVO:
@@ -315,6 +394,11 @@ async def gestisci_annuncio_radar(parsed, url, t0=None):
     riga = rm.trova_modello(titolo, parsed.get("brand"), rm.MATRICE) if modulo else None
     modello = (riga.get("id") or riga.get("modello")) if riga else None
     bm = riga.get("buy_max") if riga else None
+    if RADAR_MOSTRA_TUTTI and modello and bm and prezzo is not None:
+        await _manda_semaforo_radar(item_id, titolo, prezzo, url, modello, bm, v2, foto)
+    elif RADAR_MOSTRA_TUTTI and not modello:
+        # Verifica (25/10): annuncio di una lista senza modello riconosciuto: messaggio, poi il flusso di sempre.
+        await _manda_annuncio_senza_modello(item_id, titolo, prezzo, url, v2, foto)
     campione = (not passa) and modulo is not None and not motivo.startswith("prezzo_sotto") and nel_campione_scarti(item_id)
     base = {"titolo": titolo[:120], "prezzo": prezzo, "modulo": modulo, "brand_radar": brand_radar,
             "tipo": tipo, "l1": "passa" if passa else "scarto", "motivo": motivo, "campione": campione,
