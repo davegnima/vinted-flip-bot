@@ -542,3 +542,13 @@ def test_didascalia_toglie_la_riga_query_prima_di_accorciare():
     out = didascalia_verdetto(testo)
     assert "🔎" not in out and "x" * 300 in out and "y" * 300 in out
     assert riga in didascalia_verdetto("✅ COMPRA\n" + riga)   # sotto il limite resta
+
+
+def test_esperimento_rosso_esclude_jpg_e_max_mara(monkeypatch):
+    import bot.fair_value as fv_mod
+    from bot.fair_value import check_skip_rosso
+    monkeypatch.setattr(fv_mod, "SALTA_CERVELLO_ROSSO_TUTTI", True)
+    rosso = {"semaforo": "🔴", "conf": "bassa", "margine": 25, "fv": 80, "categoria": "maglia"}
+    for brand in ("Jean Paul Gaultier", "Max Mara", "jean paul gaultier"):
+        assert not check_skip_rosso({"fair_value": {**rosso, "brand": brand}, "price": 40})[0]   # va al Cervello
+    assert check_skip_rosso({"fair_value": {**rosso, "brand": "Prada"}, "price": 40})[0]
