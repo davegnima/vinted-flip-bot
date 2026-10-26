@@ -322,6 +322,8 @@ SALTA_CERVELLO_ROSSO = os.environ.get("SALTA_CERVELLO_ROSSO", "1").strip() != "0
 # (margine >= 50 e ROI >= 100%) 33 in 8 giorni, veloci veri 4 (12%, contro 71% dei verdi). Misura: esiti SKIP_ROSSO con
 # motivo "[ROSSO SICURO - ESPERIMENTO]" nel TRACCIATO (veloci persi). Spento con SALTA_CERVELLO_ROSSO_TUTTI=0.
 SALTA_CERVELLO_ROSSO_TUTTI = os.environ.get("SALTA_CERVELLO_ROSSO_TUTTI", "1").strip() != "0"
+# 26/10 (utente): brand esclusi dall'esperimento, il loro rosso va al Cervello (recap 25/10: JPG 7 veloci su 14, Max Mara 3 su 5).
+SALTA_CERVELLO_ROSSO_ESCLUSI = {b.strip().lower() for b in os.environ.get("SALTA_CERVELLO_ROSSO_ESCLUSI", "jean paul gaultier,max mara").split(",") if b.strip()}
 RAPPORTO_ROSSO_LENTO_PASSA = _env_float("RAPPORTO_ROSSO_LENTO_PASSA", 2.5)   # fair value/prezzo da cui il brand lento passa al Cervello
 
 
@@ -330,7 +332,9 @@ def check_skip_rosso(listing_info):
     from bot.config import GEMINI_SOGLIA_PREZZO_ALTO
     stima = listing_info.get("fair_value") or {}
     prezzo = _a_float(listing_info.get("price"), None)
-    if SALTA_CERVELLO_ROSSO_TUTTI and stima.get("semaforo") == "🔴" and prezzo is not None and prezzo < GEMINI_SOGLIA_PREZZO_ALTO:
+    brand = (stima.get("brand") or listing_info.get("brand") or "").strip().lower()
+    if (SALTA_CERVELLO_ROSSO_TUTTI and brand not in SALTA_CERVELLO_ROSSO_ESCLUSI and stima.get("semaforo") == "🔴"
+            and prezzo is not None and prezzo < GEMINI_SOGLIA_PREZZO_ALTO):
         return True, (f"[ROSSO SICURO - ESPERIMENTO] Stima rapida {stima.get('brand')} {stima.get('categoria')}: semaforo rosso "
                       f"(fair value ~{stima.get('fv')} € su {prezzo:.0f} €, confidenza {stima.get('conf')}) -- Cervello non consultato.")
     if (not SALTA_CERVELLO_ROSSO or stima.get("semaforo") != "🔴" or stima.get("conf") not in ("alta", "media")
