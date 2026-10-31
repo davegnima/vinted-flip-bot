@@ -159,14 +159,26 @@ def _rosso(motivo, n=0):
             "jev": None, "jev_conf": None}
 
 
+_saltati = {}
+
+
+def _log_saltato(motivo, url):
+    """Riga di log per gli annunci che il radar v2 non valuta (31/10): prima erano ritorni silenziosi. Una riga ogni 20 per motivo."""
+    n = _saltati[motivo] = _saltati.get(motivo, 0) + 1
+    if n == 1 or n % 20 == 0:
+        log.info("RADAR V2 SALTATO | motivo=%s | n=%s | url=%s", motivo, n, (url or "-")[:80])
+
+
 async def analizza(parsed, url, foto=None, query_url=None):
     """Valuta un annuncio del radar con i comparabili, chiede il giudizio di Jev e registra il verdetto.
     Ritorna dict {semaforo, rivendita, margine, roi, n, jev, jev_conf} o None. Mai eccezioni verso il chiamante."""
     if not RADAR_V2_OMBRA or radar_in_pausa():
+        _log_saltato("ombra_spenta" if not RADAR_V2_OMBRA else "pausa_notturna", url)
         return
     try:
         item_id = _estrai_item_id_da_url(url)
         if not item_id or item_id in _visti:
+            _log_saltato("senza_id" if not item_id else "gia_visto", url)
             return
         _visti.add(item_id)
         if len(_visti) > 20000:
@@ -176,6 +188,7 @@ async def analizza(parsed, url, foto=None, query_url=None):
         brand = parsed.get("brand")
         base = {"titolo": titolo[:120], "prezzo": prezzo, "brand": brand}
         if prezzo is None or prezzo <= 0 or (RADAR_SPESA_MAX and prezzo > RADAR_SPESA_MAX):
+            _log_saltato("prezzo_assente" if prezzo is None else f"prezzo_fuori:{prezzo:g}", url)
             return
         vietata = parola_vietata(titolo)
         if vietata:
