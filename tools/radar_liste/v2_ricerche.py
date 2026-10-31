@@ -4,6 +4,7 @@
 #      python3 v2_ricerche.py --carica  (toglie tutte le ricerche e carica le V2)
 #      python3 v2_ricerche.py --aggiungi (aggiunge solo le OSS in osservazione, senza toccare le altre)
 #      python3 v2_ricerche.py --console  (aggiunge le 9 ricerche console e giochi dell'ondata 1, 31/10)
+#      python3 v2_ricerche.py --onda3    (aggiunge il resto della lista V2 non ancora sul tracker, senza categorie a rischio; 31/10)
 #      python3 v2_ricerche.py --onda2    (aggiunge le 14 ricerche per brand di utensili, hi-fi, foto, casa, bimbi: raccolta dati larga, 31/10)
 import sys,os,re,html,json,urllib.request,urllib.parse
 QUI=os.path.dirname(os.path.abspath(__file__)); B='https://vinted-radar-production.up.railway.app'
@@ -44,6 +45,10 @@ ONDA2=[ # 31/10, raccolta dati larga (richiesta dell'utente): brand ovvi di cate
  ('V2 fujifilm','','fujifilm',[3075,3076],100),('V2 dji','','dji',[3723,3074],100),('V2 dyson','','dyson',[3543],100),
  ('V2 kitchenaid','','kitchenaid',[],80),('V2 stokke seggioloni','','stokke',[3450],60),('V2 bugaboo','','bugaboo',[1612],60),
 ]
+RISCHIO=('V2 airpods pro','V2 apple airpods','V2 omega uomo','V2 omega donna','V2 longines','V2 tudor','V2 montblanc penne') # repliche frequenti: fuori (piano 31/10)
+def _nomi_sul_tracker():
+    return {html.unescape(re.search(r'name="query_name"[^>]*value="([^"]*)"',m.group(2)).group(1)).split(' :: ')[0]
+            for m in re.finditer(r'action="/update_query/(\d+)"(.*?)</form>',get('/queries'),flags=re.S)}
 def get(p): return urllib.request.urlopen(B+p,timeout=120).read().decode()
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self,*a,**k): return None
@@ -71,6 +76,12 @@ if '--console' in sys.argv:
         post('/add_query',{'query':u,'query_name':nome}); print('ok',nome)
 if '--onda2' in sys.argv:
     for nome,txt,br,cat,pt in ONDA2:
+        u='https://www.vinted.it/catalog?'+(f'search_text={urllib.parse.quote(txt)}&' if txt else '')+(f'brand_ids[]={B_[br]}&' if br else '')+''.join(f'catalog[]={i}&' for i in cat)+f"price_to={pt}&currency=EUR&order=newest_first"
+        post('/add_query',{'query':u,'query_name':nome}); print('ok',nome)
+if '--onda3' in sys.argv:
+    gia=_nomi_sul_tracker()
+    for nome,txt,br,cat,pt in V2:
+        if nome in gia or nome in RISCHIO: continue
         u='https://www.vinted.it/catalog?'+(f'search_text={urllib.parse.quote(txt)}&' if txt else '')+(f'brand_ids[]={B_[br]}&' if br else '')+''.join(f'catalog[]={i}&' for i in cat)+f"price_to={pt}&currency=EUR&order=newest_first"
         post('/add_query',{'query':u,'query_name':nome}); print('ok',nome)
 if '--carica' in sys.argv:
