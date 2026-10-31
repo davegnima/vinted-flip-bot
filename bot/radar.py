@@ -387,7 +387,7 @@ def testo_risposta_gruppo(v2):
 # Scarti che non sono l'oggetto intero (ricambio, accessorio, scatola, parola vietata, prezzo segnaposto, titolo generico):
 # il messaggio del tracker nel gruppo si cancella invece di rispondere (richiesta dell'utente, 31/10: niente rumore).
 RADAR_CANCELLA_SCARTI = os.environ.get("RADAR_CANCELLA_SCARTI", "1").strip() not in ("0", "false", "no", "")
-MOTIVI_NON_OGGETTO = ("parola_vietata", "pezzo_o_accessorio", "prezzo_segnaposto", "titolo_generico")
+MOTIVI_NON_OGGETTO = ("parola_vietata", "pezzo_o_accessorio", "prezzo_segnaposto", "titolo_generico", "famiglia_senza_margine")
 
 
 def da_cancellare(v2):
@@ -401,6 +401,7 @@ def _da_mandare(v2):
 
 async def _invia_radar(testo, foto=None):
     """Messaggio del radar al chat privato: con la foto del tracker se c'e', altrimenti solo testo."""
+    log.info("RADAR PRIVATO | inviato alla chat privata | foto=%s | testo=%s", "si" if foto else "no", testo.replace("\n", " / "))
     if foto:
         await telegram_send_photo(TELEGRAM_OWNER_CHAT_ID, foto, caption=testo, disable_notification=True)
         log.info("RADAR FOTO | inviata con foto (%d KB)", len(foto) // 1024)
