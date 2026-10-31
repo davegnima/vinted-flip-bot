@@ -106,7 +106,7 @@ def test_annuncio_fuori_matrice_ha_intestazione_chiara(monkeypatch):
     from bot import radar
     inviati = []
 
-    async def finto_invia(testo, foto):
+    async def finto_invia(testo, foto, suono=False):
         inviati.append(testo)
 
     monkeypatch.setattr(radar, "RADAR_SOLO_VERDI", False)
@@ -267,3 +267,9 @@ def test_marca_dal_titolo_vince_sul_tracker():
     assert marca_dal_titolo("Console wii bon état", "Nintendo") == "Nintendo"
     assert marca_dal_titolo("Radiosveglia", None) is None
     assert marca_dal_titolo("Canon BG-E7 per Nikonos", "Canon") == "Canon"
+
+
+def test_solo_i_verdi_fanno_suono():
+    from bot import radar
+    assert radar._con_suono({"semaforo": "verde"})
+    assert not radar._con_suono({"semaforo": "giallo"}) and not radar._con_suono(None)

@@ -406,14 +406,19 @@ def _da_mandare(v2):
     return not RADAR_SOLO_VERDI or (bool(v2) and v2.get("semaforo") == "verde")
 
 
-async def _invia_radar(testo, foto=None):
-    """Messaggio del radar al chat privato: con la foto del tracker se c'e', altrimenti solo testo."""
+def _con_suono(v2):
+    """Solo i verdi fanno suono nella chat privata (31/10: il gruppo del tracker e' silenzioso, la notifica deve essere un affare vero)."""
+    return bool(v2) and v2.get("semaforo") == "verde"
+
+
+async def _invia_radar(testo, foto=None, suono=False):
+    """Messaggio del radar al chat privato: con la foto del tracker se c'e', altrimenti solo testo. Suono solo se `suono`."""
     log.info("RADAR PRIVATO | inviato alla chat privata | foto=%s | testo=%s", "si" if foto else "no", testo.replace("\n", " / "))
     if foto:
-        await telegram_send_photo(TELEGRAM_OWNER_CHAT_ID, foto, caption=testo, disable_notification=True)
+        await telegram_send_photo(TELEGRAM_OWNER_CHAT_ID, foto, caption=testo, disable_notification=not suono)
         log.info("RADAR FOTO | inviata con foto (%d KB)", len(foto) // 1024)
     else:
-        await telegram_send_message(TELEGRAM_OWNER_CHAT_ID, testo, disable_notification=True)
+        await telegram_send_message(TELEGRAM_OWNER_CHAT_ID, testo, disable_notification=not suono)
 
 
 async def _manda_semaforo_radar(item_id, titolo, prezzo, url, modello, buy_max, v2=None, foto=None):
@@ -422,7 +427,7 @@ async def _manda_semaforo_radar(item_id, titolo, prezzo, url, modello, buy_max, 
     try:
         testo = "\n".join([f"{pallino_semaforo(v2)} modello {modello} | {prezzo:g} € (buy max {buy_max:g} €)", titolo[:100]]
                           + _righe_v2(v2) + [url])
-        await _invia_radar(testo, foto)
+        await _invia_radar(testo, foto, suono=_con_suono(v2))
         log.info("RADAR MODELLO | item=%s | modello=%s | prezzo=%s | buy_max=%s", item_id, modello, prezzo, buy_max)
     except Exception:
         log.warning("Radar: semaforo non inviato per %s:\n%s", item_id, traceback.format_exc())
@@ -435,7 +440,7 @@ async def _manda_annuncio_senza_modello(item_id, titolo, prezzo, url, v2=None, f
         pall = pallino_semaforo(v2)
         intestazione = f"{pall} fuori matrice | {prezzo:g} €" if prezzo is not None else f"{pall} fuori matrice"
         testo = "\n".join([intestazione, titolo[:100]] + _righe_v2(v2) + [url])
-        await _invia_radar(testo, foto)
+        await _invia_radar(testo, foto, suono=_con_suono(v2))
         log.info("RADAR FUORI MATRICE | item=%s | prezzo=%s | titolo=%s", item_id, prezzo, titolo[:60])
     except Exception:
         log.warning("Radar: annuncio fuori matrice non inviato per %s:\n%s", item_id, traceback.format_exc())
