@@ -45,7 +45,7 @@ from bot.gemini_stato import ripristina_stato_gemini
 from bot.tracciamento import importa_tracciamento_jsonl, tracc_riprendi_serie
 from bot.feedback import parse_risposta, registra_feedback, registra_nota, ciclo_callback, _contesti, _ctx_item
 from bot.radar_v2 import analizza as radar_v2_analizza
-from bot.radar import RADAR_CHAT_IDS, RADAR_RISPOSTA_GRUPPO, testo_risposta_gruppo, radar_in_pausa, e_messaggio_radar, gestisci_annuncio_radar, risolvi_gruppo_radar, togli_marcatore
+from bot.radar import RADAR_CHAT_IDS, RADAR_RISPOSTA_GRUPPO, RADAR_CANCELLA_SCARTI, da_cancellare, testo_risposta_gruppo, radar_in_pausa, e_messaggio_radar, gestisci_annuncio_radar, risolvi_gruppo_radar, togli_marcatore
 from bot.costanti import (
     BRAND_BLOCKLIST,
     CATEGORIA_KEYWORDS,
@@ -1456,7 +1456,16 @@ async def on_new_message(event):
                         log.warning("RADAR FOTO | download non riuscito per msg_id=%s", msg_id)
                 v2_radar = await radar_v2_analizza(parsed_radar, url_radar, foto=foto_radar,
                                                    query_url=url_da_bottoni(event.message.buttons, "/catalog"))
-                if RADAR_RISPOSTA_GRUPPO:
+                cancellato = False
+                if RADAR_CANCELLA_SCARTI and da_cancellare(v2_radar):
+                    try:
+                        await event.delete()
+                        cancellato = True
+                        log.info("RADAR PULIZIA | cancellato msg_id=%s | motivo=%s", msg_id, v2_radar.get("motivo"))
+                    except Exception as exc:
+                        log.warning("RADAR PULIZIA | non cancellabile msg_id=%s (%s): serve il diritto di eliminare messaggi nel gruppo",
+                                    msg_id, type(exc).__name__)
+                if RADAR_RISPOSTA_GRUPPO and not cancellato:
                     try:
                         await event.reply(testo_risposta_gruppo(v2_radar), silent=True)
                     except Exception:
