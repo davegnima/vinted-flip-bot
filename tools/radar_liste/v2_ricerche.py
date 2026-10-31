@@ -45,7 +45,8 @@ ONDA2=[ # 31/10, raccolta dati larga (richiesta dell'utente): brand ovvi di cate
  ('V2 fujifilm','','fujifilm',[3075,3076],100),('V2 dji','','dji',[3723,3074],100),('V2 dyson','','dyson',[3543],100),
  ('V2 kitchenaid','','kitchenaid',[],80),('V2 stokke seggioloni','','stokke',[3450],60),('V2 bugaboo','','bugaboo',[1612],60),
 ]
-RISCHIO=('V2 airpods pro','V2 apple airpods','V2 omega uomo','V2 omega donna','V2 longines','V2 tudor','V2 montblanc penne') # repliche frequenti: fuori (piano 31/10)
+RISCHIO=('V2 airpods pro','V2 apple airpods','V2 omega uomo','V2 omega donna','V2 longines','V2 tudor','V2 montblanc penne', # repliche frequenti: fuori (piano 31/10)
+         'V2 thermomix','V2 kitchenaid') # 31/10 13:30: senza catalog[] solo rumore (thermomix limite=0, kitchenaid accessori); rimesse solo con l'id categoria visto nei log
 def _nomi_sul_tracker():
     return {html.unescape(re.search(r'name="query_name"[^>]*value="([^"]*)"',m.group(2)).group(1)).split(' :: ')[0]
             for m in re.finditer(r'action="/update_query/(\d+)"(.*?)</form>',get('/queries'),flags=re.S)}
