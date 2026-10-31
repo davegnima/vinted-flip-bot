@@ -29,7 +29,7 @@ from bot import tracciamento as tr
 from bot import radar_matrice as rm
 from bot.vinted_scrape import scrape_vinted_listing
 from bot.logger import log
-from bot.config import TELEGRAM_OWNER_CHAT_ID
+from bot.config import TELEGRAM_ALERT_CHAT_ID, TELEGRAM_OWNER_CHAT_ID
 from bot.telegram_api import telegram_send_message, telegram_send_photo
 # ---- fine import ----
 
@@ -308,8 +308,13 @@ def semaforo_radar(prezzo, buy_max):
     return "🟡" if prezzo <= buy_max * rm.RADAR_TOLLERANZA_BUY_MAX else "🔴"
 
 
-# Filtro sul rumore (25/10): con RADAR_SOLO_VERDI=1 arrivano solo gli annunci con semaforo verde (comparabili >= 6 e affare).
-RADAR_SOLO_VERDI = os.environ.get("RADAR_SOLO_VERDI", "0").strip() in ("1", "true", "si")
+# Filtro sul rumore (31/10): al chat degli avvisi arrivano solo i semafori elencati in RADAR_SEMAFORI (default verde,giallo);
+# i rossi mai. RADAR_SOLO_VERDI=1 (vecchia variabile) restringe a solo verdi.
+RADAR_SEMAFORI = {x.strip() for x in os.environ.get("RADAR_SEMAFORI", "verde,giallo").split(",") if x.strip()}
+if os.environ.get("RADAR_SOLO_VERDI", "0").strip() in ("1", "true", "si"):
+    RADAR_SEMAFORI = {"verde"}
+# Chat dove arrivano gli avvisi del radar (31/10: "Annunci cervello"): RADAR_CHAT_ID, altrimenti la chat avvisi, altrimenti l'owner.
+RADAR_CHAT_ID = (os.environ.get("RADAR_CHAT_ID") or "").strip() or TELEGRAM_ALERT_CHAT_ID or TELEGRAM_OWNER_CHAT_ID
 
 
 SEMAFORO_EMOJI = {"verde": "🟢", "giallo": "🟡", "rosso": "🔴"}
@@ -404,11 +409,12 @@ def da_cancellare(v2):
 
 
 def _da_mandare(v2):
-    return not RADAR_SOLO_VERDI or (bool(v2) and v2.get("semaforo") == "verde")
+    """Solo i semafori in RADAR_SEMAFORI (verde e giallo): niente rossi, niente annunci senza verdetto."""
+    return bool(v2) and v2.get("semaforo") in RADAR_SEMAFORI
 
 
 def _con_suono(v2):
-    """Solo i verdi fanno suono nella chat privata (31/10: il gruppo del tracker e' silenzioso, la notifica deve essere un affare vero)."""
+    """Solo i verdi fanno suono nel chat degli avvisi (31/10: il gruppo del tracker e' silenzioso, la notifica deve essere un affare vero)."""
     return bool(v2) and v2.get("semaforo") == "verde"
 
 
@@ -416,10 +422,10 @@ async def _invia_radar(testo, foto=None, suono=False):
     """Messaggio del radar al chat privato: con la foto del tracker se c'e', altrimenti solo testo. Suono solo se `suono`."""
     log.info("RADAR PRIVATO | inviato alla chat privata | foto=%s | testo=%s", "si" if foto else "no", testo.replace("\n", " / "))
     if foto:
-        await telegram_send_photo(TELEGRAM_OWNER_CHAT_ID, foto, caption=testo, disable_notification=not suono)
+        await telegram_send_photo(RADAR_CHAT_ID, foto, caption=testo, disable_notification=not suono)
         log.info("RADAR FOTO | inviata con foto (%d KB)", len(foto) // 1024)
     else:
-        await telegram_send_message(TELEGRAM_OWNER_CHAT_ID, testo, disable_notification=not suono)
+        await telegram_send_message(RADAR_CHAT_ID, testo, disable_notification=not suono)
 
 
 async def _manda_semaforo_radar(item_id, titolo, prezzo, url, modello, buy_max, v2=None, foto=None):
