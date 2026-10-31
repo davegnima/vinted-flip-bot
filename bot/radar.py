@@ -51,7 +51,7 @@ RADAR_PREZZO_MIN = float(os.environ.get("RADAR_PREZZO_MIN", "10") or 0)
 # anche se il buy max del modello sarebbe piu' alto. 0 = nessun tetto.
 RADAR_SPESA_MAX = float(os.environ.get("RADAR_SPESA_MAX", "50") or 0)
 RADAR_RICONTROLLI_SECONDI = tuple(
-    int(x) for x in os.environ.get("RADAR_RICONTROLLI_SECONDI", "60,900,3600").split(",") if x.strip())
+    int(x) for x in os.environ.get("RADAR_RICONTROLLI_SECONDI", "60,300,900,3600").split(",") if x.strip())
 _radar_sem = asyncio.Semaphore(RADAR_MAX_PARALLELO)
 # Pausa notturna (richiesta dall'utente il 7/10): dalle RADAR_PAUSA_DA alle RADAR_PAUSA_A, ora italiana, i messaggi radar
 # si ignorano (niente visite ne' ricontrolli: risparmio di banda proxy). Vuoto = nessuna pausa.
