@@ -38,6 +38,7 @@ RADAR_V2_RIF_ORE = float(os.environ.get("RADAR_V2_RIF_ORE", "8") or 8)
 RIF_MIN_COMPARABILI = 6
 
 _visti = set()
+RADAR_V2_SCALA_MIN = int(os.environ.get("RADAR_V2_SCALA_MIN", "3") or 3)  # sotto questi comparabili si allarga la ricerca (0 = spenta)
 _cache = {}  # testo ricerca -> (ts, [prezzi], n_grezzi)
 _riferimenti = {}  # nome ricerca -> (ts, stima o None)
 _conteggio = {"giorno": None, "n": 0}
@@ -153,6 +154,19 @@ async def _prezzi_simili(testo, titolo, prezzo, brand=None, catalogo=None):
     return prezzi, len(comps), False
 
 
+def testi_piu_larghi(testo, brand=None):
+    """Ricerche piu' corte da provare quando i comparabili sono pochi: marca + 2 parole, poi solo la marca. Pura."""
+    parole = (testo or "").split()
+    b = (brand or "").lower().split()
+    resto = parole[len(b):] if b and parole[:len(b)] == b else parole
+    out = []
+    if len(resto) > 2:
+        out.append(" ".join(b + resto[:2]))
+    if b:
+        out.append(" ".join(b))
+    return [t for i, t in enumerate(out) if t and t != testo and t not in out[:i]]
+
+
 def _rosso(motivo, n=0):
     """Risultato per un annuncio scartato: il messaggio mostra comunque il motivo dei comparabili."""
     return {"semaforo": "rosso", "rivendita": None, "margine": None, "roi": None, "n": n, "motivo": motivo,
@@ -220,11 +234,23 @@ async def analizza(parsed, url, foto=None, query_url=None):
         if prezzi is None:
             db.scrivi_evento("radar_v2", item_id, brand, {**base, "ok": False, "motivo": "comparabili_non_disponibili", "q": testo})
             return _rosso("comparabili_non_disponibili")
+        # Scala di allargamento (31/10): con pochi comparabili si riprova con ricerche piu' corte (modello, poi solo marca nella
+        # stessa categoria). Stima meno precisa: il semaforo non supera il giallo (niente suono).
+        allargata = None
+        if len(prezzi) < RADAR_V2_SCALA_MIN:
+            for passo, testo_largo in enumerate(testi_piu_larghi(testo, brand), 1):
+                p2, g2, _c2 = await _prezzi_simili(testo_largo, titolo, prezzo, brand, catalogo)
+                if p2 and len(p2) > len(prezzi):
+                    prezzi, n_grezzi, allargata, testo = p2, g2, passo, testo_largo
+                if len(prezzi) >= RADAR_V2_SCALA_MIN:
+                    break
         v = valuta(prezzo, stima_mercato(prezzi, min_n=2))
-        dati = {**base, "q": testo, "n_grezzi": n_grezzi, "n_usati": len(prezzi), "cache": dalla_cache, **v}
-        log.info("RADAR V2 OMBRA | item=%s | semaforo=%s | ok=%s | motivo=%s | prezzo=%s | rivendita=%s | margine=%s | roi=%s | n=%s | aff=%s | q=%s | ricerca=%s | titolo=%s",
+        if allargata and v.get("semaforo") == "verde":
+            v["semaforo"] = "giallo"
+        dati = {**base, "q": testo, "n_grezzi": n_grezzi, "n_usati": len(prezzi), "cache": dalla_cache, "allargata": allargata, **v}
+        log.info("RADAR V2 OMBRA | item=%s | semaforo=%s | ok=%s | motivo=%s | prezzo=%s | rivendita=%s | margine=%s | roi=%s | n=%s | grezzi=%s | largo=%s | aff=%s | q=%s | ricerca=%s | titolo=%s",
                  item_id, v["semaforo"], v["ok"], v["motivo"], prezzo, v.get("rivendita"), v.get("margine"), v.get("roi"), len(prezzi),
-                 v.get("affidabilita"), testo, parsed.get("query_name") or "-", titolo[:60])
+                 n_grezzi, allargata or 0, v.get("affidabilita"), testo, parsed.get("query_name") or "-", titolo[:60])
         # Prova foto (25/10): la foto va a Jev solo con i semafori di JEV_FOTO_SEMAFORI (di default il verde).
         foto_jev = foto if v.get("semaforo") in JEV_FOTO_SEMAFORI else None
         jev, jev_conf = await asyncio.to_thread(giudica, titolo, prezzo, prezzi, v.get("rivendita"), foto_jev)
@@ -232,6 +258,7 @@ async def analizza(parsed, url, foto=None, query_url=None):
             log.info("RADAR V2 JEV | item=%s | giudizio=%s | confidenza=%s | titolo=%s", item_id, jev, jev_conf, titolo[:60])
         db.scrivi_evento("radar_v2", item_id, brand, {**dati, "jev": jev, "jev_conf": jev_conf})
         return {"semaforo": v.get("semaforo"), "rivendita": v.get("rivendita"), "margine": v.get("margine"),
-                "roi": v.get("roi"), "n": len(prezzi), "motivo": v.get("motivo"), "jev": jev, "jev_conf": jev_conf}
+                "roi": v.get("roi"), "n": len(prezzi), "n_grezzi": n_grezzi, "allargata": allargata, "motivo": v.get("motivo"),
+                "jev": jev, "jev_conf": jev_conf}
     except Exception:
         log.warning("Radar v2 ombra: annuncio non valutato:\n%s", traceback.format_exc())

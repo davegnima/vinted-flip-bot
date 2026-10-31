@@ -37,6 +37,13 @@ _RE_PEZZO = re.compile(
     r"batteries (?:enduro|pour|de rechange)|recambio|repuesto|ersatzteile?|pi[èe]ces? d[ée]tach[ée]es?)\b", re.I)
 # Titolo che inizia con la scatola ("Scatola Xbox series X"): e' l'imballo, non la console.
 _RE_SCATOLA_INIZIO = re.compile(r"^\s*(?:la )?(scatola|box|boite|boîte|karton|emballage|caja)\b", re.I)
+# 31/10: parole generiche in IT/FR/ES/DE/EN che sporcano la ricerca dei comparabili (stato, taglia, colore, venditore)
+_PAROLE_GENERICHE = {"gebraucht", "neuwertig", "defekt", "très", "tres", "bon", "bonne", "état", "etat", "occasion", "bueno", "buen",
+                     "estado", "usado", "usada", "perfecto", "perfekt", "guter", "gutem", "zustand", "used", "good", "condition",
+                     "excellent", "like", "great", "bellissimo", "bellissima", "splendido", "pari", "quasi", "ottimo", "ottima",
+                     "spedizione", "tracciata", "gratis", "garanzia", "funzionante", "funzionanti", "completo", "completa",
+                     "nero", "nera", "bianco", "bianca", "noir", "blanc", "negro", "schwarz", "weiss", "weiß", "black", "white",
+                     "rosso", "blu", "grigio", "rouge", "bleu", "gris", "verde", "grau", "rot", "blau", "grün"}
 _PAROLE_VUOTE = {"vendo", "vendesi", "usato", "usata", "ottime", "ottimo", "buone", "condizioni", "perfette", "perfetto",
                  "come", "nuovo", "nuova", "originale", "con", "per", "di", "il", "la", "in", "e", "a", "da", "del", "della"}
 
@@ -88,7 +95,7 @@ def comparabili_simili(comps, query, brand=None, soglia=0.6):
 
 def query_comp(titolo, brand=None, max_parole=4):
     """Testo di ricerca: marca + prime parole significative del titolo (niente 'usato', 'ottime condizioni'...)."""
-    parole = [w for w in re.findall(r"[\w'’]+", (titolo or "").lower()) if w not in _PAROLE_VUOTE]
+    parole = [w for w in re.findall(r"[\w'’]+", (titolo or "").lower()) if w not in _PAROLE_VUOTE and w not in _PAROLE_GENERICHE]
     if brand:
         b = brand.lower().split()
         parole = b + [w for w in parole if w not in b]
