@@ -111,21 +111,18 @@ def test_cascata_per_fase_occhio_e_cervello(monkeypatch):
     assert {"gen-1", "cer-top", "cer-lite"} <= gs.tutti_i_modelli_cascata()
 
 
-def test_resellbot_disattivato_va_diretto_su_google(monkeypatch):
+def test_resellbot_disattivato_non_fa_nessuna_chiamata(monkeypatch):
     import asyncio
     from bot import comps
 
     async def non_chiamare(*a, **k):
         raise AssertionError("Resellbot non deve essere chiamato")
 
-    async def google(*a, **k):
-        return "risultati google", True
-
     monkeypatch.setattr(comps, "RESELLBOT_ATTIVO", False)
     monkeypatch.setattr(comps, "_cerca_ebay_sold_via_resellbot", non_chiamare)
-    monkeypatch.setattr(comps, "_serper_batch_query_ebay_sold", google)
+    monkeypatch.setattr(comps, "_sold_cache", {})
     testo, ok, mappa = asyncio.run(comps._cerca_ebay_sold_con_fallback("Prada", "giacca", None, None))
-    assert ok and "risultati google" in testo and "ASK" in testo and mappa == {}
+    assert not ok and "disattivato" in testo and mappa == {}
 
 
 def test_ruoli_gemini_dalla_stima_rapida_con_fallback_sul_prezzo():

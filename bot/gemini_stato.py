@@ -18,7 +18,7 @@ from bot import db
 # bruciare fino a max_retries (4) tentativi x fino a 4 key prima di arrendersi
 # -- decine di secondi reali per tentativo (e' la latenza di Gemini prima di
 # restituire il 503, non un timeout nostro), moltiplicati per ogni round del
-# Cervello. Stessa idea del raffreddamento gia' usato per Serper qui sopra,
+# Cervello. Stessa idea del raffreddamento per i timeout,
 # ma parametri diversi: un blackout Gemini osservato e' uno spike di minuti,
 # non ore, quindi il raffreddamento e' molto piu' corto e si riprova a piena
 # potenza molto prima.
@@ -35,7 +35,7 @@ MAX_RETRIES_GEMINI_IN_BLACKOUT = 2      # tentativi per chiamata durante un blac
 def _gemini_in_blackout():
     """True se le ultime chiamate Gemini sono finite in errore abbastanza di
     fila e abbastanza di recente da trattarlo come un blackout in corso
-    (stessa logica di in_raffreddamento gia' usata per Serper piu' sotto)."""
+    (raffreddamento dopo i timeout)."""
     if _gemini_5xx_consecutivi[0] < SOGLIA_5XX_GEMINI_PER_BLACKOUT:
         return False
     return (time.time() - _gemini_timestamp_ultimo_5xx[0]) < RAFFREDDAMENTO_GEMINI_SECONDI

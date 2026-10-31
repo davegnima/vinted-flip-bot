@@ -77,7 +77,7 @@ def check_skip_pre_cervello(output_occhi_testo, listing_info=None, occhio_json=N
     #    anche un "Probabilmente falso" testuale puro con "Confidenza: Alta"
     #    non veniva riconosciuto. Risultato pratico osservato in produzione:
     #    il cervello veniva comunque consultato e tutte le ricerche di
-    #    prezzo (Resellbot/Serper) partivano inutilmente su un verdetto
+    #    prezzo (Resellbot) partivano inutilmente su un verdetto
     #    gia' scontato (NON COMPRARE), sprecando query a pagamento.
     ha_falso_alta_confidenza = (
         "probabilmente falso" in testo

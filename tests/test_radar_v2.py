@@ -25,7 +25,7 @@ def test_ombra_registra_verdetto(monkeypatch):
 
     async def finto(url):
         return righe, True, {}
-    monkeypatch.setattr(radar_v2, "_cerca_vinted_testo_diretto_con_fallback_serper", finto)
+    monkeypatch.setattr(radar_v2, "_cerca_vinted_testo_diretto", finto)
     parsed = {"title": "Set posate Christofle", "price": "7", "brand": "Christofle"}
     asyncio.run(radar_v2.analizza(parsed, "https://www.vinted.it/items/123456-set"))
     assert len(eventi) == 1

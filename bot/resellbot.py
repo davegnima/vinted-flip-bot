@@ -1,94 +1,12 @@
-"""Modulo estratto da main_telethon.py (spostamento meccanico)."""
-import re
+"""Venduti eBay/Poshmark da Resellbot (ex serper_fonti.py: dal 31/10 Serper non c'e' piu')."""
 import uuid
 
 
 from bot.costanti import CATEGORIA_TERMINE_EN
-from bot.config import SERPER_API_KEY
-from bot.serper_base import _e_errore_crediti_serper, _log_errore_serper
-from bot.vinted_search import _estrai_articoli_vinted
 from bot.testo import _normalizza_titolo_per_link
 from bot.logger import log
 from bot import http_clients as hc
 # ---- fine import ----
-async def _serper_scrape_page_diretto(label, url):
-    if not SERPER_API_KEY:
-        return "Scrape non eseguito (SERPER_API_KEY non impostata).", False
-
-    payload = {"url": url, "includeMarkdown": True, "includeRawHtml": True, "includeHtml": True}
-    try:
-        resp = await hc._client_generico.post(
-            "https://scrape.serper.dev",
-            headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
-            json=payload, timeout=15,
-        )
-        if _e_errore_crediti_serper(resp):
-            _log_errore_serper("bot/serper_fonti.py", resp=resp)
-            return f"  Serper fallito (HTTP {resp.status_code}).", False
-        resp.raise_for_status()
-        data = resp.json()
-    except Exception as e:
-        _log_errore_serper("bot/serper_fonti.py", eccezione=e)
-        return f"  Scrape fallito: {e}", False
-
-    if "VINTED" in label.upper():
-        content = data.get("markdown") or data.get("text") or ""
-        return _estrai_articoli_vinted(content), True
-    return "  Fonte non supportata.", True
-
-
-async def _serper_batch_query_vestiaire(brand, categoria):
-    """Query mirata su Vestiaire Collective. NON usa piu' un fallback generico
-    "dress" quando la categoria non e' rilevata: in quel caso salta la query
-    ed espone chiaramente al cervello che manca il dato, invece di restituire
-    comp completamente fuori tema (es. abiti da sera al posto di camicie)."""
-    if not SERPER_API_KEY:
-        return "Ricerca non eseguita (SERPER_API_KEY non impostata).", False
-
-    brand_pulito = (brand or "").strip()
-    categoria_per_query = (categoria or "").strip()
-
-    if not categoria_per_query:
-        return (
-            "Categoria non rilevata dal titolo dell'annuncio -- query Vestiaire "
-            "saltata per evitare risultati fuorvianti (es. abiti al posto di camicie). "
-            "Se necessario, usa la function cerca_comp_prezzo con una query piu' mirata."
-        ), False
-
-    termine_en = CATEGORIA_TERMINE_EN.get(categoria_per_query, categoria_per_query)
-    query_serper = f'site:vestiairecollective.com "{brand_pulito}" "{termine_en}" €'.strip() if brand_pulito else f'site:vestiairecollective.com "{termine_en}" €'
-
-    payload = [{"q": query_serper, "gl": "it", "hl": "it", "num": 10}]
-    try:
-        resp = await hc._client_generico.post(
-            "https://google.serper.dev/search",
-            headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
-            json=payload, timeout=15,
-        )
-        if _e_errore_crediti_serper(resp):
-            _log_errore_serper("bot/serper_fonti.py", resp=resp)
-            return f"  Serper fallito (HTTP {resp.status_code}).", False
-        resp.raise_for_status()
-        results = resp.json()
-    except Exception as e:
-        _log_errore_serper("bot/serper_fonti.py", eccezione=e)
-        return f"Ricerca fallita: {e}", False
-
-    lines = []
-    for batch in results:
-        for r in batch.get("organic", [])[:10]:
-            titolo = r.get("title", "")
-            snippet = r.get("snippet", "")
-            match_prezzo = re.search(r"€\s*[\d.,]+|\d+(?:[.,]\d+)?\s*€|EUR\s*[\d.,]+", snippet, re.IGNORECASE)
-            snippet_troncato = snippet[:100].rstrip()
-            if match_prezzo and match_prezzo.group(0) not in snippet_troncato:
-                snippet_troncato += f"... [PREZZO: {match_prezzo.group(0)}]"
-            elif len(snippet) > 100:
-                snippet_troncato += "..."
-            lines.append(f"- {titolo}\n  {snippet_troncato}")
-    return ("\n".join(lines) if lines else "Nessun risultato trovato."), True
-
-
 # Tasso di cambio USD->EUR fisso, hardcoded (scelta dell'utente il
 # 2026-09-25 discutendo il fix del bug qui sotto): niente chiamata a
 # un'API di cambio live, per non aggiungere un'altra dipendenza di rete sul
@@ -215,13 +133,11 @@ async def _cerca_ebay_sold_via_resellbot(brand, categoria, material_per_ricerca=
     -- individuato ispezionando manualmente il tab Network del browser durante
     una ricerca reale (la pagina in se' non mostra risultati nell'HTML statico,
     li carica via fetch() asincrono dopo il caricamento, per questo uno scrape
-    HTML classico -- sia il nostro WebFetch che, presumibilmente, Serper senza
-    rendering JS -- vede solo la shell vuota).
+    HTML classico, senza rendering JS, vede solo la shell vuota).
 
-    A differenza della query Google (_serper_batch_query_ebay_sold, tenuta
-    sotto come fallback), questa e' l'API REALE che alimenta il tool: prezzi
-    di vendita CONFERMATI con data (soldAt), non uno snippet testuale con la
-    parola "sold" che puo' riferirsi a un annuncio ancora attivo.
+    E' l'API REALE che alimenta il tool: prezzi di vendita CONFERMATI con
+    data (soldAt), non uno snippet testuale con la parola "sold" che puo'
+    riferirsi a un annuncio ancora attivo.
 
     Ritorna (testo, ok, mappa_url) dal 2026-09-25 -- vedi _query_resellbot_raw
     per il contratto della mappa URL (Punto 3).
@@ -305,106 +221,3 @@ async def _cerca_ebay_sold_via_resellbot(brand, categoria, material_per_ricerca=
     if testo is None:
         return "  Nessun venduto trovato su Resellbot per questa query.", True, {}
     return testo, True, mappa_url
-
-
-async def _serper_batch_query_ebay_sold(brand, categoria, material_per_ricerca=None, dettaglio_distintivo=None):
-    """FALLBACK per eBay SOLD (fonte primaria: _cerca_ebay_sold_via_resellbot
-    sopra) -- stesso schema di _serper_batch_query_vestiaire (Google search
-    via Serper, non scrape diretto della pagina eBay).
-
-    material_per_ricerca (aggiunto il 2026-09-19, per coerenza con la fonte
-    primaria Resellbot) viene aggiunto tra virgolette come termine di
-    ricerca aggiuntivo quando disponibile -- qui non serve un retry "senza
-    materiale" come per Resellbot: Google gestisce query piu' lunghe senza
-    azzerare i risultati come farebbe una specificity "exact" letterale, si
-    limita a pesarlo come termine di rilevanza in piu'.
-
-    dettaglio_distintivo (aggiunto il 2026-09-25, stessa fonte e stesso
-    motivo di material_per_ricerca -- vedi _cerca_ebay_sold_via_resellbot):
-    stesso trattamento, un termine tra virgolette in piu'.
-
-    Sostituisce il vecchio approccio (_serper_scrape_page_diretto +
-    _estrai_articoli_ebay) che scrapava direttamente l'URL di ricerca eBay
-    con LH_Sold=1. Abbandonato il 2026-09-19 dopo conferma diretta nei log
-    Railway: OGNI scrape, su item diversi con query diverse, restituiva la
-    stessa identica pagina eBay ('metadata': {'title': 'Misura di sicurezza
-    | eBay'}, sempre 217 righe di contenuto) -- non un problema di selettori
-    CSS o layout cambiato, ma il muro anti-bot di eBay che intercetta
-    sistematicamente lo scraper di Serper su quell'endpoint, prima ancora
-    che la pagina risultati venga generata. Nessun fix ai selettori
-    avrebbe mai funzionato.
-
-    Interrogando invece Google (site:ebay.it/ebay.com) tramite l'endpoint
-    /search di Serper, la richiesta non tocca mai eBay direttamente: e' lo
-    stesso principio gia' usato per Vestiaire, che infatti non ha mai
-    avuto questo problema. Perso il filtro nativo LH_Sold=1 (non
-    disponibile fuori dall'URL di ricerca eBay), compensato aggiungendo
-    "venduto"/"sold" in query -- lo stesso schema gia' usato con successo
-    dalle ricerche on-demand del cervello (cerca_serper_mirata), che infatti
-    su eBay trovano spesso dati reali (vedi log 'NWT Brunello Cucinelli...
-    1 venduto' nei risultati on-demand) proprio perche' passano da Google
-    e non dallo scrape diretto."""
-    if not SERPER_API_KEY:
-        return "Ricerca non eseguita (SERPER_API_KEY non impostata).", False
-
-    brand_pulito = (brand or "").strip()
-    categoria_per_query = (categoria or "").strip()
-
-    if not categoria_per_query:
-        return (
-            "Categoria non rilevata dal titolo dell'annuncio -- query eBay "
-            "saltata per evitare risultati fuorvianti. Se necessario, usa la "
-            "function cerca_comp_prezzo con una query piu' mirata."
-        ), False
-
-    termine_en = CATEGORIA_TERMINE_EN.get(categoria_per_query, categoria_per_query)
-    # Parentesi esplicite sui due OR: senza raggruppamento la sintassi Google
-    # ("A OR B OR C" senza parentesi ha precedenza ambigua) rischia di
-    # applicare il vincolo site:ebay.* solo a un ramo della query invece che
-    # a tutta la ricerca, con risultati fuori da eBay.
-    base = f'{brand_pulito} "{termine_en}"'.strip() if brand_pulito else f'"{termine_en}"'
-    materiale_pulito = (material_per_ricerca or "").strip()
-    if materiale_pulito:
-        base = f'{base} "{materiale_pulito}"'
-    dettaglio_pulito = (dettaglio_distintivo or "").strip()
-    if dettaglio_pulito:
-        base = f'{base} "{dettaglio_pulito}"'
-    query_serper = f'{base} (venduto OR sold) (site:ebay.it OR site:ebay.com)'
-
-    payload = [{"q": query_serper, "gl": "it", "hl": "it", "num": 10}]
-    try:
-        resp = await hc._client_generico.post(
-            "https://google.serper.dev/search",
-            headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
-            # timeout 8s: questa funzione e' anche il FALLBACK di
-            # _cerca_ebay_sold_con_fallback, chiamato DOPO il tentativo
-            # Resellbot (fino a 12s dal 2026-09-25, vedi
-            # _cerca_ebay_sold_via_resellbot) -- il budget totale (12+8=20s)
-            # deve restare sotto i 25s di TIMEOUT_FONTE_VINTED_CON_FALLBACK_SECONDI
-            # riusato per la fonte "ebay_poshmark" nel fan-out di
-            # search_comps_completo, altrimenti la fonte verrebbe scartata
-            # come "troppo lenta" anche quando il fallback stava per riuscire.
-            json=payload, timeout=8,
-        )
-        if _e_errore_crediti_serper(resp):
-            _log_errore_serper("bot/serper_fonti.py", resp=resp)
-            return f"  Serper fallito (HTTP {resp.status_code}).", False
-        resp.raise_for_status()
-        results = resp.json()
-    except Exception as e:
-        _log_errore_serper("bot/serper_fonti.py", eccezione=e)
-        return f"Ricerca fallita: {e}", False
-
-    lines = []
-    for batch in results:
-        for r in batch.get("organic", [])[:10]:
-            titolo = r.get("title", "")
-            snippet = r.get("snippet", "")
-            match_prezzo = re.search(r"€\s*[\d.,]+|\d+(?:[.,]\d+)?\s*€|EUR\s*[\d.,]+", snippet, re.IGNORECASE)
-            snippet_troncato = snippet[:100].rstrip()
-            if match_prezzo and match_prezzo.group(0) not in snippet_troncato:
-                snippet_troncato += f"... [PREZZO: {match_prezzo.group(0)}]"
-            elif len(snippet) > 100:
-                snippet_troncato += "..."
-            lines.append(f"- {titolo}\n  {snippet_troncato}")
-    return ("\n".join(lines) if lines else "Nessun risultato trovato."), True
