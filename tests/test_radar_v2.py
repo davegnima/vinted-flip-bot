@@ -231,3 +231,10 @@ def test_allargamento_trova_comparabili_e_non_da_verde(monkeypatch):
     monkeypatch.setattr(radar_v2, "_catalogo_annuncio", senza_catalogo)
     r = asyncio.run(radar_v2.analizza({"title": "Dyson V8 detect absolute", "price": "20", "brand": "Dyson"}, "https://www.vinted.it/items/555001-dyson"))
     assert r["allargata"] and r["n"] >= 6 and r["semaforo"] == "giallo"
+
+
+def test_guasti_e_battery_grip_sono_pezzi():
+    from bot.valore_mercato import e_un_pezzo
+    for t in ("Switch ne s'allume plus", "Canon BG-E7", "Wii kaputt", "Battery grip Canon 5D", "Console no funciona"):
+        assert e_un_pezzo(t), t
+    assert e_un_pezzo("Nintendo Switch OLED completa") is None
