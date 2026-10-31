@@ -182,13 +182,23 @@ def test_risposta_gruppo_con_stima_e_senza():
     assert radar.testo_risposta_gruppo(None) == "⚪ semaforo non calcolato"
 
 
-def test_da_cancellare_solo_i_non_oggetti():
+def test_da_cancellare_solo_i_non_oggetti(monkeypatch):
     from bot import radar
     from bot.radar_v2 import _rosso
+    monkeypatch.setattr(radar, "RADAR_CANCELLA_ROSSI", False)
     assert radar.da_cancellare(_rosso("pezzo_o_accessorio:")) and radar.da_cancellare(_rosso("parola_vietata:"))
     assert radar.da_cancellare(_rosso("prezzo_segnaposto")) and radar.da_cancellare(_rosso("titolo_generico"))
     assert not radar.da_cancellare(_rosso("pochi_comparabili")) and not radar.da_cancellare(_rosso("sopra_riferimento", 11))
     assert not radar.da_cancellare(None) and not radar.da_cancellare({"semaforo": "verde", "motivo": "ok"})
+
+
+def test_da_cancellare_tutti_i_rossi_ma_non_giallo_e_verde(monkeypatch):
+    from bot import radar
+    from bot.radar_v2 import _rosso
+    monkeypatch.setattr(radar, "RADAR_CANCELLA_ROSSI", True)
+    assert radar.da_cancellare(_rosso("margine_basso")) and radar.da_cancellare(_rosso("pochi_comparabili"))
+    assert radar.da_cancellare(_rosso("sopra_riferimento", 11)) and radar.da_cancellare(_rosso("roi_basso"))
+    assert not radar.da_cancellare({"semaforo": "giallo", "motivo": "ok"}) and not radar.da_cancellare({"semaforo": "verde", "motivo": "ok"})
 
 
 def test_scocche_cinturini_e_campane_sono_pezzi():
