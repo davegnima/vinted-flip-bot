@@ -10,7 +10,7 @@ from bot.costanti import CATEGORIA_TERMINE_EN, VINTED_BRAND_IDS
 from bot.config import REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET, REDDIT_USERNAME, VISUAL_SEARCH_ATTIVA
 from bot.config import RESELLBOT_ATTIVO
 from bot.serper_fonti import _cerca_ebay_sold_via_resellbot, _serper_batch_query_ebay_sold, _serper_scrape_page_diretto
-from bot.comps_filtri import campione_pagina_vinted, _estrai_articoli_da_alt_vinted, _estrai_mappa_url_comp_vinted, _filtra_comp_per_brand_sottolinee, _filtra_comp_per_categoria, _rimuovi_comp_autoreferenziale
+from bot.comps_filtri import campione_pagina_vinted, campione_scheda_vinted, _estrai_articoli_da_alt_vinted, _estrai_mappa_url_comp_vinted, _filtra_comp_per_brand_sottolinee, _filtra_comp_per_categoria, _rimuovi_comp_autoreferenziale
 from bot.vinted_http import _vinted_get_con_retry
 from bot.vinted_search import build_vinted_search_url, build_vinted_visual_search_url
 from bot.logger import log
@@ -99,6 +99,10 @@ async def _cerca_vinted_testo_diretto_con_fallback_serper(url):
         if MARKER_NESSUN_ARTICOLO_VINTED not in testo:
             log.info("Comp Vinted testo: scrape diretto OK (%d articoli, proxy=%s), Serper non usato -- %s",
                      testo.count("\n") + 1, etichetta_proxy, url)
+            global _schede_scritte
+            if _schede_scritte < 2:
+                _schede_scritte += 1
+                log.info("COMPS SCHEDA CAMPIONE | %s", campione_scheda_vinted(resp.text))
             return testo, True, _estrai_mappa_url_comp_vinted(resp.text)
         motivo_fallback = (
             f"scrape diretto senza articoli estratti (proxy={etichetta_proxy}, "
@@ -120,6 +124,7 @@ async def _cerca_vinted_testo_diretto_con_fallback_serper(url):
 
 
 _campioni_pagina_scritti = 0
+_schede_scritte = 0
 
 
 async def _recupera_comp_visuali_vinted(item_id, photo_id, brand):

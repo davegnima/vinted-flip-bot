@@ -43,7 +43,7 @@ DOMANDE = {
         "instructions": "Il titolo dice che l'oggetto e' completo o funzionante?",
         "criteria": {
             "si": "il titolo dice completo, funzionante, in scatola o con accessori",
-            "no": "il titolo dice che manca qualcosa o che non funziona",
+            "no": "il titolo dice che manca qualcosa, che non funziona, che e' bloccato (iCloud, codice) o da riparare",
             "non_dichiarato": "il titolo non dice nulla in proposito",
         },
     },
@@ -82,6 +82,19 @@ def verdetto_jev(risposte):
     if scelte["prezzo"] == "sotto" and scelte["completo"] in ("si", "non_dichiarato"):
         return "affare_vero", conf
     return "non_affare", conf
+
+
+# Fasce di confidenza (31/10): sopra SOGLIA_PASSA l'esito vale; tra le due soglie e' un caso limite da valutare a mano con i
+# bottoni (taratura di soglie e domande); sotto SOGLIA_RIVEDERE e' scartato. Ipotesi iniziali, da tarare sui dati.
+SOGLIA_PASSA = 0.85
+SOGLIA_RIVEDERE = 0.70
+
+
+def fascia(confidenza):
+    """'passa', 'da_rivedere' o 'scartato' dalla confidenza di Jev (None = scartato). Pura."""
+    if confidenza is None or confidenza < SOGLIA_RIVEDERE:
+        return "scartato"
+    return "passa" if confidenza >= SOGLIA_PASSA else "da_rivedere"
 
 
 def _formato_foto(foto):
