@@ -201,6 +201,15 @@ def test_da_cancellare_tutti_i_rossi_ma_non_giallo_e_verde(monkeypatch):
     assert not radar.da_cancellare({"semaforo": "giallo", "motivo": "ok"}) and not radar.da_cancellare({"semaforo": "verde", "motivo": "ok"})
 
 
+def test_accessori_multilingua_e_parti_passeggino_sono_pezzi():
+    from bot.valore_mercato import e_un_pezzo
+    for t in ("Kamera-Zubehör Set", "Acessorios drone DJI mini 2", "Garmin Watchständer", "Soporte móvil Bugaboo",
+              "Chasis Bugaboo bee 5", "Vestidura cuco Bugaboo Camaleon 3", "Accessoires GoPro Hero 7"):
+        assert e_un_pezzo(t), t
+    for t in ("Nintendo Switch OLED", "Bugaboo Fox 3 completo", "GoPro Hero 3+ black"):
+        assert e_un_pezzo(t) is None, t
+
+
 def test_scocche_cinturini_e_campane_sono_pezzi():
     from bot.valore_mercato import e_un_pezzo
     for t in ("Scocca Nintendo 3DS XL Pokemon X e Y", "campana de aspiración de polvo para radial",
