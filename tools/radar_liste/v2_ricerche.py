@@ -12,7 +12,7 @@ POSATE=[1950,1951,1952,1970]; STOV=[1958,1959,1960,1961]; BIC=[2006,2007,2008,20
 B_=json.load(open(QUI+'/dati/brand_ids.json'))['marchi']
 V2=[ # nome, testo, brand (nome o None), catalog, tetto
  ('V2 posate christofle','','christofle',POSATE+[1961],50),('V2 posate sambonet','','sambonet',POSATE+[1961],50),
- ('V2 posate in set','posate',None,[1950],30),('V2 ginori','','richard ginori',STOV,50),('V2 baccarat','','baccarat',BIC+VASI,50),
+ ('V2 ginori','','richard ginori',STOV,50),('V2 baccarat','','baccarat',BIC+VASI,50),
  ('V2 lalique','','lalique',VASI,50),('V2 iittala','','iittala',STOV+BIC+VASI,50),
  ('V2 le creuset','','le creuset',[3507,3508,3510],50),('V2 staub','staub',None,[3507,3508,3510],50),('V2 smeg','','smeg',[],50),('V2 kitchenaid','','kitchenaid',[],50),
  ('V2 dyson','','dyson',[],50),('V2 thermomix','thermomix',None,[],50),
