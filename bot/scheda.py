@@ -31,7 +31,7 @@ GALLERIA_ANTICIPATA = os.environ.get("GALLERIA_ANTICIPATA", "1").strip() != "0"
 # PAUSA ANALISI GEMINI (richiesto dall'utente il 2026-09-28, durante un
 # sovraccarico 503 prolungato di Gemini): ANALISI_GEMINI=0 su Railway ->
 # arriva SOLO la galleria (album + scheda), nessuna chiamata a
-# Gemini/Serper, nessun verdetto. Restano attivi scrape, foto e i filtri
+# Gemini, nessun verdetto. Restano attivi scrape, foto e i filtri
 # gratuiti (pre-scrape, pre-Gemini), quindi le gallerie restano solo per
 # annunci pertinenti. Il canale alert in pausa non riceve nulla: dipende dal
 # verdetto. Cambiare la variabile su Railway riavvia il servizio, quindi il

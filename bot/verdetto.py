@@ -17,7 +17,7 @@ def _estrai_item_id_da_url(url):
 def _estrai_prezzi_da_pool_ricerca(pool_ricerca_grezzo):
     """Estrae tutti i numeri che compaiono vicino a un simbolo di prezzo
     (€ prima o dopo, o 'EUR') nel testo grezzo dei risultati di ricerca
-    (comp pre-raccolti + eventuali cerca_comp_prezzo on-demand). Sono gli
+    (comp pre-raccolti). Sono gli
     UNICI numeri che il cervello puo' legittimamente citare come prezzi nel
     blocco Analisi -- qualunque altro prezzo citato non ha una fonte
     verificabile in questa conversazione.
@@ -55,7 +55,7 @@ def _prezzi_per_fonte_da_pool(pool_ricerca_grezzo):
     davvero nel pool'.
 
     Corretto il 2026-09-19 (caso reale Jil Sander): un blocco 'RICERCA
-    ON-DEMAND CERVELLO' e' sempre una query Google generica (Serper), mai
+    ON-DEMAND CERVELLO' (tolto il 31/10) era una query Google generica, mai
     taggata col nome di un marketplace specifico -- ma i suoi risultati
     spesso SONO risultati eBay/Vestiaire/Vinted/Depop/Grailed (lo snippet
     cita il dominio, es. 'ebay.it', o il titolo lo rende ovvio). Quando il
@@ -113,10 +113,10 @@ def _prezzi_per_fonte_da_pool(pool_ricerca_grezzo):
 def _motivo_nessun_prezzo(blocco_fonte):
     """Quando una fonte non ha prodotto prezzi, va a leggere il motivo che
     le funzioni di estrazione (_estrai_articoli_vinted, _estrai_articoli_ebay,
-    _serper_batch_query_vestiaire) ora incorporano nel loro stesso testo di
-    ritorno quando non trovano nulla -- distingue 'Serper non ha trovato
-    proprio niente' da 'Serper ha trovato risultati ma senza un prezzo
-    riconoscibile' da 'la richiesta a Serper e' fallita (rete/crediti)'.
+    la ricerca Resellbot) incorporano nel loro stesso testo di
+    ritorno quando non trovano nulla -- distingue 'la fonte non ha trovato
+    proprio niente' da 'ha trovato risultati ma senza un prezzo
+    riconoscibile' da 'la richiesta e' fallita (rete)'.
     Aggiunto il 2026-09-19 su richiesta esplicita: sapere solo 'nessun
     prezzo' non bastava, serviva vedere se la ricerca aveva davvero
     restituito qualcosa di scartato dopo, o se era vuota dall'inizio."""
@@ -129,20 +129,19 @@ def _motivo_nessun_prezzo(blocco_fonte):
     # pagina bloccata" dentro il messaggio di pagina vuota) -- un controllo
     # a substring qui darebbe falsi positivi "query FALLITA" per quel caso.
     if (
-        testo_lower.startswith("serper fallito")
-        or testo_lower.startswith("scrape fallito")
+        testo_lower.startswith("scrape fallito")
         or testo_lower.startswith("ricerca fallita")
         or testo_lower.startswith("ricerca non eseguita")
     ):
-        return f"query Serper FALLITA -- {testo}"
+        return f"query FALLITA -- {testo}"
     if "categoria non rilevata" in testo_lower:
         return "query saltata (categoria non rilevata dal titolo)"
     if testo_lower == "nessun risultato trovato.":
-        return "query Google (site:vestiairecollective.com) interrogata, 0 risultati organici trovati"
+        return "fonte interrogata, 0 risultati trovati"
     if "pagina scrapata vuota" in testo_lower or testo_lower.startswith("nessun risultato trovato") or testo_lower.startswith("nessun risultato sold trovato"):
-        return f"Serper interrogato, 0 risultati -- {testo}"
+        return f"fonte interrogata, 0 risultati -- {testo}"
     if "righe di contenuto scrapate" in testo_lower or "titoli o prezzi trovati singolarmente" in testo_lower:
-        return f"Serper ha trovato contenuto ma nessun prezzo utilizzabile -- {testo}"
+        return f"contenuto trovato ma nessun prezzo utilizzabile -- {testo}"
     # Fallback: testo diagnostico non riconosciuto in uno dei pattern noti
     # (es. "Fonte non disponibile", messaggi futuri) -- lo mostriamo cosi'
     # com'e' invece di nasconderlo dietro un generico "nessun prezzo".
@@ -152,14 +151,14 @@ def _motivo_nessun_prezzo(blocco_fonte):
 def _riepilogo_comp_per_fonte(pool_ricerca_grezzo):
     """Riassume pool_ricerca_grezzo in UNA riga per fonte (conteggio + range
     di prezzo quando ci sono prezzi, motivo diagnostico quando non ce ne
-    sono), invece di riportare gli snippet grezzi Serper per intero --
+    sono), invece di riportare i testi grezzi per intero --
     pensata per il blocco debug Telegram (DEBUG_CONFRONTO_COMP_TELEGRAM).
     Riconosce i blocchi gia' etichettati "📍 FONTE: <nome>" (comp pre-raccolti
     E ricerche on-demand, entrambi taggati cosi', vedi search_comps_completo/
     chiama_*_cervello_forzato) e spacca il pool su quell'etichetta.
 
     Aggiornato il 2026-09-19: il ramo 'nessun prezzo' ora richiama
-    _motivo_nessun_prezzo per dire ANCHE se Serper ha trovato qualcosa (poi
+    _motivo_nessun_prezzo per dire ANCHE se la fonte ha trovato qualcosa (poi
     scartato/senza prezzo) o non ha trovato proprio nulla -- prima
     'nessun prezzo' copriva indistintamente entrambi i casi, nascondendo se
     la ricerca stessa avesse funzionato."""
@@ -1123,7 +1122,7 @@ def render_messaggio_verdetto(v, verdetto, problemi=None, stats_comp=None, item_
         # Split per fonte calcolato su TUTTI i comp utilizzabili (non solo i
         # primi 6 mostrati sopra in dettaglio) -- richiesto dall'utente il
         # 2026-09-20 per vedere a colpo d'occhio quanto pesa ciascuna fonte
-        # (Vinted testo/Serper, Vinted ricerca visuale, ragionamento/memoria
+        # (Vinted testo, Vinted ricerca visuale, ragionamento/memoria
         # del modello) senza dover attivare DEBUG_CONFRONTO_COMP_TELEGRAM,
         # che aggiunge un blocco diagnostico molto piu' verboso e pensato
         # per un altro scopo (confrontare i prezzi citati dal Cervello con

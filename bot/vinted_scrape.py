@@ -538,7 +538,7 @@ async def scrape_vinted_listing(url, includi_guardaroba=True):
         # es. "02_015a4_6DEmrNgrJhNwjhWvNPecp79k"). NON confermato in modo
         # definitivo (nessun accesso di rete a Vinted da qui per testarlo),
         # ma se corretto permette di ottenere comp per-foto (non solo per
-        # brand/categoria testuale) riusando tutta l'infrastruttura Serper
+        # brand/categoria testuale) riusando tutta l'infrastruttura di ricerca Vinted
         # gia' esistente, senza browser. Vedi build_vinted_visual_search_url.
         if best_url_by_photo_id:
             result["cover_photo_id"] = next(iter(best_url_by_photo_id.keys()), None)

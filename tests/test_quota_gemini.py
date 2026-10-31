@@ -115,3 +115,33 @@ def test_chiama_gemini_dopo_due_timeout_smette_di_ritentare(monkeypatch):
     assert len(chiamate) == 2          # dopo 2 timeout di fila la fase e' in pausa: niente altri tentativi
 
 
+
+
+def test_cervello_fa_una_sola_chiamata_json_senza_strumenti(monkeypatch):
+    # 31/10: tolta la ricerca on-demand (Serper): una chiamata, schema JSON, nessun function calling
+    import asyncio
+    import httpx
+    from bot import gemini_api as ga
+    from bot import http_clients as hc
+
+    monkeypatch.setattr(gs, "GEMINI_API_KEYS", ["k"])
+    monkeypatch.setattr(ga, "GEMINI_API_KEYS", ["k"])
+    monkeypatch.setattr(gs, "_gemini_key_quota_esaurita_fino", {})
+    monkeypatch.setattr(gs, "_gemini_key_index", [0])
+    monkeypatch.setattr(gs.db, "salva_quota_gemini", lambda *a, **k: None)
+    payload_visti = []
+
+    class Finto:
+        async def post(self, url, headers=None, json=None, timeout=None):
+            payload_visti.append(json)
+            req = httpx.Request("POST", url)
+            return httpx.Response(200, request=req, json={"candidates": [{"content": {"parts": [{"text": '{"a": 1}'}]}}]})
+
+    monkeypatch.setattr(hc, "_client_generico", Finto())
+    v, err, costo = asyncio.run(ga.chiama_gemini_cervello("sistema", "annuncio"))
+    assert v == {"a": 1} and err is None
+    assert len(payload_visti) == 1
+    p = payload_visti[0]
+    assert "tools" not in p and "tool_config" not in p
+    assert p["generationConfig"]["responseMimeType"] == "application/json"
+    assert len(p["contents"]) == 1 and p["contents"][0]["role"] == "user"

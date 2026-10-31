@@ -13,7 +13,7 @@ import traceback
 from urllib.parse import quote
 
 from bot import db
-from bot.comps import _cerca_vinted_testo_diretto_con_fallback_serper
+from bot.comps import _cerca_vinted_testo_diretto
 from bot.jev import giudica
 from bot.logger import log
 from bot.radar import RADAR_SPESA_MAX, parola_vietata, radar_in_pausa
@@ -92,7 +92,7 @@ async def _prezzi_simili(testo, titolo, prezzo, brand=None, catalogo=None):
     if not _entro_il_tetto(adesso):
         return None, 0, False
     async with _sem:
-        risposta, ok, _mappa = await _cerca_vinted_testo_diretto_con_fallback_serper(url_comparabili(testo, catalogo, brand))
+        risposta, ok, _mappa = await _cerca_vinted_testo_diretto(url_comparabili(testo, catalogo, brand))
     if not ok:
         return None, 0, False
     comps = parse_comp(risposta)

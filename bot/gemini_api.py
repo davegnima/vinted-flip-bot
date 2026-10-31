@@ -9,7 +9,6 @@ import httpx
 from bot.schemas import CERVELLO_RESPONSE_SCHEMA
 from bot.gemini_stato import GEMINI_API_KEYS, GEMINI_BACKOFF_MAX_S, GEMINI_BUDGET_CHIAMATA_S, GEMINI_TIMEOUT_S, gemini_in_pausa_timeout, gemini_segna_timeout, gemini_timeout_azzera, cascata_per, MAX_RETRIES_GEMINI_IN_BLACKOUT, _gemini_e_errore_key_non_valida, _gemini_e_errore_quota_giornaliera, _gemini_gestisci_modello_non_disponibile, _gemini_in_blackout, _gemini_key_attuale, _gemini_modello_da_url, _gemini_prossima_key, _gemini_registra_esito, _gemini_secondi_retry, _gemini_segna_key_non_valida, _gemini_segna_key_quota_esaurita, _gemini_url_effettivo
 from bot.config import GEMINI_API_URL_CERVELLO, GEMINI_API_URL_OCCHIO, PREZZO_CERVELLO_INPUT, PREZZO_CERVELLO_OUTPUT, PREZZO_GROUNDING_PER_QUERY, PREZZO_OCCHIO_INPUT, PREZZO_OCCHIO_OUTPUT
-from bot.serper_base import cerca_serper_mirata
 from bot.foto import costruisci_parts_foto
 from bot.logger import log
 from bot import http_clients as hc
@@ -196,42 +195,8 @@ async def chiama_gemini(system_prompt, user_text, photo_bytes_list=None, groundi
     return "[ERRORE: tentativi esauriti]", 0.0, 0
 
 
-CERVELLO_FUNCTION_DECLARATION = {
-    "name": "cerca_comp_prezzo",
-    "description": (
-        "Cerca sul web per due scopi distinti, entrambi validi: (1) trovare comp "
-        "di prezzo aggiuntivi quando i dati pre-raccolti sono insufficienti, fuori "
-        "tema o troppo scarsi; (2) VERIFICARE la plausibilita' di codici prodotto, "
-        "diciture rare ('prototipo', 'campionario', edizione limitata) o altri "
-        "claim molto specifici citati nell'analisi visiva, prima di trattarli come "
-        "prova di autenticita' o di valore superiore alla media."
-    ),
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "query": {
-                "type": "string",
-                "description": (
-                    "Query di ricerca mirata, es. 'YSL camicia vintage uomo venduto eBay' "
-                    "oppure 'Miu Miu codice PMMJ-2016 prototipo collezione'. Se il capo "
-                    "appartiene a una sottolinea o linea/etichetta specifica (es. 'M Missoni', "
-                    "'JPG.JEAN'S', 'Weekend Max Mara'), nominala SEMPRE nella query al posto "
-                    "del solo brand madre generico -- es. 'M Missoni maglione zigzag', non "
-                    "'Missoni maglione zigzag', per evitare comp del mainline che sovrastimano "
-                    "un capo di sottolinea."
-                ),
-            }
-        },
-        "required": ["query"],
-    },
-}
-
-
-MAX_ROUNDS_FUNZIONE = 2  # Rialzato da 1 a 2 il 2026-09-14. Con 1, i log
-
-
 ISTRUZIONE_FASE_JSON = (
-    "Le ricerche sono terminate. Produci ORA il verdetto come oggetto JSON "
+    "Produci ORA il verdetto come oggetto JSON "
     "conforme allo schema, usando esclusivamente i dati e i comp raccolti in "
     "questa conversazione. Ricorda: non calcolare margine, ROI, decisione, "
     "urgenza o importi di trattativa, e marca fonte='memoria_modello' ogni "
@@ -243,57 +208,28 @@ def _estrai_testo_da_parts(parts):
     return "".join(p.get("text", "") for p in (parts or []) if isinstance(p, dict))
 
 
-async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca=True, max_retries=4,
-                                         api_url=GEMINI_API_URL_CERVELLO,
-                                         prezzo_input=PREZZO_CERVELLO_INPUT,
-                                         prezzo_output=PREZZO_CERVELLO_OUTPUT,
-                                         mappa_url_ricerche_extra=None, ruolo="cervello"):
-    """Cervello Gemini in DUE FASI, imposte da un vincolo dell'API.
+async def chiama_gemini_cervello(system_prompt, user_text, max_retries=4,
+                                 api_url=GEMINI_API_URL_CERVELLO,
+                                 prezzo_input=PREZZO_CERVELLO_INPUT,
+                                 prezzo_output=PREZZO_CERVELLO_OUTPUT,
+                                 ruolo="cervello"):
+    """Cervello Gemini: UNA sola chiamata, con responseMimeType="application/json"
+    e responseSchema. L'output e' un oggetto conforme a CERVELLO_RESPONSE_SCHEMA,
+    non prosa da cui pescare numeri con espressioni regolari.
 
-    FASE 1 -- RICERCA (fino a MAX_ROUNDS_FUNZIONE giri): function calling
-    come prima. Con forza_ricerca=True il primo giro DEVE chiamare
-    cerca_comp_prezzo (mode ANY), i successivi sono liberi (AUTO).
+    Dal 31/10 non c'e' piu' la fase di ricerca on-demand (function calling
+    cerca_comp_prezzo, che passava per Serper, tolto per scelta dell'utente):
+    il Cervello decide solo sui comp pre-raccolti dal bot (Vinted, ricerca
+    visuale, eBay/Poshmark) e sul testo dell'Occhio. Una chiamata Gemini in
+    meno per annuncio.
 
-    FASE 2 -- VERDETTO (un solo giro): "tools" e "tool_config" vengono
-    TOLTI dal payload e si accendono responseMimeType="application/json" +
-    responseSchema. L'output e' quindi un oggetto conforme a
-    CERVELLO_RESPONSE_SCHEMA, non piu' prosa da cui pescare numeri con
-    espressioni regolari.
-
-    Perche' due fasi e non una: Gemini rifiuta un payload che contenga
-    insieme function_declarations e responseMimeType "application/json"
-    ("Function calling with a response mime type: 'application/json' is
-    unsupported"). Non e' un bug transitorio ma una limitazione
-    documentata, quindi la separazione e' strutturale, non un workaround
-    temporaneo.
-
-    Effetto collaterale positivo: sparisce l'intera classe di bug che
-    affliggeva la vecchia ultima fase. Prima, per impedire al modello di
-    restituire l'ennesima functionCall al posto del verdetto, servivano un
-    "mode: NONE" dichiarato esplicitamente, un tentativo di fallback senza
-    tools e una diagnostica sul testo vuoto (vedi lo storico dei commenti
-    del 2026-09-13). Ora, con responseMimeType="application/json", il
-    modello non ha piu' un canale per emettere una functionCall: l'unico
-    output sintatticamente valido e' l'oggetto JSON.
-
-    Ritorna una tupla di 5 elementi:
-      (verdetto_dict | None, errore | None, costo_totale, n_query_extra,
-       ricerche_extra_raw)
-
-    mappa_url_ricerche_extra (aggiunto il 2026-09-25, Punto 3 esteso alla
-    ricerca on-demand): dict opzionale fornito dal chiamante, AGGIORNATO IN
-    PLACE (non nel valore di ritorno, per non cambiare la tupla usata
-    dall'unico chiamante attuale) con la mappa URL di ogni query
-    cerca_serper_mirata riuscita in questa chiamata -- vedi cerca_serper_mirata
-    per come viene costruita."""
-    contents = [{"role": "user", "parts": [{"text": user_text}]}]
+    Ritorna una tupla di 3 elementi:
+      (verdetto_dict | None, errore | None, costo_totale)"""
+    # L'istruzione finale sta nello stesso turno utente: un solo messaggio.
+    contents = [{"role": "user", "parts": [{"text": f"{user_text}\n\n{ISTRUZIONE_FASE_JSON}"}]}]
     costo_totale = 0.0
-    n_query_extra = 0
-    ricerche_extra_raw = []  # testo grezzo di ogni cerca_serper_mirata riuscita,
-                             # usato per etichettare i comp che il cervello
-                             # dichiara e per il blocco debug Telegram.
 
-    async def _chiama_gemini_raw(tool_mode=None, json_mode=False, tentativi_rimasti=max_retries):
+    async def _chiama_gemini_raw(tentativi_rimasti=max_retries):
         generation_config = {
             "maxOutputTokens": 10000,
             "thinkingConfig": {"thinkingLevel": "low"},
@@ -309,30 +245,14 @@ async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca
             "generationConfig": generation_config,
         }
 
-        if json_mode:
-            # FASE 2. Niente "tools"/"tool_config" nel payload: con lo schema
-            # attivo sarebbero rifiutati dall'API. La cronologia in "contents"
-            # continua a contenere le coppie functionCall/functionResponse dei
-            # giri di ricerca, ed e' accettata senza problemi -- lo stesso
-            # schema (history con function parts, payload senza tools) era
-            # gia' usato dal vecchio tentativo di fallback finale.
-            generation_config["responseMimeType"] = "application/json"
-            generation_config["responseSchema"] = CERVELLO_RESPONSE_SCHEMA
-        else:
-            # FASE 1. maxOutputTokens piu' basso: qui il modello deve solo
-            # formulare una query di ricerca, non il verdetto completo.
-            generation_config["maxOutputTokens"] = 2000
-            function_calling_config = {"mode": tool_mode}
-            if tool_mode == "ANY":
-                function_calling_config["allowed_function_names"] = ["cerca_comp_prezzo"]
-            payload["tools"] = [{"function_declarations": [CERVELLO_FUNCTION_DECLARATION]}]
-            payload["tool_config"] = {"function_calling_config": function_calling_config}
+        # Niente "tools"/"tool_config" nel payload: con lo schema attivo
+        # sarebbero rifiutati dall'API.
+        generation_config["responseMimeType"] = "application/json"
+        generation_config["responseSchema"] = CERVELLO_RESPONSE_SCHEMA
 
         # Stesso ragionamento di chiama_gemini (vedi commento esteso li'):
         # con un blackout gia' rilevato non si spendono tentativi_rimasti
-        # pieni ad ogni round -- si fallisce prima, il round FASE 1 passa
-        # direttamente al verdetto (vedi "si passa comunque al verdetto" nel
-        # chiamante) invece di aspettare minuti in piu' per round.
+        # pieni -- si fallisce prima invece di aspettare minuti in piu'.
         tentativi_effettivi = MAX_RETRIES_GEMINI_IN_BLACKOUT if _gemini_in_blackout() else tentativi_rimasti
         if cascata_per(ruolo):
             tentativi_effettivi += len(GEMINI_API_KEYS)
@@ -406,67 +326,14 @@ async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca
         _gemini_registra_esito(False)
         raise RuntimeError("tentativi esauriti")
 
-    # ---- FASE 1: giri di ricerca ------------------------------------------
-    tool_mode = "ANY" if forza_ricerca else "AUTO"
-
-    for round_idx in range(MAX_ROUNDS_FUNZIONE):
-        try:
-            data = await _chiama_gemini_raw(tool_mode=tool_mode)
-        except Exception as e:
-            log.warning("Cervello: fase ricerca fallita al giro %d (%s) -- si passa comunque al verdetto.", round_idx + 1, e)
-            break
-
-        candidates = data.get("candidates", [])
-        if not candidates:
-            log.warning("Cervello: nessun candidate nella fase di ricerca (giro %d).", round_idx + 1)
-            break
-
-        costo_totale += costo_gemini_token(data.get("usageMetadata", {}), prezzo_input, prezzo_output)
-
-        parts = candidates[0].get("content", {}).get("parts", []) or []
-        function_call = next((p.get("functionCall") for p in parts if p.get("functionCall")), None)
-
-        if not function_call:
-            # Il modello non vuole (piu') cercare: ha gia' abbastanza per
-            # decidere. Si passa direttamente alla fase di verdetto; il testo
-            # eventualmente prodotto qui viene scartato, perche' il verdetto
-            # valido e' solo quello strutturato della fase 2.
-            break
-
-        query_richiesta = function_call.get("args", {}).get("query", "")
-        log.info("Cervello Gemini ha richiesto ricerca mirata (giro %d/%d): '%s'",
-                 round_idx + 1, MAX_ROUNDS_FUNZIONE, query_richiesta)
-        risultato_ricerca, mappa_url_query = await cerca_serper_mirata(query_richiesta)
-        n_query_extra += 1
-        ricerche_extra_raw.append(
-            f"\n📍 FONTE: RICERCA ON-DEMAND CERVELLO (Serper google search, query: '{query_richiesta}')\n{risultato_ricerca}"
-        )
-        if mappa_url_ricerche_extra is not None:
-            mappa_url_ricerche_extra.update(mappa_url_query)
-
-        contents.append({"role": "model", "parts": parts})
-        contents.append({
-            "role": "user",
-            "parts": [{
-                "functionResponse": {
-                    "name": "cerca_comp_prezzo",
-                    "response": {"result": risultato_ricerca},
-                }
-            }]
-        })
-        tool_mode = "AUTO"  # i giri successivi non sono piu' forzati
-
-    # ---- FASE 2: verdetto strutturato -------------------------------------
-    contents.append({"role": "user", "parts": [{"text": ISTRUZIONE_FASE_JSON}]})
-
     try:
-        data = await _chiama_gemini_raw(json_mode=True)
+        data = await _chiama_gemini_raw()
     except Exception as e:
-        return None, f"chiamata al verdetto strutturato fallita: {e}", costo_totale, n_query_extra, ricerche_extra_raw
+        return None, f"chiamata al verdetto strutturato fallita: {e}", costo_totale
 
     candidates = data.get("candidates", [])
     if not candidates:
-        return None, "risposta Gemini senza candidates nella fase di verdetto", costo_totale, n_query_extra, ricerche_extra_raw
+        return None, "risposta Gemini senza candidates nella fase di verdetto", costo_totale
 
     usage = data.get("usageMetadata", {})
     costo_totale += costo_gemini_token(usage, prezzo_input, prezzo_output)
@@ -488,22 +355,22 @@ async def chiama_gemini_cervello_forzato(system_prompt, user_text, forza_ricerca
                 "Se ricapita spesso, la causa piu' probabile e' un array "
                 "comp_candidati molto lungo: alzare maxOutputTokens o "
                 "accorciare titolo_verbatim nello schema."
-            ), costo_totale, n_query_extra, ricerche_extra_raw
+            ), costo_totale
         log.warning(
             "Cervello: fase verdetto senza testo -- finishReason=%s, usage=%s, n_parts=%d, safetyRatings=%s",
             finish_reason, json.dumps(usage, ensure_ascii=False)[:300], len(parts),
             candidates[0].get("safetyRatings", "assenti"),
         )
-        return None, f"il modello non ha prodotto il JSON del verdetto (finishReason={finish_reason})", costo_totale, n_query_extra, ricerche_extra_raw
+        return None, f"il modello non ha prodotto il JSON del verdetto (finishReason={finish_reason})", costo_totale
 
     try:
         verdetto = json.loads(testo_json)
     except json.JSONDecodeError as e:
         log.warning("Cervello: JSON non parsabile (finishReason=%s): %s\nTESTO GREZZO: %s",
                     finish_reason, e, testo_json[:1000])
-        return None, f"JSON del verdetto non parsabile ({e})", costo_totale, n_query_extra, ricerche_extra_raw
+        return None, f"JSON del verdetto non parsabile ({e})", costo_totale
 
     if not isinstance(verdetto, dict):
-        return None, "il JSON del verdetto non e' un oggetto", costo_totale, n_query_extra, ricerche_extra_raw
+        return None, "il JSON del verdetto non e' un oggetto", costo_totale
 
-    return verdetto, None, costo_totale, n_query_extra, ricerche_extra_raw
+    return verdetto, None, costo_totale

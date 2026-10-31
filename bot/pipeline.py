@@ -8,7 +8,7 @@ from functools import partial
 
 from bot.scheda import avviso_solo_semaforo, testo_avviso_solo_semaforo, richiede_etichetta, invia_richiesta_etichetta, ANALISI_GEMINI_ATTIVA, STATO_ANALISI_COMPLETATA, STATO_ANALISI_INTERROTTA, _PermessoAnalisi, _aggiorna_stato_scheda, _invia_galleria_anticipata, _invia_risultato_telegram, aggiorna_preavviso, invia_galleria_dopo_lampo, invia_preavviso, riga_scarto_preavviso, componi_testi_verdetto
 from bot.verdetto import CERVELLO_CAMPIONI_EXTRA, _a_float, _estrai_item_id_da_url, _estrai_prezzi_da_pool_ricerca, _riepilogo_comp_per_fonte, calcola_verdetto, classifica_provenienza_comp, consolida_target_cervello, render_messaggio_verdetto, valida_payload_cervello
-from bot.config import GEMINI_SOGLIA_PREZZO_ALTO, TELEGRAM_ALERT_CHAT_ID, DEBUG_CONFRONTO_COMP_TELEGRAM, OCCHIO_OUTPUT_JSON, RAFFREDDAMENTO_SERPER_SECONDI, SERPER_API_KEY, SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO, SOGLIA_MARGINE_ASSOLUTO_NOTIFICA, TELEGRAM_OWNER_CHAT_ID, _serper_fallimenti_consecutivi, _serper_notifica_esaurimento_inviata, _serper_timestamp_ultimo_fallimento
+from bot.config import GEMINI_SOGLIA_PREZZO_ALTO, TELEGRAM_ALERT_CHAT_ID, DEBUG_CONFRONTO_COMP_TELEGRAM, OCCHIO_OUTPUT_JSON, SOGLIA_MARGINE_ASSOLUTO_NOTIFICA, TELEGRAM_OWNER_CHAT_ID
 from bot.feedback import proponi_controllo, rischio_falso_da_scarto, rischio_falso_da_verdetto, contesto_annuncio
 from bot.fair_value import FAIR_VALUE_FILTRA, check_skip_rosso, catalogo_impara, check_skip_fair_value, fv_registra_gemini, fv_registra_rapida, stima_fair_value, valuta_preavviso, preavviso_con_suono, PREAVVISO_LAMPO
 from bot.prompts import GEMINI_CERVELLO_SYSTEM_PROMPT, GEMINI_OCCHI_SYSTEM_PROMPT, GEMINI_OCCHI_SYSTEM_PROMPT_JSON
@@ -21,22 +21,20 @@ from bot.testo import _escapa_markdown_legacy
 from bot.vinted_scrape import _scrapa_guardaroba_venditore, scrape_vinted_listing
 from bot.skip_report import build_skip_report, check_skip_pre_cervello
 from bot.filtri import check_skip_pre_gemini
-from bot.gemini_api import chiama_gemini, chiama_gemini_cervello_forzato
+from bot.gemini_api import chiama_gemini, chiama_gemini_cervello
 from bot.foto import download_image_bytes
 from bot.categorie import estrai_categoria_da_titolo
 from bot.logger import log
 from bot.occhio import render_occhio_da_json, valida_payload_occhio, applica_paese_al_verdetto, applica_prove_al_verdetto, riga_controllo_occhio
 from bot.comps import search_comps_completo, verifica_codici_prodotto_reddit
 from bot.telegram_api import telegram_send_message
-from bot.serper_base import valuta_qualita_comp
 # ---- fine import ----
 
-async def _campione_target_cervello(chiama, user_text, forza_ricerca):
+async def _campione_target_cervello(chiama, user_text):
     """Una valutazione in piu' del Cervello. Ritorna (v|None, problemi, costo): v e' il verdetto validato (il
     chiamante usa quello piu' vicino alla mediana, cosi' testo e numeri restano coerenti)."""
     try:
-        vj, err, costo, _n, _raw = await chiama(
-            GEMINI_CERVELLO_SYSTEM_PROMPT, user_text, forza_ricerca=forza_ricerca, mappa_url_ricerche_extra={})
+        vj, err, costo = await chiama(GEMINI_CERVELLO_SYSTEM_PROMPT, user_text)
         if err:
             return None, [], costo or 0.0
         v2, problemi2 = valida_payload_cervello(vj)
@@ -481,7 +479,6 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
 
     decisione = "NON COMPRARE"
     urgenza = "Bassa"
-    n_query_grounding = 0
     costo_cervello = 0.0
     costo_campioni = 0.0
     campioni_target = None
@@ -489,7 +486,6 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
     pool_ricerca_grezzo = ""
     tentare_ricerca_visuale = False
     fonte_visuale_riuscita = False
-    forza_ricerca = None
     verdetto_calcolato = None
     legit_cervello = None
 
@@ -566,48 +562,23 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
         comps_text = None
         mappa_url_comp = {}
 
-        tempo_trascorso = time.time() - _serper_timestamp_ultimo_fallimento[0]
-        in_raffreddamento = (
-            _serper_fallimenti_consecutivi[0] >= SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO
-            and tempo_trascorso < RAFFREDDAMENTO_SERPER_SECONDI
-        )
-        serper_disponibile = bool(SERPER_API_KEY) and not in_raffreddamento
-
         # Verifica codici prodotto su Reddit (aggiunta 2026-09-26): lanciata
         # in parallelo alla ricerca comp con asyncio.gather, cosi' non
-        # aggiunge secondi alla pipeline -- gira anche quando Serper non e'
-        # disponibile, e' del tutto indipendente da lui. Se REDDIT_ABILITATO
-        # e' False (credenziali non configurate) ritorna subito "" senza
-        # fare alcuna chiamata di rete.
-        if serper_disponibile:
-            (comps_text, serper_ok, tentare_ricerca_visuale, fonte_visuale_riuscita, mappa_url_comp), testo_verifica_codici = await asyncio.gather(
-                search_comps_completo(
-                    brand_per_ricerca, categoria_per_ricerca, titolo_annuncio,
-                    catalog_id=catalog_id, material_per_ricerca=material_per_ricerca,
-                    cover_photo_id=cover_photo_id, item_id=item_id_annuncio,
-                    nome_sarto=nome_sarto_o_maker, dettaglio_distintivo=dettaglio_distintivo,
-                ),
-                verifica_codici_prodotto_reddit(occhio_json, brand_per_ricerca, categoria_per_ricerca=categoria_per_ricerca),
-            )
-            t_tappe.append(("comp", time.time()))
-            if serper_ok:
-                scenario_usato = "G"
-                _serper_fallimenti_consecutivi[0] = 0
-                if _serper_notifica_esaurimento_inviata[0]:
-                    _serper_notifica_esaurimento_inviata[0] = False
-                    await telegram_send_message(TELEGRAM_OWNER_CHAT_ID, "✅ Serper e' tornato a funzionare normalmente.")
-            else:
-                _serper_fallimenti_consecutivi[0] += 1
-                _serper_timestamp_ultimo_fallimento[0] = time.time()
-                if _serper_fallimenti_consecutivi[0] >= SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO:
-                    if not _serper_notifica_esaurimento_inviata[0]:
-                        _serper_notifica_esaurimento_inviata[0] = True
-                        await telegram_send_message(
-                            TELEGRAM_OWNER_CHAT_ID,
-                            f"⚠️ *Serper ha esaurito i crediti o non risponde*.\nFallback a Scenario F per {RAFFREDDAMENTO_SERPER_SECONDI/3600:.0f} ore."
-                        )
-        else:
-            testo_verifica_codici = await verifica_codici_prodotto_reddit(occhio_json, brand_per_ricerca, categoria_per_ricerca=categoria_per_ricerca)
+        # aggiunge secondi alla pipeline. Se REDDIT_ABILITATO e' False
+        # (credenziali non configurate) ritorna subito "" senza fare alcuna
+        # chiamata di rete.
+        (comps_text, comp_ok, tentare_ricerca_visuale, fonte_visuale_riuscita, mappa_url_comp), testo_verifica_codici = await asyncio.gather(
+            search_comps_completo(
+                brand_per_ricerca, categoria_per_ricerca, titolo_annuncio,
+                catalog_id=catalog_id, material_per_ricerca=material_per_ricerca,
+                cover_photo_id=cover_photo_id, item_id=item_id_annuncio,
+                nome_sarto=nome_sarto_o_maker, dettaglio_distintivo=dettaglio_distintivo,
+            ),
+            verifica_codici_prodotto_reddit(occhio_json, brand_per_ricerca, categoria_per_ricerca=categoria_per_ricerca),
+        )
+        t_tappe.append(("comp", time.time()))
+        if comp_ok:
+            scenario_usato = "G"
 
         if testo_verifica_codici:
             output_occhi += testo_verifica_codici
@@ -618,50 +589,33 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             f"URL annuncio: {url or 'non disponibile'}"
         )
         if scenario_usato == "G":
-            comp_sufficienti = valuta_qualita_comp(comps_text)
-            forza_ricerca = not comp_sufficienti
             user_text_cervello = (
                 f"{contesto_listing}\n\n"
                 f"--- LA TUA VALUTAZIONE PRELIMINARE ---\n"
                 f"{output_occhi}\n--- FINE ---\n\n"
                 f"--- {comps_text} ---\n\n"
-                "Usa i risultati di ricerca web PRE-RACCOLTI come base. Se sono insufficienti, "
-                "assenti o palesemente fuori tema, chiama la function cerca_comp_prezzo con una "
-                "query mirata prima di dare il verdetto finale."
+                "Usa i risultati di ricerca web PRE-RACCOLTI come base. Non puoi fare altre ricerche: "
+                "se sono scarsi, assenti o palesemente fuori tema, dichiaralo e abbassa la confidenza."
             )
         else:
-            forza_ricerca = True
             user_text_cervello = (
                 f"{contesto_listing}\n\n"
                 f"--- LA TUA VALUTAZIONE PRELIMINARE ---\n"
                 f"{output_occhi}\n--- FINE ---\n\n"
-                "NOTA: non ci sono risultati di ricerca pre-raccolti. Chiama la function "
-                "cerca_comp_prezzo per ottenere comp reali prima di rispondere."
+                "NOTA: non ci sono risultati di ricerca pre-raccolti e non puoi fare ricerche. "
+                "Ogni prezzo viene dalla tua conoscenza: marcalo fonte='memoria_modello' e abbassa la confidenza."
             )
 
-        chiama_cervello = partial(chiama_gemini_cervello_forzato, ruolo=ruolo_cervello)
-        # Mappa URL delle ricerche on-demand (Punto 3 esteso il 2026-09-25):
-        # riempita IN PLACE da chiama_cervello mentre elabora le eventuali
-        # chiamate a cerca_comp_prezzo -- vedi mappa_url_ricerche_extra in
-        # chiama_gemini_cervello_forzato.
-        mappa_url_ricerche_extra = {}
-        verdetto_json, errore_cervello, costo_cervello, n_query_grounding, ricerche_extra_raw = await chiama_cervello(
-            GEMINI_CERVELLO_SYSTEM_PROMPT, user_text_cervello, forza_ricerca=forza_ricerca,
-            mappa_url_ricerche_extra=mappa_url_ricerche_extra)
+        chiama_cervello = partial(chiama_gemini_cervello, ruolo=ruolo_cervello)
+        verdetto_json, errore_cervello, costo_cervello = await chiama_cervello(
+            GEMINI_CERVELLO_SYSTEM_PROMPT, user_text_cervello)
         costo_totale += costo_cervello
         t_tappe.append(("cervello", time.time()))
 
-        # Unione con la mappa dei comp pre-raccolti (Vinted/Resellbot): in
-        # caso di chiave duplicata vince quest'ultima, piu' affidabile (dati
-        # strutturati con ID/URL diretto, non un match best-effort su
-        # titolo+prezzo estratto da uno snippet Google).
-        mappa_url_comp = {**mappa_url_ricerche_extra, **mappa_url_comp}
-
         # Pool di TUTTO il testo grezzo di ricerca visto dal cervello per
-        # questo item: comp pre-raccolti (Scenario G) + eventuali ricerche
-        # on-demand. Serve a stabilire la provenienza reale di ogni comp che
-        # il cervello dichiara (vedi classifica_provenienza_comp).
-        pool_ricerca_grezzo = "\n".join(filter(None, [comps_text] + ricerche_extra_raw))
+        # questo item (i comp pre-raccolti). Serve a stabilire la provenienza
+        # reale di ogni comp che il cervello dichiara (vedi classifica_provenienza_comp).
+        pool_ricerca_grezzo = comps_text or ""
 
         if errore_cervello:
             # Un errore qui e' definitivo: senza il JSON non c'e' verdetto da
@@ -699,7 +653,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             # target e, come verdetto di riferimento, la valutazione piu' vicina alla mediana: testo
             # dell'analista, comparabili e numeri restano coerenti tra loro.
             extra = await asyncio.gather(*(
-                _campione_target_cervello(chiama_cervello, user_text_cervello, forza_ricerca)
+                _campione_target_cervello(chiama_cervello, user_text_cervello)
                 for _ in range(CERVELLO_CAMPIONI_EXTRA)))
             costo_campioni = sum(c for _, _, c in extra)
             costo_totale += costo_campioni
@@ -784,14 +738,9 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
     if scenario_usato == "SKIP":
         info_scenario = " · filtro pre-cervello (occhi soli)"
     elif scenario_usato == "F":
-        info_scenario = " · nessun comp pre-raccolto, ricerca forzata"
-        info_scenario += f" ({n_query_grounding} extra)" if n_query_grounding else ""
+        info_scenario = " · nessun comp pre-raccolto"
     else:  # Scenario G
-        if forza_ricerca:
-            info_scenario = " · comp pre-raccolti scarsi, ricerca forzata"
-        else:
-            info_scenario = " · comp pre-raccolti sufficienti"
-        info_scenario += f" ({n_query_grounding} extra)" if n_query_grounding else " (nessuna extra)"
+        info_scenario = " · comp pre-raccolti"
 
     info_foto = ""
     if listing_info.get("fallback_solo_cover_photo"):

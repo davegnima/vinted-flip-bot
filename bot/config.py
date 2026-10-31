@@ -12,7 +12,6 @@ TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_OWNER_CHAT_ID = os.environ["TELEGRAM_OWNER_CHAT_ID"]
 TELEGRAM_ALERT_CHAT_ID = os.environ.get("TELEGRAM_ALERT_CHAT_ID")
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
-SERPER_API_KEY = os.environ.get("SERPER_API_KEY")
 
 # REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET: opzionali, servono SOLO per la
 # verifica dei codici prodotto su Reddit (vedi sezione VERIFICA CODICI
@@ -93,8 +92,8 @@ TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 # quello di 3.5-flash "pieno" e 3.6-flash) concede solo ~20 richieste/giorno
 # -- non i 1.500 di una fonte terza rivelatasi sbagliata per questi modelli
 # -- mentre gemini-3.5-flash-lite ha un tetto reale di ~500 RPD. Con 200
-# annunci/giorno e il Cervello che fa 2-3 chiamate ciascuno (fase ricerca +
-# fase verdetto JSON, vedi MAX_ROUNDS_FUNZIONE), restare su un modello a 20
+# annunci/giorno e il Cervello che faceva 2-3 chiamate ciascuno (fase ricerca +
+# fase verdetto JSON; dal 31/10 ne fa una sola), restare su un modello a 20
 # RPD significa fermarsi dopo ~10 item; con 3.5-flash-lite c'e' margine per
 # coprirli quasi tutti, anche se non e' garantito al 100% (Occhio + Cervello
 # sullo stesso modello condividono lo stesso tetto giornaliero: vedi il
@@ -222,9 +221,8 @@ TOLLERANZA_COMP_EUR = 1.0
 # PRECISAZIONE TECNICA IMPORTANTE (non un'obiezione, un dato di fatto sul
 # funzionamento di QUESTO bot): il cervello NON ha il grounding Google
 # attivo. Il tool builtin google_search e' stato deliberatamente sostituito
-# da cerca_comp_prezzo/Serper perche' non era forzabile in modo affidabile
-# (vedi il commento alla sezione CERVELLO GEMINI CON FUNCTION CALLING
-# FORZATO), e l'unica funzione che accetta grounding=True e' chiama_gemini,
+# da una ricerca Serper (dal 31/10 tolta del tutto) perche' non era forzabile
+# in modo affidabile, e l'unica funzione che accetta grounding=True e' chiama_gemini,
 # invocata per l'Occhio con grounding=False. Un prezzo fuori pool non
 # proviene quindi da una ricerca web eseguita in quel momento, ma dalla
 # memoria parametrica del modello, con i limiti che questo comporta:
@@ -298,12 +296,6 @@ BRAND_ESCLUSI_ALERT_CHIEDI_FOTO = ("miu miu", "loewe", "arc'teryx", "arcteryx", 
 SOGLIA_MARGINE_ALERT_CHIEDI_FOTO_BRAND_ESCLUSI = 30.0   # 8/10: Prada e Miu Miu 10 veloci su 11 in due giorni (sopra 30 EUR: 7 su 8)
 
 VINTED_TRACKER_NAME_HINTS = ("vinted", "tracker")
-
-_serper_fallimenti_consecutivi = [0]
-_serper_timestamp_ultimo_fallimento = [0.0]
-SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO = 3
-RAFFREDDAMENTO_SERPER_SECONDI = 3600 * 6
-_serper_notifica_esaurimento_inviata = [False]
 
 
 def _env_float(nome, default):
