@@ -41,7 +41,7 @@ ONDA2=[ # 31/10, raccolta dati larga (richiesta dell'utente): brand ovvi di cate
  ('V2 makita','','makita',[3875],100),('V2 milwaukee','','milwaukee',[3875],100),('V2 dewalt','','dewalt',[3875],100),
  ('V2 sonos','','sonos',[3695,3682,3697,3678],100),('V2 bang olufsen','','bang olufsen',[3694,3695,3678,3701],150),
  ('V2 technics','','technics',[3701],150),('V2 marantz','','marantz',[3699,3694],150),('V2 leica','','leica',[3075,3076],150),
- ('V2 fujifilm','','fujifilm',[3075,3076],100),('V2 dji','','dji',[3723,3074],100),('V2 dyson','','dyson',[],100),
+ ('V2 fujifilm','','fujifilm',[3075,3076],100),('V2 dji','','dji',[3723,3074],100),('V2 dyson','','dyson',[3543],100),
  ('V2 kitchenaid','','kitchenaid',[],80),('V2 stokke seggioloni','','stokke',[3450],60),('V2 bugaboo','','bugaboo',[1612],60),
 ]
 def get(p): return urllib.request.urlopen(B+p,timeout=120).read().decode()
