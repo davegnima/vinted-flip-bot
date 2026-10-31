@@ -180,3 +180,22 @@ def test_risposta_gruppo_con_stima_e_senza():
     r = radar.testo_risposta_gruppo({"semaforo": "rosso", "rivendita": None, "n": 1, "motivo": "pochi_comparabili"})
     assert r.startswith("🔴 rosso · nessuna stima (pochi comparabili")
     assert radar.testo_risposta_gruppo(None) == "⚪ semaforo non calcolato"
+
+
+def test_da_cancellare_solo_i_non_oggetti():
+    from bot import radar
+    from bot.radar_v2 import _rosso
+    assert radar.da_cancellare(_rosso("pezzo_o_accessorio:")) and radar.da_cancellare(_rosso("parola_vietata:"))
+    assert radar.da_cancellare(_rosso("prezzo_segnaposto")) and radar.da_cancellare(_rosso("titolo_generico"))
+    assert not radar.da_cancellare(_rosso("pochi_comparabili")) and not radar.da_cancellare(_rosso("sopra_riferimento", 11))
+    assert not radar.da_cancellare(None) and not radar.da_cancellare({"semaforo": "verde", "motivo": "ok"})
+
+
+def test_scocche_cinturini_e_campane_sono_pezzi():
+    from bot.valore_mercato import e_un_pezzo
+    for t in ("Scocca Nintendo 3DS XL Pokemon X e Y", "campana de aspiración de polvo para radial",
+              "Bracelet silicone bleu QuickFit 22 mm", "2 Batteries Enduro GoPro avec chageur DUO",
+              "Bracelet à dégagement rapide 22mm en silicone noir"):
+        assert e_un_pezzo(t), t
+    for t in ("Garmin Forerunner 245", "Batterie électronique Roland TD-17", "Nintendo 3DS XL rossa"):
+        assert e_un_pezzo(t) is None, t

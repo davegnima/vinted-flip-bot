@@ -377,6 +377,17 @@ def testo_risposta_gruppo(v2):
     return testo
 
 
+# Scarti che non sono l'oggetto intero (ricambio, accessorio, scatola, parola vietata, prezzo segnaposto, titolo generico):
+# il messaggio del tracker nel gruppo si cancella invece di rispondere (richiesta dell'utente, 31/10: niente rumore).
+RADAR_CANCELLA_SCARTI = os.environ.get("RADAR_CANCELLA_SCARTI", "1").strip() not in ("0", "false", "no", "")
+MOTIVI_NON_OGGETTO = ("parola_vietata", "pezzo_o_accessorio", "prezzo_segnaposto", "titolo_generico")
+
+
+def da_cancellare(v2):
+    """True se il verdetto e' un rosso per un annuncio che non e' l'oggetto intero. Pura."""
+    return bool(v2) and v2.get("semaforo") == "rosso" and (v2.get("motivo") or "").split(":")[0] in MOTIVI_NON_OGGETTO
+
+
 def _da_mandare(v2):
     return not RADAR_SOLO_VERDI or (bool(v2) and v2.get("semaforo") == "verde")
 

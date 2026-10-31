@@ -31,7 +31,10 @@ _RE_PEZZO = re.compile(
     # 31/10: accessori visti come falsi verdi (borsa 3DS, filtri ND DJI, supporti Sonos, ventilatore Xbox, cartucce, Verpackung)
     r"borsa|borse|tasche|aufbewahrungstasche|etui|housse|sleeve|filtri|filters?|supporto|supporti|supports?|halterung|"
     r"action mount|ventilador|ventilatore|lüfter|cartucc[ae]|cartridges?|pokeball|verpackung|keine konsole|ohne konsole|"
-    r"empty box|box only)\b", re.I)
+    r"empty box|box only|"
+    # 31/10 (secondo giro): scocche, campane, cinturini QuickFit e batterie sciolte viste con 0-1 comparabili
+    r"scocc[ae]|coque|campana de aspiraci[oó]n|quickfit|bracelet (?:silicone|de rechange|[àa] d[ée]gagement)|"
+    r"batteries (?:enduro|pour|de rechange)|recambio|repuesto|ersatzteile?|pi[èe]ces? d[ée]tach[ée]es?)\b", re.I)
 # Titolo che inizia con la scatola ("Scatola Xbox series X"): e' l'imballo, non la console.
 _RE_SCATOLA_INIZIO = re.compile(r"^\s*(?:la )?(scatola|box|boite|boîte|karton|emballage|caja)\b", re.I)
 _PAROLE_VUOTE = {"vendo", "vendesi", "usato", "usata", "ottime", "ottimo", "buone", "condizioni", "perfette", "perfetto",
