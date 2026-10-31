@@ -2,7 +2,7 @@
 il codice (verdetto_jev) decide l'esito. Jev non decide mai da solo.
 
 Attivo con JEV_GIUDICE=1 e la chiave in TYPESAFE_API_KEY. Chiamata bloccante: usarla con asyncio.to_thread.
-Il risultato va nel messaggio Telegram e nei log. Mai decisioni automatiche: il filtro e' RADAR_SOLO_VERDI.
+Il risultato va nel messaggio Telegram e nei log. Mai decisioni automatiche: il filtro e' RADAR_SEMAFORI.
 Schema da docs.typesafe.ai/introduction/quickstart (domande di tipo choice con criteria).
 """
 import base64

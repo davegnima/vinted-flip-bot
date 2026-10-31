@@ -51,12 +51,14 @@ def test_righe_v2_e_filtro_solo_verdi(monkeypatch):
     ]
     assert radar._righe_v2(None) == ["Comparabili: non calcolati", "Semaforo: non calcolato"]
     assert radar.pallino_semaforo(v2) == "🟢" and radar.pallino_semaforo(None) == "🔎"
-    monkeypatch.setattr(radar, "RADAR_SOLO_VERDI", True)
+    monkeypatch.setattr(radar, "RADAR_SEMAFORI", {"verde"})
     assert radar._da_mandare(v2) is True
     assert radar._da_mandare({"semaforo": "giallo"}) is False
     assert radar._da_mandare(None) is False
-    monkeypatch.setattr(radar, "RADAR_SOLO_VERDI", False)
-    assert radar._da_mandare(None) is True
+    monkeypatch.setattr(radar, "RADAR_SEMAFORI", {"verde", "giallo"})
+    assert radar._da_mandare({"semaforo": "giallo"}) is True
+    assert radar._da_mandare({"semaforo": "rosso"}) is False
+    assert radar._da_mandare(None) is False
 
 
 def test_jev_senza_chiave_non_chiama_nulla(monkeypatch):
@@ -109,10 +111,14 @@ def test_annuncio_fuori_matrice_ha_intestazione_chiara(monkeypatch):
     async def finto_invia(testo, foto, suono=False):
         inviati.append(testo)
 
-    monkeypatch.setattr(radar, "RADAR_SOLO_VERDI", False)
+    monkeypatch.setattr(radar, "RADAR_SEMAFORI", {"verde", "giallo"})
     monkeypatch.setattr(radar, "_invia_radar", finto_invia)
-    asyncio.run(radar._manda_annuncio_senza_modello("1", "Psp portatile", 30.0, "https://www.vinted.it/items/1", None, None))
-    assert inviati[0].startswith("🔎 fuori matrice | 30 €\nPsp portatile")
+    asyncio.run(radar._manda_annuncio_senza_modello("1", "Psp portatile", 30.0, "https://www.vinted.it/items/1", {"semaforo": "giallo"}, None))
+    assert inviati[0].startswith("🟡 fuori matrice | 30 €\nPsp portatile")
+    inviati.clear()
+    asyncio.run(radar._manda_annuncio_senza_modello("2", "Psp rotta", 30.0, "https://www.vinted.it/items/2", {"semaforo": "rosso"}, None))
+    asyncio.run(radar._manda_annuncio_senza_modello("3", "Psp", 30.0, "https://www.vinted.it/items/3", None, None))
+    assert inviati == []
 
 
 QUERY_URL = "https://www.vinted.it/catalog?search_text=ps5%20slim&catalog[]=3025&price_to=150&currency=EUR&order=newest_first"
