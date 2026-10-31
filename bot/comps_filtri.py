@@ -244,6 +244,17 @@ def campione_pagina_vinted(html_content, lunghezza=900):
     return {"len": len(testo), "marcatori": marcatori, "tratto": " ".join(tratto.split())}
 
 
+def campione_scheda_vinted(html_content, lunghezza=1800):
+    """Tratto di HTML attorno alla prima scheda prodotto di una pagina catalogo (data-testid 'product-item-id-'), con
+    le immagini e gli attributi della scheda. Serve per scrivere il parser delle foto dei comparabili sul markup vero
+    (31/10: il campione precedente mostrava solo l'intestazione della pagina). Pura: solo per i log."""
+    testo = html_content or ""
+    primo = testo.find("product-item-id-")
+    if primo < 0:
+        return None
+    return " ".join(testo[max(0, primo - 600):max(0, primo - 600) + lunghezza].split())
+
+
 def _articoli_vinted(html_content):
     """Lista di (item_id, titolo, prezzo) di una pagina catalogo Vinted. Legge il title= del link overlay (markup dal
     25/10/2026); se non trova nulla ripiega sull'alt= dell'immagine (markup precedente, con la taglia). id None sul ramo alt=."""

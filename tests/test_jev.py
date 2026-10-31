@@ -139,3 +139,9 @@ def test_richiesta_con_foto_rifiutata_riprova_solo_testo(monkeypatch):
     esito = jev.giudica("Psp portatile", 30, [60], 80, foto=JPEG)
     assert "assets" in richieste[0] and "assets" not in richieste[1]
     assert esito == ("affare_vero", 0.7)
+
+
+def test_fascia_di_confidenza():
+    assert jev.fascia(0.9) == "passa" and jev.fascia(0.85) == "passa"
+    assert jev.fascia(0.75) == "da_rivedere" and jev.fascia(0.7) == "da_rivedere"
+    assert jev.fascia(0.69) == "scartato" and jev.fascia(None) == "scartato"

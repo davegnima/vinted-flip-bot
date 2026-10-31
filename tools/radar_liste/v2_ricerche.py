@@ -3,6 +3,7 @@
 # Uso: python3 v2_ricerche.py --salva   (salva nomi e URL delle ricerche attuali in docs/analisi/)
 #      python3 v2_ricerche.py --carica  (toglie tutte le ricerche e carica le V2)
 #      python3 v2_ricerche.py --aggiungi (aggiunge solo le OSS in osservazione, senza toccare le altre)
+#      python3 v2_ricerche.py --console  (aggiunge le 9 ricerche console e giochi dell'ondata 1, 31/10)
 import sys,os,re,html,json,urllib.request,urllib.parse
 QUI=os.path.dirname(os.path.abspath(__file__)); B='https://vinted-radar-production.up.railway.app'
 POSATE=[1950,1951,1952,1970]; STOV=[1958,1959,1960,1961]; BIC=[2006,2007,2008,2009,2010,2011]; VASI=[1940]; LAMP=[3836,3837,3838,3839]
@@ -29,6 +30,12 @@ V2=[ # nome, testo, brand (nome o None), catalog, tetto
 OSS=[ # osservazione fuori moda (24/10): categorie larghe, nessun brand, tetto 50; il radar valuta e registra, niente Telegram
  ('V2 OSS fumetti manga','',None,[5425],50),('V2 OSS libri universitari','universitari',None,[5426],50),('V2 OSS giochi da tavolo','',None,[4881],50),
 ]
+CONSOLE=[ # 31/10, ondata 1 (console e giochi): ricerche con testo = un prodotto preciso, cosi' il worker calcola il riferimento di prezzo UNA volta per ricerca.
+ # nome, testo, brand, catalog, tetto (tetto per categoria: console fino a 150 EUR, retro/giochi piu' bassi)
+ ('V2 ps5','ps5',None,[3025],150),('V2 switch oled','switch oled',None,[3025],120),('V2 switch','nintendo switch',None,[3025],90),
+ ('V2 steam deck','steam deck',None,[3025],150),('V2 xbox series x','xbox series x',None,[3025],150),('V2 ps4 pro','ps4 pro',None,[3025],60),
+ ('V2 game boy','game boy',None,[3025],50),('V2 3ds','3ds',None,[3025],60),('V2 giochi switch ps5','switch ps5',None,[3026],25),
+]
 def get(p): return urllib.request.urlopen(B+p,timeout=120).read().decode()
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self,*a,**k): return None
@@ -48,6 +55,10 @@ if '--salva' in sys.argv:
     print(len(out),'ricerche salvate')
 if '--aggiungi' in sys.argv:
     for nome,txt,br,cat,pt in OSS:
+        u='https://www.vinted.it/catalog?'+(f'search_text={urllib.parse.quote(txt)}&' if txt else '')+(f'brand_ids[]={B_[br]}&' if br else '')+''.join(f'catalog[]={i}&' for i in cat)+f"price_to={pt}&currency=EUR&order=newest_first"
+        post('/add_query',{'query':u,'query_name':nome}); print('ok',nome)
+if '--console' in sys.argv:
+    for nome,txt,br,cat,pt in CONSOLE:
         u='https://www.vinted.it/catalog?'+(f'search_text={urllib.parse.quote(txt)}&' if txt else '')+(f'brand_ids[]={B_[br]}&' if br else '')+''.join(f'catalog[]={i}&' for i in cat)+f"price_to={pt}&currency=EUR&order=newest_first"
         post('/add_query',{'query':u,'query_name':nome}); print('ok',nome)
 if '--carica' in sys.argv:

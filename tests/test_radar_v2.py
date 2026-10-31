@@ -112,3 +112,42 @@ def test_annuncio_fuori_matrice_ha_intestazione_chiara(monkeypatch):
     monkeypatch.setattr(radar, "_invia_radar", finto_invia)
     asyncio.run(radar._manda_annuncio_senza_modello("1", "Psp portatile", 30.0, "https://www.vinted.it/items/1", None, None))
     assert inviati[0].startswith("🔎 fuori matrice | 30 €\nPsp portatile")
+
+
+QUERY_URL = "https://www.vinted.it/catalog?search_text=ps5%20slim&catalog[]=3025&price_to=150&currency=EUR&order=newest_first"
+
+
+def test_testo_e_url_senza_prezzo():
+    assert radar_v2.testo_ricerca(QUERY_URL) == "ps5 slim"
+    assert radar_v2.testo_ricerca("https://www.vinted.it/catalog?brand_ids[]=1") == ""
+    u = radar_v2.url_senza_prezzo(QUERY_URL + "&price_from=5&page=2")
+    assert "price_to" not in u and "price_from" not in u and "page=" not in u and "ps5" in u and "3025" in u
+
+
+def test_prefiltro_scarta_sopra_il_riferimento_senza_comparabili(monkeypatch):
+    eventi, urls = [], []
+    monkeypatch.setattr(radar_v2, "RADAR_V2_OMBRA", True)
+    monkeypatch.setattr(radar_v2, "RADAR_SPESA_MAX", 500)
+    monkeypatch.setattr(radar_v2, "radar_in_pausa", lambda: False)
+    monkeypatch.setattr(radar_v2.db, "scrivi_evento", lambda *a, **k: eventi.append(a))
+    radar_v2._visti.clear(); radar_v2._cache.clear(); radar_v2._riferimenti.clear(); radar_v2._conteggio.update(giorno=None, n=0)
+    righe = "\n".join(f"- PlayStation 5 slim — €{p}" for p in (300, 310, 320, 330, 340, 350, 360, 370))
+
+    async def finto(url):
+        urls.append(url)
+        return righe, True, {}
+    monkeypatch.setattr(radar_v2, "_cerca_vinted_testo_diretto", finto)
+    parsed = {"title": "PlayStation 5 slim", "price": "290", "brand": "Sony", "query_name": "V2 ps5"}
+    v = asyncio.run(radar_v2.analizza(parsed, "https://www.vinted.it/items/777001-ps5", query_url=QUERY_URL))
+    assert v["semaforo"] == "rosso" and v["motivo"] == "sopra_riferimento"
+    assert len(urls) == 1 and "price_to" not in urls[0]  # solo la ricerca di riferimento, nessuna pagina ne' comparabili in piu'
+    # un secondo annuncio della stessa ricerca usa la cache: zero richieste
+    parsed2 = {"title": "PlayStation 5 slim", "price": "280", "brand": "Sony", "query_name": "V2 ps5"}
+    asyncio.run(radar_v2.analizza(parsed2, "https://www.vinted.it/items/777002-ps5", query_url=QUERY_URL))
+    assert len(urls) == 1
+
+
+def test_pezzi_non_funzionanti():
+    from bot.valore_mercato import e_un_pezzo
+    assert e_un_pezzo("Playstation 5 non funzionante") and e_un_pezzo("iPhone bloccato icloud")
+    assert e_un_pezzo("Switch OLED completa con box") is None
