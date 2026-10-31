@@ -34,6 +34,8 @@ _RE_PEZZO = re.compile(
     r"empty box|box only|"
     # 31/10 (secondo giro): scocche, campane, cinturini QuickFit e batterie sciolte viste con 0-1 comparabili
     r"scocc[ae]|coque|campana de aspiraci[oó]n|quickfit|bracelet (?:silicone|de rechange|[àa] d[ée]gagement)|"
+    r"ne s'?allume (?:plus|pas)|ne d[ée]marre (?:plus|pas)|hors service|d[ée]fectueu[xs]e?|kaputt|defekt|no funciona|averiad[oa]|"
+    r"battery grip|impugnatura|bg-?e\d+|"
     r"batteries (?:enduro|pour|de rechange)|recambio|repuesto|ersatzteile?|pi[èe]ces? d[ée]tach[ée]es?)\b", re.I)
 # Titolo che inizia con la scatola ("Scatola Xbox series X"): e' l'imballo, non la console.
 _RE_SCATOLA_INIZIO = re.compile(r"^\s*(?:la )?(scatola|box|boite|boîte|karton|emballage|caja)\b", re.I)
