@@ -60,6 +60,9 @@ RADAR_PAUSA_DA = os.environ.get("RADAR_PAUSA_DA", "23").strip()
 RADAR_PAUSA_A = os.environ.get("RADAR_PAUSA_A", "6").strip()
 _radar_pausa_saltati = 0
 _radar_visti = set()
+# Tracciamento del verdetto v2 (31/10): ogni giallo e verde si ricontrolla (1, 5, 15, 60 min), dei rossi 1 ogni N (banda).
+RADAR_TRACCIA_ROSSI_1_SU = int(os.environ.get("RADAR_TRACCIA_ROSSI_1_SU", "10") or 0)
+_radar_tracciati = set()
 
 # ---------------------------------------------------------------------------
 # Moduli categoria. Brand e parole sono confrontati sul titolo in minuscolo, a parola intera.
@@ -453,6 +456,38 @@ async def _manda_annuncio_senza_modello(item_id, titolo, prezzo, url, v2=None, f
         log.warning("Radar: annuncio fuori matrice non inviato per %s:\n%s", item_id, traceback.format_exc())
 
 
+def traccia_verdetto_v2(parsed, url, v2, t0=None):
+    """Avvia la serie di ricontrolli di vendita per un annuncio col verdetto v2 (semaforo nel contesto della riga
+    TRACCIATO_RADAR). Gialli e verdi sempre; rossi 1 ogni RADAR_TRACCIA_ROSSI_1_SU (0 = nessuno), esclusi i non-oggetto.
+    Ritorna True se la serie e' partita."""
+    if not v2 or not v2.get("semaforo"):
+        return False
+    item_id = _estrai_item_id_da_url(url) if url else None
+    if not item_id or str(item_id) in _radar_tracciati:
+        return False
+    sem = v2["semaforo"]
+    if sem == "rosso":
+        if (v2.get("motivo") or "").split(":")[0] in MOTIVI_NON_OGGETTO or not RADAR_TRACCIA_ROSSI_1_SU:
+            return False
+        try:
+            if int(item_id) % RADAR_TRACCIA_ROSSI_1_SU:
+                return False
+        except ValueError:
+            return False
+    _radar_tracciati.add(str(item_id))
+    if len(_radar_tracciati) > 20000:
+        _radar_tracciati.clear()
+    prezzo = _a_float(parsed.get("price"), None)
+    info = {"title": parsed.get("title"), "price": prezzo, "brand": parsed.get("brand"), "url": url}
+    tr._tracc_esiti[str(item_id)] = ("RADAR_V2", None)
+    tr._tracc_ctx[str(item_id)] = {k: v for k, v in {
+        "semaforo": sem, "motivo": v2.get("motivo"), "rivendita": v2.get("rivendita"), "margine": v2.get("margine"),
+        "roi": v2.get("roi"), "n_comp": v2.get("n"), "jev": v2.get("jev"), "jev_motivo": v2.get("jev_motivo")}.items()
+        if v is not None}
+    tr.tracc_avvia_serie(info, url, t0 or time.time(), offsets=RADAR_RICONTROLLI_SECONDI)
+    return True
+
+
 async def gestisci_annuncio_radar(parsed, url, t0=None, v2=None, foto=None):
     """Fase 0: classifica, filtra, visita la pagina se serve, registra. Mai messaggi, mai AI."""
     global _radar_pausa_saltati
@@ -522,6 +557,7 @@ async def gestisci_annuncio_radar(parsed, url, t0=None, v2=None, foto=None):
         # Ricontrolli di vendita come per la moda: l'esito RADAR_* li tiene separati nel recap.
         tr._tracc_esiti[str(item_id)] = (esito, None)
         tr.tracc_registra_valutato(info, url, esito)
-        tr.tracc_avvia_serie(info, url, t0, offsets=RADAR_RICONTROLLI_SECONDI)
+        if str(item_id) not in _radar_tracciati:
+            tr.tracc_avvia_serie(info, url, t0, offsets=RADAR_RICONTROLLI_SECONDI)
     except Exception:
         log.warning("Radar: annuncio %s non registrato:\n%s", item_id, traceback.format_exc())
