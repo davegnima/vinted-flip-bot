@@ -314,20 +314,44 @@ RADAR_SOLO_VERDI = os.environ.get("RADAR_SOLO_VERDI", "0").strip() in ("1", "tru
 SEMAFORO_EMOJI = {"verde": "🟢", "giallo": "🟡", "rosso": "🔴"}
 
 
+_MOTIVI_LEGGIBILI = {
+    "parola_vietata": "parola vietata nel titolo (rotto, replica, solo scatola...)",
+    "pezzo_o_accessorio": "accessorio o ricambio, non l'oggetto intero",
+    "titolo_generico": "titolo troppo generico",
+    "prezzo_segnaposto": "prezzo segnaposto",
+    "sopra_riferimento": "prezzo sopra il limite di acquisto della ricerca",
+    "comparabili_non_disponibili": "comparabili non disponibili",
+    "pochi_comparabili": "pochi comparabili",
+    "margine_basso": "margine troppo basso",
+    "roi_basso": "ROI troppo basso",
+}
+
+
+def _motivo_leggibile(motivo):
+    chiave = (motivo or "").split(":")[0]
+    return _MOTIVI_LEGGIBILI.get(chiave, motivo or "motivo non noto")
+
+
+def pallino_semaforo(v2, predefinito="🔎"):
+    """Pallino del semaforo v2 per l'intestazione del messaggio (richiesta dell'utente, 31/10). Pura."""
+    return SEMAFORO_EMOJI.get((v2 or {}).get("semaforo"), predefinito)
+
+
 def _righe_v2(v2):
-    """Righe del messaggio: comparabili (quanti e perche' zero), semaforo (solo se ci sono comparabili), giudizio Jev.
+    """Righe del messaggio: comparabili (quanti e perche' zero), esito del semaforo (sempre), giudizio Jev.
     Il semaforo non viene dal buy max della matrice: si costruisce dai comparabili (richiesta dell'utente, 25/10)."""
     if v2 is None:
-        return ["Comparabili: non calcolati"]
+        return ["Comparabili: non calcolati", "Semaforo: non calcolato"]
     n = v2.get("n") or 0
     righe = []
+    pallino = pallino_semaforo(v2, "n.d.")
     if v2.get("rivendita") is None:
-        righe.append(f"Comparabili: {n} trovati, nessuna stima ({v2.get('motivo') or 'motivo non noto'})")
-        righe.append("Semaforo: in costruzione (servono più comparabili nel tempo)")
+        righe.append(f"Comparabili: {n} trovati, nessuna stima ({_motivo_leggibile(v2.get('motivo'))})")
+        righe.append(f"Semaforo: {pallino} {v2.get('semaforo') or 'n.d.'}, {_motivo_leggibile(v2.get('motivo'))}")
     else:
         righe.append(f"Comparabili: {n} trovati · rivendita {v2.get('rivendita')} € · margine {v2.get('margine')} € "
                      f"· ROI {v2.get('roi')}%")
-        righe.append(f"Semaforo: {SEMAFORO_EMOJI.get(v2.get('semaforo'), 'n.d.')}")
+        righe.append(f"Semaforo: {pallino} {v2.get('semaforo') or 'n.d.'}")
     if v2.get("jev"):
         righe.append(f"Jev: {v2['jev']} (confidenza {v2.get('jev_conf')})")
     return righe
@@ -350,7 +374,7 @@ async def _manda_semaforo_radar(item_id, titolo, prezzo, url, modello, buy_max, 
     if not _da_mandare(v2):
         return
     try:
-        testo = "\n".join([f"🔎 modello {modello} | {prezzo:g} € (buy max {buy_max:g} €)", titolo[:100]]
+        testo = "\n".join([f"{pallino_semaforo(v2)} modello {modello} | {prezzo:g} € (buy max {buy_max:g} €)", titolo[:100]]
                           + _righe_v2(v2) + [url])
         await _invia_radar(testo, foto)
         log.info("RADAR MODELLO | item=%s | modello=%s | prezzo=%s | buy_max=%s", item_id, modello, prezzo, buy_max)
@@ -362,7 +386,8 @@ async def _manda_annuncio_senza_modello(item_id, titolo, prezzo, url, v2=None, f
     if not _da_mandare(v2):
         return
     try:
-        intestazione = f"🔎 fuori matrice | {prezzo:g} €" if prezzo is not None else "🔎 fuori matrice"
+        pall = pallino_semaforo(v2)
+        intestazione = f"{pall} fuori matrice | {prezzo:g} €" if prezzo is not None else f"{pall} fuori matrice"
         testo = "\n".join([intestazione, titolo[:100]] + _righe_v2(v2) + [url])
         await _invia_radar(testo, foto)
         log.info("RADAR FUORI MATRICE | item=%s | prezzo=%s | titolo=%s", item_id, prezzo, titolo[:60])

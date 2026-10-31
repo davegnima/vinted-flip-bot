@@ -46,10 +46,11 @@ def test_righe_v2_e_filtro_solo_verdi(monkeypatch):
     v2 = {"semaforo": "verde", "rivendita": 80, "margine": 60, "roi": 150, "n": 7, "jev": "affare_vero", "jev_conf": 0.9}
     assert radar._righe_v2(v2) == [
         "Comparabili: 7 trovati · rivendita 80 € · margine 60 € · ROI 150%",
-        "Semaforo: 🟢",
+        "Semaforo: 🟢 verde",
         "Jev: affare_vero (confidenza 0.9)",
     ]
-    assert radar._righe_v2(None) == ["Comparabili: non calcolati"]
+    assert radar._righe_v2(None) == ["Comparabili: non calcolati", "Semaforo: non calcolato"]
+    assert radar.pallino_semaforo(v2) == "🟢" and radar.pallino_semaforo(None) == "🔎"
     monkeypatch.setattr(radar, "RADAR_SOLO_VERDI", True)
     assert radar._da_mandare(v2) is True
     assert radar._da_mandare({"semaforo": "giallo"}) is False
@@ -69,11 +70,11 @@ def test_righe_v2_mostra_sempre_il_motivo():
     from bot import radar
     riga = radar._righe_v2({"semaforo": "rosso", "rivendita": None, "n": 1, "motivo": "pochi_comparabili"})
     assert riga == [
-        "Comparabili: 1 trovati, nessuna stima (pochi_comparabili)",
-        "Semaforo: in costruzione (servono più comparabili nel tempo)",
+        "Comparabili: 1 trovati, nessuna stima (pochi comparabili)",
+        "Semaforo: 🔴 rosso, pochi comparabili",
     ]
     assert radar._righe_v2({"semaforo": "rosso", "rivendita": None, "n": 0, "motivo": "titolo_generico"})[0] == \
-        "Comparabili: 0 trovati, nessuna stima (titolo_generico)"
+        "Comparabili: 0 trovati, nessuna stima (titolo troppo generico)"
     from bot.radar_v2 import _rosso
     assert _rosso("parola_vietata:x")["semaforo"] == "rosso"
 
@@ -151,3 +152,22 @@ def test_pezzi_non_funzionanti():
     from bot.valore_mercato import e_un_pezzo
     assert e_un_pezzo("Playstation 5 non funzionante") and e_un_pezzo("iPhone bloccato icloud")
     assert e_un_pezzo("Switch OLED completa con box") is None
+
+
+def test_accessori_e_scatole_sono_pezzi():
+    from bot.valore_mercato import e_un_pezzo
+    for t in ("Aufbewahrungstasche Nintendo 3DS", "DJI Air 3s ND filters Freewell", "Scatola Xbox series X",
+              "Lot de 2 supports de bureau pour Sonos One", "Ventilador xbox series x", "PokeBall Nintendo Switch, 8 cartucce",
+              "Switch 2 Zelda Edition Verpackung (keine Konsole!)"):
+        assert e_un_pezzo(t), t
+    for t in ("Nintendo Switch OLED con accessori", "Switch in scatola originale", "Canon EF 50mm obiettivo", "Olympus Mju 1"):
+        assert e_un_pezzo(t) is None, t
+
+
+def test_prezzo_segnaposto_e_rosso(monkeypatch):
+    eventi = []
+    monkeypatch.setattr(radar_v2, "RADAR_V2_OMBRA", True)
+    monkeypatch.setattr(radar_v2, "radar_in_pausa", lambda: False)
+    monkeypatch.setattr(radar_v2.db, "scrivi_evento", lambda *a, **k: eventi.append(a))
+    r = asyncio.run(radar_v2.analizza({"title": "Bugaboo Fox 5 Renew 1000€ VB", "price": "1"}, "https://www.vinted.it/items/99001-bugaboo"))
+    assert r["semaforo"] == "rosso" and r["motivo"] == "prezzo_segnaposto"

@@ -190,6 +190,10 @@ async def analizza(parsed, url, foto=None, query_url=None):
         if prezzo is None or prezzo <= 0 or (RADAR_SPESA_MAX and prezzo > RADAR_SPESA_MAX):
             _log_saltato("prezzo_assente" if prezzo is None else f"prezzo_fuori:{prezzo:g}", url)
             return
+        if prezzo <= 1:
+            # 31/10: "Bugaboo Fox 5 ... 1000€ VB" a 1 EUR: prezzo segnaposto, non un affare
+            db.scrivi_evento("radar_v2", item_id, brand, {**base, "ok": False, "motivo": "prezzo_segnaposto"})
+            return _rosso("prezzo_segnaposto")
         vietata = parola_vietata(titolo)
         if vietata:
             db.scrivi_evento("radar_v2", item_id, brand, {**base, "ok": False, "motivo": "parola_vietata:" + vietata})
