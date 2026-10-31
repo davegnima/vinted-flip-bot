@@ -145,3 +145,27 @@ def test_fascia_di_confidenza():
     assert jev.fascia(0.9) == "passa" and jev.fascia(0.85) == "passa"
     assert jev.fascia(0.75) == "da_rivedere" and jev.fascia(0.7) == "da_rivedere"
     assert jev.fascia(0.69) == "scartato" and jev.fascia(None) == "scartato"
+
+
+def test_descrizione_e_titoli_simili_vanno_a_jev_e_simili_non_cambia_l_esito(monkeypatch):
+    monkeypatch.setattr(jev, "JEV_GIUDICE", True)
+    monkeypatch.setenv("TYPESAFE_API_KEY", "k")
+    corpi = []
+
+    def finto(corpo):
+        corpi.append(corpo)
+        risp = {k: {"choice": s, "confidence": 0.9} for k, s in
+                (("tipo", "oggetto_principale"), ("completo", "si"), ("prezzo", "sotto"))}
+        if "simili" in corpo["questions"]:
+            risp["simili"] = {"choice": "diverso", "confidence": 0.8}
+        return {"answers": risp}
+    monkeypatch.setattr(jev, "_chiama_jev", finto)
+    esito, conf, simili = jev.giudica_completo("Dyson V11", 40, [100, 120], 100, descrizione="  non   funziona " + "x" * 900,
+                                               titoli_simili=["Dyson V11 Absolute", "Dyson V8"])
+    assert (esito, conf, simili) == ("affare_vero", 0.9, ("diverso", 0.8))
+    stato = corpi[0]["state"]
+    assert "Descrizione del venditore: non funziona" in stato and "- Dyson V8" in stato
+    assert len(stato.split("Descrizione del venditore: ")[1].split("\n")[0]) <= jev.MAX_DESCRIZIONE
+    # senza titoli dei simili la domanda non c'e' e il terzo valore e' None
+    assert jev.giudica_completo("Dyson V11", 40, [100], 100)[2] is None
+    assert "simili" not in corpi[1]["questions"]

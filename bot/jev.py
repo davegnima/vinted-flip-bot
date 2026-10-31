@@ -40,11 +40,11 @@ DOMANDE = {
         },
     },
     "completo": {
-        "instructions": "Il titolo dice che l'oggetto e' completo o funzionante?",
+        "instructions": "Il titolo o la descrizione dicono che l'oggetto e' completo o funzionante?",
         "criteria": {
-            "si": "il titolo dice completo, funzionante, in scatola o con accessori",
-            "no": "il titolo dice che manca qualcosa, che non funziona, che e' bloccato (iCloud, codice) o da riparare",
-            "non_dichiarato": "il titolo non dice nulla in proposito",
+            "si": "dicono completo, funzionante, in scatola o con accessori",
+            "no": "dicono che manca qualcosa, che non funziona, che e' bloccato (iCloud, codice), venduto per ricambi o da riparare",
+            "non_dichiarato": "non dicono nulla in proposito",
         },
     },
     "prezzo": {
@@ -56,6 +56,18 @@ DOMANDE = {
         },
     },
 }
+# Prova in ombra (31/10): i titoli dei comparabili vanno a Jev, che dice se sono lo stesso modello dell'annuncio. La risposta
+# NON entra in verdetto_jev: finisce solo nel log e nell'evento, per tarare dopo una promozione dei gialli da ricerca allargata.
+DOMANDA_SIMILI = {
+    "instructions": "I titoli degli annunci simili sono lo stesso modello e la stessa versione dell'annuncio?",
+    "criteria": {
+        "stesso_modello": "quasi tutti i simili sono lo stesso modello e la stessa versione",
+        "in_parte": "alcuni simili sono lo stesso modello, altri una versione o un modello diverso",
+        "diverso": "i simili sono per lo piu' un altro modello, una serie diversa o oggetti diversi",
+    },
+}
+MAX_DESCRIZIONE = 600
+MAX_TITOLI_SIMILI = 15
 # Esiti del radar: stessa lista di prima, ora decisa dal codice.
 ESITI = ("affare_vero", "non_affare", "falso_o_ricambio")
 TIPI_NON_VENDIBILI = ("ricambio_accessorio", "lotto", "replica_o_dubbio")
@@ -117,19 +129,34 @@ def _chiama_jev(corpo):
 
 
 def giudica(titolo, prezzo, prezzi_simili, rivendita, foto=None):
-    """(esito, confidenza) oppure (None, None) se Jev non e' attivo o non risponde. Bloccante.
-    Con `foto` (bytes) e JEV_FOTO=1 Jev riceve anche la prima foto; se la richiesta con la foto fallisce, riprova solo testo."""
+    """(esito, confidenza) oppure (None, None). Versione senza descrizione ne' titoli dei simili: vedi giudica_completo."""
+    return giudica_completo(titolo, prezzo, prezzi_simili, rivendita, foto)[:2]
+
+
+def giudica_completo(titolo, prezzo, prezzi_simili, rivendita, foto=None, descrizione=None, titoli_simili=None):
+    """(esito, confidenza, simili) oppure (None, None, None) se Jev non e' attivo o non risponde. Bloccante.
+    Con `foto` (bytes) e JEV_FOTO=1 Jev riceve anche la prima foto; se la richiesta con la foto fallisce, riprova solo testo.
+    `descrizione` (tagliata a MAX_DESCRIZIONE caratteri) entra nello stato. Con `titoli_simili` Jev risponde anche a DOMANDA_SIMILI:
+    la risposta ('stesso_modello', 'in_parte', 'diverso', confidenza) e' il terzo valore e non influisce sull'esito."""
     chiave = os.environ.get("TYPESAFE_API_KEY", "").strip()
     if not (JEV_GIUDICE and chiave):
-        return None, None
+        return None, None, None
     simili = ", ".join(f"{p:g}" for p in sorted(prezzi_simili)[:20]) or "nessuno"
     formato = _formato_foto(foto) if JEV_FOTO else None
     stato = (f"Annuncio Vinted: {titolo}\nPrezzo chiesto: {prezzo} EUR\n"
              f"Prezzi chiesti di annunci simili usati: {simili}\n"
              f"Stima di rivendita (25 percentile): {rivendita} EUR")
+    desc = " ".join((descrizione or "").split())[:MAX_DESCRIZIONE]
+    if desc:
+        stato += f"\nDescrizione del venditore: {desc}"
+    titoli = [t for t in (titoli_simili or []) if t][:MAX_TITOLI_SIMILI]
+    if titoli:
+        stato += "\nTitoli degli annunci simili:\n" + "\n".join(f"- {t[:100]}" for t in titoli)
     domande = {k: {"type": "choice", "instructions": d["instructions"], "criteria": d["criteria"]}
                for k, d in DOMANDE.items()}
-    corpo = {"model": MODELLO, "state": stato, "questions": domande}
+    corpo = {"model": MODELLO, "state": stato, "questions": dict(domande)}
+    if titoli:
+        corpo["questions"]["simili"] = {"type": "choice", **DOMANDA_SIMILI}
     if formato:
         corpo["state"] += f"\nFoto dell'annuncio: {RIFERIMENTO_FOTO}"
         corpo["assets"] = {RIFERIMENTO_FOTO: {"type": "image", "data_base64": base64.b64encode(foto).decode(),
@@ -140,18 +167,27 @@ def giudica(titolo, prezzo, prezzi_simili, rivendita, foto=None):
     except Exception as e:  # noqa: BLE001 - Jev non deve bloccare il radar
         if not formato:
             log.warning("JEV | giudizio non disponibile: %s", str(e)[:200])
-            return None, None
+            return None, None, None
         log.warning("JEV FOTO | richiesta con foto non riuscita, riprovo solo testo: %s", str(e)[:200])
-        return giudica(titolo, prezzo, prezzi_simili, rivendita, foto=None)
+        return giudica_completo(titolo, prezzo, prezzi_simili, rivendita, None, descrizione, titoli_simili)
     try:
         risposte = {k: (risposta["answers"][k].get("choice"), risposta["answers"][k].get("confidence"))
                     for k in domande}
     except Exception as e:  # noqa: BLE001
         log.warning("JEV | risposta non leggibile: %s", str(e)[:200])
-        return None, None
+        return None, None, None
     if formato:
         risposte["foto"] = (risposta["answers"]["foto"].get("choice"), risposta["answers"]["foto"].get("confidence"))
+    simili_risp = None
+    if titoli:
+        try:
+            r = risposta["answers"]["simili"]
+            simili_risp = (r.get("choice"), r.get("confidence"))
+        except Exception:  # noqa: BLE001 - e' solo una prova in ombra
+            simili_risp = None
     token = (risposta.get("usage") or {}).get("input_tokens")
-    log.info("JEV DOMANDE | titolo=%s | foto=%s | input_tokens=%s | %s", titolo[:60], formato or "no", token,
+    log.info("JEV DOMANDE | titolo=%s | foto=%s | desc=%s | simili=%s | input_tokens=%s | %s", titolo[:60], formato or "no",
+             len(desc), simili_risp[0] if simili_risp else "-", token,
              " | ".join(f"{k}={v[0]}({v[1]})" for k, v in risposte.items()))
-    return verdetto_jev(risposte)
+    esito, conf = verdetto_jev(risposte)
+    return esito, conf, simili_risp

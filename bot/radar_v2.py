@@ -14,13 +14,14 @@ from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 from bot import db, radar_appreso
 from bot.comps import _cerca_vinted_testo_diretto
-from bot.jev import giudica
+from bot.jev import giudica_completo
 from bot.config import SPEDIZIONE_STIMATA_EUR
 from bot.logger import log
 from bot.radar import RADAR_SPESA_MAX, parola_vietata, radar_in_pausa
 from bot.radar_matrice import buy_max
 from bot.verdetto import _a_float, _estrai_item_id_da_url
 from bot.vinted_http import _vinted_get_con_retry
+from bot.vinted_scrape import _decodifica_stringa_json
 from bot.valore_mercato import comparabili_simili, e_un_pezzo, parse_comp, query_comp, solo_usato, stima_mercato, valuta
 # ---- fine import ----
 
@@ -38,6 +39,21 @@ RADAR_V2_RIF_ORE = float(os.environ.get("RADAR_V2_RIF_ORE", "8") or 8)
 RIF_MIN_COMPARABILI = 6
 
 _visti = set()
+# Prova in ombra (31/10): descrizioni e titoli dei simili per Jev, senza richieste in piu' (la pagina e i comparabili si scaricano comunque).
+_descrizioni = {}
+_titoli_simili = {}
+_RE_DESCRIZIONE = re.compile(r'"description"\s*:\s*"((?:[^"\\]|\\.)*)"')
+
+
+def _descrizione_da_html(html):
+    """Descrizione dell'annuncio dalla pagina (stessa regex di scrape_vinted_listing), o None. Pura."""
+    m = _RE_DESCRIZIONE.search(html or "")
+    if not m:
+        return None
+    try:
+        return _decodifica_stringa_json(m.group(1)) or None
+    except Exception:  # noqa: BLE001
+        return None
 _appreso_caricato = {"si": False}
 RADAR_V2_SCALA_MIN = int(os.environ.get("RADAR_V2_SCALA_MIN", "3") or 3)  # sotto questi comparabili si allarga la ricerca (0 = spenta)
 _cache = {}  # testo ricerca -> (ts, [prezzi], n_grezzi)
@@ -141,7 +157,14 @@ async def _catalogo_annuncio(url):
     di richieste. Senza categoria la ricerca resta sul testo."""
     try:
         resp = await _vinted_get_con_retry(url, timeout=10, max_retries=1)
-        return _catalogo_da_html(resp.text) if resp is not None else None
+        if resp is None:
+            return None
+        desc = _descrizione_da_html(resp.text)
+        if desc:
+            if len(_descrizioni) > 500:
+                _descrizioni.clear()
+            _descrizioni[url] = desc
+        return _catalogo_da_html(resp.text)
     except Exception:  # noqa: BLE001 - senza categoria la ricerca resta solo sul testo
         return None
 
@@ -163,6 +186,9 @@ async def _prezzi_simili(testo, titolo, prezzo, brand=None, catalogo=None):
     usati = [(t, p) for t, p in comparabili_simili(solo_usato(comps), testo, brand) if not (t == titolo and abs(p - prezzo) < 0.01)]
     prezzi = [p for _, p in usati]
     _cache[chiave] = (adesso, prezzi, len(comps))
+    if len(_titoli_simili) > 500:
+        _titoli_simili.clear()
+    _titoli_simili[chiave] = [t for t, _ in usati]
     return prezzi, len(comps), False
 
 
@@ -280,10 +306,16 @@ async def analizza(parsed, url, foto=None, query_url=None):
                  n_grezzi, allargata or 0, v.get("affidabilita"), testo, parsed.get("query_name") or "-", titolo[:60])
         # Prova foto (25/10): la foto va a Jev solo con i semafori di JEV_FOTO_SEMAFORI (di default il verde).
         foto_jev = foto if v.get("semaforo") in JEV_FOTO_SEMAFORI else None
-        jev, jev_conf = await asyncio.to_thread(giudica, titolo, prezzo, prezzi, v.get("rivendita"), foto_jev)
+        jev, jev_conf, jev_simili = await asyncio.to_thread(
+            giudica_completo, titolo, prezzo, prezzi, v.get("rivendita"), foto_jev, _descrizioni.pop(url, None),
+            _titoli_simili.get((testo, catalogo)))
         if jev:
-            log.info("RADAR V2 JEV | item=%s | giudizio=%s | confidenza=%s | titolo=%s", item_id, jev, jev_conf, titolo[:60])
-        db.scrivi_evento("radar_v2", item_id, brand, {**dati, "jev": jev, "jev_conf": jev_conf})
+            log.info("RADAR V2 JEV | item=%s | giudizio=%s | confidenza=%s | simili=%s(%s) | largo=%s | n=%s | titolo=%s", item_id, jev,
+                     jev_conf, jev_simili[0] if jev_simili else "-", jev_simili[1] if jev_simili else "-", allargata or 0,
+                     len(prezzi), titolo[:60])
+        db.scrivi_evento("radar_v2", item_id, brand, {**dati, "jev": jev, "jev_conf": jev_conf,
+                                                      "jev_simili": jev_simili[0] if jev_simili else None,
+                                                      "jev_simili_conf": jev_simili[1] if jev_simili else None})
         return {"semaforo": v.get("semaforo"), "rivendita": v.get("rivendita"), "margine": v.get("margine"),
                 "roi": v.get("roi"), "n": len(prezzi), "n_grezzi": n_grezzi, "allargata": allargata, "motivo": v.get("motivo"),
                 "jev": jev, "jev_conf": jev_conf}
