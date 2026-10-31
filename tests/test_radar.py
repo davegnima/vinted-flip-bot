@@ -58,6 +58,13 @@ def test_filtro_livello1():
     assert radar.filtro_livello1("Minifigure LEGO", 5, "lego")[1].startswith("prezzo_sotto_minimo")
 
 
+def test_solo_scatola_e_vietata():
+    # 31/10: falso verde, "Switch 2 Zelda Edition Verpackung (keine Konsole!)" a 40 EUR con rivendita 640
+    assert radar.parola_vietata("Nintendo Switch 2 Zelda Edition Verpackung (keine Konsole!)") == "verpackung"
+    assert radar.parola_vietata("Switch solo scatola") == "solo scatola"
+    assert radar.parola_vietata("Switch in scatola con accessori") is None
+
+
 def test_negazione_annulla_parola_vietata():
     assert radar.parola_vietata("Set LEGO completo, nessun pezzo mancante") is None
     assert radar.parola_vietata("LEGO 10179 mancano 3 pezzi") == "mancano"

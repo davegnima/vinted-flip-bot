@@ -161,7 +161,8 @@ RADAR_BRAND_ESCLUSI = ("tiffany", "cartier", "bulgari", "bvlgari", "castelli", "
 _PAROLE_VIETATE_RE = re.compile(
     r"(?<!\w)(rott[oaie]|non funzion\w*|da riparare|guast[oaie]|difettos[oaie]|per pezzi|per ricambi|ricambi"
     r"|incomplet[oaie]|mancante|mancano|senza pezzi|replica|fake|copia|imitazione|ispirat[oaie]|stile|simil\w*"
-    r"|tipo|non original\w*|broken|for parts)(?!\w)",
+    r"|tipo|non original\w*|broken|for parts"
+    r"|solo (?:la )?scatola|scatola vuota|verpackung|keine konsole|ohne konsole|empty box|box only)(?!\w)",
     re.I,
 )
 
