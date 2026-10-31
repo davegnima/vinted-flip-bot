@@ -485,6 +485,7 @@ def traccia_verdetto_v2(parsed, url, v2, t0=None):
         "roi": v2.get("roi"), "n_comp": v2.get("n"), "jev": v2.get("jev"), "jev_motivo": v2.get("jev_motivo")}.items()
         if v is not None}
     tr.tracc_avvia_serie(info, url, t0 or time.time(), offsets=RADAR_RICONTROLLI_SECONDI)
+    log.info("RADAR TRACCIA AVVIO | item=%s | semaforo=%s | prezzo=%s", item_id, sem, prezzo)
     return True
 
 
