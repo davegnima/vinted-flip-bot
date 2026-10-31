@@ -95,13 +95,34 @@ def comparabili_simili(comps, query, brand=None, soglia=0.6):
     return out
 
 
+_RE_SIGLA_MODELLO = re.compile(r"^(?=[a-z0-9]*[a-z])(?=[a-z0-9]*\d)[a-z0-9]{2,}$")
+_RE_SPECIFICA = re.compile(r"^\d+(mp|gb|tb|mb|mm|cm|ml|cl|kg|gr|w|v|hz|k|g|l|x|inch|pollici)$")
+
+
+def _e_sigla_modello(w):
+    """'s1900', 'ps5', 'v15', 'a7iii' si' (sono il modello); '2mp', '64gb', '24cm' no (sono specifiche). Pura."""
+    return bool(_RE_SIGLA_MODELLO.match(w)) and not _RE_SPECIFICA.match(w)
+
+
 def query_comp(titolo, brand=None, max_parole=4):
-    """Testo di ricerca: marca + prime parole significative del titolo (niente 'usato', 'ottime condizioni'...)."""
+    """Testo di ricerca: marca + prime parole significative del titolo (niente 'usato', 'ottime condizioni'...).
+
+    Se il titolo ha una sigla di modello (es. 'S1900'), la ricerca parte dalla parola prima della sigla (la serie, 'finepix'):
+    'Fotocamera compatta digitale Fujifilm FinePix S1900' dava 'fujifilm fotocamera compatta digitale' e il modello restava
+    fuori (31/10)."""
     parole = [w for w in re.findall(r"[\w'’]+", (titolo or "").lower()) if w not in _PAROLE_VUOTE and w not in _PAROLE_GENERICHE]
-    if brand:
-        b = brand.lower().split()
-        parole = b + [w for w in parole if w not in b]
-    return " ".join(parole[:max_parole])
+    b = brand.lower().split() if brand else []
+    if b:
+        parole = [w for w in parole if w not in b]
+    for i, w in enumerate(parole):
+        if _e_sigla_modello(w):
+            if i > 0 and not parole[i - 1].isdigit():
+                parole = parole[i - 1:]
+            else:
+                parole = parole[i:]
+            parole = [x for x in parole if not x.isdigit() and not _RE_SPECIFICA.match(x)]  # '12.2MP' lascia '12' e '2mp': rumore
+            break
+    return " ".join((b + parole)[:max_parole])
 
 
 def stima_mercato(prezzi, min_n=MIN_COMPARABILI):
