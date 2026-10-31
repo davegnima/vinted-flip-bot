@@ -1461,13 +1461,16 @@ async def on_new_message(event):
                     try:
                         await event.delete()
                         cancellato = True
-                        log.info("RADAR PULIZIA | cancellato msg_id=%s | motivo=%s", msg_id, v2_radar.get("motivo"))
+                        log.info("RADAR PULIZIA | cancellato msg_id=%s | item=%s | motivo=%s", msg_id, _estrai_item_id_da_url(url_radar), v2_radar.get("motivo"))
                     except Exception as exc:
                         log.warning("RADAR PULIZIA | non cancellabile msg_id=%s (%s): serve il diritto di eliminare messaggi nel gruppo",
                                     msg_id, type(exc).__name__)
                 if RADAR_RISPOSTA_GRUPPO and not cancellato:
                     try:
-                        await event.reply(testo_risposta_gruppo(v2_radar), silent=True)
+                        testo_gruppo = testo_risposta_gruppo(v2_radar)
+                        await event.reply(testo_gruppo, silent=True)
+                        log.info("RADAR GRUPPO | risposta msg_id=%s | item=%s | testo=%s", msg_id, _estrai_item_id_da_url(url_radar),
+                                 testo_gruppo.replace("\n", " / "))
                     except Exception:
                         log.warning("RADAR RISPOSTA | non inviata per msg_id=%s", msg_id)
                 await gestisci_annuncio_radar(parsed_radar, url_radar, t0=t_ricevuto_bot, v2=v2_radar, foto=foto_radar)

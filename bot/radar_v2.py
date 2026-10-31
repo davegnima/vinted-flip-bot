@@ -12,7 +12,7 @@ import asyncio
 import traceback
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
-from bot import db
+from bot import db, radar_appreso
 from bot.comps import _cerca_vinted_testo_diretto
 from bot.jev import giudica
 from bot.config import SPEDIZIONE_STIMATA_EUR
@@ -38,6 +38,7 @@ RADAR_V2_RIF_ORE = float(os.environ.get("RADAR_V2_RIF_ORE", "8") or 8)
 RIF_MIN_COMPARABILI = 6
 
 _visti = set()
+_appreso_caricato = {"si": False}
 RADAR_V2_SCALA_MIN = int(os.environ.get("RADAR_V2_SCALA_MIN", "3") or 3)  # sotto questi comparabili si allarga la ricerca (0 = spenta)
 _cache = {}  # testo ricerca -> (ts, [prezzi], n_grezzi)
 _riferimenti = {}  # nome ricerca -> (ts, stima o None)
@@ -233,6 +234,17 @@ async def analizza(parsed, url, foto=None, query_url=None):
             # titolo di una parola ("Dyson"): il modello non si capisce, i comparabili sarebbero ricambi e accessori
             db.scrivi_evento("radar_v2", item_id, brand, {**base, "ok": False, "motivo": "titolo_generico", "q": testo})
             return _rosso("titolo_generico")
+        if not _appreso_caricato["si"]:
+            _appreso_caricato["si"] = True
+            radar_appreso.carica_dal_db()
+        fam = testo
+        limite_appreso = radar_appreso.da_saltare(fam, prezzo)
+        if limite_appreso is not None:
+            # filtro appreso (31/10): la famiglia non ha mai dato margine a questo prezzo, niente richiesta a Vinted
+            db.scrivi_evento("radar_v2", item_id, brand, {**base, "ok": False, "motivo": "famiglia_senza_margine", "fam": fam, "limite": limite_appreso})
+            log.info("RADAR V2 APPRESO SALTATO | item=%s | famiglia=%s | prezzo=%s | limite=%.0f | ricerca=%s | titolo=%s",
+                     item_id, fam, prezzo, limite_appreso, parsed.get("query_name") or "-", titolo[:60])
+            return _rosso("famiglia_senza_margine")
         if RADAR_V2_PREFILTRO and query_url and parsed.get("query_name") and testo_ricerca(query_url):
             rif = await _riferimento_ricerca(parsed["query_name"], query_url)
             limite = limite_acquisto(rif)
@@ -256,10 +268,13 @@ async def analizza(parsed, url, foto=None, query_url=None):
                     prezzi, n_grezzi, allargata, testo = p2, g2, passo, testo_largo
                 if len(prezzi) >= RADAR_V2_SCALA_MIN:
                     break
-        v = valuta(prezzo, stima_mercato(prezzi, min_n=2))
+        stima = stima_mercato(prezzi, min_n=2)
+        v = valuta(prezzo, stima)
+        limite = limite_acquisto(stima)
+        radar_appreso.registra(fam, limite, len(prezzi), allargata)
         if allargata and v.get("semaforo") == "verde":
             v["semaforo"] = "giallo"
-        dati = {**base, "q": testo, "n_grezzi": n_grezzi, "n_usati": len(prezzi), "cache": dalla_cache, "allargata": allargata, **v}
+        dati = {**base, "q": testo, "fam": fam, "limite": limite, "n_grezzi": n_grezzi, "n_usati": len(prezzi), "cache": dalla_cache, "allargata": allargata, **v}
         log.info("RADAR V2 OMBRA | item=%s | semaforo=%s | ok=%s | motivo=%s | prezzo=%s | rivendita=%s | margine=%s | roi=%s | n=%s | grezzi=%s | largo=%s | aff=%s | q=%s | ricerca=%s | titolo=%s",
                  item_id, v["semaforo"], v["ok"], v["motivo"], prezzo, v.get("rivendita"), v.get("margine"), v.get("roi"), len(prezzi),
                  n_grezzi, allargata or 0, v.get("affidabilita"), testo, parsed.get("query_name") or "-", titolo[:60])
