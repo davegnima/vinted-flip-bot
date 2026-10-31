@@ -390,9 +390,16 @@ RADAR_CANCELLA_SCARTI = os.environ.get("RADAR_CANCELLA_SCARTI", "1").strip() not
 MOTIVI_NON_OGGETTO = ("parola_vietata", "pezzo_o_accessorio", "prezzo_segnaposto", "titolo_generico", "famiglia_senza_margine")
 
 
+# Anche i rossi economici (margine/ROI bassi, sopra il riferimento, pochi comparabili) si cancellano dal gruppo
+# (richiesta dell'utente, 31/10: "mi arriva di tutto, anche i rossi"). Il tracciamento resta: i rossi si validano nei log.
+RADAR_CANCELLA_ROSSI = os.environ.get("RADAR_CANCELLA_ROSSI", "1").strip() not in ("0", "false", "no", "")
+
+
 def da_cancellare(v2):
-    """True se il verdetto e' un rosso per un annuncio che non e' l'oggetto intero. Pura."""
-    return bool(v2) and v2.get("semaforo") == "rosso" and (v2.get("motivo") or "").split(":")[0] in MOTIVI_NON_OGGETTO
+    """True se il verdetto e' un rosso da togliere dal gruppo: non e' l'oggetto intero, oppure (RADAR_CANCELLA_ROSSI) e' rosso. Pura."""
+    if not v2 or v2.get("semaforo") != "rosso":
+        return False
+    return RADAR_CANCELLA_ROSSI or (v2.get("motivo") or "").split(":")[0] in MOTIVI_NON_OGGETTO
 
 
 def _da_mandare(v2):
