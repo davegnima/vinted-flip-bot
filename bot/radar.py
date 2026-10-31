@@ -29,7 +29,7 @@ from bot import tracciamento as tr
 from bot import radar_matrice as rm
 from bot.vinted_scrape import scrape_vinted_listing
 from bot.logger import log
-from bot.config import TELEGRAM_ALERT_CHAT_ID, TELEGRAM_OWNER_CHAT_ID
+from bot.config import TELEGRAM_OWNER_CHAT_ID
 from bot.telegram_api import telegram_send_message, telegram_send_photo
 # ---- fine import ----
 
@@ -313,8 +313,8 @@ def semaforo_radar(prezzo, buy_max):
 RADAR_SEMAFORI = {x.strip() for x in os.environ.get("RADAR_SEMAFORI", "verde,giallo").split(",") if x.strip()}
 if os.environ.get("RADAR_SOLO_VERDI", "0").strip() in ("1", "true", "si"):
     RADAR_SEMAFORI = {"verde"}
-# Chat dove arrivano gli avvisi del radar (31/10: "Annunci cervello"): RADAR_CHAT_ID, altrimenti la chat avvisi, altrimenti l'owner.
-RADAR_CHAT_ID = (os.environ.get("RADAR_CHAT_ID") or "").strip() or TELEGRAM_ALERT_CHAT_ID or TELEGRAM_OWNER_CHAT_ID
+# Chat dove arrivano gli avvisi del radar (31/10: "Annunci cervello", la stessa del Cervello della moda): RADAR_CHAT_ID, altrimenti l'owner.
+RADAR_CHAT_ID = (os.environ.get("RADAR_CHAT_ID") or "").strip() or TELEGRAM_OWNER_CHAT_ID
 
 
 SEMAFORO_EMOJI = {"verde": "🟢", "giallo": "🟡", "rosso": "🔴"}
