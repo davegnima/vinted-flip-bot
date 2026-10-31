@@ -273,3 +273,9 @@ def test_solo_i_verdi_fanno_suono():
     from bot import radar
     assert radar._con_suono({"semaforo": "verde"})
     assert not radar._con_suono({"semaforo": "giallo"}) and not radar._con_suono(None)
+
+
+def test_descrizione_dalla_pagina():
+    html = '<script>{"id":1,"description":"Non funziona, vendo per ricambi\\nSpedisco","x":2}</script>'
+    assert radar_v2._descrizione_da_html(html) == "Non funziona, vendo per ricambi\nSpedisco"
+    assert radar_v2._descrizione_da_html("niente") is None
