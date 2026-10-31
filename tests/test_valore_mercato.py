@@ -90,3 +90,11 @@ def test_semaforo_radar_dal_buy_max():
     assert semaforo_radar(60, 50) == "🔴"
     assert semaforo_radar(None, 50) is None
     assert semaforo_radar(40, None) is None
+
+
+def test_query_comp_parte_dalla_serie_prima_della_sigla_modello():
+    # 31/10: il modello restava fuori dalle prime 4 parole e i comparabili erano fotocamere qualsiasi
+    assert query_comp("Fotocamera compatta digitale Fujifilm FinePix S1900 12.2MP", "Fujifilm") == "fujifilm finepix s1900"
+    assert query_comp("Fotocamera Canon EOS 5D Mark IV", "Canon") == "canon eos 5d mark"
+    # specifiche (2mp, 64gb) non sono sigle di modello
+    assert query_comp("Console Nintendo Switch OLED 64GB bianca", "Nintendo") == "nintendo console switch oled"
