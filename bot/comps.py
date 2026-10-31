@@ -9,7 +9,7 @@ import asyncio
 from bot.costanti import CATEGORIA_TERMINE_EN, VINTED_BRAND_IDS
 from bot.config import REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET, REDDIT_USERNAME, VISUAL_SEARCH_ATTIVA
 from bot.config import RESELLBOT_ATTIVO
-from bot.serper_fonti import _cerca_ebay_sold_via_resellbot, _serper_batch_query_ebay_sold, _serper_scrape_page_diretto
+from bot.resellbot import _cerca_ebay_sold_via_resellbot
 from bot.comps_filtri import campione_pagina_vinted, campione_scheda_vinted, _estrai_articoli_da_alt_vinted, _estrai_mappa_url_comp_vinted, _filtra_comp_per_brand_sottolinee, _filtra_comp_per_categoria, _rimuovi_comp_autoreferenziale
 from bot.vinted_http import _vinted_get_con_retry
 from bot.vinted_search import build_vinted_search_url, build_vinted_visual_search_url
@@ -19,13 +19,13 @@ from bot import http_clients as hc
 async def _scrape_catalogo_vinted_diretto(url):
     """Scarica la pagina catalogo search_by_image_id con il client HTTP GIA'
     autenticato del bot (stesso pool/proxy usato per annunci e profili
-    venditore), invece di passare per Serper. Aggiunta il 2026-09-20 dopo
+    venditore). Aggiunta il 2026-09-20 dopo
     aver isolato empiricamente (con l'utente, via DevTools) che Vinted
     restituisce contenuto DIVERSO a seconda di chi fa la richiesta: il
     browser dell'utente (anche incognito, senza login) riceve la vera
     griglia filtrata per search_by_image_id renderizzata server-side (SSR,
     confermato: i titoli sono gia' nell'HTML grezzo via view-source, non
-    serve JS), mentre Serper riceveva sistematicamente lo stesso mazzo
+    serve JS), mentre un fetcher esterno (Serper, poi tolto) riceveva sistematicamente lo stesso mazzo
     generico di articoli del brand (identico su search_by_image_id diversi
     per lo stesso brand) -- quasi certamente un fallback anti-bot (Datadome,
     gia' noto per altri endpoint Vinted) che riconosce il fingerprint di
@@ -47,40 +47,27 @@ async def _scrape_catalogo_vinted_diretto(url):
     return _estrai_articoli_da_alt_vinted(resp.text), True, _estrai_mappa_url_comp_vinted(resp.text)
 
 
-# Timeout dedicati alla ricerca testuale Vinted con fallback (2026-09-25):
-# lo scrape diretto ha un budget corto, cosi' se Vinted e' lento o risponde
-# 403 resta tempo per il tentativo Serper dentro il timeout complessivo della
-# fonte (TIMEOUT_FONTE_VINTED_CON_FALLBACK_SECONDI in search_comps_completo).
+# Timeout della ricerca testuale Vinted: due tentativi da 8 s al massimo, tetto
+# complessivo 16 s, sotto i 18 s della fonte (TIMEOUT_FONTE_VINTED_SECONDI in search_comps_completo).
 TIMEOUT_SCRAPE_DIRETTO_VINTED_TESTO_SECONDI = 8
-# 25/10: due tentativi (prima uno solo, e un 403 mandava subito su Serper). Il tetto complessivo resta sotto i 25 s
-# della fonte, cosi' il fallback Serper ha ancora tempo.
 TIMEOUT_SCRAPE_DIRETTO_VINTED_TESTO_TOTALE_SECONDI = 16
-TIMEOUT_FONTE_VINTED_CON_FALLBACK_SECONDI = 25
+TIMEOUT_FONTE_VINTED_SECONDI = 18
 MARKER_NESSUN_ARTICOLO_VINTED = "Nessun articolo trovato"
 
 
-async def _cerca_vinted_testo_diretto_con_fallback_serper(url):
-    """Ricerca comp testuale su Vinted: PRIMA lo scrape diretto della pagina
-    catalogo (stesso client/proxy e stesso parser su alt= gia' usati per la
-    ricerca visuale, vedi _scrape_catalogo_vinted_diretto), POI Serper solo
-    se il diretto fallisce o non estrae nessun articolo.
+async def _cerca_vinted_testo_diretto(url):
+    """Ricerca comp testuale su Vinted: scrape diretto della pagina catalogo
+    (stesso client/proxy e stesso parser su alt= gia' usati per la ricerca
+    visuale, vedi _scrape_catalogo_vinted_diretto).
 
-    Aggiunta il 2026-09-25 su richiesta dell'utente per risparmiare crediti
-    Serper sulla ricerca testuale (una chiamata a ogni annuncio, piu' una
-    per il sarto quando c'e'). Serper resta come rete di sicurezza e non
-    viene tolto: lo scrape diretto aggiunge 1-2 richieste a Vinted per
-    annuncio dallo stesso IP, e il bot ha gia' preso 403 da Vinted dopo molte
-    ore di attivita' (vedi PAUSA_MINIMA_TRA_RICHIESTE_VINTED_SECONDI). Se
-    succede, il fallback copre l'annuncio invece di lasciarlo senza comp.
+    Dal 31/10 e' l'unica via: Serper (che era la riserva) e' stato tolto per
+    scelta dell'utente. Se lo scrape fallisce l'annuncio resta senza comp
+    Vinted di testo e si va avanti con le altre fonti.
 
-    Stesso contratto di ritorno delle altre fonti: (testo, ok, mappa_url),
-    con il testo nel formato '- titolo — €prezzo' una riga per articolo.
-    mappa_url (aggiunta il 2026-09-25, vedi _estrai_mappa_url_comp_vinted)
-    e' popolata SOLO sul ramo di scrape diretto: l'HTML che arriva da
-    Serper (_serper_scrape_page_diretto) e' gia' passato per un'estrazione
-    di contenuto che non preserva i data-testid, quindi su quel ramo il
-    dizionario resta vuoto -- niente link per quei comp, non un errore."""
-    motivo_fallback = None
+    Contratto di ritorno comune alle fonti: (testo, ok, mappa_url), con il
+    testo nel formato '- titolo — €prezzo' una riga per articolo e mappa_url
+    (vedi _estrai_mappa_url_comp_vinted) per riattaccare i link ai comp."""
+    motivo = None
     try:
         resp = await asyncio.wait_for(
             _vinted_get_con_retry(url, timeout=TIMEOUT_SCRAPE_DIRETTO_VINTED_TESTO_SECONDI, max_retries=2),
@@ -88,23 +75,21 @@ async def _cerca_vinted_testo_diretto_con_fallback_serper(url):
         )
     except asyncio.TimeoutError:
         resp = None
-        motivo_fallback = "timeout scrape diretto"
+        motivo = "timeout scrape diretto"
     if resp is not None:
         testo = _estrai_articoli_da_alt_vinted(resp.text)
-        # Etichetta proxy (2026-09-27, vedi _vinted_get_con_retry) anche qui:
-        # stessa logica del catalogo che sopra, applicata al lato testuale
-        # "senza articoli estratti" -- e' l'ALTRO caso applicativo (oltre alle
-        # foto) in cui Vinted risponde 200 ma con una pagina non utilizzabile.
+        # Etichetta proxy (2026-09-27, vedi _vinted_get_con_retry): e' il caso
+        # in cui Vinted risponde 200 ma con una pagina non utilizzabile.
         etichetta_proxy = getattr(resp, "_proxy_etichetta", "?")
         if MARKER_NESSUN_ARTICOLO_VINTED not in testo:
-            log.info("Comp Vinted testo: scrape diretto OK (%d articoli, proxy=%s), Serper non usato -- %s",
+            log.info("Comp Vinted testo: scrape diretto OK (%d articoli, proxy=%s) -- %s",
                      testo.count("\n") + 1, etichetta_proxy, url)
             global _schede_scritte
             if _schede_scritte < 2:
                 _schede_scritte += 1
                 log.info("COMPS SCHEDA CAMPIONE | %s", campione_scheda_vinted(resp.text))
             return testo, True, _estrai_mappa_url_comp_vinted(resp.text)
-        motivo_fallback = (
+        motivo = (
             f"scrape diretto senza articoli estratti (proxy={etichetta_proxy}, "
             f"status {resp.status_code}, len {len(resp.text)})"
         )
@@ -113,14 +98,11 @@ async def _cerca_vinted_testo_diretto_con_fallback_serper(url):
         if _campioni_pagina_scritti < 3:
             _campioni_pagina_scritti += 1
             log.info("COMPS PAGINA CAMPIONE | %s", campione_pagina_vinted(resp.text))
-    elif motivo_fallback is None:
-        motivo_fallback = "scrape diretto fallito (nessuna risposta)"
+    elif motivo is None:
+        motivo = "scrape diretto fallito (nessuna risposta)"
 
-    log.info("Comp Vinted testo: %s -- uso Serper come riserva per %s", motivo_fallback, url)
-    testo_serper, ok_serper = await _serper_scrape_page_diretto("VINTED", url)
-    if ok_serper:
-        return testo_serper, True, {}
-    return f"  {motivo_fallback}; fallback Serper anch'esso fallito: {testo_serper.strip()}", False, {}
+    log.info("Comp Vinted testo: %s -- %s", motivo, url)
+    return f"  {motivo}", False, {}
 
 
 _campioni_pagina_scritti = 0
@@ -141,7 +123,7 @@ async def _recupera_comp_visuali_vinted(item_id, photo_id, brand):
     tratta come fonte assente senza differenziare i log dalle altre query
     fallite.
 
-    Scrape diretto (non Serper) dal 2026-09-20: vedi docstring di
+    Scrape diretto dal 2026-09-20: vedi docstring di
     _scrape_catalogo_vinted_diretto per il perche'."""
     url = await build_vinted_visual_search_url(item_id, photo_id, brand)
     if not url:
@@ -159,9 +141,9 @@ async def _recupera_comp_visuali_vinted(item_id, photo_id, brand):
 
 
 # Cache dei venduti Resellbot (richiesto dall'utente il 2026-10-03): l'analisi del 2026-10-02 ha mostrato
-# Resellbot in errore 429 decine di volte da sera, con il bot costretto al fallback Google (meno preciso,
+# Resellbot in errore 429 decine di volte da sera, con il bot costretto al fallback Google di allora (meno preciso,
 # nessun URL). I prezzi venduti per brand+categoria cambiano lentamente: si riusano per 24h (meno chiamate,
-# meno 429) e, se Resellbot e' bloccato, fino a 72h prima di ripiegare su Google.
+# meno 429) e, se Resellbot e' bloccato, fino a 72h (dal 31/10 senza piu' la riserva Google: Serper e' stato tolto).
 SOLD_CACHE_FRESCA_SECONDI = 24 * 3600
 SOLD_CACHE_STALE_SECONDI = 72 * 3600
 SOLD_CACHE_MAX_VOCI = 400
@@ -187,52 +169,33 @@ def _sold_cache_scrivi(chiave, testo, mappa_url):
 
 
 async def _cerca_ebay_sold_con_fallback(brand, categoria, material_per_ricerca=None, dettaglio_distintivo=None):
-    """Wrapper per l'executor: prova prima Resellbot (dati di vendita
-    confermati, veri, vedi _cerca_ebay_sold_via_resellbot), e solo se fallisce
-    (bloccato, rate-limited, errore di rete, o semplicemente 'nessun venduto
-    trovato' con ok=True viene comunque accettato cosi' com'e' -- il fallback
-    scatta solo su ok=False) prova la query Google di riserva. Tenute
-    sequenziali (non in parallelo) per non raddoppiare le chiamate quando la
-    prima fonte funziona, che e' il caso comune.
+    """Venduti eBay/Poshmark da Resellbot (dati di vendita confermati, vedi
+    _cerca_ebay_sold_via_resellbot), con cache: se Resellbot non risponde si
+    usano i venduti in cache di ore fa. Dal 31/10 non c'e' piu' la query
+    Google di riserva (Serper tolto): se Resellbot e' spento o fallisce e la
+    cache e' vuota la fonte resta assente.
 
-    material_per_ricerca (aggiunto il 2026-09-19) e dettaglio_distintivo
-    (aggiunto il 2026-09-25, vedi occhio_schema.dettaglio_distintivo_ricerca)
-    vengono inoltrati a entrambe le fonti per restringere la query -- vedi
-    docstring di _cerca_ebay_sold_via_resellbot per come le varianti vengono
-    combinate in una sola chiamata a Resellbot.
+    material_per_ricerca e dettaglio_distintivo (vedi
+    occhio_schema.dettaglio_distintivo_ricerca) restringono la query -- vedi
+    docstring di _cerca_ebay_sold_via_resellbot.
 
-    Ritorna (testo, ok, mappa_url) dal 2026-09-25: mappa_url e' popolata solo
-    sul ramo Resellbot (fonte primaria), vuota sul ramo fallback Google."""
+    Ritorna (testo, ok, mappa_url)."""
     chiave_cache = _sold_cache_chiave(brand, categoria, material_per_ricerca, dettaglio_distintivo)
     in_cache = _sold_cache_leggi(chiave_cache, SOLD_CACHE_FRESCA_SECONDI)
     if in_cache:
         return in_cache[0], True, in_cache[1]
     if not RESELLBOT_ATTIVO:
-        # Resellbot disattivato: si va direttamente su Google/eBay, niente chiamate sprecate ne' cache dei venduti.
-        testo_fallback, ok_fallback = await _serper_batch_query_ebay_sold(brand, categoria, material_per_ricerca, dettaglio_distintivo)
-        if ok_fallback:
-            return (f"{testo_fallback}\n(Nota: eBay/Poshmark da ricerca Google, non da vendite confermate: "
-                    f"trattali come prezzi ASK.)"), True, {}
-        return f"ricerca Google eBay/Poshmark fallita: {testo_fallback}", False, {}
+        return "  Resellbot disattivato: nessun venduto eBay/Poshmark.", False, {}
     testo, ok, mappa_url = await _cerca_ebay_sold_via_resellbot(brand, categoria, material_per_ricerca, dettaglio_distintivo)
     if ok:
         _sold_cache_scrivi(chiave_cache, testo, mappa_url)
         return testo, ok, mappa_url
-    log.info("_cerca_ebay_sold_con_fallback: Resellbot fallito (%s), tento fallback Google.", testo)
     vecchio = _sold_cache_leggi(chiave_cache, SOLD_CACHE_STALE_SECONDI)
     if vecchio:
-        log.info("_cerca_ebay_sold_con_fallback: uso i venduti in cache (piu' vecchi di %dh) al posto del fallback Google.",
-                 SOLD_CACHE_FRESCA_SECONDI // 3600)
+        log.info("_cerca_ebay_sold_con_fallback: Resellbot fallito (%s), uso i venduti in cache (piu' vecchi di %dh).",
+                 testo, SOLD_CACHE_FRESCA_SECONDI // 3600)
         return vecchio[0] + "\n(Nota: Resellbot non raggiungibile, questi venduti arrivano dalla cache di ore fa.)", True, vecchio[1]
-    testo_fallback, ok_fallback = await _serper_batch_query_ebay_sold(brand, categoria, material_per_ricerca, dettaglio_distintivo)
-    if ok_fallback:
-        # Nessuna mappa_url dal fallback Google (stesso limite del fallback
-        # Serper per Vinted, vedi _cerca_vinted_testo_diretto_con_fallback_serper):
-        # gli snippet Google non danno un URL diretto all'annuncio abbastanza
-        # affidabile per il lookup titolo+prezzo, quindi niente link Punto 3
-        # per i comp arrivati da questo ramo.
-        return f"{testo_fallback}\n(Nota: fonte primaria Resellbot fallita, questi risultati vengono da Google/eBay.)", True, {}
-    return f"{testo} | fallback Google anch'esso fallito: {testo_fallback}", False, {}
+    return testo, False, {}
 
 
 # ---------------------------------------------------------------------------
@@ -537,7 +500,7 @@ async def search_comps_completo(brand, categoria, query_base, catalog_id=None, m
     # AGGIORNAMENTO 2026-09-25: la conversione valuta in
     # _cerca_ebay_sold_via_resellbot / _query_resellbot_raw e' stata
     # corretta (vedi TASSO_USD_EUR). Su richiesta esplicita dell'utente,
-    # eBay/Poshmark (via Resellbot, con fallback Google) rientra ora nel
+    # eBay/Poshmark (via Resellbot) rientra ora nel
     # fan-out qui sotto come fonte SEMPRE tentata (non condizionale come la
     # ricerca visuale) -- stessi filtri di pulizia gia' usati su Vinted
     # (autoreferenziale, categoria, non il filtro sottolinee: non ha senso
@@ -547,7 +510,7 @@ async def search_comps_completo(brand, categoria, query_base, catalog_id=None, m
     # il timeout e' PER FONTE (prima era complessivo sull'as_completed, quindi
     # una fonte lenta poteva consumare il budget di tutte), e asyncio.wait_for
     # CANCELLA davvero la coroutine scaduta, mentre un thread in timeout
-    # restava vivo a consumare connessioni e quota Serper per una risposta
+    # restava vivo a consumare connessioni e quota per una risposta
     # che nessuno avrebbe piu' letto.
     TIMEOUT_PER_FONTE_SECONDI = 15
 
@@ -560,30 +523,25 @@ async def search_comps_completo(brand, categoria, query_base, catalog_id=None, m
         except Exception as e:
             return nome, f"  Query fallita: {e}", False, {}
 
-    # Ricerca testuale Vinted (e per sarto): scrape diretto con Serper come
-    # riserva dal 2026-09-25, vedi _cerca_vinted_testo_diretto_con_fallback_serper.
-    # Timeout piu' ampio delle altre fonti perche' nel caso peggiore fa due
-    # tentativi in sequenza (diretto, poi Serper).
+    # Ricerca testuale Vinted (e per sarto): scrape diretto, vedi
+    # _cerca_vinted_testo_diretto. Timeout piu' ampio delle altre fonti perche'
+    # nel caso peggiore fa due tentativi in sequenza.
     lavori = [_esegui_fonte(
-        "vinted", _cerca_vinted_testo_diretto_con_fallback_serper(vinted_url),
-        timeout=TIMEOUT_FONTE_VINTED_CON_FALLBACK_SECONDI)]
+        "vinted", _cerca_vinted_testo_diretto(vinted_url),
+        timeout=TIMEOUT_FONTE_VINTED_SECONDI)]
     if tentare_ricerca_visuale:
         lavori.append(_esegui_fonte(
             "vinted_visuale", _recupera_comp_visuali_vinted(item_id, cover_photo_id, brand)))
     if url_sarto:
         lavori.append(_esegui_fonte(
-            "vinted_sarto", _cerca_vinted_testo_diretto_con_fallback_serper(url_sarto),
-            timeout=TIMEOUT_FONTE_VINTED_CON_FALLBACK_SECONDI))
-    # eBay/Poshmark via Resellbot (con fallback Google), sempre tentata --
-    # reintrodotta nel fan-out il 2026-09-25, vedi commento sopra e
-    # _cerca_ebay_sold_con_fallback. Timeout piu' ampio delle fonti Vinted
-    # semplici per lo stesso motivo (caso peggiore: Resellbot fino a 12s poi
-    # fallback Google fino a 8s, vedi il timeout di _cerca_ebay_sold_via_resellbot
-    # alzato da 6 a 12s lo stesso giorno dopo l'analisi dei log di produzione).
+            "vinted_sarto", _cerca_vinted_testo_diretto(url_sarto),
+            timeout=TIMEOUT_FONTE_VINTED_SECONDI))
+    # eBay/Poshmark via Resellbot (con cache), sempre tentata -- reintrodotta
+    # nel fan-out il 2026-09-25, vedi commento sopra e
+    # _cerca_ebay_sold_con_fallback. Resellbot ha un timeout di 12 s.
     lavori.append(_esegui_fonte(
         "ebay_poshmark",
-        _cerca_ebay_sold_con_fallback(brand, categoria, material_per_ricerca, dettaglio_distintivo),
-        timeout=TIMEOUT_FONTE_VINTED_CON_FALLBACK_SECONDI))
+        _cerca_ebay_sold_con_fallback(brand, categoria, material_per_ricerca, dettaglio_distintivo)))
 
     risultati = {}
     successi = {}
@@ -593,7 +551,7 @@ async def search_comps_completo(brand, categoria, query_base, catalog_id=None, m
         successi[nome] = ok
         mappe_url[nome] = mappa_url
 
-    serper_ha_funzionato = any(successi.values())
+    almeno_una_fonte_ok = any(successi.values())
 
     nota_brand = "" if vinted_per_id else (
         "⚠️ Brand non nella mappa brand_id Vinted -- la ricerca Vinted usa testo libero "
@@ -644,7 +602,7 @@ async def search_comps_completo(brand, categoria, query_base, catalog_id=None, m
             nome_sarto, item_id, sarto_comp_puliti,
         )
 
-    # Fonte eBay/Poshmark (Resellbot, con fallback Google) -- reintrodotta nel
+    # Fonte eBay/Poshmark (Resellbot) -- reintrodotta nel
     # fan-out il 2026-09-25. Pulita con le stesse funzioni delle fonti Vinted
     # testuali TRANNE il filtro sottolinee (_filtra_comp_per_brand_sottolinee
     # e' pensato per collab/sottolinee di maison italiane su Vinted, non ha
@@ -692,7 +650,7 @@ async def search_comps_completo(brand, categoria, query_base, catalog_id=None, m
         )
 
     # Mappa URL comp unita da tutte le fonti che l'hanno popolata (solo
-    # scrape diretto, vedi _cerca_vinted_testo_diretto_con_fallback_serper) --
+    # scrape diretto, vedi _cerca_vinted_testo_diretto) --
     # usata al rendering finale per riattaccare un link cliccabile al comp
     # che il Cervello cita nel suo JSON, mai passata al prompt (Punto 3,
     # 2026-09-25, esteso a eBay/Poshmark lo stesso giorno). Sull'eventuale,
@@ -704,6 +662,6 @@ async def search_comps_completo(brand, categoria, query_base, catalog_id=None, m
         mappa_url_comp.update(mappe_url.get(nome) or {})
 
     return (
-        "\n".join(parti), serper_ha_funzionato, tentare_ricerca_visuale,
+        "\n".join(parti), almeno_una_fonte_ok, tentare_ricerca_visuale,
         fonte_visuale_riuscita, mappa_url_comp,
     )

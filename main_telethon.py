@@ -102,14 +102,11 @@ from bot.config import (
     PREZZO_OCCHIO_INPUT,
     PREZZO_OCCHIO_OUTPUT,
     QUOTA_INCASSO_NETTO,
-    RAFFREDDAMENTO_SERPER_SECONDI,
     REDDIT_CLIENT_ID,
     REDDIT_CLIENT_SECRET,
     REDDIT_USERNAME,
     SCONTO_MAX_TRATTATIVA,
     SCONTO_TIPICO_TRATTATIVA_VENDITA,
-    SERPER_API_KEY,
-    SOGLIA_FALLIMENTI_PER_FALLBACK_TEMPORANEO,
     SOGLIA_GIORNI_VENDITA_LAMPO,
     SOGLIA_MARGINE_ALERT_CHIEDI_FOTO,
     SOGLIA_MARGINE_ASSOLUTO_NOTIFICA,
@@ -138,9 +135,6 @@ from bot.config import (
     VINTED_TRACKER_NAME_HINTS,
     VISUAL_SEARCH_ATTIVA,
     _env_float,
-    _serper_fallimenti_consecutivi,
-    _serper_notifica_esaurimento_inviata,
-    _serper_timestamp_ultimo_fallimento,
 )  # noqa: F401  (re-export)
 
 from bot.testo import (
@@ -444,42 +438,26 @@ from bot.foto import (
     optimize_image_bytes,
 )  # noqa: F401  (re-export)
 
-from bot.serper_base import (
-    SIMBOLI_VALUTA_COMPARABILI,
-    SIMBOLI_VALUTA_NON_COMPARABILI,
-    SNIPPET_PLACEHOLDER_INUTILI,
-    _e_errore_crediti_serper,
-    _riga_serper_e_rumore,
-    cerca_serper_mirata,
-    valuta_qualita_comp,
-)  # noqa: F401  (re-export)
-
 from bot.gemini_api import (
-    CERVELLO_FUNCTION_DECLARATION,
     testa_chiavi_gemini,
     ISTRUZIONE_FASE_JSON,
-    MAX_ROUNDS_FUNZIONE,
     _estrai_testo_da_parts,
     chiama_gemini,
-    chiama_gemini_cervello_forzato,
+    chiama_gemini_cervello,
     costo_gemini_token,
 )  # noqa: F401  (re-export)
 
 from bot.vinted_search import (
     _estrai_articoli_vinted,
     _risolvi_search_by_image_id,
-    _risolvi_search_by_image_id_via_serper,
     build_vinted_search_url,
     build_vinted_visual_search_url,
 )  # noqa: F401  (re-export)
 
-from bot.serper_fonti import (
+from bot.resellbot import (
     TASSO_USD_EUR,
     _cerca_ebay_sold_via_resellbot,
     _query_resellbot_raw,
-    _serper_batch_query_ebay_sold,
-    _serper_batch_query_vestiaire,
-    _serper_scrape_page_diretto,
 )  # noqa: F401  (re-export)
 
 from bot.comps_filtri import (
@@ -505,11 +483,11 @@ from bot.comps import (
     SOLD_CACHE_FRESCA_SECONDI,
     SOLD_CACHE_MAX_VOCI,
     SOLD_CACHE_STALE_SECONDI,
-    TIMEOUT_FONTE_VINTED_CON_FALLBACK_SECONDI,
+    TIMEOUT_FONTE_VINTED_SECONDI,
     TIMEOUT_SCRAPE_DIRETTO_VINTED_TESTO_SECONDI,
     _BRAND_NOTI_PER_INCROCIO_REDDIT,
     _cerca_ebay_sold_con_fallback,
-    _cerca_vinted_testo_diretto_con_fallback_serper,
+    _cerca_vinted_testo_diretto,
     _codici_reddit_cache,
     _estrai_codici_prodotto_da_occhio,
     _recupera_comp_visuali_vinted,
@@ -572,7 +550,7 @@ from bot.pipeline import (
 # tracker. Nella versione precedente process_listing girava dentro
 # asyncio.to_thread, il che evitava il blocco del loop ma serializzava di
 # fatto la pipeline su un solo thread per annuncio, con decine di secondi
-# di attesa passiva (scraping Vinted, Serper, Gemini) durante i quali non
+# di attesa passiva (scraping Vinted, Gemini) durante i quali non
 # si poteva iniziare a lavorare l'annuncio successivo.
 #
 # Ora tutta la rete passa da httpx.AsyncClient e tutte le pause da
@@ -748,17 +726,6 @@ from bot.pipeline import (
 
 
 # ---------------------------------------------------------------------------
-# CERVELLO GEMINI CON FUNCTION CALLING FORZATO
-# ---------------------------------------------------------------------------
-# Il tool builtin "google_search" di Gemini NON e' forzabile in modo affidabile
-# (il modello spesso decide di non chiamarlo mai, anche se il prompt lo chiede
-# esplicitamente). Sostituiamo con una function custom che richiama Serper --
-# stesso servizio gia' usato per i comp pre-raccolti -- e la forziamo con
-# tool_config.function_calling_config.mode = "ANY", che per il function calling
-# "vero" (non il retrieval builtin) e' effettivamente vincolante.
-
-
-# ---------------------------------------------------------------------------
 # SCHEMA DI OUTPUT STRUTTURATO DEL CERVELLO (structured output / JSON mode)
 # ---------------------------------------------------------------------------
 # Sostituisce il verdetto in prosa e tutte le regex che ne estraevano i
@@ -769,13 +736,8 @@ from bot.pipeline import (
 # sparare un numero prima di aver dichiarato su quale linea lo sta
 # calcolando.
 #
-# VINCOLO API (documentato, non aggirabile): Gemini rifiuta una richiesta
-# che contenga insieme function_declarations e responseMimeType
-# "application/json" con l'errore "Function calling with a response mime
-# type: 'application/json' is unsupported". Per questo la chiamata al
-# cervello e' divisa in due fasi: i giri di ricerca usano i tools come
-# prima, il giro finale toglie i tools dal payload e accende lo schema.
-# Vedi chiama_gemini_cervello_forzato.
+# Dal 31/10 il Cervello fa una sola chiamata con lo schema (vedi
+# chiama_gemini_cervello): niente piu' function calling ne' ricerca on-demand.
 #
 # Nota sui vincoli numerici: responseSchema accetta solo un sottoinsieme di
 # OpenAPI, quindi qui non si usano pattern/minimum/maximum -- i limiti
@@ -783,29 +745,6 @@ from bot.pipeline import (
 # valida_payload_cervello/calcola_verdetto, che e' comunque dove devono
 # stare: un vincolo dichiarato nello schema verrebbe rispettato "quasi
 # sempre", uno applicato in codice sempre.
-
-
-                         # mostravano che ~1 item su 2 finiva comunque nel
-                         # fallback forzato, che nel caso peggiore costa
-                         # quanto il vecchio "2 giri" (3 chiamate totali) ma
-                         # senza dare al modello la seconda ricerca reale che
-                         # chiedeva. Con 2 il caso "un giro basta" costa
-                         # uguale a prima, il caso "serve una seconda ricerca"
-                         # costa quanto il vecchio fallback ma con una
-                         # ricerca vera al posto del rifiuto secco.
-
-
-# ---------------------------------------------------------------------------
-# SERPER RICERCA
-# ---------------------------------------------------------------------------
-
-
-# search_comps_ebay_sold_url (URL diretto www.ebay.it/sch/i.html?...&LH_Sold=1)
-# RIMOSSA il 2026-09-19: costruiva l'URL per lo scrape diretto della pagina
-# eBay, abbandonato dopo conferma che eBay blocca sistematicamente Serper su
-# quell'endpoint con la pagina anti-bot "Misura di sicurezza" (vedi
-# _serper_batch_query_ebay_sold, che l'ha sostituita passando da una query
-# Google invece dello scrape diretto).
 
 
 # ---------------------------------------------------------------------------
@@ -948,7 +887,7 @@ def e_variante_recente(parsed, url=None):
 # TLS di Safari iOS e di Chrome), con gli stessi cookie dell'account
 # dedicato e lo stesso proxy. Serve a capire se il 403 Datadome su
 # /search_by_image (diagnosi del 2026-09-20, vedi
-# _risolvi_search_by_image_id_via_serper) dipende dall'impronta di httpx,
+# _risolvi_search_by_image_id) dipende dall'impronta di httpx,
 # prima di cambiare qualunque cosa nella pipeline. Nessuna chiamata Gemini.
 
 VARIANTI_CURL_TEST_VISUALE = (("curl_cffi Safari iOS", "safari184_ios"), ("curl_cffi Chrome", "chrome146"))
@@ -1546,11 +1485,11 @@ async def on_new_message(event):
         # Ora process_listing e' una coroutine e si attende direttamente:
         # Telethon esegue ogni handler come task separato, quindi piu'
         # annunci vengono elaborati davvero in parallelo, e le lunghe attese
-        # di rete (scraping, Serper, Gemini) non occupano piu' un thread
+        # di rete (scraping, Gemini) non occupano piu' un thread
         # ciascuna.
         # Tetto alle analisi in parallelo (fix 2026-09-27): senza, un burst
         # di N annunci faceva partire N pipeline complete insieme (scrape,
-        # Gemini, Serper), bruciando la quota Gemini e la RAM tutto in una
+        # Gemini), bruciando la quota Gemini e la RAM tutto in una
         # volta. Dal 2026-09-28 il posto si prende DENTRO process_listing,
         # dopo scrape + foto + galleria (leggeri, niente Gemini): in un burst
         # le foto arrivano subito e in coda aspetta solo l'analisi Gemini.

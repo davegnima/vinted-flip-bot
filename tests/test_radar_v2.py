@@ -25,7 +25,7 @@ def test_ombra_registra_verdetto(monkeypatch):
 
     async def finto(url):
         return righe, True, {}
-    monkeypatch.setattr(radar_v2, "_cerca_vinted_testo_diretto_con_fallback_serper", finto)
+    monkeypatch.setattr(radar_v2, "_cerca_vinted_testo_diretto", finto)
     parsed = {"title": "Set posate Christofle", "price": "7", "brand": "Christofle"}
     asyncio.run(radar_v2.analizza(parsed, "https://www.vinted.it/items/123456-set"))
     assert len(eventi) == 1
@@ -136,7 +136,7 @@ def test_prefiltro_scarta_sopra_il_riferimento_senza_comparabili(monkeypatch):
     async def finto(url):
         urls.append(url)
         return righe, True, {}
-    monkeypatch.setattr(radar_v2, "_cerca_vinted_testo_diretto_con_fallback_serper", finto)
+    monkeypatch.setattr(radar_v2, "_cerca_vinted_testo_diretto", finto)
     parsed = {"title": "PlayStation 5 slim", "price": "290", "brand": "Sony", "query_name": "V2 ps5"}
     v = asyncio.run(radar_v2.analizza(parsed, "https://www.vinted.it/items/777001-ps5", query_url=QUERY_URL))
     assert v["semaforo"] == "rosso" and v["motivo"] == "sopra_riferimento"

@@ -114,14 +114,14 @@ def test_descrizione_informativa_resta():
 
 
 def test_campione_extra_ritorna_il_verdetto_validato():
-    async def chiama(sistema, testo, forza_ricerca=None, mappa_url_ricerche_extra=None):
-        return _v(), None, 0.01, 0, []
-    v2, problemi, costo = asyncio.run(m._campione_target_cervello(chiama, "x", False))
+    async def chiama(sistema, testo):
+        return _v(), None, 0.01
+    v2, problemi, costo = asyncio.run(m._campione_target_cervello(chiama, "x"))
     assert v2["prezzo_target_vendita_eur"] == 60 and costo == 0.01
 
     async def rotta(*a, **k):
-        return None, "errore", 0.02, 0, []
-    assert asyncio.run(m._campione_target_cervello(rotta, "x", False)) == (None, [], 0.02)
+        return None, "errore", 0.02
+    assert asyncio.run(m._campione_target_cervello(rotta, "x")) == (None, [], 0.02)
 
 
 def test_messaggi_al_venditore_italiano_cortese_senza_interessato():

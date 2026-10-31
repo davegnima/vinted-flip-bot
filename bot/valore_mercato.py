@@ -1,6 +1,6 @@
 """Radar v2 (non moda): rivendita verosimile ricavata dagli annunci simili in vendita adesso, con tetto dal prezzo del nuovo.
 
-Funzioni pure, senza rete: il worker scarica la pagina catalogo (comps._cerca_vinted_testo_diretto_con_fallback_serper) e passa
+Funzioni pure, senza rete: il worker scarica la pagina catalogo (comps._cerca_vinted_testo_diretto) e passa
 qui il testo nel formato '- titolo — €prezzo'. Proposta: docs/proposta-radar-v2-2026-10-23.md.
 
   1. parse_comp          righe '- titolo — €prezzo' -> [(titolo, prezzo)]

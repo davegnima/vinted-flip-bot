@@ -119,7 +119,7 @@ def _e_linea_o_era_utile_per_ricerca(linea_o_era):
 
 
 def _arricchisci_brand_per_ricerca(brand_annuncio, occhio_json):
-    """Brand/etichetta da usare per la ricerca comp (Serper), arricchito con
+    """Brand/etichetta da usare per la ricerca comp, arricchito con
     la sottolinea o la linea/etichetta specifica lette dall'Occhio quando
     presenti e utili come testo di ricerca. Richiesto dall'utente il
     2026-09-22 ("assicurati che quando la linea e' M Missoni o Jean's Paul

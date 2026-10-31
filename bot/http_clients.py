@@ -6,7 +6,7 @@ from bot.proxy import PROXY_LIST, _CLIENT_VINTED_POOL, _CLIENT_VINTED_POOL_KEYS,
 from bot.costanti import VINTED_HEADERS
 from bot.logger import log
 # ---- fine import ----
-_client_generico = None   # Gemini/OpenAI/Serper/Resellbot: nessun proxy
+_client_generico = None   # Gemini/Resellbot: nessun proxy
 _client_telegram = None   # Bot API: timeout piu' corti, chiamate frequenti
 
 # Client HTTP DEDICATO all'account Vinted autenticato (ricerca visuale),
