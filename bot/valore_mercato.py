@@ -26,7 +26,8 @@ _RE_NUOVO = re.compile(r"\b(nuov[oai]|sigillat[oai]|cartellino|mai usat[oai]|mai
 _RE_PEZZO = re.compile(
     r"\b(quadrant[ei]|cinturin[oi]|maglia|maglie|bracciale ricambio|mouvement|movimento|lunetta|corona|vetro ricambio|ricambi?|"
     r"pezz[oi] di ricambio|per ricambi|per pezzi|guasto|rotto|difettos[oa]|scatola vuota|box vuot[oa]|solo scatola|libretto|manuale|"
-    r"istruzioni|custodia|cover|cavo|caricabatterie|filtro|spazzola|testina|ugello|batteria|sacchett[oi])\b", re.I)
+    r"istruzioni|custodia|cover|cavo|caricabatterie|filtro|spazzola|testina|ugello|batteria|sacchett[oi]|"
+    r"non funzionante|non funziona|bloccat[oa]|icloud|da riparare|per componenti)\b", re.I)
 _PAROLE_VUOTE = {"vendo", "vendesi", "usato", "usata", "ottime", "ottimo", "buone", "condizioni", "perfette", "perfetto",
                  "come", "nuovo", "nuova", "originale", "con", "per", "di", "il", "la", "in", "e", "a", "da", "del", "della"}
 

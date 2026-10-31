@@ -10,13 +10,15 @@ import re
 import time
 import asyncio
 import traceback
-from urllib.parse import quote
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 from bot import db
 from bot.comps import _cerca_vinted_testo_diretto_con_fallback_serper
 from bot.jev import giudica
+from bot.config import SPEDIZIONE_STIMATA_EUR
 from bot.logger import log
 from bot.radar import RADAR_SPESA_MAX, parola_vietata, radar_in_pausa
+from bot.radar_matrice import buy_max
 from bot.verdetto import _a_float, _estrai_item_id_da_url
 from bot.vinted_http import _vinted_get_con_retry
 from bot.valore_mercato import comparabili_simili, e_un_pezzo, parse_comp, query_comp, solo_usato, stima_mercato, valuta
@@ -28,9 +30,16 @@ JEV_FOTO_SEMAFORI = {x.strip() for x in os.environ.get("JEV_FOTO_SEMAFORI", "ver
 RADAR_V2_MAX_GIORNO = int(os.environ.get("RADAR_V2_MAX_GIORNO", "3000") or 3000)
 RADAR_V2_CACHE_ORE = float(os.environ.get("RADAR_V2_CACHE_ORE", "6") or 6)
 RADAR_V2_PARALLELO = int(os.environ.get("RADAR_V2_PARALLELO", "2") or 2)
+# Pre-filtro per ricerca (31/10): per le ricerche con testo (un prodotto preciso) il prezzo di riferimento si calcola UNA volta
+# ogni RADAR_V2_RIF_ORE ore dalla ricerca stessa senza limite di prezzo; un annuncio sopra il prezzo massimo di acquisto
+# calcolato sul 75° percentile (generoso, per non perdere affari) non fa piu' una ricerca di comparabili.
+RADAR_V2_PREFILTRO = os.environ.get("RADAR_V2_PREFILTRO", "1").strip() in ("1", "true", "si")
+RADAR_V2_RIF_ORE = float(os.environ.get("RADAR_V2_RIF_ORE", "8") or 8)
+RIF_MIN_COMPARABILI = 6
 
 _visti = set()
 _cache = {}  # testo ricerca -> (ts, [prezzi], n_grezzi)
+_riferimenti = {}  # nome ricerca -> (ts, stima o None)
 _conteggio = {"giorno": None, "n": 0}
 _sem = asyncio.Semaphore(RADAR_V2_PARALLELO)
 
@@ -49,6 +58,48 @@ def url_comparabili(testo, catalogo=None, brand=None):
     categoria = f"&catalog[]={catalogo}" if catalogo else ""
     marchio = f"&brand_ids[]={id_marchio(brand)}" if id_marchio(brand) else ""
     return f"https://www.vinted.it/catalog?search_text={quote(testo)}{categoria}{marchio}&order=newest_first"
+
+
+def testo_ricerca(query_url):
+    """Parole chiave (search_text) dell'URL di ricerca del tracker, '' se assenti. Pura."""
+    for k, v in parse_qsl(urlsplit(query_url or "").query):
+        if k == "search_text":
+            return v.strip()
+    return ""
+
+
+def url_senza_prezzo(query_url):
+    """URL della ricerca del tracker senza limiti di prezzo ne' pagina: il riferimento deve vedere tutto il mercato. Pura."""
+    parti = urlsplit(query_url)
+    resto = [(k, v) for k, v in parse_qsl(parti.query) if k not in ("price_to", "price_from", "page")]
+    return urlunsplit((parti.scheme, parti.netloc, parti.path, urlencode(resto), ""))
+
+
+def limite_acquisto(stima):
+    """Prezzo massimo di acquisto che puo' dare margine e ROI minimi, calcolato sul 75° percentile (generoso). Pura."""
+    return buy_max(stima["p75"], SPEDIZIONE_STIMATA_EUR) if stima else None
+
+
+async def _riferimento_ricerca(nome, query_url, adesso=None):
+    """Stima di mercato della ricerca (cache RADAR_V2_RIF_ORE ore), None se non disponibile o con pochi comparabili."""
+    adesso = adesso or time.time()
+    voce = _riferimenti.get(nome)
+    if voce and adesso - voce[0] < RADAR_V2_RIF_ORE * 3600:
+        return voce[1]
+    if not _entro_il_tetto(adesso):
+        return None
+    async with _sem:
+        risposta, ok, _mappa = await _cerca_vinted_testo_diretto_con_fallback_serper(url_senza_prezzo(query_url))
+    stima = None
+    if ok:
+        # niente filtro sulle parole della ricerca: i titoli hanno sinonimi (PS5 / PlayStation 5) e la ricerca e' gia' stretta
+        comps = [(t, p) for t, p in solo_usato(parse_comp(risposta)) if not e_un_pezzo(t)]
+        stima = stima_mercato([p for _, p in comps], min_n=RIF_MIN_COMPARABILI)
+    # una ricerca fallita si ritenta dopo un'ora, non subito
+    _riferimenti[nome] = (adesso if stima else adesso - (RADAR_V2_RIF_ORE - 1) * 3600, stima)
+    log.info("RADAR V2 RIFERIMENTO | ricerca=%s | n=%s | p25=%s | mediana=%s | p75=%s | limite=%s", nome,
+             stima and stima["n"], stima and stima["p25"], stima and stima["mediana"], stima and stima["p75"], limite_acquisto(stima))
+    return stima
 
 
 def _entro_il_tetto(adesso=None):
@@ -108,7 +159,7 @@ def _rosso(motivo, n=0):
             "jev": None, "jev_conf": None}
 
 
-async def analizza(parsed, url, foto=None):
+async def analizza(parsed, url, foto=None, query_url=None):
     """Valuta un annuncio del radar con i comparabili, chiede il giudizio di Jev e registra il verdetto.
     Ritorna dict {semaforo, rivendita, margine, roi, n, jev, jev_conf} o None. Mai eccezioni verso il chiamante."""
     if not RADAR_V2_OMBRA or radar_in_pausa():
@@ -139,6 +190,14 @@ async def analizza(parsed, url, foto=None):
             # titolo di una parola ("Dyson"): il modello non si capisce, i comparabili sarebbero ricambi e accessori
             db.scrivi_evento("radar_v2", item_id, brand, {**base, "ok": False, "motivo": "titolo_generico", "q": testo})
             return _rosso("titolo_generico")
+        if RADAR_V2_PREFILTRO and query_url and parsed.get("query_name") and testo_ricerca(query_url):
+            rif = await _riferimento_ricerca(parsed["query_name"], query_url)
+            limite = limite_acquisto(rif)
+            if limite is not None and prezzo > limite:
+                db.scrivi_evento("radar_v2", item_id, brand, {**base, "ok": False, "motivo": "sopra_riferimento", "limite": limite, "n": rif["n"]})
+                log.info("RADAR V2 OMBRA | item=%s | semaforo=rosso | ok=False | motivo=sopra_riferimento | prezzo=%s | limite=%s | n=%s | ricerca=%s",
+                         item_id, prezzo, limite, rif["n"], parsed["query_name"])
+                return _rosso("sopra_riferimento", rif["n"])
         catalogo = await _catalogo_annuncio(url)
         prezzi, n_grezzi, dalla_cache = await _prezzi_simili(testo, titolo, prezzo, brand, catalogo)
         if prezzi is None:
