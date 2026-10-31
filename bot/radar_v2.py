@@ -53,6 +53,17 @@ def id_marchio(brand):
     return _MARCHI_ID.get((brand or "").strip().lower())
 
 
+def marca_dal_titolo(titolo, brand=None):
+    """Marca da usare per i comparabili: se il titolo nomina un marchio noto diverso da quello del tracker, vince il titolo
+    (la ricerca 'V2 sony' porta anche cuffie Bose: cercare i comparabili 'sony' darebbe prezzi sbagliati). Pura."""
+    t = " " + re.sub(r"\s+", " ", re.sub(r"[&+]", " ", (titolo or "").lower())) + " "
+    gia = (brand or "").strip().lower()
+    for nome in sorted(_MARCHI_ID, key=len, reverse=True):
+        if re.search(rf"(?<![\w]){re.escape(nome)}(?![\w])", t):
+            return brand if nome == gia else nome
+    return brand
+
+
 def url_comparabili(testo, catalogo=None, brand=None):
     """Ricerca dei simili su Vinted: parole chiave + categoria (catalog[]) + marchio (brand_ids[]), quando noti.
     Senza categoria una ricerca di 'ricoh r1' pesca qualsiasi fotocamera (25/10)."""
@@ -216,6 +227,7 @@ async def analizza(parsed, url, foto=None, query_url=None):
         if pezzo:
             db.scrivi_evento("radar_v2", item_id, brand, {**base, "ok": False, "motivo": "pezzo_o_accessorio:" + pezzo})
             return _rosso("pezzo_o_accessorio:")
+        brand = marca_dal_titolo(titolo, brand)
         testo = query_comp(titolo, brand)
         if len(testo.split()) < 2:
             # titolo di una parola ("Dyson"): il modello non si capisce, i comparabili sarebbero ricambi e accessori

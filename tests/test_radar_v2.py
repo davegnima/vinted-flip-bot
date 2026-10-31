@@ -238,3 +238,13 @@ def test_guasti_e_battery_grip_sono_pezzi():
     for t in ("Switch ne s'allume plus", "Canon BG-E7", "Wii kaputt", "Battery grip Canon 5D", "Console no funciona"):
         assert e_un_pezzo(t), t
     assert e_un_pezzo("Nintendo Switch OLED completa") is None
+
+
+def test_marca_dal_titolo_vince_sul_tracker():
+    from bot.radar_v2 import marca_dal_titolo
+    assert marca_dal_titolo("Cuffie Bose QuietComfort 35", "Sony") == "bose"
+    assert marca_dal_titolo("Bang & Olufsen Beoplay H5", None) == "bang olufsen"
+    assert marca_dal_titolo("Garmin Forerunner 35", "Garmin") == "Garmin"
+    assert marca_dal_titolo("Console wii bon état", "Nintendo") == "Nintendo"
+    assert marca_dal_titolo("Radiosveglia", None) is None
+    assert marca_dal_titolo("Canon BG-E7 per Nikonos", "Canon") == "Canon"
