@@ -171,3 +171,12 @@ def test_prezzo_segnaposto_e_rosso(monkeypatch):
     monkeypatch.setattr(radar_v2.db, "scrivi_evento", lambda *a, **k: eventi.append(a))
     r = asyncio.run(radar_v2.analizza({"title": "Bugaboo Fox 5 Renew 1000€ VB", "price": "1"}, "https://www.vinted.it/items/99001-bugaboo"))
     assert r["semaforo"] == "rosso" and r["motivo"] == "prezzo_segnaposto"
+
+
+def test_risposta_gruppo_con_stima_e_senza():
+    from bot import radar
+    v2 = {"semaforo": "verde", "rivendita": 80, "margine": 60, "roi": 150, "n": 7}
+    assert radar.testo_risposta_gruppo(v2) == "🟢 verde · rivendita stimata 80 € · margine 60 € · ROI 150% · 7 comparabili"
+    r = radar.testo_risposta_gruppo({"semaforo": "rosso", "rivendita": None, "n": 1, "motivo": "pochi_comparabili"})
+    assert r.startswith("🔴 rosso · nessuna stima (pochi comparabili")
+    assert radar.testo_risposta_gruppo(None) == "⚪ semaforo non calcolato"

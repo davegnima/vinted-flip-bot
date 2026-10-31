@@ -357,6 +357,26 @@ def _righe_v2(v2):
     return righe
 
 
+# Risposta sotto il messaggio del tracker nel gruppo radar (richiesta dell'utente, 31/10: "messaggi con semaforo e
+# vendita stimata" dove li legge davvero). Silenziosa. 0 = spenta.
+RADAR_RISPOSTA_GRUPPO = os.environ.get("RADAR_RISPOSTA_GRUPPO", "1").strip() not in ("0", "false", "no", "")
+
+
+def testo_risposta_gruppo(v2):
+    """Riga breve per la risposta nel gruppo: semaforo, rivendita stimata, margine, ROI, comparabili. Pura."""
+    if not v2:
+        return "⚪ semaforo non calcolato"
+    n = v2.get("n") or 0
+    colore = v2.get("semaforo") or "n.d."
+    if v2.get("rivendita") is None:
+        return f"{pallino_semaforo(v2, '⚪')} {colore} · nessuna stima ({_motivo_leggibile(v2.get('motivo'))}, {n} comparabili)"
+    testo = (f"{pallino_semaforo(v2, '⚪')} {colore} · rivendita stimata {v2.get('rivendita')} € · margine {v2.get('margine')} € "
+             f"· ROI {v2.get('roi')}% · {n} comparabili")
+    if v2.get("jev"):
+        testo += f"\nJev: {v2['jev']} (confidenza {v2.get('jev_conf')})"
+    return testo
+
+
 def _da_mandare(v2):
     return not RADAR_SOLO_VERDI or (bool(v2) and v2.get("semaforo") == "verde")
 
