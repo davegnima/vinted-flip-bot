@@ -27,7 +27,13 @@ _RE_PEZZO = re.compile(
     r"\b(quadrant[ei]|cinturin[oi]|maglia|maglie|bracciale ricambio|mouvement|movimento|lunetta|corona|vetro ricambio|ricambi?|"
     r"pezz[oi] di ricambio|per ricambi|per pezzi|guasto|rotto|difettos[oa]|scatola vuota|box vuot[oa]|solo scatola|libretto|manuale|"
     r"istruzioni|custodia|cover|cavo|caricabatterie|filtro|spazzola|testina|ugello|batteria|sacchett[oi]|"
-    r"non funzionante|non funziona|bloccat[oa]|icloud|da riparare|per componenti)\b", re.I)
+    r"non funzionante|non funziona|bloccat[oa]|icloud|da riparare|per componenti|"
+    # 31/10: accessori visti come falsi verdi (borsa 3DS, filtri ND DJI, supporti Sonos, ventilatore Xbox, cartucce, Verpackung)
+    r"borsa|borse|tasche|aufbewahrungstasche|etui|housse|sleeve|filtri|filters?|supporto|supporti|supports?|halterung|"
+    r"action mount|ventilador|ventilatore|lüfter|cartucc[ae]|cartridges?|pokeball|verpackung|keine konsole|ohne konsole|"
+    r"empty box|box only)\b", re.I)
+# Titolo che inizia con la scatola ("Scatola Xbox series X"): e' l'imballo, non la console.
+_RE_SCATOLA_INIZIO = re.compile(r"^\s*(?:la )?(scatola|box|boite|boîte|karton|emballage|caja)\b", re.I)
 _PAROLE_VUOTE = {"vendo", "vendesi", "usato", "usata", "ottime", "ottimo", "buone", "condizioni", "perfette", "perfetto",
                  "come", "nuovo", "nuova", "originale", "con", "per", "di", "il", "la", "in", "e", "a", "da", "del", "della"}
 
@@ -53,8 +59,8 @@ def solo_usato(comps):
 
 def e_un_pezzo(titolo):
     """Prima parola di ricambio/accessorio nel titolo, None se sembra l'oggetto intero. Pura."""
-    m = _RE_PEZZO.search(titolo or "")
-    return m.group(0).lower() if m else None
+    m = _RE_PEZZO.search(titolo or "") or _RE_SCATOLA_INIZIO.search(titolo or "")
+    return m.group(0).lower().strip() if m else None
 
 
 def _parole(testo):
