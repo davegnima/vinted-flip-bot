@@ -306,18 +306,21 @@ async def analizza(parsed, url, foto=None, query_url=None):
                  n_grezzi, allargata or 0, v.get("affidabilita"), testo, parsed.get("query_name") or "-", titolo[:60])
         # Prova foto (25/10): la foto va a Jev solo con i semafori di JEV_FOTO_SEMAFORI (di default il verde).
         foto_jev = foto if v.get("semaforo") in JEV_FOTO_SEMAFORI else None
-        jev, jev_conf, jev_simili = await asyncio.to_thread(
+        jev, jev_conf, jev_simili, jev_motivo = await asyncio.to_thread(
             giudica_completo, titolo, prezzo, prezzi, v.get("rivendita"), foto_jev, _descrizioni.pop(url, None),
             _titoli_simili.get((testo, catalogo)))
         if jev:
-            log.info("RADAR V2 JEV | item=%s | giudizio=%s | confidenza=%s | simili=%s(%s) | largo=%s | n=%s | titolo=%s", item_id, jev,
-                     jev_conf, jev_simili[0] if jev_simili else "-", jev_simili[1] if jev_simili else "-", allargata or 0,
+            log.info("RADAR V2 JEV | item=%s | giudizio=%s | confidenza=%s | simili=%s(%s) | motivo=%s | largo=%s | n=%s | titolo=%s", item_id, jev,
+                     jev_conf, jev_simili[0] if jev_simili else "-", jev_simili[1] if jev_simili else "-", jev_motivo[0] if jev_motivo else "-", allargata or 0,
                      len(prezzi), titolo[:60])
         db.scrivi_evento("radar_v2", item_id, brand, {**dati, "jev": jev, "jev_conf": jev_conf,
                                                       "jev_simili": jev_simili[0] if jev_simili else None,
-                                                      "jev_simili_conf": jev_simili[1] if jev_simili else None})
+                                                      "jev_simili_conf": jev_simili[1] if jev_simili else None,
+                                                      "jev_motivo": jev_motivo[0] if jev_motivo else None,
+                                                      "jev_motivo_frase": jev_motivo[1] if jev_motivo else None})
         return {"semaforo": v.get("semaforo"), "rivendita": v.get("rivendita"), "margine": v.get("margine"),
                 "roi": v.get("roi"), "n": len(prezzi), "n_grezzi": n_grezzi, "allargata": allargata, "motivo": v.get("motivo"),
-                "jev": jev, "jev_conf": jev_conf}
+                "jev": jev, "jev_conf": jev_conf, "jev_motivo": jev_motivo[0] if jev_motivo else None,
+                "jev_motivo_frase": jev_motivo[1] if jev_motivo else None}
     except Exception:
         log.warning("Radar v2 ombra: annuncio non valutato:\n%s", traceback.format_exc())

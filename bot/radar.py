@@ -24,6 +24,7 @@ from zoneinfo import ZoneInfo
 
 from bot.verdetto import _a_float, _estrai_item_id_da_url
 from bot import db
+from bot.jev import descrizione_jev
 from bot import tracciamento as tr
 from bot import radar_matrice as rm
 from bot.vinted_scrape import scrape_vinted_listing
@@ -353,7 +354,7 @@ def _righe_v2(v2):
                      f"· ROI {v2.get('roi')}%")
         righe.append(f"Semaforo: {pallino} {v2.get('semaforo') or 'n.d.'}")
     if v2.get("jev"):
-        righe.append(f"Jev: {v2['jev']} (confidenza {v2.get('jev_conf')})")
+        righe.append(f"Jev: {descrizione_jev(v2['jev'], v2.get('jev_conf'), v2.get('jev_motivo_frase'))}")
     return righe
 
 
@@ -380,7 +381,7 @@ def testo_risposta_gruppo(v2):
     testo = (f"{pallino_semaforo(v2, '⚪')} {colore} · rivendita stimata {v2.get('rivendita')} € · margine {v2.get('margine')} € "
              f"· ROI {v2.get('roi')}% · {n} comparabili{_dettaglio_comp(v2)}")
     if v2.get("jev"):
-        testo += f"\nJev: {v2['jev']} (confidenza {v2.get('jev_conf')})"
+        testo += f"\nJev: {descrizione_jev(v2['jev'], v2.get('jev_conf'), v2.get('jev_motivo_frase'))}"
     return testo
 
 
