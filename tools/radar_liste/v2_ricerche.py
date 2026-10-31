@@ -14,7 +14,7 @@ V2=[ # nome, testo, brand (nome o None), catalog, tetto
  ('V2 posate christofle','','christofle',POSATE+[1961],50),('V2 posate sambonet','','sambonet',POSATE+[1961],50),
  ('V2 posate in set','posate',None,[1950],30),('V2 ginori','','richard ginori',STOV,50),('V2 baccarat','','baccarat',BIC+VASI,50),
  ('V2 lalique','','lalique',VASI,50),('V2 iittala','','iittala',STOV+BIC+VASI,50),
- ('V2 le creuset','','le creuset',[],50),('V2 staub','staub',None,[3507,3508,3510],50),('V2 smeg','','smeg',[],50),('V2 kitchenaid','','kitchenaid',[],50),
+ ('V2 le creuset','','le creuset',[3507,3508,3510],50),('V2 staub','staub',None,[3507,3508,3510],50),('V2 smeg','','smeg',[],50),('V2 kitchenaid','','kitchenaid',[],50),
  ('V2 dyson','','dyson',[],50),('V2 thermomix','thermomix',None,[],50),
  ('V2 airpods pro','airpods pro',None,[3678],50),('V2 sony cuffie','','sony',[3678],50),('V2 switch oled','switch oled',None,[3025],50),
  ('V2 montblanc penne','','montblanc',[5456],50),('V2 omega uomo','','omega',[97],50),('V2 omega donna','','omega',[22],50),
