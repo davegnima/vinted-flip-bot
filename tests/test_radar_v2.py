@@ -47,7 +47,7 @@ def test_righe_v2_e_filtro_solo_verdi(monkeypatch):
     assert radar._righe_v2(v2) == [
         "Comparabili: 7 trovati · rivendita 80 € · margine 60 € · ROI 150%",
         "Semaforo: 🟢 verde",
-        "Jev: affare_vero (confidenza 0.9)",
+        "Jev: affare (confidenza 0.9)",
     ]
     assert radar._righe_v2(None) == ["Comparabili: non calcolati", "Semaforo: non calcolato"]
     assert radar.pallino_semaforo(v2) == "🟢" and radar.pallino_semaforo(None) == "🔎"
@@ -279,3 +279,10 @@ def test_descrizione_dalla_pagina():
     html = '<script>{"id":1,"description":"Non funziona, vendo per ricambi\\nSpedisco","x":2}</script>'
     assert radar_v2._descrizione_da_html(html) == "Non funziona, vendo per ricambi\nSpedisco"
     assert radar_v2._descrizione_da_html("niente") is None
+
+
+def test_messaggio_gruppo_spiega_il_perche_di_jev():
+    from bot.radar import testo_risposta_gruppo
+    v2 = {"semaforo": "giallo", "rivendita": 160.0, "margine": 93.55, "roi": 185.4, "n": 14, "n_grezzi": 15, "allargata": 1,
+          "jev": "non_affare", "jev_conf": 0.9, "jev_motivo_frase": "dichiarato rotto, incompleto, bloccato o per ricambi"}
+    assert "Jev: non e' un affare, dichiarato rotto, incompleto, bloccato o per ricambi (confidenza 0.9)" in testo_risposta_gruppo(v2)

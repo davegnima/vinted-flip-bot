@@ -160,12 +160,39 @@ def test_descrizione_e_titoli_simili_vanno_a_jev_e_simili_non_cambia_l_esito(mon
             risp["simili"] = {"choice": "diverso", "confidence": 0.8}
         return {"answers": risp}
     monkeypatch.setattr(jev, "_chiama_jev", finto)
-    esito, conf, simili = jev.giudica_completo("Dyson V11", 40, [100, 120], 100, descrizione="  non   funziona " + "x" * 900,
+    esito, conf, simili, motivo = jev.giudica_completo("Dyson V11", 40, [100, 120], 100, descrizione="  non   funziona " + "x" * 900,
                                                titoli_simili=["Dyson V11 Absolute", "Dyson V8"])
     assert (esito, conf, simili) == ("affare_vero", 0.9, ("diverso", 0.8))
+    assert motivo == ("ok", jev.FRASI_MOTIVO["ok"] + ", ma i simili non sono lo stesso modello")
     stato = corpi[0]["state"]
     assert "Descrizione del venditore: non funziona" in stato and "- Dyson V8" in stato
     assert len(stato.split("Descrizione del venditore: ")[1].split("\n")[0]) <= jev.MAX_DESCRIZIONE
     # senza titoli dei simili la domanda non c'e' e il terzo valore e' None
     assert jev.giudica_completo("Dyson V11", 40, [100], 100)[2] is None
     assert "simili" not in corpi[1]["questions"]
+
+
+def test_motivo_jev_un_codice_per_ogni_caso():
+    assert jev.motivo_jev(_r())[0] == "ok"
+    assert jev.motivo_jev(_r(tipo="ricambio_accessorio"))[0] == "ricambio"
+    assert jev.motivo_jev(_r(tipo="lotto"))[0] == "lotto"
+    assert jev.motivo_jev(_r(tipo="replica_o_dubbio"))[0] == "replica_dubbio"
+    assert jev.motivo_jev(_r(completo="no"))[0] == "guasto_incompleto"
+    assert jev.motivo_jev(_r(prezzo="sopra"))[0] == "prezzo_alto"
+    assert jev.motivo_jev(_r(prezzo="in_linea"))[0] == "prezzo_in_linea"
+    assert jev.motivo_jev({**_r(), "foto": ("non_corrisponde", 0.9)})[0] == "foto_diversa"
+    assert jev.motivo_jev({"tipo": ("lotto", 0.9)}) == (None, None)
+
+
+def test_motivo_jev_stesso_ordine_dell_esito():
+    # ricambio + rotto: l'esito e' falso_o_ricambio, quindi il motivo e' il ricambio (non il guasto)
+    r = _r(tipo="ricambio_accessorio", completo="no")
+    assert jev.verdetto_jev(r)[0] == "falso_o_ricambio" and jev.motivo_jev(r)[0] == "ricambio"
+    r = _r(completo="no", prezzo="sopra")
+    assert jev.verdetto_jev(r)[0] == "non_affare" and jev.motivo_jev(r)[0] == "guasto_incompleto"
+
+
+def test_descrizione_jev_in_italiano():
+    f = jev.FRASI_MOTIVO["guasto_incompleto"]
+    assert jev.descrizione_jev("non_affare", 0.9, f) == f"non e' un affare, {f} (confidenza 0.9)"
+    assert jev.descrizione_jev("affare_vero", 0.8, None) == "affare (confidenza 0.8)"

@@ -96,6 +96,53 @@ def verdetto_jev(risposte):
     return "non_affare", conf
 
 
+ETICHETTE_ESITO = {"affare_vero": "affare", "non_affare": "non e' un affare", "falso_o_ricambio": "falso o ricambio"}
+FRASI_MOTIVO = {
+    "foto_diversa": "la foto non corrisponde al titolo",
+    "ricambio": "e' solo un ricambio o un accessorio",
+    "lotto": "e' un lotto di piu' oggetti",
+    "replica_dubbio": "replica o descrizione poco chiara",
+    "guasto_incompleto": "dichiarato rotto, incompleto, bloccato o per ricambi",
+    "prezzo_alto": "prezzo sopra la stima di rivendita",
+    "prezzo_in_linea": "prezzo in linea con la stima, nessuno sconto",
+    "ok": "oggetto vero, non dichiarato guasto, prezzo sotto la stima",
+}
+_MOTIVO_TIPO = {"ricambio_accessorio": "ricambio", "lotto": "lotto", "replica_o_dubbio": "replica_dubbio"}
+
+
+def motivo_jev(risposte):
+    """(codice, frase) del perche' dell'esito, dalle stesse risposte di verdetto_jev (stesso ordine delle regole), oppure
+    (None, None) se manca una risposta. Con `simili` diverso o in_parte la frase avverte che la stima poggia su altri modelli.
+    Non cambia l'esito. Pura."""
+    scelte = {k: risposte.get(k, (None, None))[0] for k in DOMANDE}
+    if any(v is None for v in scelte.values()):
+        return None, None
+    if risposte.get("foto", (None, None))[0] == "non_corrisponde":
+        codice = "foto_diversa"
+    elif scelte["tipo"] in TIPI_NON_VENDIBILI:
+        codice = _MOTIVO_TIPO[scelte["tipo"]]
+    elif scelte["completo"] == "no":
+        codice = "guasto_incompleto"
+    elif scelte["prezzo"] == "sopra":
+        codice = "prezzo_alto"
+    elif scelte["prezzo"] == "sotto" and scelte["completo"] in ("si", "non_dichiarato"):
+        codice = "ok"
+    else:
+        codice = "prezzo_in_linea"
+    frase = FRASI_MOTIVO[codice]
+    if risposte.get("simili", (None, None))[0] in ("diverso", "in_parte"):
+        frase += ", ma i simili non sono lo stesso modello"
+    return codice, frase
+
+
+def descrizione_jev(esito, conf, frase):
+    """Riga per il messaggio: 'non e' un affare, dichiarato rotto... (confidenza 0,9)'. Pura."""
+    testo = ETICHETTE_ESITO.get(esito, esito)
+    if frase:
+        testo += f", {frase}"
+    return f"{testo} (confidenza {conf})"
+
+
 # Fasce di confidenza (31/10): sopra SOGLIA_PASSA l'esito vale; tra le due soglie e' un caso limite da valutare a mano con i
 # bottoni (taratura di soglie e domande); sotto SOGLIA_RIVEDERE e' scartato. Ipotesi iniziali, da tarare sui dati.
 SOGLIA_PASSA = 0.85
@@ -134,13 +181,14 @@ def giudica(titolo, prezzo, prezzi_simili, rivendita, foto=None):
 
 
 def giudica_completo(titolo, prezzo, prezzi_simili, rivendita, foto=None, descrizione=None, titoli_simili=None):
-    """(esito, confidenza, simili) oppure (None, None, None) se Jev non e' attivo o non risponde. Bloccante.
+    """(esito, confidenza, simili, motivo) oppure quattro None se Jev non e' attivo o non risponde. Bloccante.
     Con `foto` (bytes) e JEV_FOTO=1 Jev riceve anche la prima foto; se la richiesta con la foto fallisce, riprova solo testo.
     `descrizione` (tagliata a MAX_DESCRIZIONE caratteri) entra nello stato. Con `titoli_simili` Jev risponde anche a DOMANDA_SIMILI:
-    la risposta ('stesso_modello', 'in_parte', 'diverso', confidenza) e' il terzo valore e non influisce sull'esito."""
+    la risposta ('stesso_modello', 'in_parte', 'diverso', confidenza) e' il terzo valore e non influisce sull'esito.
+    Il quarto valore e' (codice, frase) da motivo_jev: il perche' dell'esito."""
     chiave = os.environ.get("TYPESAFE_API_KEY", "").strip()
     if not (JEV_GIUDICE and chiave):
-        return None, None, None
+        return None, None, None, None
     simili = ", ".join(f"{p:g}" for p in sorted(prezzi_simili)[:20]) or "nessuno"
     formato = _formato_foto(foto) if JEV_FOTO else None
     stato = (f"Annuncio Vinted: {titolo}\nPrezzo chiesto: {prezzo} EUR\n"
@@ -167,7 +215,7 @@ def giudica_completo(titolo, prezzo, prezzi_simili, rivendita, foto=None, descri
     except Exception as e:  # noqa: BLE001 - Jev non deve bloccare il radar
         if not formato:
             log.warning("JEV | giudizio non disponibile: %s", str(e)[:200])
-            return None, None, None
+            return None, None, None, None
         log.warning("JEV FOTO | richiesta con foto non riuscita, riprovo solo testo: %s", str(e)[:200])
         return giudica_completo(titolo, prezzo, prezzi_simili, rivendita, None, descrizione, titoli_simili)
     try:
@@ -175,7 +223,7 @@ def giudica_completo(titolo, prezzo, prezzi_simili, rivendita, foto=None, descri
                     for k in domande}
     except Exception as e:  # noqa: BLE001
         log.warning("JEV | risposta non leggibile: %s", str(e)[:200])
-        return None, None, None
+        return None, None, None, None
     if formato:
         risposte["foto"] = (risposta["answers"]["foto"].get("choice"), risposta["answers"]["foto"].get("confidence"))
     simili_risp = None
@@ -190,4 +238,6 @@ def giudica_completo(titolo, prezzo, prezzi_simili, rivendita, foto=None, descri
              len(desc), simili_risp[0] if simili_risp else "-", token,
              " | ".join(f"{k}={v[0]}({v[1]})" for k, v in risposte.items()))
     esito, conf = verdetto_jev(risposte)
-    return esito, conf, simili_risp
+    motivo = motivo_jev({**risposte, "simili": simili_risp or (None, None)})
+    log.info("JEV MOTIVO | titolo=%s | esito=%s | motivo=%s", titolo[:60], esito, motivo[0])
+    return esito, conf, simili_risp, motivo
