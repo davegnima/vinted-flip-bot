@@ -20,3 +20,11 @@ def test_leggi_e_tabella():
     assert venduti == {"1": 600, "2": None}
     t = ar.tabella(ombra, venduti)
     assert t["V2 switch"]["verde"] == [1, 1, 1] and t["V2 ps5"]["rosso"] == [1, 1, 0]
+
+
+def test_rossi_spariti_in_fretta():
+    righe = RIGHE + [
+        "x | RADAR V2 OMBRA | item=3 | semaforo=rosso | ok=False | motivo=margine_basso | prezzo=20 | ricerca=Console | titolo=Wii console",
+        "x | TRACCIATO_RADAR | item=3 | brand='n/d' | venduto_s=240 | controlli=2",
+    ]
+    assert ar.rossi_veloci(righe) == [("3", "Console", "margine_basso", 240, "Wii console")]

@@ -38,8 +38,28 @@ def tabella(ombra, venduti):
     return t
 
 
+ENTRO_ROSSI_S = 300
+RE_TITOLO = re.compile(r"\| titolo=(.*)$")
+
+
+def rossi_veloci(righe, entro_s=ENTRO_ROSSI_S):
+    """[(item, ricerca, motivo, venduto_s, titolo)] dei rossi spariti entro `entro_s` secondi: i verdetti da rivedere (31/10). Pura."""
+    rossi, venduti = {}, {}
+    for r in righe:
+        m = RE_OMBRA.search(r)
+        if m:
+            if m.group(2) == "rosso":
+                t = RE_TITOLO.search(r)
+                rossi[m.group(1)] = ((m.group(5) or "-").strip(), m.group(4), (t.group(1).strip() if t else ""))
+            continue
+        m = RE_TRACC.search(r)
+        if m and m.group(2).isdigit():
+            venduti[m.group(1)] = int(m.group(2))
+    return [(i, rossi[i][0], rossi[i][1], venduti[i], rossi[i][2]) for i in rossi if i in venduti and venduti[i] <= entro_s]
+
+
 def stampa(t):
-    print("ricerca | semaforo | annunci | con esito | venduti entro 1 h | % (solo con >= %d casi con esito)" % MIN_CASI)
+    print(f"ricerca | semaforo | annunci | con esito | venduti entro 1 h | percentuale (solo con >= {MIN_CASI} casi con esito)")
     for ricerca in sorted(t):
         for sem in ("verde", "giallo", "rosso"):
             if sem in t[ricerca]:
@@ -50,4 +70,9 @@ def stampa(t):
 
 if __name__ == "__main__":
     with open(sys.argv[1], encoding="utf-8", errors="replace") as f:
-        stampa(tabella(*leggi(f)))
+        righe = f.readlines()
+    stampa(tabella(*leggi(righe)))
+    rv = rossi_veloci(righe)
+    print(f"\nRossi spariti entro {ENTRO_ROSSI_S // 60} minuti (verdetti da rivedere): {len(rv)}")
+    for item, ricerca, motivo, vend, titolo in rv:
+        print(f"{item} | {ricerca} | {motivo} | venduto dopo {vend} s | {titolo}")
