@@ -121,6 +121,31 @@ def test_annuncio_fuori_matrice_ha_intestazione_chiara(monkeypatch):
     assert inviati == []
 
 
+def test_invia_verdetto_v2_gialli_e_verdi_una_volta(monkeypatch):
+    import asyncio
+    from bot import radar
+    inviati = []
+
+    async def finto_invia(testo, foto, suono=False):
+        inviati.append((testo, suono))
+
+    monkeypatch.setattr(radar, "RADAR_SEMAFORI", {"verde", "giallo"})
+    monkeypatch.setattr(radar, "_invia_radar", finto_invia)
+    monkeypatch.setattr(radar, "radar_in_pausa", lambda *a, **k: False)
+    radar._radar_inviati.clear()
+    p = {"title": "Switch oled", "price": "40"}
+    u = "https://www.vinted.it/items/901-switch"
+    assert asyncio.run(radar.invia_verdetto_v2(p, u, {"semaforo": "giallo"})) is True
+    assert asyncio.run(radar.invia_verdetto_v2(p, u, {"semaforo": "giallo"})) is False
+    assert asyncio.run(radar.invia_verdetto_v2(p, "https://www.vinted.it/items/902-x", {"semaforo": "verde"})) is True
+    assert asyncio.run(radar.invia_verdetto_v2(p, "https://www.vinted.it/items/903-x", {"semaforo": "rosso"})) is False
+    assert [x[1] for x in inviati] == [False, True]
+    assert inviati[0][0].startswith("🟡 40 €\nSwitch oled")
+    # il vecchio ramo non rimanda lo stesso annuncio
+    asyncio.run(radar._manda_annuncio_senza_modello("901", "Switch oled", 40.0, u, {"semaforo": "giallo"}, None))
+    assert len(inviati) == 2
+
+
 QUERY_URL = "https://www.vinted.it/catalog?search_text=ps5%20slim&catalog[]=3025&price_to=150&currency=EUR&order=newest_first"
 
 

@@ -431,8 +431,34 @@ async def _invia_radar(testo, foto=None, suono=False):
         await telegram_send_message(RADAR_CHAT_ID, testo, disable_notification=not suono)
 
 
+_radar_inviati = set()
+
+
+async def invia_verdetto_v2(parsed, url, v2, foto=None):
+    """Manda al chat degli avvisi i verdetti v2 in RADAR_SEMAFORI (verde con suono, giallo silenzioso), subito dopo
+    l'analisi: prima l'invio passava solo dal vecchio ramo e i gialli non arrivavano mai. Anti-duplicato per annuncio.
+    Ritorna True se ha inviato."""
+    if not _da_mandare(v2) or radar_in_pausa():
+        return False
+    item_id = _estrai_item_id_da_url(url) if url else None
+    if not item_id or str(item_id) in _radar_inviati:
+        return False
+    _radar_inviati.add(str(item_id))
+    if len(_radar_inviati) > 20000:
+        _radar_inviati.clear()
+    try:
+        prezzo = _a_float(parsed.get("price"), None)
+        intestazione = f"{pallino_semaforo(v2)} {prezzo:g} €" if prezzo is not None else pallino_semaforo(v2)
+        testo = "\n".join([intestazione, (parsed.get("title") or "")[:100]] + _righe_v2(v2) + [url])
+        await _invia_radar(testo, foto, suono=_con_suono(v2))
+        return True
+    except Exception:
+        log.warning("Radar: verdetto v2 non inviato per %s:\n%s", item_id, traceback.format_exc())
+        return False
+
+
 async def _manda_semaforo_radar(item_id, titolo, prezzo, url, modello, buy_max, v2=None, foto=None):
-    if not _da_mandare(v2):
+    if not _da_mandare(v2) or str(item_id) in _radar_inviati:
         return
     try:
         testo = "\n".join([f"{pallino_semaforo(v2)} modello {modello} | {prezzo:g} € (buy max {buy_max:g} €)", titolo[:100]]
@@ -444,7 +470,7 @@ async def _manda_semaforo_radar(item_id, titolo, prezzo, url, modello, buy_max, 
 
 
 async def _manda_annuncio_senza_modello(item_id, titolo, prezzo, url, v2=None, foto=None):
-    if not _da_mandare(v2):
+    if not _da_mandare(v2) or str(item_id) in _radar_inviati:
         return
     try:
         pall = pallino_semaforo(v2)
