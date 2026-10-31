@@ -362,6 +362,13 @@ def _righe_v2(v2):
 RADAR_RISPOSTA_GRUPPO = os.environ.get("RADAR_RISPOSTA_GRUPPO", "1").strip() not in ("0", "false", "no", "")
 
 
+def _dettaglio_comp(v2):
+    """' (X trovati in tutto, ricerca allargata)' per capire dove si perdono i comparabili. Pura."""
+    g = v2.get("n_grezzi")
+    extra = ", ricerca allargata" if v2.get("allargata") else ""
+    return f" ({g} grezzi{extra})" if g is not None else (" (ricerca allargata)" if extra else "")
+
+
 def testo_risposta_gruppo(v2):
     """Riga breve per la risposta nel gruppo: semaforo, rivendita stimata, margine, ROI, comparabili. Pura."""
     if not v2:
@@ -369,9 +376,9 @@ def testo_risposta_gruppo(v2):
     n = v2.get("n") or 0
     colore = v2.get("semaforo") or "n.d."
     if v2.get("rivendita") is None:
-        return f"{pallino_semaforo(v2, '⚪')} {colore} · nessuna stima ({_motivo_leggibile(v2.get('motivo'))}, {n} comparabili)"
+        return f"{pallino_semaforo(v2, '⚪')} {colore} · nessuna stima ({_motivo_leggibile(v2.get('motivo'))}, {n} comparabili{_dettaglio_comp(v2)})"
     testo = (f"{pallino_semaforo(v2, '⚪')} {colore} · rivendita stimata {v2.get('rivendita')} € · margine {v2.get('margine')} € "
-             f"· ROI {v2.get('roi')}% · {n} comparabili")
+             f"· ROI {v2.get('roi')}% · {n} comparabili{_dettaglio_comp(v2)}")
     if v2.get("jev"):
         testo += f"\nJev: {v2['jev']} (confidenza {v2.get('jev_conf')})"
     return testo
