@@ -292,3 +292,22 @@ def test_messaggio_gruppo_spiega_il_perche_di_jev():
     v2 = {"semaforo": "giallo", "rivendita": 160.0, "margine": 93.55, "roi": 185.4, "n": 14, "n_grezzi": 15, "allargata": 1,
           "jev": "non_affare", "jev_conf": 0.9, "jev_motivo_frase": "dichiarato rotto, incompleto, bloccato o per ricambi"}
     assert "Jev: non e' un affare, dichiarato rotto, incompleto, bloccato o per ricambi (confidenza 0.9)" in testo_risposta_gruppo(v2)
+
+
+def test_traccia_verdetto_v2_gialli_verdi_sempre_rossi_a_campione(monkeypatch):
+    from bot import radar, tracciamento as tr
+    partite = []
+    monkeypatch.setattr(tr, "tracc_avvia_serie", lambda info, url, t0, offsets=None: partite.append((url, offsets)))
+    monkeypatch.setattr(radar, "_radar_tracciati", set())
+    monkeypatch.setattr(radar, "RADAR_TRACCIA_ROSSI_1_SU", 10)
+    p = {"title": "Switch", "price": "40", "brand": "nintendo"}
+    u = lambda n: f"https://www.vinted.it/items/{n}-switch"
+    assert radar.traccia_verdetto_v2(p, u(101), {"semaforo": "verde", "motivo": "ok", "n": 8})
+    assert radar.traccia_verdetto_v2(p, u(103), {"semaforo": "giallo", "motivo": "ok"})
+    assert not radar.traccia_verdetto_v2(p, u(101), {"semaforo": "verde"})          # gia' tracciato
+    assert not radar.traccia_verdetto_v2(p, u(105), {"semaforo": "rosso", "motivo": "margine_basso"})   # 105 % 10 != 0
+    assert radar.traccia_verdetto_v2(p, u(110), {"semaforo": "rosso", "motivo": "margine_basso"})      # 110 % 10 == 0
+    assert not radar.traccia_verdetto_v2(p, u(120), {"semaforo": "rosso", "motivo": "pezzo_o_accessorio"})
+    assert not radar.traccia_verdetto_v2(p, u(130), None)
+    assert tr._tracc_ctx["101"]["semaforo"] == "verde"
+    assert len(partite) == 3 and partite[0][1] == radar.RADAR_RICONTROLLI_SECONDI
