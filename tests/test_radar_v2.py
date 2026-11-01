@@ -354,3 +354,31 @@ def test_da_mandare_richiede_jev_affare(monkeypatch):
     assert radar._da_mandare({"semaforo": "verde", "jev": None, "jev_conf": None}) is False
     assert radar._da_mandare({**ok, "semaforo": "rosso"}) is False
     assert radar.RADAR_CHAT_ID == (radar.TELEGRAM_ALERT_CHAT_ID or radar.TELEGRAM_OWNER_CHAT_ID)
+
+
+def test_verifica_comparabili_filtra_e_toglie_il_suffisso(monkeypatch):
+    from bot import radar
+    monkeypatch.setattr(radar, "RADAR_VERIFICA", True)
+    base = {"semaforo": "giallo", "jev": "affare_vero", "jev_conf": 0.9, "rivendita": 200, "margine": 150, "roi": 300, "n": 14,
+            "jev_motivo_frase": "oggetto vero, ma i simili non sono lo stesso modello"}
+    rosso = {**base, "verificata": {"semaforo": "rosso", "n_stesso": 0, "n_giudicati": 14, "rivendita": None}}
+    assert radar._da_mandare(rosso) is False
+    giallo = {**base, "verificata": {"semaforo": "giallo", "n_stesso": 4, "n_giudicati": 4, "rivendita": 187.5, "margine": 107, "roi": 250}}
+    assert radar._da_mandare(giallo) is True
+    testo = "\n".join(radar._righe_v2(giallo))
+    assert "Verificati: 4 su 4" in testo and "simili non sono" not in testo
+    assert radar._da_mandare(base) is True
+
+
+def test_classifica_titolo_vuoto_non_sfasa(monkeypatch):
+    from bot import jev
+    monkeypatch.setattr(jev, "JEV_GIUDICE", True)
+    monkeypatch.setattr(jev, "JEV_COMPS", True)
+    monkeypatch.setenv("TYPESAFE_API_KEY", "k")
+    visto = {}
+    def finto(corpo):
+        visto.update(corpo)
+        return {"answers": {f"c{i}": {"choice": "altro", "confidence": 0.9} for i in range(3)}}
+    monkeypatch.setattr(jev, "_chiama_jev", finto)
+    out = jev.classifica_comparabili("x", ["a", "", "c"])
+    assert len(out) == 3 and set(visto["questions"]) == {"c0", "c1", "c2"}

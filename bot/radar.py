@@ -368,8 +368,15 @@ def _righe_v2(v2):
         righe.append(f"Comparabili: {n} trovati · rivendita {v2.get('rivendita')} € · margine {v2.get('margine')} € "
                      f"· ROI {v2.get('roi')}%")
         righe.append(f"Semaforo: {pallino} {v2.get('semaforo') or 'n.d.'}")
+    ver = v2.get("verificata")
+    frase = v2.get("jev_motivo_frase")
+    if ver and RADAR_VERIFICA:
+        # i comparabili sono stati verificati uno per uno: la rivendita sopra e' quella grezza, qui quella sul solo stesso modello
+        righe.append(f"Verificati: {ver.get('n_stesso')} su {ver.get('n_giudicati')} stesso modello · rivendita {ver.get('rivendita')} € "
+                     f"· margine {ver.get('margine')} € · ROI {ver.get('roi')}%")
+        frase = _frase_senza_simili(v2)
     if v2.get("jev"):
-        righe.append(f"Jev: {descrizione_jev(v2['jev'], v2.get('jev_conf'), v2.get('jev_motivo_frase'))}")
+        righe.append(f"Jev: {descrizione_jev(v2['jev'], v2.get('jev_conf'), frase)}")
     return righe
 
 
@@ -396,7 +403,7 @@ def testo_risposta_gruppo(v2):
     testo = (f"{pallino_semaforo(v2, '⚪')} {colore} · rivendita stimata {v2.get('rivendita')} € · margine {v2.get('margine')} € "
              f"· ROI {v2.get('roi')}% · {n} comparabili{_dettaglio_comp(v2)}")
     if v2.get("jev"):
-        testo += f"\nJev: {descrizione_jev(v2['jev'], v2.get('jev_conf'), v2.get('jev_motivo_frase'))}"
+        testo += f"\nJev: {descrizione_jev(v2['jev'], v2.get('jev_conf'), _frase_senza_simili(v2))}"
     return testo
 
 
@@ -418,6 +425,20 @@ def da_cancellare(v2):
     return RADAR_CANCELLA_ROSSI or (v2.get("motivo") or "").split(":")[0] in MOTIVI_NON_OGGETTO
 
 
+# Verifica dei comparabili (01/11, richiesta dell'utente: "i simili non sono lo stesso modello"): se Jev ha giudicato i comparabili
+# e la rivendita sui soli "stesso modello" non da' verde o giallo, l'avviso non parte. Senza verifica (pochi comparabili, Jev spento) resta il vecchio comportamento.
+RADAR_VERIFICA = os.environ.get("RADAR_VERIFICA", "1").strip() not in ("0", "false", "no", "")
+SUFFISSO_SIMILI = ", ma i simili non sono lo stesso modello"
+
+
+def _frase_senza_simili(v2):
+    """Motivo di Jev senza il suffisso sui simili quando i comparabili sono stati verificati uno per uno."""
+    frase = v2.get("jev_motivo_frase")
+    if v2.get("verificata") and RADAR_VERIFICA:
+        return (frase or "").replace(SUFFISSO_SIMILI, "") or None
+    return frase
+
+
 def _da_mandare(v2):
     """Solo i semafori in RADAR_SEMAFORI (verde e giallo) e, con RADAR_JEV_RICHIESTO, solo se Jev dice affare con la confidenza
     minima: niente rossi, niente annunci senza verdetto, niente rotti o ricambi."""
@@ -425,6 +446,11 @@ def _da_mandare(v2):
         return False
     if RADAR_JEV_RICHIESTO and not (v2.get("jev") == "affare_vero" and (v2.get("jev_conf") or 0) >= RADAR_JEV_CONF_MIN):
         log.info("RADAR SCARTATO JEV | semaforo=%s | jev=%s | conf=%s | motivo=%s", v2.get("semaforo"), v2.get("jev"), v2.get("jev_conf"), v2.get("jev_motivo"))
+        return False
+    ver = v2.get("verificata")
+    if RADAR_VERIFICA and ver and ver.get("semaforo") not in RADAR_SEMAFORI:
+        log.info("RADAR SCARTATO VERIFICA | semaforo=%s | dopo=%s | stesso=%s/%s | rivendita=%s", v2.get("semaforo"), ver.get("semaforo"),
+                 ver.get("n_stesso"), ver.get("n_giudicati"), ver.get("rivendita"))
         return False
     return True
 
