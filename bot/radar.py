@@ -413,6 +413,10 @@ def testo_risposta_gruppo(v2):
              f"· ROI {v2.get('roi')}% · {n} comparabili{_dettaglio_comp(v2)}")
     if v2.get("jev"):
         testo += f"\nJev: {descrizione_jev(v2['jev'], v2.get('jev_conf'), _frase_senza_simili(v2))}"
+    if v2.get("semaforo") in RADAR_SEMAFORI:
+        motivo = perche_non_inviato(v2)
+        testo += "\n" + ("Inviato in COMPRA" if motivo is None else f"Non inviato in COMPRA: {motivo}")
+        testo += "".join("\n" + r for r in _righe_link_comps(v2))
     return testo
 
 
@@ -448,20 +452,27 @@ def _frase_senza_simili(v2):
     return frase
 
 
+def perche_non_inviato(v2):
+    """None se l'avviso va mandato, altrimenti la frase che dice perche' no (per il gruppo e per i log). Pura."""
+    if not v2 or v2.get("semaforo") not in RADAR_SEMAFORI:
+        return "semaforo rosso: margine o ROI sotto soglia" if v2 and v2.get("semaforo") == "rosso" else "semaforo non calcolato"
+    if RADAR_JEV_RICHIESTO and not (v2.get("jev") == "affare_vero" and (v2.get("jev_conf") or 0) >= RADAR_JEV_CONF_MIN):
+        if v2.get("jev") == "affare_vero":
+            return f"Jev dice affare ma con confidenza {v2.get('jev_conf')} sotto la soglia {RADAR_JEV_CONF_MIN}"
+        return f"Jev non lo da' come affare ({v2.get('jev_motivo_frase') or v2.get('jev') or 'nessun giudizio'})"
+    ver = v2.get("verificata")
+    if RADAR_VERIFICA and ver and ver.get("semaforo") not in RADAR_SEMAFORI:
+        return f"comparabili verificati: solo {ver.get('n_stesso')} su {ver.get('n_giudicati')} sono lo stesso modello"
+    return None
+
+
 def _da_mandare(v2):
     """Solo i semafori in RADAR_SEMAFORI (verde e giallo) e, con RADAR_JEV_RICHIESTO, solo se Jev dice affare con la confidenza
     minima: niente rossi, niente annunci senza verdetto, niente rotti o ricambi."""
-    if not v2 or v2.get("semaforo") not in RADAR_SEMAFORI:
-        return False
-    if RADAR_JEV_RICHIESTO and not (v2.get("jev") == "affare_vero" and (v2.get("jev_conf") or 0) >= RADAR_JEV_CONF_MIN):
-        log.info("RADAR SCARTATO JEV | semaforo=%s | jev=%s | conf=%s | motivo=%s", v2.get("semaforo"), v2.get("jev"), v2.get("jev_conf"), v2.get("jev_motivo"))
-        return False
-    ver = v2.get("verificata")
-    if RADAR_VERIFICA and ver and ver.get("semaforo") not in RADAR_SEMAFORI:
-        log.info("RADAR SCARTATO VERIFICA | semaforo=%s | dopo=%s | stesso=%s/%s | rivendita=%s", v2.get("semaforo"), ver.get("semaforo"),
-                 ver.get("n_stesso"), ver.get("n_giudicati"), ver.get("rivendita"))
-        return False
-    return True
+    motivo = perche_non_inviato(v2)
+    if motivo and v2 and v2.get("semaforo") in RADAR_SEMAFORI:
+        log.info("RADAR SCARTATO | semaforo=%s | jev=%s | conf=%s | %s", v2.get("semaforo"), v2.get("jev"), v2.get("jev_conf"), motivo)
+    return motivo is None
 
 
 def _con_suono(v2):

@@ -210,7 +210,11 @@ def test_prezzo_segnaposto_e_rosso(monkeypatch):
 def test_risposta_gruppo_con_stima_e_senza():
     from bot import radar
     v2 = {"semaforo": "verde", "rivendita": 80, "margine": 60, "roi": 150, "n": 7}
-    assert radar.testo_risposta_gruppo(v2) == "🟢 verde · rivendita stimata 80 € · margine 60 € · ROI 150% · 7 comparabili"
+    assert radar.testo_risposta_gruppo(v2).startswith("🟢 verde · rivendita stimata 80 € · margine 60 € · ROI 150% · 7 comparabili")
+    assert "Non inviato in COMPRA: Jev non lo da' come affare" in radar.testo_risposta_gruppo(v2)
+    ok = {**v2, "jev": "affare_vero", "jev_conf": 0.95, "link_comps": [("t", 90.0, "https://www.vinted.it/items/1")]}
+    t = radar.testo_risposta_gruppo(ok)
+    assert "Inviato in COMPRA" in t and "• 90 € https://www.vinted.it/items/1" in t
     r = radar.testo_risposta_gruppo({"semaforo": "rosso", "rivendita": None, "n": 1, "motivo": "pochi_comparabili"})
     assert r.startswith("🔴 rosso · nessuna stima (pochi comparabili")
     assert radar.testo_risposta_gruppo(None) == "⚪ semaforo non calcolato"
