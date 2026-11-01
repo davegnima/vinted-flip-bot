@@ -57,6 +57,7 @@ ONDA4=[ # 01/11, categorie nuove (richiesta dell'utente: "altri affari da altre 
 RISCHIO=('V2 alessi','V2 iittala','V2 rosenthal','V2 zwilling','V2 gopro','V2 dji', # 01/11 (b) potate: margine_basso 90% (prezzi 15-28 EUR) o 0 vendite veloci su 38 tracciate (URL in docs/analisi/radar-ricerche-potate-2026-11-01-b.json)
          'V2 games workshop','V2 smeg','V2 ginori', # 01/11 potate: 0 gialli/verdi su 24 h, 91-100% margine_basso (URL salvate in docs/analisi/radar-ricerche-potate-2026-11-01.json)
          'V2 airpods pro','V2 apple airpods','V2 omega uomo','V2 omega donna','V2 longines','V2 tudor','V2 montblanc penne', # repliche frequenti: fuori (piano 31/10)
+         'V2 lalique','V2 babyzen','V2 flos','V2 venini','V2 nuna','V2 lego star wars','V2 lego technic','V2 game boy', # 01/11 (c) tolte dal tracker: 0 annunci in 24 h (lalique, babyzen, flos, venini, nuna) o solo rossi (lego star wars 310, lego technic 106, game boy 16)
          'V2 thermomix','V2 kitchenaid') # 31/10 13:30: senza catalog[] solo rumore (thermomix limite=0, kitchenaid accessori); rimesse solo con l'id categoria visto nei log
 def _nomi_sul_tracker():
     return {html.unescape(re.search(r'name="query_name"[^>]*value="([^"]*)"',m.group(2)).group(1)).split(' :: ')[0]
