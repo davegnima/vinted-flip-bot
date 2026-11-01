@@ -109,13 +109,22 @@ def _e_sigla_modello(w):
     return bool(_RE_SIGLA_MODELLO.match(w)) and not _RE_SPECIFICA.match(w)
 
 
+_RE_SIGLA_SPEZZATA = re.compile(r"\b([bcdfghjklmnpqrstvwxz])\s(\d{1,3})\b")
+
+
+def unisci_sigla(titolo):
+    """'Sony h 1' -> 'Sony h1' (01/11): una lettera e un numero separati sono quasi sempre la sigla del modello; cercata con lo
+    spazio Vinted restituiva altre Sony da 190-270 EUR invece delle H1 da 30. Solo consonanti (le vocali sono articoli: 'i 3 giochi'). Pura."""
+    return _RE_SIGLA_SPEZZATA.sub(r"\1\2", (titolo or "").lower())
+
+
 def query_comp(titolo, brand=None, max_parole=4):
     """Testo di ricerca: marca + prime parole significative del titolo (niente 'usato', 'ottime condizioni'...).
 
     Se il titolo ha una sigla di modello (es. 'S1900'), la ricerca parte dalla parola prima della sigla (la serie, 'finepix'):
     'Fotocamera compatta digitale Fujifilm FinePix S1900' dava 'fujifilm fotocamera compatta digitale' e il modello restava
     fuori (31/10)."""
-    parole = [w for w in re.findall(r"[\w'’]+", (titolo or "").lower()) if w not in _PAROLE_VUOTE and w not in _PAROLE_GENERICHE]
+    parole = [w for w in re.findall(r"[\w'’]+", unisci_sigla(titolo)) if w not in _PAROLE_VUOTE and w not in _PAROLE_GENERICHE]
     b = brand.lower().split() if brand else []
     if b:
         parole = [w for w in parole if w not in b]
@@ -149,7 +158,7 @@ def nomi_candidati(titolo, brand=None, max_n=6):
 def query_alternative(titolo, brand=None, max_n=2):
     """Ricerche alternative costruite dalla sigla del modello quando quella principale non trova lo stesso prodotto
     (es. 'Sony cuffie bluetooth WH-CH520 nere' -> 'sony ch520', 'sony wh ch520'). Pura, nessun testo libero da modelli."""
-    parole = [w for w in re.findall(r"[\w'’]+", (titolo or "").lower()) if w not in _PAROLE_VUOTE and w not in _PAROLE_GENERICHE]
+    parole = [w for w in re.findall(r"[\w'’]+", unisci_sigla(titolo)) if w not in _PAROLE_VUOTE and w not in _PAROLE_GENERICHE]
     b = brand.lower().split() if brand else []
     if b:
         parole = [w for w in parole if w not in b]

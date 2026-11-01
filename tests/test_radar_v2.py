@@ -543,3 +543,10 @@ def test_invia_radar_bottone_e_resto(monkeypatch):
     inviati.clear()
     asyncio.run(radar._invia_radar("ciao\n" + url))
     assert inviati == [("msg", len("ciao\n" + url), url)]
+
+
+def test_sigla_spezzata_si_unisce_nella_query():
+    from bot.valore_mercato import query_comp, unisci_sigla
+    assert unisci_sigla("Sony h 1") == "sony h1"
+    assert unisci_sigla("Sony i 3 giochi") == "sony i 3 giochi"  # vocale: articolo, non sigla
+    assert "h1" in query_comp("Sony h 1", "sony").split()
