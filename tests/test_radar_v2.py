@@ -795,3 +795,11 @@ def test_non_oggetti_di_novembre_sono_pezzi():
     # console intere con dock o alimentatore restano oggetti
     for t in ("Nintendo Switch OLED con dock e joycon", "Switch lite completa"):
         assert e_un_pezzo(t) is None, t
+
+
+def test_parole_vietate_di_novembre_senza_falsi_positivi():
+    from bot.radar import parola_vietata
+    for t in ("Zoom H6 solo custodia", "Garmin Edge con muffa", "Stokke solo cuscino", "Gimbal bloccato Ronin", "Rtx 3060 water damage"):
+        assert parola_vietata(t), t
+    for t in ("DJI Mini 3 Pro Fly More", "Heroquest completo", "RTX 3060 mai usata per mining", "Kit con drift controllato"):
+        assert parola_vietata(t) is None, t

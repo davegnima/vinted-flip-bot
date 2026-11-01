@@ -170,7 +170,10 @@ _PAROLE_VIETATE_RE = re.compile(
     r"(?<!\w)(rott[oaie]|non funzion\w*|da riparare|guast[oaie]|difettos[oaie]|per pezzi|per ricambi|ricambi"
     r"|incomplet[oaie]|mancante|mancano|senza pezzi|replica|fake|copia|imitazione|ispirat[oaie]|stile|simil\w*"
     r"|tipo|non original\w*|broken|for parts"
-    r"|solo (?:la )?scatola|scatola vuota|verpackung|keine konsole|ohne konsole|empty box|box only)(?!\w)",
+    r"|solo (?:la )?scatola|scatola vuota|verpackung|keine konsole|ohne konsole|empty box|box only"
+    r"|solo (?:custodia|case|ricevitore|dissipatore|cuscino|telaio|coperchio|staffa|istruzioni|tabellone)"
+    r"|pin piegati|artefatti|schermo blu|lente graffiata|fungo|muffa|gimbal bloccato|water damage|allagat[oaie]"
+    r"|crepa|cavo ricambio|boite vide)(?!\w)",
     re.I,
 )
 
