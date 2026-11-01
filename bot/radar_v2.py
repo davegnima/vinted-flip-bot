@@ -483,6 +483,13 @@ async def analizza(parsed, url, foto=None, query_url=None):
                 jev_foto_comps = await asyncio.to_thread(confronta_foto_comparabili, titolo, foto, miniature)
                 log.info("RADAR V2 FOTO COMPS | item=%s | semaforo=%s | byte=%s | esito=%s | titolo=%s", item_id, v.get("semaforo"),
                          sum(len(m) for m in miniature), jev_foto_comps, titolo[:60])
+                # Buon senso (01/11, caso Sony H1: 11 'simili' da 190-270 EUR per una compatta da 30): se la stima poggia anche sui
+                # simili e la maggior parte delle foto dei comparabili e' 'diversa' (conf >= 0,5), i comparabili non sono verificati: rosso.
+                if verificata and verificata["n_simili"] > 0 and jev_foto_comps:
+                    diversi = sum(1 for sc, cf in jev_foto_comps if sc == "diverso" and (cf or 0) >= 0.5)
+                    if diversi * 2 > len(jev_foto_comps):
+                        v = {**v, "semaforo": "rosso", "ok": False, "motivo": "comparabili_diversi"}
+                        log.info("RADAR V2 COMPARABILI DIVERSI | item=%s | diversi=%s/%s | titolo=%s", item_id, diversi, len(jev_foto_comps), titolo[:60])
         db.scrivi_evento("radar_v2", item_id, brand, {**dati, "qualita": qualita, "identita": identita, "paese": paese, "classe": classe, "paese_fonte": paese_fonte, "spedizione_eur": sped_eur, "spedizione_stato": sped_stato,
                                                       "costo_totale": v.get("costo_totale"), "jev_foto_comps": jev_foto_comps, "verificata": verificata, "link_comps": [list(c) for c in link_comps], "jev": jev, "jev_conf": jev_conf,
                                                       "jev_simili": jev_simili[0] if jev_simili else None,
