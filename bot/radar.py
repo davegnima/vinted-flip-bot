@@ -361,6 +361,19 @@ def _righe_link_comps(v2):
     return ["Comparabili da controllare:"] + [f"• {p:g} € {u}" for _t, p, u in link]
 
 
+_STATO_SPEDIZIONE = {"VERIFIED": "verificata", "ESTIMATED": "stimata", "UNKNOWN": "sconosciuta, base"}
+
+
+def _riga_costo_totale(v2):
+    """'Costo totale: prezzo + spedizione (stato) + protezione = totale' (01/11). Vuota se il v2 non ha il costo. Pura."""
+    tot, sped = v2.get("costo_totale"), v2.get("spedizione_eur")
+    if tot is None or sped is None:
+        return ""
+    stato = _STATO_SPEDIZIONE.get(v2.get("spedizione_stato"), "n.d.")
+    paese = f" da {v2['paese']}" if v2.get("paese") else ""
+    return f"Costo totale: {tot:.2f} € (spedizione {sped:.2f} € {stato}{paese}, protezione acquisti inclusa)"
+
+
 def _righe_v2(v2):
     """Righe del messaggio: comparabili (quanti e perche' zero), esito del semaforo (sempre), giudizio Jev.
     Il semaforo non viene dal buy max della matrice: si costruisce dai comparabili (richiesta dell'utente, 25/10)."""
@@ -376,6 +389,9 @@ def _righe_v2(v2):
         righe.append(f"Comparabili: {n} trovati · rivendita {v2.get('rivendita')} € · margine {v2.get('margine')} € "
                      f"· ROI {v2.get('roi')}%")
         righe.append(f"Semaforo: {pallino} {v2.get('semaforo') or 'n.d.'}")
+    riga_costo = _riga_costo_totale(v2)
+    if riga_costo:
+        righe.append(riga_costo)
     ver = v2.get("verificata")
     frase = v2.get("jev_motivo_frase")
     if ver and RADAR_VERIFICA:

@@ -17,9 +17,10 @@ from bot.comps import _cerca_vinted_testo_diretto, _miniature_comp
 from bot.foto import download_image_bytes, optimize_image_bytes
 from bot.jev import JEV_COMPS, JEV_FOTO_COMPS, MAX_COMPS_VERIFICA, MAX_FOTO_COMPS, classifica_comparabili, comparabili_stesso_modello, confronta_foto_comparabili, giudica_completo, precontrollo_tipo, prezzi_stesso_modello, riconosci_prodotto
 from bot.config import SPEDIZIONE_STIMATA_EUR
+from bot.spedizione import UNKNOWN, campi_spedizione_da_html, classe_taglia, costo_spedizione, paese_da_html
 from bot.logger import log
 from bot.radar import RADAR_SPESA_MAX, parola_vietata, radar_in_pausa
-from bot.radar_matrice import buy_max
+from bot.radar_matrice import buy_max, costo_acquisto
 from bot.testo import _normalizza_titolo_per_link
 from bot.verdetto import _a_float, _estrai_item_id_da_url
 from bot.vinted_http import _vinted_get_con_retry
@@ -43,6 +44,7 @@ RIF_MIN_COMPARABILI = 6
 _visti = set()
 # Prova in ombra (31/10): descrizioni e titoli dei simili per Jev, senza richieste in piu' (la pagina e i comparabili si scaricano comunque).
 _descrizioni = {}
+_info_pagina = {}  # url -> {paese, campi spedizione}: dalla stessa pagina dell'annuncio, zero richieste in piu'
 _titoli_simili = {}
 _url_comps = {}  # (testo, catalogo) -> {(titolo normalizzato, prezzo 2 decimali): url dell'annuncio} per i link nei messaggi
 _comps_simili = {}  # (testo, catalogo) -> [(titolo, prezzo)] per il giudizio di Jev sui singoli comparabili
@@ -163,6 +165,9 @@ async def _catalogo_annuncio(url):
         resp = await _vinted_get_con_retry(url, timeout=10, max_retries=1)
         if resp is None:
             return None
+        _info_pagina[url] = {"paese": paese_da_html(resp.text), "campi": campi_spedizione_da_html(resp.text)}
+        if len(_info_pagina) > 500:
+            _info_pagina.clear()
         desc = _descrizione_da_html(resp.text)
         if desc:
             if len(_descrizioni) > 500:
@@ -367,6 +372,12 @@ async def analizza(parsed, url, foto=None, query_url=None):
                      item_id, scarto_tipo, prezzo, parsed.get("query_name") or "-", titolo[:60])
             return _rosso("jev_tipo:" + scarto_tipo)
         catalogo = await _catalogo_annuncio(url)
+        info_pag = _info_pagina.pop(url, None) or {}
+        paese = info_pag.get("paese")
+        classe = classe_taglia(titolo)
+        sped_eur, sped_stato = costo_spedizione(paese, classe)
+        log.info("SPEDIZIONE PAGINA | item=%s | paese=%s | classe=%s | stato=%s | eur=%s | campi=%s", item_id, paese or "-", classe, sped_stato,
+                 sped_eur, ";".join(f"{k}={x}" for k, x in info_pag.get("campi") or []) or "-")
         prezzi, n_grezzi, dalla_cache = await _prezzi_simili(testo, titolo, prezzo, brand, catalogo)
         if prezzi is None:
             db.scrivi_evento("radar_v2", item_id, brand, {**base, "ok": False, "motivo": "comparabili_non_disponibili", "q": testo})
@@ -382,7 +393,7 @@ async def analizza(parsed, url, foto=None, query_url=None):
                 if len(prezzi) >= RADAR_V2_SCALA_MIN:
                     break
         stima = stima_mercato(prezzi, min_n=2)
-        v = valuta(prezzo, stima)
+        v = valuta(prezzo, stima, spedizione_eur=sped_eur)
         limite = limite_acquisto(stima)
         radar_appreso.registra(fam, limite, len(prezzi), allargata)
         if allargata and v.get("semaforo") == "verde":
@@ -398,7 +409,7 @@ async def analizza(parsed, url, foto=None, query_url=None):
         if JEV_COMPS and (v.get("semaforo") in ("verde", "giallo") or v.get("motivo") == "pochi_comparabili"):
             info, ok_prezzi = await _verifica_comparabili(titolo, prezzo, brand, catalogo, testo)
             if info:
-                v_ver = valuta(prezzo, stima_mercato(ok_prezzi, min_n=3))
+                v_ver = valuta(prezzo, stima_mercato(ok_prezzi, min_n=3), spedizione_eur=sped_eur)
                 verificata = {**info, "rivendita": v_ver.get("rivendita"), "margine": v_ver.get("margine"), "roi": v_ver.get("roi"),
                               "semaforo": v_ver.get("semaforo")}
                 log.info("RADAR V2 VERIFICATA | item=%s | prima=%s rivendita=%s | dopo=%s rivendita=%s margine=%s | stesso=%s/%s | q=%s | titolo=%s",
@@ -410,6 +421,11 @@ async def analizza(parsed, url, foto=None, query_url=None):
                     if cap and v.get("semaforo") == "verde":
                         v["semaforo"] = "giallo"
                     prezzi, titoli_jev = ok_prezzi, None
+        # Costo totale (01/11): con spedizione sconosciuta il semaforo non supera il giallo (niente suono); il verde dipende dal costo totale.
+        v["spedizione_eur"], v["spedizione_stato"] = sped_eur, sped_stato
+        v["costo_totale"] = round(costo_acquisto(prezzo, sped_eur), 2)
+        if sped_stato == UNKNOWN and v.get("semaforo") == "verde":
+            v["semaforo"] = "giallo"
         # Link dei comparabili nei messaggi (01/11): quelli verificati se ci sono, altrimenti i grezzi della ricerca usata.
         link_comps = []
         if v.get("semaforo") in ("verde", "giallo"):
@@ -433,12 +449,14 @@ async def analizza(parsed, url, foto=None, query_url=None):
                 jev_foto_comps = await asyncio.to_thread(confronta_foto_comparabili, titolo, foto, miniature)
                 log.info("RADAR V2 FOTO COMPS | item=%s | semaforo=%s | byte=%s | esito=%s | titolo=%s", item_id, v.get("semaforo"),
                          sum(len(m) for m in miniature), jev_foto_comps, titolo[:60])
-        db.scrivi_evento("radar_v2", item_id, brand, {**dati, "jev_foto_comps": jev_foto_comps, "verificata": verificata, "link_comps": [list(c) for c in link_comps], "jev": jev, "jev_conf": jev_conf,
+        db.scrivi_evento("radar_v2", item_id, brand, {**dati, "paese": paese, "classe": classe, "spedizione_eur": sped_eur, "spedizione_stato": sped_stato,
+                                                      "costo_totale": v.get("costo_totale"), "jev_foto_comps": jev_foto_comps, "verificata": verificata, "link_comps": [list(c) for c in link_comps], "jev": jev, "jev_conf": jev_conf,
                                                       "jev_simili": jev_simili[0] if jev_simili else None,
                                                       "jev_simili_conf": jev_simili[1] if jev_simili else None,
                                                       "jev_motivo": jev_motivo[0] if jev_motivo else None,
                                                       "jev_motivo_frase": jev_motivo[1] if jev_motivo else None})
         return {"semaforo": v.get("semaforo"), "rivendita": v.get("rivendita"), "margine": v.get("margine"),
+                "spedizione_eur": sped_eur, "spedizione_stato": sped_stato, "costo_totale": v.get("costo_totale"), "paese": paese,
                 "roi": v.get("roi"), "n": len(prezzi), "n_grezzi": n_grezzi, "allargata": allargata, "motivo": v.get("motivo"),
                 "jev": jev, "jev_conf": jev_conf, "jev_motivo": jev_motivo[0] if jev_motivo else None,
                 "jev_motivo_frase": jev_motivo[1] if jev_motivo else None, "verificata": verificata, "link_comps": link_comps}
