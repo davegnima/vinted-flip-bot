@@ -277,6 +277,35 @@ def giudica_completo(titolo, prezzo, prezzi_simili, rivendita, foto=None, descri
     return esito, conf, simili_risp, motivo
 
 
+JEV_PRECONTROLLO = os.environ.get("JEV_PRECONTROLLO", "1").strip() == "1"
+CONF_PRECONTROLLO = 0.6
+
+
+def precontrollo_tipo(titolo):
+    """Codice del motivo (come motivo_jev) se dal solo titolo l'annuncio e' un ricambio, un lotto, una replica o e' dichiarato
+    rotto/incompleto, con confidenza >= CONF_PRECONTROLLO; altrimenti None (anche se Jev e' spento o non risponde).
+    Serve a non cercare comparabili per cio' che non si puo' rivendere come oggetto. Bloccante, poche decine di token."""
+    chiave = os.environ.get("TYPESAFE_API_KEY", "").strip()
+    if not (JEV_GIUDICE and JEV_PRECONTROLLO and chiave):
+        return None
+    domande = {k: {"type": "choice", "instructions": DOMANDE[k]["instructions"], "criteria": DOMANDE[k]["criteria"]}
+               for k in ("tipo", "completo")}
+    try:
+        risposta = _chiama_jev({"model": MODELLO, "state": f"Annuncio Vinted: {titolo}", "questions": domande})
+        r = {k: (risposta["answers"][k].get("choice"), risposta["answers"][k].get("confidence")) for k in domande}
+    except Exception as e:  # noqa: BLE001 - il precontrollo non deve bloccare il radar
+        log.warning("JEV PRECONTROLLO | non disponibile: %s", str(e)[:200])
+        return None
+    codice = None
+    if r["tipo"][0] in TIPI_NON_VENDIBILI and (r["tipo"][1] or 0) >= CONF_PRECONTROLLO:
+        codice = _MOTIVO_TIPO[r["tipo"][0]]
+    elif r["completo"][0] == "no" and (r["completo"][1] or 0) >= CONF_PRECONTROLLO:
+        codice = "guasto_incompleto"
+    log.info("JEV PRECONTROLLO | titolo=%s | tipo=%s(%s) | completo=%s(%s) | scartato=%s", titolo[:60],
+             r["tipo"][0], r["tipo"][1], r["completo"][0], r["completo"][1], codice or "no")
+    return codice
+
+
 def confronta_foto_comparabili(titolo, foto, miniature):
     """[(scelta, confidenza), ...] una per miniatura, oppure None se Jev e' spento o non risponde. Bloccante.
     `foto` e `miniature` sono byte di immagini png/jpeg (max MAX_FOTO_COMPS miniature). Non influisce sull'esito."""
