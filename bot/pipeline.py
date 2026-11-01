@@ -6,7 +6,7 @@ import traceback
 from functools import partial
 
 
-from bot.scheda import avviso_solo_semaforo, testo_avviso_solo_semaforo, richiede_etichetta, invia_richiesta_etichetta, ANALISI_GEMINI_ATTIVA, STATO_ANALISI_COMPLETATA, STATO_ANALISI_INTERROTTA, _PermessoAnalisi, _aggiorna_stato_scheda, _invia_galleria_anticipata, _invia_risultato_telegram, aggiorna_preavviso, invia_galleria_dopo_lampo, invia_preavviso, riga_scarto_preavviso, componi_testi_verdetto
+from bot.scheda import SOLO_SEMAFORO, avviso_solo_semaforo, testo_avviso_solo_semaforo, richiede_etichetta, invia_richiesta_etichetta, ANALISI_GEMINI_ATTIVA, STATO_ANALISI_COMPLETATA, STATO_ANALISI_INTERROTTA, _PermessoAnalisi, _aggiorna_stato_scheda, _invia_galleria_anticipata, _invia_risultato_telegram, aggiorna_preavviso, invia_galleria_dopo_lampo, invia_preavviso, riga_scarto_preavviso, componi_testi_verdetto
 from bot.verdetto import CERVELLO_CAMPIONI_EXTRA, _a_float, _estrai_item_id_da_url, _estrai_prezzi_da_pool_ricerca, _riepilogo_comp_per_fonte, calcola_verdetto, classifica_provenienza_comp, consolida_target_cervello, render_messaggio_verdetto, valida_payload_cervello
 from bot.config import GEMINI_SOGLIA_PREZZO_ALTO, TELEGRAM_ALERT_CHAT_ID, DEBUG_CONFRONTO_COMP_TELEGRAM, OCCHIO_OUTPUT_JSON, SOGLIA_MARGINE_ASSOLUTO_NOTIFICA, TELEGRAM_OWNER_CHAT_ID
 from bot.feedback import proponi_controllo, rischio_falso_da_scarto, rischio_falso_da_verdetto, contesto_annuncio
@@ -366,6 +366,24 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             # Letto dall'handler se la pipeline va in eccezione da qui in poi,
             # per rispondere alla galleria invece di lasciarla appesa.
             stato["msg_id_galleria"] = msg_id_galleria
+
+    if SOLO_SEMAFORO:
+        # Niente Occhio ne' Cervello: l'avviso e' la regola del preavviso (stima rapida). Chi non scatta resta tracciato
+        # (serie ridotta) per misurare quanti veloci si perdono.
+        if task_guardaroba is not None:
+            task_guardaroba.cancel()
+        fv_sem = listing_info.get("fair_value") or {}
+        if listing_info.get("preavviso"):
+            _log_esito(listing_info, "SOLO_SEMAFORO", sem=fv_sem.get("semaforo"), margine=fv_sem.get("margine"))
+            testo_sem = testo_avviso_solo_semaforo(listing_info, url, msg_id_galleria)
+            if not await aggiorna_preavviso(stato, url, testo_verdetto=testo_sem):
+                await telegram_send_message(TELEGRAM_ALERT_CHAT_ID or TELEGRAM_OWNER_CHAT_ID, testo_sem)
+            log.info("AVVISO SOLO SEMAFORO | item=%s | prezzo=%s | sem=%s", _estrai_item_id_da_url(url),
+                     listing_info.get("price"), fv_sem.get("semaforo"))
+        else:
+            listing_info["_motivo_scarto"] = "semaforo non promettente (solo semaforo)"
+            _log_esito(listing_info, "SKIP_SOLO_SEMAFORO", sem=fv_sem.get("semaforo"))
+        return
 
     if not ANALISI_GEMINI_ATTIVA:
         if task_guardaroba is not None:

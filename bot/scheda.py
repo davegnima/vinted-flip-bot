@@ -36,7 +36,11 @@ GALLERIA_ANTICIPATA = os.environ.get("GALLERIA_ANTICIPATA", "1").strip() != "0"
 # annunci pertinenti. Il canale alert in pausa non riceve nulla: dipende dal
 # verdetto. Cambiare la variabile su Railway riavvia il servizio, quindi il
 # valore letto all'avvio basta.
-ANALISI_GEMINI_ATTIVA = os.environ.get("ANALISI_GEMINI", "1").strip() != "0"
+# SOLO_SEMAFORO=1 (1/11, richiesta dell'utente): niente Occhio ne' Cervello. Dopo scrape, foto e filtri gratuiti l'annuncio
+# viene segnalato dal solo semaforo (regola del preavviso, `valuta_preavviso`), senza verifica di autenticita'. Gemini resta
+# spento come in pausa (galleria subito, nessuna scheda "in corso"), ma gli avvisi partono.
+SOLO_SEMAFORO = os.environ.get("SOLO_SEMAFORO", "0").strip() == "1"
+ANALISI_GEMINI_ATTIVA = os.environ.get("ANALISI_GEMINI", "1").strip() != "0" and not SOLO_SEMAFORO
 
 
 STATO_ANALISI_COMPLETATA = "✅ Analisi completata, risposta qui sotto"
@@ -45,6 +49,8 @@ STATO_ANALISI_INTERROTTA = "⚠️ Analisi interrotta per un errore"
 
 
 def _stato_analisi_testo(n_foto):
+    if SOLO_SEMAFORO:
+        return f"🚦 Solo semaforo, senza AI · {n_foto} foto"
     return (f"⏳ Analisi in corso… · {n_foto} foto" if ANALISI_GEMINI_ATTIVA
             else f"⏸️ Analisi AI in pausa · {n_foto} foto")
 
@@ -250,6 +256,7 @@ def riga_scarto_preavviso(motivo, msg_id=None, interrotta=False):
 
 
 RIGA_SOLO_SEMAFORO = "⚠️ Cervello non disponibile: avviso dal solo semaforo (stima rapida, non verificata)"
+RIGA_SOLO_SEMAFORO_SCELTO = "🚦 Avviso dal solo semaforo (stima rapida, senza AI): autenticita' non verificata"
 
 
 def avviso_solo_semaforo(listing_info):
@@ -262,14 +269,14 @@ def testo_avviso_solo_semaforo(listing_info, url=None, msg_id=None):
     fair value rapido, link e avvertenza che manca la verifica. Pura."""
     esc = _escapa_markdown_legacy
     fv = listing_info.get("fair_value") or {}
-    marca = "🟢 " + (f"~+{fv['margine']:.0f} € · " if fv.get("margine") is not None else "")
+    marca = (fv.get("semaforo") or "🟢") + " " + (f"~+{fv['margine']:.0f} € · " if fv.get("margine") is not None else "")
     righe = [marca + "*" + (_testa_prezzo_brand(listing_info) or "") + "*", esc(listing_info.get("title") or "Annuncio"),
              esc(_riga_fair_value_testo(fv) or "")]
     righe = [r for r in righe if r]
     if url:
         righe.append(f"[vedi su Vinted]({url})")
     link = link_messaggio_chat_principale(msg_id)
-    righe += ["", RIGA_SOLO_SEMAFORO] + ([f"[messaggio originale nell'altra chat]({link})"] if link else [])
+    righe += ["", RIGA_SOLO_SEMAFORO_SCELTO if SOLO_SEMAFORO else RIGA_SOLO_SEMAFORO] + ([f"[messaggio originale nell'altra chat]({link})"] if link else [])
     return "\n".join(righe)
 
 

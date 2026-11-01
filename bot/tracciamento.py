@@ -48,7 +48,7 @@ _tracc_ridotti = set()
 # serie ridotta (5 min, 15 min, 1 h): l'utente vuole ragionare su TUTTI gli annunci, e solo cosi' si misurano i falsi
 # negativi dei filtri e dell'Occhio. SKIP_PRE_SCRAPE (esclusioni dell'utente su titolo/brand) resta senza serie.
 TRACCIAMENTO_SERIE_SKIP_S = (300, 900, 3600)
-_SKIP_DA_SEGUIRE = ("SKIP_PRE_GEMINI", "SKIP_PRE_CERVELLO", "SKIP_ROSSO")
+_SKIP_DA_SEGUIRE = ("SKIP_PRE_GEMINI", "SKIP_PRE_CERVELLO", "SKIP_ROSSO", "SKIP_SOLO_SEMAFORO")
 # ALLARME PREFERITI (11/10, caso Margiela 56 EUR: NON COMPRARE del Cervello, 18 preferiti in 3 minuti): i preferiti letti dai
 # ricontrolli sono il segnale di domanda piu' forte che abbiamo (10/10, 709 annunci: con 2+ preferiti a 60 s il 50% si vende
 # entro 15 min contro il 7% con zero). Se a 60 s ci sono >= ALLARME_PREF_60 preferiti (o a 300 s >= ALLARME_PREF_300), l'annuncio
