@@ -222,3 +222,31 @@ def test_classifica_comparabili_spenta_o_guasta_ritorna_none(monkeypatch):
     monkeypatch.setattr(jev, "JEV_COMPS", True)
     _finto(monkeypatch, [OSError("rete")])
     assert jev.classifica_comparabili("x", ["a"]) is None
+
+
+def test_confronta_foto_comparabili_manda_foto1_e_miniature(monkeypatch):
+    visto = {}
+
+    def finta(corpo):
+        visto["corpo"] = corpo
+        return {"answers": {"comp1": {"choice": "stesso_modello", "confidence": 0.9},
+                            "comp2": {"choice": "diverso", "confidence": 0.8}}, "usage": {"input_tokens": 500}}
+
+    monkeypatch.setenv("TYPESAFE_API_KEY", "x")
+    monkeypatch.setattr(jev, "JEV_GIUDICE", True)
+    monkeypatch.setattr(jev, "JEV_FOTO_COMPS", True)
+    monkeypatch.setattr(jev, "_chiama_jev", finta)
+    png = b"\x89PNG" + b"0" * 10
+    r = jev.confronta_foto_comparabili("Switch OLED", png, [png, b"\xff\xd8\xff" + b"1", b"non immagine"][:2])
+    assert r == [("stesso_modello", 0.9), ("diverso", 0.8)]
+    assert set(visto["corpo"]["assets"]) == {"foto1", "comp1", "comp2"}
+    assert set(visto["corpo"]["questions"]) == {"comp1", "comp2"}
+
+
+def test_confronta_foto_comparabili_spento_o_senza_miniature(monkeypatch):
+    monkeypatch.setenv("TYPESAFE_API_KEY", "x")
+    monkeypatch.setattr(jev, "JEV_GIUDICE", True)
+    monkeypatch.setattr(jev, "JEV_FOTO_COMPS", False)
+    assert jev.confronta_foto_comparabili("t", b"\x89PNG", [b"\x89PNG"]) is None
+    monkeypatch.setattr(jev, "JEV_FOTO_COMPS", True)
+    assert jev.confronta_foto_comparabili("t", b"\x89PNG", [b"zzz"]) is None

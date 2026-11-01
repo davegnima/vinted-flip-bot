@@ -319,3 +319,19 @@ def _estrai_mappa_url_comp_vinted(html_content):
         chiave = (_normalizza_titolo_per_link(titolo), prezzo_norm)
         mappa.setdefault(chiave, f"https://www.vinted.it/items/{item_id}")
     return mappa
+
+
+_RE_IMG_VINTED = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
+_RE_IMG_ID_VINTED = re.compile(r'data-testid="product-item-id-(\d+)--image--img"')
+_RE_IMG_SRC_VINTED = re.compile(r'\bsrc="(https://images\d*\.vinted\.net/[^"]+)"')
+
+
+def _estrai_miniature_vinted(html_content):
+    """{id annuncio: url miniatura} dai tag <img> della scheda catalogo (data-testid
+    'product-item-id-<ID>--image--img'). Zero richieste: stesso HTML gia' scaricato. Pura."""
+    miniature = {}
+    for tag in _RE_IMG_VINTED.findall(html_content or ""):
+        m_id, m_src = _RE_IMG_ID_VINTED.search(tag), _RE_IMG_SRC_VINTED.search(tag)
+        if m_id and m_src:
+            miniature.setdefault(m_id.group(1), html.unescape(m_src.group(1)))
+    return miniature
