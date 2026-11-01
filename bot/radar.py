@@ -393,6 +393,9 @@ def _righe_v2(v2):
         cal = "calibrata" if v2.get("calibrazione") == "calibrato" else "non calibrata sulle vendite reali"
         righe.append(f"Prezzi: richiesto mediano {v2['richiesto_mediano']} € · vendita stimata {v2['rivendita']} € ({cal}) "
                      f"· vendita rapida {v2.get('vendita_rapida')} € (il piu' basso tra i simili)")
+    q = v2.get("qualita")
+    if q and v2.get("rivendita") is not None:
+        righe.append(f"Qualita' comparabili: {q.get('punteggio')}/100 ({q.get('fascia')}, {q.get('n')} usati)")
     riga_costo = _riga_costo_totale(v2)
     if riga_costo:
         righe.append(riga_costo)
