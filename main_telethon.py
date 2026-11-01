@@ -1491,11 +1491,11 @@ async def on_new_message(event):
                 esito_radar = {}
                 await invia_verdetto_v2(parsed_radar, url_radar, v2_radar, foto=foto_radar, rivaluta=radar_v2_rivaluta, esito=esito_radar)
                 cancellato = False
-                if RADAR_CANCELLA_SCARTI and da_cancellare(v2_radar):
+                if RADAR_CANCELLA_SCARTI and da_cancellare(v2_radar, esito_radar):
                     try:
                         await event.delete()
                         cancellato = True
-                        log.info("RADAR PULIZIA | cancellato msg_id=%s | item=%s | motivo=%s", msg_id, _estrai_item_id_da_url(url_radar), v2_radar.get("motivo"))
+                        log.info("RADAR PULIZIA | cancellato msg_id=%s | item=%s | motivo=%s", msg_id, _estrai_item_id_da_url(url_radar), v2_radar.get("motivo") or esito_radar.get("motivo"))
                     except Exception as exc:
                         log.warning("RADAR PULIZIA | non cancellabile msg_id=%s (%s): serve il diritto di eliminare messaggi nel gruppo",
                                     msg_id, type(exc).__name__)

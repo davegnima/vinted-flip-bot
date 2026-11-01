@@ -533,8 +533,11 @@ MOTIVI_NON_OGGETTO = ("parola_vietata", "pezzo_o_accessorio", "prezzo_segnaposto
 RADAR_CANCELLA_ROSSI = os.environ.get("RADAR_CANCELLA_ROSSI", "1").strip() not in ("0", "false", "no", "")
 
 
-def da_cancellare(v2):
-    """True se il verdetto e' un rosso da togliere dal gruppo: non e' l'oggetto intero, oppure (RADAR_CANCELLA_ROSSI) e' rosso. Pura."""
+def da_cancellare(v2, esito=None):
+    """True se il verdetto e' un rosso da togliere dal gruppo: non e' l'oggetto intero, oppure (RADAR_CANCELLA_ROSSI) e' rosso.
+    Con `esito` anche i gialli/verdi scartati nel merito (Jev, comparabili, Gemini, rivalutazione): 1/11, scelta dell'utente. Pura."""
+    if esito and esito.get("scartato"):
+        return True
     if not v2 or v2.get("semaforo") != "rosso":
         return False
     return RADAR_CANCELLA_ROSSI or (v2.get("motivo") or "").split(":")[0] in MOTIVI_NON_OGGETTO
@@ -628,6 +631,11 @@ async def _invia_radar(testo, foto=None, suono=False, ricerca=None, url=None):
 
 
 _radar_inviati = set()
+# Rapporto minimo tra la stima di rivendita di Gemini e quella del codice (0 = spento); serve confidenza di Gemini >= 0,5.
+try:
+    RADAR_GEMINI_RAPPORTO_MIN = float(os.environ.get("RADAR_GEMINI_RAPPORTO_MIN", "0.5"))
+except ValueError:
+    RADAR_GEMINI_RAPPORTO_MIN = 0.5
 
 
 async def invia_verdetto_v2(parsed, url, v2, foto=None, rivaluta=None, esito=None):
@@ -636,9 +644,10 @@ async def invia_verdetto_v2(parsed, url, v2, foto=None, rivaluta=None, esito=Non
     Ritorna True solo se l'avviso e' stato consegnato. Se `esito` e' un dict lo riempie con `inviato`, `motivo` (perche' no,
     in italiano) e `v2` (il verdetto finale, rivalutato se Gemini ha cambiato modello): il gruppo non deve piu' dire "Inviato" a vuoto (1/11)."""
     esito = esito if esito is not None else {}
-    esito.update({"inviato": False, "motivo": None, "v2": v2})
+    esito.update({"inviato": False, "motivo": None, "v2": v2, "scartato": False})
     if not _da_mandare(v2):
         esito["motivo"] = perche_non_inviato(v2)
+        esito["scartato"] = bool(v2 and v2.get("semaforo") in RADAR_SEMAFORI)
         return False
     if radar_in_pausa():
         esito["motivo"] = "radar in pausa (fascia notturna)"
@@ -661,6 +670,15 @@ async def invia_verdetto_v2(parsed, url, v2, foto=None, rivaluta=None, esito=Non
             log.info("RADAR SCARTATO GEMINI | item=%s | semaforo=%s | conf=%s | motivo=%s | titolo=%s", item_id, v2.get("semaforo"), g.get("confidenza"),
                      g.get("motivo"), (parsed.get("title") or "")[:60])
             esito["motivo"] = f"Gemini lo scarta dalle foto ({g.get('motivo') or 'nessun motivo'})"
+            esito["scartato"] = True
+            return False
+        # Stima di Gemini molto sotto quella del codice (es. Ixus 65 contro 150): la rivendita del codice e' sospetta, l'avviso non parte.
+        riv_g, riv_c = (g or {}).get("rivendita_eur"), v2.get("rivendita")
+        if (RADAR_GEMINI_RAPPORTO_MIN and riv_g and riv_c and ((g.get("rivendita_confidenza") or 0) >= 0.5)
+                and riv_g < RADAR_GEMINI_RAPPORTO_MIN * riv_c):
+            log.info("RADAR SCARTATO GEMINI | item=%s | stima_bassa | gemini=%s | codice=%s | conf_riv=%s", item_id, riv_g, riv_c, g.get("rivendita_confidenza"))
+            esito["motivo"] = f"Gemini stima la rivendita a {riv_g:g} € contro {riv_c:g} € dei comparabili"
+            esito["scartato"] = True
             return False
         if rivaluta and g and g.get("ricerca_modello"):
             # Gemini ha letto il modello: se non e' quello dei comparabili, la stima si rifa' sul modello giusto (01/11, richiesta dell'utente).
@@ -672,6 +690,7 @@ async def invia_verdetto_v2(parsed, url, v2, foto=None, rivaluta=None, esito=Non
                     log.info("RADAR SCARTATO RIVALUTAZIONE | item=%s | semaforo=%s | margine=%s | motivo=%s | titolo=%s", item_id, v2.get("semaforo"),
                              v2.get("margine"), v2.get("motivo"), (parsed.get("title") or "")[:60])
                     esito["motivo"] = ("rifatta la stima sul modello letto da Gemini: " + (perche_non_inviato(v2) or "non regge"))
+                    esito["scartato"] = True
                     return False
         testo = testo_avviso_v2(parsed, url, v2, g)
         # Il suono resta solo ai verdi confermati da Gemini (o senza controllo disponibile): un "da rivedere" arriva muto.
