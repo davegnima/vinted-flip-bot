@@ -784,3 +784,14 @@ def test_gemini_stima_molto_bassa_scarta(monkeypatch):
     assert asyncio.run(radar.invia_verdetto_v2({"title": "Ixus", "price": "30"}, "https://www.vinted.it/items/935-x", v2)) is True
     inviati = _prepara_invio(monkeypatch, gemini={**base, "rivendita_eur": 65.0, "rivendita_confidenza": 0.3})
     assert asyncio.run(radar.invia_verdetto_v2({"title": "Ixus", "price": "30"}, "https://www.vinted.it/items/936-x", v2)) is True
+
+
+def test_non_oggetti_di_novembre_sono_pezzi():
+    from bot.valore_mercato import e_un_pezzo
+    for t in ("Nintendo Switch online Familiengruppen Platz", "Dock Nintendo switch y mando", "Sacoche Switch",
+              "Oplader accu Canon ixus 870 IS", "sony ipt ds1 dock de transfert", "Media manager pour Psp (Sony)",
+              "Multi Power Batteriegriff per Canon EOS 550D", "Abbonamento Nintendo online 12 mesi"):
+        assert e_un_pezzo(t), t
+    # console intere con dock o alimentatore restano oggetti
+    for t in ("Nintendo Switch OLED con dock e joycon", "Switch lite completa"):
+        assert e_un_pezzo(t) is None, t
