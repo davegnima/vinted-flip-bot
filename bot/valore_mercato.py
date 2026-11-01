@@ -130,6 +130,22 @@ def query_comp(titolo, brand=None, max_parole=4):
     return " ".join((b + parole)[:max_parole])
 
 
+def nomi_candidati(titolo, brand=None, max_n=6):
+    """Nomi di prodotto possibili dal titolo, per far scegliere a Jev (01/11): il titolo si spezza su + / , ; | e " e "/" and "/" con ",
+    di ogni pezzo si tengono le parole significative (senza marca, parole vuote o generiche) e si propongono fino a 4 parole e le prime 2.
+    'Wash Buckler + Skylanders Swap Force' -> ['wash buckler', 'skylanders swap force', 'skylanders swap']. Pura."""
+    b = brand.lower().split() if brand else []
+    pezzi = re.split(r"\s[+/&,;|\-]\s|[+/,;|]|\s(?:e|and|et|und|con|avec|mit)\s", (titolo or "").lower())
+    out = []
+    for pezzo in pezzi:
+        parole = [w for w in re.findall(r"[\w'’]+", pezzo) if w not in _PAROLE_VUOTE and w not in _PAROLE_GENERICHE and w not in b]
+        for n in (4, 2):
+            nome = " ".join(parole[:n])
+            if len(parole) >= (2 if n == 2 else 1) and nome and nome not in out and not (n == 2 and len(parole) <= 2):
+                out.append(nome)
+    return out[:max_n]
+
+
 def query_alternative(titolo, brand=None, max_n=2):
     """Ricerche alternative costruite dalla sigla del modello quando quella principale non trova lo stesso prodotto
     (es. 'Sony cuffie bluetooth WH-CH520 nere' -> 'sony ch520', 'sony wh ch520'). Pura, nessun testo libero da modelli."""

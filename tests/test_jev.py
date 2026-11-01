@@ -250,3 +250,22 @@ def test_confronta_foto_comparabili_spento_o_senza_miniature(monkeypatch):
     assert jev.confronta_foto_comparabili("t", b"\x89PNG", [b"\x89PNG"]) is None
     monkeypatch.setattr(jev, "JEV_FOTO_COMPS", True)
     assert jev.confronta_foto_comparabili("t", b"\x89PNG", [b"zzz"]) is None
+
+
+def test_riconosci_prodotto_sceglie_il_nome_dal_titolo(monkeypatch):
+    visto = {}
+
+    def finta(corpo):
+        visto["corpo"] = corpo
+        return {"answers": {"prodotto": {"choice": "n1", "confidence": 0.8}}, "usage": {"input_tokens": 200}}
+
+    monkeypatch.setenv("TYPESAFE_API_KEY", "x")
+    monkeypatch.setattr(jev, "JEV_GIUDICE", True)
+    monkeypatch.setattr(jev, "JEV_COMPS", True)
+    monkeypatch.setattr(jev, "_chiama_jev", finta)
+    r = jev.riconosci_prodotto("Wash Buckler + Skylanders Swap Force", ["wash buckler", "skylanders swap force"])
+    assert r == ("skylanders swap force", 0.8)
+    assert set(visto["corpo"]["questions"]["prodotto"]["criteria"]) == {"n0", "n1", "nessuno"}
+    monkeypatch.setattr(jev, "_chiama_jev", lambda c: {"answers": {"prodotto": {"choice": "nessuno", "confidence": 0.9}}})
+    assert jev.riconosci_prodotto("x", ["a b", "c d"]) is None
+    assert jev.riconosci_prodotto("x", ["solo uno"]) is None

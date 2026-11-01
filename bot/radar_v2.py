@@ -15,7 +15,7 @@ from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 from bot import db, radar_appreso
 from bot.comps import _cerca_vinted_testo_diretto, _miniature_comp
 from bot.foto import download_image_bytes, optimize_image_bytes
-from bot.jev import JEV_COMPS, JEV_FOTO_COMPS, MAX_COMPS_VERIFICA, MAX_FOTO_COMPS, classifica_comparabili, comparabili_stesso_modello, confronta_foto_comparabili, giudica_completo, prezzi_stesso_modello
+from bot.jev import JEV_COMPS, JEV_FOTO_COMPS, MAX_COMPS_VERIFICA, MAX_FOTO_COMPS, classifica_comparabili, comparabili_stesso_modello, confronta_foto_comparabili, giudica_completo, prezzi_stesso_modello, riconosci_prodotto
 from bot.config import SPEDIZIONE_STIMATA_EUR
 from bot.logger import log
 from bot.radar import RADAR_SPESA_MAX, parola_vietata, radar_in_pausa
@@ -24,7 +24,7 @@ from bot.testo import _normalizza_titolo_per_link
 from bot.verdetto import _a_float, _estrai_item_id_da_url
 from bot.vinted_http import _vinted_get_con_retry
 from bot.vinted_scrape import _decodifica_stringa_json
-from bot.valore_mercato import comparabili_simili, e_un_pezzo, parse_comp, query_alternative, query_comp, solo_usato, stima_mercato, valuta
+from bot.valore_mercato import comparabili_simili, e_un_pezzo, nomi_candidati, parse_comp, query_alternative, query_comp, solo_usato, stima_mercato, valuta
 # ---- fine import ----
 
 RADAR_V2_OMBRA = os.environ.get("RADAR_V2_OMBRA", "0").strip() in ("1", "true", "si")
@@ -257,7 +257,16 @@ async def _verifica_comparabili(titolo, prezzo, brand, catalogo, testo):
         ok = prezzi_stesso_modello(pool, etichette)
     # Se i comparabili veri restano pochi si cerca ancora (richiesta dell'utente, 01/11): prima dalla sigla del modello,
     # poi con ricerche piu' larghe (marca + 2 parole); Jev rigiudica ogni titolo. Al massimo 3 ricerche in piu'.
-    ricerche = list(dict.fromkeys(query_alternative(titolo, brand) + testi_piu_larghi(testo, brand)))[:3]
+    ricerche = []
+    if len(ok) < 3:
+        # Riconoscimento del prodotto dal titolo (01/11): Jev sceglie il nome del prodotto, si cerca con marca + categoria + quel nome,
+        # poi con la sua prima parola ("skylanders swap force", poi "skylanders"); mai la sola marca.
+        riconosciuto = await asyncio.to_thread(riconosci_prodotto, titolo, nomi_candidati(titolo, brand), None)
+        if riconosciuto:
+            parole = riconosciuto[0].split()
+            ricerche += [" ".join(([brand.lower()] if brand and brand.lower() not in riconosciuto[0] else []) + parole[:3]), parole[0]]
+    ricerche = list(dict.fromkeys(ricerche + query_alternative(titolo, brand) + testi_piu_larghi(testo, brand)))
+    ricerche = [q for q in ricerche if q and q.lower() != (brand or "").lower() and q not in usate][:4]
     for q in ricerche:
         if len(ok) >= 3:
             break
