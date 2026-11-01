@@ -496,8 +496,12 @@ def _dettaglio_comp(v2):
     return f" ({g} grezzi{extra})" if g is not None else (" (ricerca allargata)" if extra else "")
 
 
-def testo_risposta_gruppo(v2):
-    """Riga breve per la risposta nel gruppo: semaforo, rivendita stimata, margine, ROI, comparabili. Pura."""
+def testo_risposta_gruppo(v2, esito=None):
+    """Riga breve per la risposta nel gruppo: semaforo, rivendita stimata, margine, ROI, comparabili. Pura.
+    Con `esito` (compilato da invia_verdetto_v2) la riga COMPRA dice cosa e' successo davvero e i numeri sono quelli finali."""
+    v2_originale = v2
+    if esito and esito.get("v2"):
+        v2 = esito["v2"]
     if not v2:
         return "⚪ semaforo non calcolato"
     n = v2.get("n") or 0
@@ -508,8 +512,11 @@ def testo_risposta_gruppo(v2):
              f"· ROI {v2.get('roi')}% · {n} comparabili{_dettaglio_comp(v2)}")
     if v2.get("jev"):
         testo += f"\nJev: {descrizione_jev(v2['jev'], v2.get('jev_conf'), _frase_senza_simili(v2))}"
-    if v2.get("semaforo") in RADAR_SEMAFORI:
-        motivo = perche_non_inviato(v2)
+    if (v2_originale or v2).get("semaforo") in RADAR_SEMAFORI or v2.get("semaforo") in RADAR_SEMAFORI:
+        if esito is not None:
+            motivo = None if esito.get("inviato") else (esito.get("motivo") or "non inviato")
+        else:
+            motivo = perche_non_inviato(v2)
         testo += "\n" + ("Inviato in COMPRA" if motivo is None else f"Non inviato in COMPRA: {motivo}")
         testo += "".join("\n" + r for r in _righe_link_comps(v2))
     return testo
@@ -599,30 +606,49 @@ def url_annuncio_nel_testo(testo, url=None):
 
 async def _invia_radar(testo, foto=None, suono=False, ricerca=None, url=None):
     """Messaggio del radar al chat privato: con la foto del tracker se c'e', altrimenti solo testo. Suono solo se `suono`.
-    Sempre il bottone 'Apri su Vinted' (link dell'annuncio, mai di un comparabile); didascalia lunga: il resto in un secondo messaggio silenzioso."""
-    log.info("RADAR PRIVATO | inviato alla chat privata | foto=%s | ricerca=%s | testo=%s", "si" if foto else "no", ricerca or "-", testo.replace("\n", " / "))
+    Sempre il bottone 'Apri su Vinted' (link dell'annuncio, mai di un comparabile); didascalia lunga: il resto in un secondo messaggio silenzioso.
+    Ritorna True solo se Telegram ha davvero consegnato; se la foto viene rifiutata ripiega sul solo testo (prima l'avviso andava perso)."""
     url = url_annuncio_nel_testo(testo, url)
+    consegnato = False
+    con_foto = False
     if foto:
         didascalia, resto = spezza_didascalia(testo)
-        await telegram_send_photo(RADAR_CHAT_ID, foto, caption=didascalia, disable_notification=not suono, url_bottone=url)
-        log.info("RADAR FOTO | inviata con foto (%d KB)", len(foto) // 1024)
-        if resto:
-            await telegram_send_message(RADAR_CHAT_ID, resto, disable_notification=True)
-    else:
-        await telegram_send_message(RADAR_CHAT_ID, testo, disable_notification=not suono, url_bottone=url)
+        if await telegram_send_photo(RADAR_CHAT_ID, foto, caption=didascalia, disable_notification=not suono, url_bottone=url):
+            consegnato = con_foto = True
+            log.info("RADAR FOTO | inviata con foto (%d KB)", len(foto) // 1024)
+            if resto:
+                await telegram_send_message(RADAR_CHAT_ID, resto, disable_notification=True)
+        else:
+            log.warning("RADAR FOTO | rifiutata da Telegram, ripiego sul solo testo | ricerca=%s", ricerca or "-")
+    if not consegnato:
+        consegnato = bool(await telegram_send_message(RADAR_CHAT_ID, testo, disable_notification=not suono, url_bottone=url))
+    log.info("RADAR PRIVATO | consegnato=%s | foto=%s | ricerca=%s | testo=%s", "si" if consegnato else "NO", "si" if con_foto else "no",
+             ricerca or "-", testo.replace("\n", " / "))
+    return consegnato
 
 
 _radar_inviati = set()
 
 
-async def invia_verdetto_v2(parsed, url, v2, foto=None, rivaluta=None):
+async def invia_verdetto_v2(parsed, url, v2, foto=None, rivaluta=None, esito=None):
     """Manda al chat degli avvisi i verdetti v2 in RADAR_SEMAFORI (verde con suono, giallo silenzioso), subito dopo
     l'analisi: prima l'invio passava solo dal vecchio ramo e i gialli non arrivavano mai. Anti-duplicato per annuncio.
-    Ritorna True se ha inviato."""
-    if not _da_mandare(v2) or radar_in_pausa():
+    Ritorna True solo se l'avviso e' stato consegnato. Se `esito` e' un dict lo riempie con `inviato`, `motivo` (perche' no,
+    in italiano) e `v2` (il verdetto finale, rivalutato se Gemini ha cambiato modello): il gruppo non deve piu' dire "Inviato" a vuoto (1/11)."""
+    esito = esito if esito is not None else {}
+    esito.update({"inviato": False, "motivo": None, "v2": v2})
+    if not _da_mandare(v2):
+        esito["motivo"] = perche_non_inviato(v2)
+        return False
+    if radar_in_pausa():
+        esito["motivo"] = "radar in pausa (fascia notturna)"
         return False
     item_id = _estrai_item_id_da_url(url) if url else None
-    if not item_id or str(item_id) in _radar_inviati:
+    if not item_id:
+        esito["motivo"] = "annuncio senza id"
+        return False
+    if str(item_id) in _radar_inviati:
+        esito["motivo"] = "avviso gia' mandato per questo annuncio"
         return False
     _radar_inviati.add(str(item_id))
     if len(_radar_inviati) > 20000:
@@ -634,22 +660,31 @@ async def invia_verdetto_v2(parsed, url, v2, foto=None, rivaluta=None):
         if g and g["verdetto"] == "scarta":
             log.info("RADAR SCARTATO GEMINI | item=%s | semaforo=%s | conf=%s | motivo=%s | titolo=%s", item_id, v2.get("semaforo"), g.get("confidenza"),
                      g.get("motivo"), (parsed.get("title") or "")[:60])
+            esito["motivo"] = f"Gemini lo scarta dalle foto ({g.get('motivo') or 'nessun motivo'})"
             return False
         if rivaluta and g and g.get("ricerca_modello"):
             # Gemini ha letto il modello: se non e' quello dei comparabili, la stima si rifa' sul modello giusto (01/11, richiesta dell'utente).
             v2_nuovo = await rivaluta(parsed, url, v2, g)
             if v2_nuovo is not v2:
                 v2 = v2_nuovo
+                esito["v2"] = v2
                 if not _da_mandare(v2):
                     log.info("RADAR SCARTATO RIVALUTAZIONE | item=%s | semaforo=%s | margine=%s | motivo=%s | titolo=%s", item_id, v2.get("semaforo"),
                              v2.get("margine"), v2.get("motivo"), (parsed.get("title") or "")[:60])
+                    esito["motivo"] = ("rifatta la stima sul modello letto da Gemini: " + (perche_non_inviato(v2) or "non regge"))
                     return False
         testo = testo_avviso_v2(parsed, url, v2, g)
         # Il suono resta solo ai verdi confermati da Gemini (o senza controllo disponibile): un "da rivedere" arriva muto.
         suono = _con_suono(v2) and not (g and g["verdetto"] == "dubbio")
-        await _invia_radar(testo, foto, suono=suono, ricerca=parsed.get("query_name"), url=url)
+        if not await _invia_radar(testo, foto, suono=suono, ricerca=parsed.get("query_name"), url=url):
+            _radar_inviati.discard(str(item_id))  # invio fallito: al prossimo giro si puo' ritentare
+            esito["motivo"] = "Telegram non ha consegnato il messaggio"
+            return False
+        esito["inviato"] = True
         return True
     except Exception:
+        _radar_inviati.discard(str(item_id))
+        esito["motivo"] = "errore interno nell'invio (vedi log)"
         log.warning("Radar: verdetto v2 non inviato per %s:\n%s", item_id, traceback.format_exc())
         return False
 
