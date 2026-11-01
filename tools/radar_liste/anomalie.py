@@ -8,7 +8,22 @@ import statistics
 import sys
 from collections import defaultdict
 
+import json
+import os
+
 ENTRO_S = 3600
+_EXTRA = ("nintendo", "sony", "playstation", "xbox", "microsoft", "sega", "canon", "nikon", "fujifilm", "gopro", "garmin", "dji", "bose", "jbl",
+          "technics", "panasonic", "olympus", "leica", "kodak", "minolta", "pentax", "samsung", "apple", "lego", "ghd", "dyson", "makita",
+          "milwaukee", "dewalt", "festool", "sonos", "marantz", "pioneer", "yamaha", "steam", "valve", "polaroid", "contax", "hasselblad")
+
+
+def _marche():
+    try:
+        qui = os.path.dirname(os.path.abspath(__file__))
+        base = json.load(open(os.path.join(qui, "dati", "brand_ids.json"), encoding="utf-8")).get("marchi", {})
+    except (OSError, ValueError):
+        base = {}
+    return sorted({*base, *_EXTRA}, key=lambda x: -len(x))
 MARGINE_MIN, ROI_MIN, QUOTA_MEDIANA = 50.0, 100.0, 0.6
 _RE_MODELLO = re.compile(r"\b(?=[a-z0-9-]*[a-z])(?=[a-z0-9-]*\d)[a-z0-9-]{2,12}\b")
 
@@ -46,22 +61,31 @@ def leggi(righe):
             c = campi(r)
             if c.get("item"):
                 s = c.get("venduto_s", "-")
+                p = c.get("prenotato_s", "-")
                 dati[c["item"]].update(brand=(c.get("brand") or "n/d").strip("'").lower(), venduto_s=int(s) if s.isdigit() else None,
-                                       traccia=True, ricerca_t=c.get("ricerca"))
+                                       prenotato_s=int(p) if p.isdigit() else None, traccia=True, ricerca_t=c.get("ricerca"))
     return {k: v for k, v in dati.items() if v.get("ombra")}
 
 
+def marca(d):
+    """Marca: dal tracciamento se c'e' (e non e' n/d), altrimenti la prima marca nota trovata nel titolo. Pura."""
+    if d.get("brand") and d["brand"] != "n/d":
+        return d["brand"]
+    t = f" {(d.get('titolo') or '').lower()} "
+    return next((m for m in _marche() if f" {m} " in t or f" {m}" in t), "n/d")
+
+
 def identita(d):
-    """(marca, modello): marca dal tracciamento (altrimenti 'n/d'), modello = primo token con lettere e cifre del titolo. Pura."""
+    """(marca, modello): modello = primo token con lettere e cifre del titolo ('-' se manca: mai raggruppato). Pura."""
     m = _RE_MODELLO.search((d.get("titolo") or "").lower())
-    return d.get("brand") or "n/d", m.group(0) if m else "-"
+    return marca(d), m.group(0) if m else "-"
 
 
 def marca_anomalie(dati, min_n=3):
     """Aggiunge a ogni annuncio `anomalia` (True/False). Pura."""
     prezzi = defaultdict(list)
     for d in dati.values():
-        if d.get("prezzo"):
+        if d.get("prezzo") and identita(d)[1] != "-":
             prezzi[identita(d)].append(d["prezzo"])
     for d in dati.values():
         vera = (d.get("margine") or 0) >= MARGINE_MIN and (d.get("roi") or 0) >= ROI_MIN
@@ -82,7 +106,8 @@ def tabella(dati, chiave, min_n=1):
             r[1] += 1
             if d.get("traccia"):
                 r[2] += 1
-                if d.get("venduto_s") is not None and d["venduto_s"] <= ENTRO_S:
+                # domanda provata = venduto o prenotato (acquirente gia' pagato) entro 1 h
+                if any(x is not None and x <= ENTRO_S for x in (d.get("venduto_s"), d.get("prenotato_s"))):
                     r[3] += 1
     out = [(k, *v) for k, v in g.items() if v[0] >= min_n]
     return sorted(out, key=lambda x: (-x[4], -x[3], -x[2], -x[1], str(x[0])))
@@ -104,10 +129,10 @@ def main(argv):
     print(f"{len(dati)} annunci valutati, {sum(1 for d in dati.values() if d.get('anomalia'))} con anomalia, "
           f"{sum(1 for d in dati.values() if d.get('traccia'))} con esito di vendita (campione parziale, n piccoli = indicativo)")
     stampa("Per ricerca", tabella(dati, lambda d: d.get("ricerca") or "-"))
-    stampa("Per marca (solo annunci tracciati hanno la marca)", tabella(dati, lambda d: d.get("brand") or "n/d"))
+    stampa("Per marca (dal tracciamento o dal titolo)", tabella(dati, marca))
     stampa(f"Per prodotto (marca + sigla), almeno {min_n} annunci", tabella(dati, identita, min_n=min_n))
     cand = [r for r in tabella(dati, identita, min_n=1) if r[4] >= 1 and r[0][0] != "n/d"]
-    stampa("Candidati a nuova ricerca (anomalie vendute entro 1 h)", cand, limite=10)
+    stampa("Candidati a nuova ricerca (anomalie con domanda provata (venduto o prenotato entro 1 h))", cand, limite=10)
     return 0
 
 
