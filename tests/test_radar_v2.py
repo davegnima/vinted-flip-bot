@@ -135,6 +135,11 @@ def test_invia_verdetto_v2_gialli_e_verdi_una_volta(monkeypatch):
     monkeypatch.setattr(radar, "RADAR_SEMAFORI", {"verde", "giallo"})
     monkeypatch.setattr(radar, "_invia_radar", finto_invia)
     monkeypatch.setattr(radar, "radar_in_pausa", lambda *a, **k: False)
+
+    async def senza_gemini(*a, **k):
+        return None
+
+    monkeypatch.setattr(radar, "controlla_gemini", senza_gemini)
     radar._radar_inviati.clear()
     p = {"title": "Switch oled", "price": "40"}
     u = "https://www.vinted.it/items/901-switch"
