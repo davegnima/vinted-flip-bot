@@ -419,6 +419,63 @@ def _righe_v2(v2):
     return righe
 
 
+def _md(testo):
+    """Escape del Markdown di Telegram (_ * ` [) nei testi che arrivano da fuori (titolo, motivi): un trattino basso non deve rompere il messaggio. Pura."""
+    return re.sub(r"([_*`\[])", r"\\\1", str(testo or ""))
+
+
+def testo_avviso_v2(parsed, url, v2, g=None):
+    """Messaggio Telegram dell'avviso radar (gialli e verdi), a blocchi con emoji: prezzo e rivendita in testa, poi numeri, costo, giudizi, link.
+    Sostituisce l'elenco di righe tutte uguali (richiesta dell'utente, 01/11: 'cosi' e' illeggibile'). Pura."""
+    prezzo = _a_float(parsed.get("price"), None)
+    pall = pallino_semaforo(v2)
+    testa = f"{pall} *{prezzo:g} €*" if prezzo is not None else pall
+    if v2.get("rivendita") is not None:
+        testa += f"  ➜  rivendita ~*{v2['rivendita']:g} €*"
+    righe = [testa, _md((parsed.get("title") or "")[:100]), ""]
+    if v2.get("rivendita") is not None:
+        riga = f"💶 Margine *{v2.get('margine')} €* · ROI *{v2.get('roi')}%* · {v2.get('n') or 0} comparabili"
+        if v2.get("allargata"):
+            riga += " (ricerca allargata)"
+        righe.append(riga)
+    else:
+        righe.append(f"💶 Nessuna stima: {_md(_motivo_leggibile(v2.get('motivo')))}")
+    if v2.get("costo_totale") is not None and v2.get("spedizione_eur") is not None:
+        stato = _STATO_SPEDIZIONE.get(v2.get("spedizione_stato"), "n.d.")
+        paese = f" da {_md(v2['paese'])}" if v2.get("paese") else ""
+        righe.append(f"📦 Costo totale *{v2['costo_totale']:.2f} €* (spedizione {v2['spedizione_eur']:.2f} € {stato}{paese}, protezione inclusa)")
+    prezzi = []
+    if v2.get("richiesto_mediano") is not None and v2.get("rivendita") is not None:
+        prezzi.append(f"richiesto mediano {v2['richiesto_mediano']} €")
+        if v2.get("vendita_rapida") is not None:
+            prezzi.append(f"vendita rapida {v2['vendita_rapida']} €")
+    q = v2.get("qualita")
+    if q and v2.get("rivendita") is not None:
+        prezzi.append(f"qualità {q.get('punteggio')}/100 ({q.get('fascia')})")
+    if prezzi:
+        righe.append("📊 " + " · ".join(prezzi))
+    ver = v2.get("verificata")
+    frase = v2.get("jev_motivo_frase")
+    if ver and RADAR_VERIFICA:
+        righe.append(f"✅ Verificati {ver.get('n_stesso')}/{ver.get('n_giudicati')} stesso modello"
+                     + (f" + {ver['n_simili']} simili" if ver.get("n_simili") else "")
+                     + f" · rivendita {ver.get('rivendita')} € · margine {ver.get('margine')} € · ROI {ver.get('roi')}%")
+        frase = _frase_senza_simili(v2)
+    giudizi = []
+    if v2.get("jev"):
+        giudizi.append(f"🧠 Jev: {_md(descrizione_jev(v2['jev'], v2.get('jev_conf'), frase))}")
+    if RADAR_GEMINI:
+        for n, r in enumerate(riga_gemini(g).split("\n")):
+            giudizi.append(("👁 " if n == 0 else "💡 ") + _md(r))
+    if giudizi:
+        righe += [""] + giudizi
+    link = (v2.get("link_comps") or [])
+    if link:
+        righe += ["", "🔗 Comparabili da controllare:"] + [f"• {p:g} € {u}" for _t, p, u in link]
+    righe += ["", url]
+    return "\n".join(righe)
+
+
 # Risposta sotto il messaggio del tracker nel gruppo radar (richiesta dell'utente, 31/10: "messaggi con semaforo e
 # vendita stimata" dove li legge davvero). Silenziosa. 0 = spenta.
 RADAR_RISPOSTA_GRUPPO = os.environ.get("RADAR_RISPOSTA_GRUPPO", "1").strip() not in ("0", "false", "no", "")
@@ -563,8 +620,7 @@ async def invia_verdetto_v2(parsed, url, v2, foto=None):
             log.info("RADAR SCARTATO GEMINI | item=%s | semaforo=%s | conf=%s | motivo=%s | titolo=%s", item_id, v2.get("semaforo"), g.get("confidenza"),
                      g.get("motivo"), (parsed.get("title") or "")[:60])
             return False
-        intestazione = f"{pallino_semaforo(v2)} {prezzo:g} €" if prezzo is not None else pallino_semaforo(v2)
-        testo = "\n".join([intestazione, (parsed.get("title") or "")[:100]] + _righe_v2(v2) + [riga_gemini(g), url] if RADAR_GEMINI else [intestazione, (parsed.get("title") or "")[:100]] + _righe_v2(v2) + [url])
+        testo = testo_avviso_v2(parsed, url, v2, g)
         # Il suono resta solo ai verdi confermati da Gemini (o senza controllo disponibile): un "da rivedere" arriva muto.
         suono = _con_suono(v2) and not (g and g["verdetto"] == "dubbio")
         await _invia_radar(testo, foto, suono=suono, ricerca=parsed.get("query_name"))
