@@ -16,6 +16,9 @@ JEV_GIUDICE = os.environ.get("JEV_GIUDICE", "0").strip() in ("1", "true", "si")
 # Prova sulle foto (25/10): Jev vede anche la prima foto, solo per gli annunci con semaforo verde. Anteprima di TypeSafe
 # (header TypeSafe-Danger-Zone-Images): i token per immagine si misurano dal log "JEV DOMANDE ... input_tokens=".
 JEV_FOTO = os.environ.get("JEV_FOTO", "0").strip() in ("1", "true", "si")
+# Giudizio per singolo comparabile (01/11): Jev dice, titolo per titolo, se e' lo stesso modello dell'annuncio. In ombra: la rivendita
+# ricalcolata sui soli "stesso modello" si scrive nel log e nell'evento, il semaforo non cambia.
+JEV_COMPS = os.environ.get("JEV_COMPS", "0").strip() in ("1", "true", "si")
 ENDPOINT = "https://api.typesafe.ai/v1/systemone"
 MODELLO = "jev-latest"
 HEADER_IMMAGINI = "TypeSafe-Danger-Zone-Images"
@@ -66,6 +69,12 @@ DOMANDA_SIMILI = {
         "diverso": "i simili sono per lo piu' un altro modello, una serie diversa o oggetti diversi",
     },
 }
+CRITERI_COMP = {
+    "stesso_modello": "e' lo stesso modello (la versione puo' cambiare di poco, es. colore o capacita')",
+    "simile": "e' della stessa famiglia ma un altro modello o un'altra generazione",
+    "altro": "e' un altro oggetto, un accessorio, un ricambio o un lotto",
+}
+CONF_COMP_MIN = 0.6
 MAX_DESCRIZIONE = 600
 MAX_TITOLI_SIMILI = 15
 # Esiti del radar: stessa lista di prima, ora decisa dal codice.
@@ -133,6 +142,13 @@ def motivo_jev(risposte):
     if risposte.get("simili", (None, None))[0] in ("diverso", "in_parte"):
         frase += ", ma i simili non sono lo stesso modello"
     return codice, frase
+
+
+def prezzi_stesso_modello(comps, etichette, conf_min=CONF_COMP_MIN):
+    """Prezzi dei comparabili che Jev giudica 'stesso_modello' con confidenza >= conf_min. `comps` = [(titolo, prezzo)],
+    `etichette` = [(scelta, confidenza)] nello stesso ordine (puo' essere piu' corta: i comparabili oltre non sono giudicati). Pura."""
+    return [p for (_t, p), (scelta, conf) in zip(comps, etichette or [])
+            if scelta == "stesso_modello" and (conf is None or conf >= conf_min)]
 
 
 def descrizione_jev(esito, conf, frase):
@@ -241,3 +257,32 @@ def giudica_completo(titolo, prezzo, prezzi_simili, rivendita, foto=None, descri
     motivo = motivo_jev({**risposte, "simili": simili_risp or (None, None)})
     log.info("JEV MOTIVO | titolo=%s | esito=%s | motivo=%s", titolo[:60], esito, motivo[0])
     return esito, conf, simili_risp, motivo
+
+
+def classifica_comparabili(titolo, titoli, descrizione=None):
+    """[(scelta, confidenza)] uno per titolo (al massimo MAX_TITOLI_SIMILI) oppure None se Jev non e' attivo o non risponde.
+    Scelte: stesso_modello / simile / altro. Bloccante: usarla con asyncio.to_thread."""
+    chiave = os.environ.get("TYPESAFE_API_KEY", "").strip()
+    titoli = [t for t in (titoli or []) if t][:MAX_TITOLI_SIMILI]
+    if not (JEV_GIUDICE and JEV_COMPS and chiave and titoli):
+        return None
+    stato = f"Annuncio Vinted: {titolo}"
+    desc = " ".join((descrizione or "").split())[:MAX_DESCRIZIONE]
+    if desc:
+        stato += f"\nDescrizione del venditore: {desc}"
+    stato += "\nAnnunci simili da giudicare:\n" + "\n".join(f"{i + 1}. {t[:100]}" for i, t in enumerate(titoli))
+    domande = {f"c{i}": {"type": "choice", "instructions": f"L'annuncio simile numero {i + 1} e' lo stesso modello dell'annuncio?",
+                         "criteria": CRITERI_COMP} for i in range(len(titoli))}
+    try:
+        risposta = _chiama_jev({"model": MODELLO, "state": stato, "questions": domande})
+        out = []
+        for i in range(len(titoli)):
+            r = risposta["answers"][f"c{i}"]
+            out.append((r.get("choice"), r.get("confidence")))
+    except Exception as e:  # noqa: BLE001 - Jev non deve bloccare il radar
+        log.warning("JEV COMPS | giudizio non disponibile: %s", str(e)[:200])
+        return None
+    token = (risposta.get("usage") or {}).get("input_tokens")
+    log.info("JEV COMPS | titolo=%s | n=%s | stesso=%s | input_tokens=%s", titolo[:60], len(out),
+             sum(1 for c, _ in out if c == "stesso_modello"), token)
+    return out

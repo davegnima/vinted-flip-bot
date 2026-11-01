@@ -196,3 +196,29 @@ def test_descrizione_jev_in_italiano():
     f = jev.FRASI_MOTIVO["guasto_incompleto"]
     assert jev.descrizione_jev("non_affare", 0.9, f) == f"non e' un affare, {f} (confidenza 0.9)"
     assert jev.descrizione_jev("affare_vero", 0.8, None) == "affare (confidenza 0.8)"
+
+
+def test_prezzi_stesso_modello_tiene_solo_i_sicuri():
+    comps = [("a", 10), ("b", 20), ("c", 30), ("d", 40)]
+    etichette = [("stesso_modello", 0.9), ("simile", 0.9), ("stesso_modello", 0.3), ("stesso_modello", None)]
+    assert jev.prezzi_stesso_modello(comps, etichette) == [10, 40]
+    assert jev.prezzi_stesso_modello(comps, None) == []
+
+
+def test_classifica_comparabili_una_risposta_per_titolo(monkeypatch):
+    _attiva(monkeypatch, foto_on=False)
+    monkeypatch.setattr(jev, "JEV_COMPS", True)
+    answers = {"c0": {"choice": "stesso_modello", "confidence": 0.9}, "c1": {"choice": "altro", "confidence": 0.8}}
+    richieste = _finto(monkeypatch, [{"answers": answers, "usage": {"input_tokens": 500}}])
+    out = jev.classifica_comparabili("Dyson V11", ["Dyson V11 Absolute", "Filtro Dyson"])
+    assert out == [("stesso_modello", 0.9), ("altro", 0.8)]
+    assert set(richieste[0]["questions"]) == {"c0", "c1"}
+
+
+def test_classifica_comparabili_spenta_o_guasta_ritorna_none(monkeypatch):
+    _attiva(monkeypatch, foto_on=False)
+    monkeypatch.setattr(jev, "JEV_COMPS", False)
+    assert jev.classifica_comparabili("x", ["a"]) is None
+    monkeypatch.setattr(jev, "JEV_COMPS", True)
+    _finto(monkeypatch, [OSError("rete")])
+    assert jev.classifica_comparabili("x", ["a"]) is None
