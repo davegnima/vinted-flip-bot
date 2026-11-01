@@ -515,6 +515,7 @@ from bot.skip_report import (
 
 from bot.scheda import (
     ANALISI_GEMINI_ATTIVA,
+    SOLO_SEMAFORO,
     GALLERIA_ANTICIPATA,
     LUNGHEZZA_MAX_DESCRIZIONE_SCHEDA,
     STATO_ANALISI_COMPLETATA,
@@ -1570,7 +1571,9 @@ async def main():
         fv_ricalibra()
     except Exception:
         log.warning("Fair value appreso non caricato:\n%s", traceback.format_exc())
-    if not ANALISI_GEMINI_ATTIVA:
+    if SOLO_SEMAFORO:
+        log.warning("SOLO SEMAFORO (SOLO_SEMAFORO=1): Occhio e Cervello spenti, gli avvisi partono dalla stima rapida.")
+    elif not ANALISI_GEMINI_ATTIVA:
         log.warning("ANALISI GEMINI IN PAUSA (ANALISI_GEMINI=0): arrivera' solo la galleria, nessun verdetto.")
         try:
             await telegram_send_message(
