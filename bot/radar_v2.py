@@ -13,8 +13,9 @@ import traceback
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 from bot import db, radar_appreso
-from bot.comps import _cerca_vinted_testo_diretto
-from bot.jev import JEV_COMPS, MAX_COMPS_VERIFICA, classifica_comparabili, comparabili_stesso_modello, giudica_completo, prezzi_stesso_modello
+from bot.comps import _cerca_vinted_testo_diretto, _miniature_comp
+from bot.foto import download_image_bytes, optimize_image_bytes
+from bot.jev import JEV_COMPS, JEV_FOTO_COMPS, MAX_COMPS_VERIFICA, MAX_FOTO_COMPS, classifica_comparabili, comparabili_stesso_modello, confronta_foto_comparabili, giudica_completo, prezzi_stesso_modello
 from bot.config import SPEDIZIONE_STIMATA_EUR
 from bot.logger import log
 from bot.radar import RADAR_SPESA_MAX, parola_vietata, radar_in_pausa
@@ -218,6 +219,19 @@ def link_comparabili(coppie, mappe, n=4):
     return out
 
 
+def id_da_url_comp(url):
+    """Id numerico dell'annuncio da 'https://www.vinted.it/items/<ID>...'. None se non c'e'. Pura."""
+    m = re.search(r"/items/(\d+)", url or "")
+    return m.group(1) if m else None
+
+
+async def _foto_comparabili(link_comps):
+    """Byte delle miniature (al massimo MAX_FOTO_COMPS) dei comparabili con link noto, ridotte a 512 px. Lista vuota se mancano."""
+    urls = [u for u in (_miniature_comp.get(id_da_url_comp(c[2])) for c in link_comps) if u][:MAX_FOTO_COMPS]
+    scaricate = await asyncio.gather(*(download_image_bytes(u) for u in urls), return_exceptions=True)
+    return [await asyncio.to_thread(optimize_image_bytes, b, 512) for b in scaricate if isinstance(b, bytes) and b]
+
+
 def testi_piu_larghi(testo, brand=None):
     """Ricerche piu' corte da provare quando i comparabili sono pochi: marca + 2 parole, poi solo la marca. Pura."""
     parole = (testo or "").split()
@@ -393,7 +407,15 @@ async def analizza(parsed, url, foto=None, query_url=None):
             log.info("RADAR V2 JEV | item=%s | giudizio=%s | confidenza=%s | simili=%s(%s) | motivo=%s | largo=%s | n=%s | titolo=%s", item_id, jev,
                      jev_conf, jev_simili[0] if jev_simili else "-", jev_simili[1] if jev_simili else "-", jev_motivo[0] if jev_motivo else "-", allargata or 0,
                      len(prezzi), titolo[:60])
-        db.scrivi_evento("radar_v2", item_id, brand, {**dati, "verificata": verificata, "link_comps": [list(c) for c in link_comps], "jev": jev, "jev_conf": jev_conf,
+        # Foto dei comparabili (01/11), solo ombra: foto annuncio contro 3 miniature; nessun effetto sull'esito.
+        jev_foto_comps = None
+        if JEV_FOTO_COMPS and foto and link_comps and v.get("semaforo") in ("verde", "giallo"):
+            miniature = await _foto_comparabili(link_comps)
+            if miniature:
+                jev_foto_comps = await asyncio.to_thread(confronta_foto_comparabili, titolo, foto, miniature)
+                log.info("RADAR V2 FOTO COMPS | item=%s | semaforo=%s | byte=%s | esito=%s | titolo=%s", item_id, v.get("semaforo"),
+                         sum(len(m) for m in miniature), jev_foto_comps, titolo[:60])
+        db.scrivi_evento("radar_v2", item_id, brand, {**dati, "jev_foto_comps": jev_foto_comps, "verificata": verificata, "link_comps": [list(c) for c in link_comps], "jev": jev, "jev_conf": jev_conf,
                                                       "jev_simili": jev_simili[0] if jev_simili else None,
                                                       "jev_simili_conf": jev_simili[1] if jev_simili else None,
                                                       "jev_motivo": jev_motivo[0] if jev_motivo else None,

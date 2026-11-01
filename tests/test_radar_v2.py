@@ -431,3 +431,13 @@ def test_righe_v2_mostra_i_link_dei_comparabili():
     assert "• 95 € https://www.vinted.it/items/1" in righe
     assert "• 105.5 € https://www.vinted.it/items/2" in righe
     assert "Comparabili da controllare:" not in "\n".join(radar._righe_v2({**v2, "link_comps": []}))
+
+
+def test_estrai_miniature_vinted_e_id_da_url():
+    from bot.comps_filtri import _estrai_miniature_vinted
+    from bot.radar_v2 import id_da_url_comp
+    html = ('<img src="https://images1.vinted.net/t/ab/310x430/x.webp?s=1&amp;v=2" alt="Switch, 40 €" class="c" '
+            'data-testid="product-item-id-123--image--img"/><img src="/altro.png" data-testid="product-item-id-9--image--img"/>')
+    assert _estrai_miniature_vinted(html) == {"123": "https://images1.vinted.net/t/ab/310x430/x.webp?s=1&v=2"}
+    assert id_da_url_comp("https://www.vinted.it/items/123-slug") == "123"
+    assert id_da_url_comp("https://x") is None

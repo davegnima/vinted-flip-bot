@@ -19,6 +19,18 @@ JEV_FOTO = os.environ.get("JEV_FOTO", "0").strip() in ("1", "true", "si")
 # Giudizio per singolo comparabile (01/11): Jev dice, titolo per titolo, se e' lo stesso modello dell'annuncio. In ombra: la rivendita
 # ricalcolata sui soli "stesso modello" si scrive nel log e nell'evento, il semaforo non cambia.
 JEV_COMPS = os.environ.get("JEV_COMPS", "0").strip() in ("1", "true", "si")
+# Foto dei comparabili (01/11): Jev confronta la foto dell'annuncio con 3 miniature di comparabili. Solo ombra: log ed evento, nessun effetto
+# sul semaforo. Spenta di default (banda e token da misurare prima).
+JEV_FOTO_COMPS = os.environ.get("JEV_FOTO_COMPS", "0").strip() in ("1", "true", "si")
+MAX_FOTO_COMPS = 3
+DOMANDA_FOTO_COMP = {
+    "instructions": "L'oggetto di questa miniatura e' lo stesso modello dell'oggetto di foto1 (stessa linea, stessa versione)?",
+    "criteria": {
+        "stesso_modello": "e' chiaramente lo stesso modello",
+        "diverso": "e' un altro modello, un'altra versione, un accessorio o un altro oggetto",
+        "non_chiaro": "dalle foto non si capisce",
+    },
+}
 ENDPOINT = "https://api.typesafe.ai/v1/systemone"
 MODELLO = "jev-latest"
 HEADER_IMMAGINI = "TypeSafe-Danger-Zone-Images"
@@ -263,6 +275,38 @@ def giudica_completo(titolo, prezzo, prezzi_simili, rivendita, foto=None, descri
     motivo = motivo_jev({**risposte, "simili": simili_risp or (None, None)})
     log.info("JEV MOTIVO | titolo=%s | esito=%s | motivo=%s", titolo[:60], esito, motivo[0])
     return esito, conf, simili_risp, motivo
+
+
+def confronta_foto_comparabili(titolo, foto, miniature):
+    """[(scelta, confidenza), ...] una per miniatura, oppure None se Jev e' spento o non risponde. Bloccante.
+    `foto` e `miniature` sono byte di immagini png/jpeg (max MAX_FOTO_COMPS miniature). Non influisce sull'esito."""
+    chiave = os.environ.get("TYPESAFE_API_KEY", "").strip()
+    if not (JEV_GIUDICE and JEV_FOTO_COMPS and chiave):
+        return None
+    immagini = [("foto1", foto)] + [(f"comp{i}", m) for i, m in enumerate(miniature[:MAX_FOTO_COMPS], 1)]
+    assets = {}
+    for nome, dati in immagini:
+        formato = _formato_foto(dati)
+        if not formato:
+            continue
+        assets[nome] = {"type": "image", "data_base64": base64.b64encode(dati).decode(), "format": formato}
+    comp = [n for n in assets if n != "foto1"]
+    if "foto1" not in assets or not comp:
+        return None
+    corpo = {"model": MODELLO, "assets": assets,
+             "state": f"Annuncio Vinted: {titolo}\nFoto dell'annuncio: foto1\nMiniature di annunci simili: {', '.join(comp)}",
+             "questions": {n: {"type": "choice", **DOMANDA_FOTO_COMP, "instructions": DOMANDA_FOTO_COMP["instructions"].replace("questa miniatura", n)}
+                           for n in comp}}
+    try:
+        risposta = _chiama_jev(corpo)
+        risultati = [(risposta["answers"][n].get("choice"), risposta["answers"][n].get("confidence")) for n in comp]
+    except Exception as e:  # noqa: BLE001 - e' solo una prova in ombra
+        log.warning("JEV FOTO COMPS | non disponibile: %s", str(e)[:200])
+        return None
+    token = (risposta.get("usage") or {}).get("input_tokens")
+    log.info("JEV FOTO COMPS | titolo=%s | miniature=%s | input_tokens=%s | %s", titolo[:60], len(comp), token,
+             " | ".join(f"{n}={c}({p})" for n, (c, p) in zip(comp, risultati)))
+    return risultati
 
 
 def classifica_comparabili(titolo, titoli, descrizione=None):
