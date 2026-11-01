@@ -15,7 +15,7 @@ from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 from bot import db, radar_appreso
 from bot.comps import _cerca_vinted_testo_diretto, _miniature_comp
 from bot.foto import download_image_bytes, optimize_image_bytes
-from bot.jev import JEV_COMPS, JEV_FOTO_COMPS, MAX_COMPS_VERIFICA, MAX_FOTO_COMPS, classifica_comparabili, comparabili_stesso_modello, confronta_foto_comparabili, giudica_completo, precontrollo_tipo, prezzi_stesso_modello, riconosci_prodotto, stima_paese
+from bot.jev import JEV_COMPS, JEV_FOTO_COMPS, MAX_COMPS_VERIFICA, MAX_FOTO_COMPS, classifica_comparabili, comparabili_simili as simili_jev, comparabili_stesso_modello, confronta_foto_comparabili, giudica_completo, precontrollo_tipo, prezzi_stesso_modello, riconosci_prodotto, stima_paese
 from bot.config import SPEDIZIONE_STIMATA_EUR
 from bot.qualita_comps import fascia_numero, guasto_nella_descrizione, product_identity, punteggio_comparabili
 from bot.spedizione import UNKNOWN, campi_spedizione_da_html, classe_taglia, costo_spedizione, paese_da_html
@@ -258,13 +258,15 @@ async def _verifica_comparabili(titolo, prezzo, brand, catalogo, testo, descrizi
     usate = [testo]
     ok = []
     etichette = None
+    n_ut = 0  # comparabili utilizzabili: stesso modello + simili della stessa famiglia
     if len(pool) >= 3:
         etichette = await asyncio.to_thread(classifica_comparabili, titolo, [t for t, _ in pool], descrizione)
         ok = prezzi_stesso_modello(pool, etichette)
+        n_ut = len(ok) + len(simili_jev(pool, etichette))
     # Se i comparabili veri restano pochi si cerca ancora (richiesta dell'utente, 01/11): prima dalla sigla del modello,
     # poi con ricerche piu' larghe (marca + 2 parole); Jev rigiudica ogni titolo. Al massimo 3 ricerche in piu'.
     ricerche = []
-    if len(ok) < 3:
+    if n_ut < 3:
         # Riconoscimento del prodotto dal titolo (01/11): Jev sceglie il nome del prodotto, si cerca con marca + categoria + quel nome,
         # poi con la sua prima parola ("skylanders swap force", poi "skylanders"); mai la sola marca.
         riconosciuto = await asyncio.to_thread(riconosci_prodotto, titolo, nomi_candidati(titolo, brand), descrizione)
@@ -274,7 +276,7 @@ async def _verifica_comparabili(titolo, prezzo, brand, catalogo, testo, descrizi
     ricerche = list(dict.fromkeys(ricerche + query_alternative(titolo, brand) + testi_piu_larghi(testo, brand)))
     ricerche = [q for q in ricerche if q and q.lower() != (brand or "").lower() and q not in usate][:4]
     for q in ricerche:
-        if len(ok) >= 3:
+        if n_ut >= 3:
             break
         await _prezzi_simili(q, titolo, prezzo, brand, catalogo)
         nuovi = [c for c in (_comps_simili.get((q, catalogo)) or []) if c not in pool]
@@ -285,10 +287,18 @@ async def _verifica_comparabili(titolo, prezzo, brand, catalogo, testo, descrizi
         if len(pool) >= 3:
             etichette = await asyncio.to_thread(classifica_comparabili, titolo, [t for t, _ in pool], descrizione)
             ok = prezzi_stesso_modello(pool, etichette)
+            n_ut = len(ok) + len(simili_jev(pool, etichette))
     if not etichette:
         return None, []
-    link = link_comparabili(comparabili_stesso_modello(pool, etichette), [_url_comps.get((q, catalogo)) for q in usate])
-    return {"n_giudicati": len(etichette), "n_stesso": len(ok), "query": usate, "link": link}, ok
+    stessi = comparabili_stesso_modello(pool, etichette)
+    simili = simili_jev(pool, etichette)
+    # Buon senso (01/11): con meno di 3 "stesso modello" si aggiungono i "simile" (stessa famiglia) se insieme arrivano a 3 o piu';
+    # mai gli "altro". Con simili dentro il verde non e' possibile (vedi analizza).
+    usati = stessi if len(stessi) >= 3 else (stessi + simili if len(stessi) + len(simili) >= 3 else stessi)
+    link = link_comparabili(usati, [_url_comps.get((q, catalogo)) for q in usate])
+    n_simili_usati = len(usati) - len(stessi)
+    return {"n_giudicati": len(etichette), "n_stesso": len(stessi), "n_simili": n_simili_usati, "n_usabili": len(usati),
+            "query": usate, "link": link}, [p for _t, p in usati]
 
 
 def _rosso(motivo, n=0):
@@ -428,8 +438,8 @@ async def analizza(parsed, url, foto=None, query_url=None):
                 log.info("RADAR V2 VERIFICATA | item=%s | prima=%s rivendita=%s | dopo=%s rivendita=%s margine=%s | stesso=%s/%s | q=%s | titolo=%s",
                          item_id, v["semaforo"], v.get("rivendita"), v_ver.get("semaforo"), v_ver.get("rivendita"), v_ver.get("margine"),
                          info["n_stesso"], info["n_giudicati"], "+".join(info["query"]), titolo[:60])
-                if info["n_stesso"] >= 3:
-                    cap = v.get("semaforo") != "verde" or allargata or len(info["query"]) > 1
+                if info["n_usabili"] >= 3:
+                    cap = v.get("semaforo") != "verde" or allargata or len(info["query"]) > 1 or info["n_simili"] > 0
                     v = {**v, **v_ver}
                     if cap and v.get("semaforo") == "verde":
                         v["semaforo"] = "giallo"
@@ -442,13 +452,13 @@ async def analizza(parsed, url, foto=None, query_url=None):
         # Link dei comparabili nei messaggi (01/11): quelli verificati se ci sono, altrimenti i grezzi della ricerca usata.
         link_comps = []
         if v.get("semaforo") in ("verde", "giallo"):
-            if verificata and verificata["n_stesso"] >= 3:
+            if verificata and verificata["n_usabili"] >= 3:
                 link_comps = verificata.get("link") or []
             else:
                 link_comps = link_comparabili(_comps_simili.get((testo, catalogo)) or [], [_url_comps.get((testo, catalogo))])
         # Qualita' dei comparabili (01/11, solo misura): pool usato per la stima finale e identita' del prodotto.
         pool_q = list(_comps_simili.get((testo, catalogo)) or [])
-        ver_ok = verificata and verificata["n_stesso"] >= 3
+        ver_ok = verificata and verificata["n_usabili"] >= 3
         qualita = punteggio_comparabili(pool_q if not ver_ok else [(t, p) for t, p, _u in (verificata.get("link") or [])] or pool_q,
                                         verificata["n_stesso"] if verificata else None, verificata["n_giudicati"] if verificata else None)
         qualita["n"] = len(prezzi)

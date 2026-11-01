@@ -169,6 +169,13 @@ def prezzi_stesso_modello(comps, etichette, conf_min=CONF_COMP_MIN):
     return [p for _t, p in comparabili_stesso_modello(comps, etichette, conf_min)]
 
 
+def comparabili_simili(comps, etichette, conf_min=CONF_COMP_MIN):
+    """Coppie (titolo, prezzo) che Jev giudica 'simile' (stessa famiglia, altro modello o generazione) con confidenza >= conf_min.
+    Servono quando gli 'stesso_modello' sono pochi (01/11, utente: buon senso, la comparabilita' va verificata ma non serve lo stesso modello). Pura."""
+    return [(t, p) for (t, p), (scelta, conf) in zip(comps, etichette or [])
+            if scelta == "simile" and (conf is None or conf >= conf_min)]
+
+
 def descrizione_jev(esito, conf, frase):
     """Riga per il messaggio: 'non e' un affare, dichiarato rotto... (confidenza 0,9)'. Pura."""
     testo = ETICHETTE_ESITO.get(esito, esito)
