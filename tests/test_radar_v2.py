@@ -409,3 +409,25 @@ def test_verifica_cerca_dalla_sigla_se_gli_stessi_modelli_sono_pochi(monkeypatch
     monkeypatch.setattr(radar_v2, "query_alternative", lambda t, b, max_n=2: ["sony ch520"])
     info, ok = asyncio.run(radar_v2._verifica_comparabili("Sony WH-CH520", 15, "sony", None, "sony cuffie"))
     assert sorted(ok) == [30, 32, 35] and info["n_stesso"] == 3 and info["query"] == ["sony cuffie", "sony ch520"]
+
+
+def test_link_comparabili_i_piu_vicini_alla_mediana():
+    from bot.testo import _normalizza_titolo_per_link as norm
+    coppie = [("A uno", 10.0), ("B due", 90.0), ("C tre", 100.0), ("D quattro", 110.0), ("E cinque", 400.0), ("F senza", 95.0)]
+    mappa = {(norm(t), f"{p:.2f}"): f"https://www.vinted.it/items/{i}" for i, (t, p) in enumerate(coppie[:5], 1)}
+    out = radar_v2.link_comparabili(coppie, [mappa], n=3)
+    assert [p for _t, p, _u in out] == [100.0, 90.0, 110.0]
+    assert all(u.startswith("https://www.vinted.it/items/") for _t, _p, u in out)
+    assert radar_v2.link_comparabili([], [mappa]) == []
+    assert radar_v2.link_comparabili(coppie, [{}, None]) == []
+
+
+def test_righe_v2_mostra_i_link_dei_comparabili():
+    from bot import radar
+    v2 = {"semaforo": "giallo", "rivendita": 100, "margine": 60, "roi": 150, "n": 5,
+          "link_comps": [("Sony WH-CH520", 95.0, "https://www.vinted.it/items/1"), ("Sony WH-CH520 nere", 105.5, "https://www.vinted.it/items/2")]}
+    righe = radar._righe_v2(v2)
+    assert "Comparabili da controllare:" in righe
+    assert "• 95 € https://www.vinted.it/items/1" in righe
+    assert "• 105.5 € https://www.vinted.it/items/2" in righe
+    assert "Comparabili da controllare:" not in "\n".join(radar._righe_v2({**v2, "link_comps": []}))

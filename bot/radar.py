@@ -353,6 +353,14 @@ def pallino_semaforo(v2, predefinito="🔎"):
     return SEMAFORO_EMOJI.get((v2 or {}).get("semaforo"), predefinito)
 
 
+def _righe_link_comps(v2):
+    """Link dei comparabili che reggono la stima (gialli e verdi), per controllarli a occhio. Vuote se non ci sono. Pura."""
+    link = (v2 or {}).get("link_comps") or []
+    if not link:
+        return []
+    return ["Comparabili da controllare:"] + [f"• {p:g} € {u}" for _t, p, u in link]
+
+
 def _righe_v2(v2):
     """Righe del messaggio: comparabili (quanti e perche' zero), esito del semaforo (sempre), giudizio Jev.
     Il semaforo non viene dal buy max della matrice: si costruisce dai comparabili (richiesta dell'utente, 25/10)."""
@@ -377,6 +385,7 @@ def _righe_v2(v2):
         frase = _frase_senza_simili(v2)
     if v2.get("jev"):
         righe.append(f"Jev: {descrizione_jev(v2['jev'], v2.get('jev_conf'), frase)}")
+    righe += _righe_link_comps(v2)
     return righe
 
 
