@@ -332,6 +332,7 @@ def test_traccia_verdetto_v2_gialli_verdi_sempre_rossi_a_campione(monkeypatch):
     monkeypatch.setattr(tr, "tracc_avvia_serie", lambda info, url, t0, offsets=None: partite.append((url, offsets)))
     monkeypatch.setattr(radar, "_radar_tracciati", set())
     monkeypatch.setattr(radar, "RADAR_TRACCIA_ROSSI_1_SU", 10)
+    monkeypatch.setattr(radar, "RADAR_AUDIT_1_SU", 0)
     p = {"title": "Switch", "price": "40", "brand": "nintendo"}
     u = lambda n: f"https://www.vinted.it/items/{n}-switch"
     assert radar.traccia_verdetto_v2(p, u(101), {"semaforo": "verde", "motivo": "ok", "n": 8})
@@ -343,6 +344,35 @@ def test_traccia_verdetto_v2_gialli_verdi_sempre_rossi_a_campione(monkeypatch):
     assert not radar.traccia_verdetto_v2(p, u(130), None)
     assert tr._tracc_ctx["101"]["semaforo"] == "verde"
     assert len(partite) == 3 and partite[0][1] == radar.RADAR_RICONTROLLI_SECONDI
+
+
+def test_audit_scartati_non_oggetto_a_campione(monkeypatch):
+    from bot import radar, tracciamento as tr
+    partite = []
+    monkeypatch.setattr(tr, "tracc_avvia_serie", lambda info, url, t0, offsets=None: partite.append(url))
+    monkeypatch.setattr(radar, "_radar_tracciati", set())
+    monkeypatch.setattr(radar, "RADAR_AUDIT_1_SU", 20)
+    p = {"title": "Switch", "price": "40", "brand": "nintendo"}
+    u = lambda n: f"https://www.vinted.it/items/{n}-switch"
+    assert not radar.traccia_verdetto_v2(p, u(125), {"semaforo": "rosso", "motivo": "jev_tipo"})   # 125 % 20 != 0
+    assert radar.traccia_verdetto_v2(p, u(140), {"semaforo": "rosso", "motivo": "jev_tipo", "margine": 80, "roi": 150})
+    assert tr._tracc_ctx["140"]["audit"] == "si"
+    monkeypatch.setattr(radar, "RADAR_AUDIT_1_SU", 0)
+    assert not radar.traccia_verdetto_v2(p, u(160), {"semaforo": "rosso", "motivo": "jev_tipo"})   # audit spento
+
+
+def test_audit_radar_tabella():
+    import importlib.util, pathlib
+    sp = importlib.util.spec_from_file_location("audit_radar", pathlib.Path(__file__).parent.parent / "tools/radar_liste/audit_radar.py")
+    mod = importlib.util.module_from_spec(sp)
+    sp.loader.exec_module(mod)
+    righe = [
+        "x TRACCIATO_RADAR | item=1 | prezzo=40 | semaforo=rosso | motivo=jev_tipo | margine=80 | roi=150 | audit=si | venduto_s=120 | incompleto=no",
+        "x TRACCIATO_RADAR | item=2 | prezzo=40 | semaforo=rosso | motivo=jev_tipo | margine=10 | roi=20 | venduto_s=- | incompleto=no",
+        "x TRACCIATO_RADAR | item=3 | prezzo=40 | semaforo=verde | motivo=ok | venduto_s=60 | incompleto=no",
+    ]
+    assert mod.tabella(righe)["jev_tipo"] == [2, 2, 1, 1]
+    assert "verde" not in mod.tabella(righe)
 
 
 def test_da_mandare_richiede_jev_affare(monkeypatch):

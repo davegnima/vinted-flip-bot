@@ -62,6 +62,9 @@ _radar_pausa_saltati = 0
 _radar_visti = set()
 # Tracciamento del verdetto v2 (31/10): ogni giallo e verde si ricontrolla (1, 5, 15, 60 min), dei rossi 1 ogni N (banda).
 RADAR_TRACCIA_ROSSI_1_SU = int(os.environ.get("RADAR_TRACCIA_ROSSI_1_SU", "10") or 0)
+# Audit dei falsi negativi (01/11, tappa 4): 1 scartato "non oggetto" (jev_tipo, pezzo_o_accessorio, ...) su N entra nella serie di
+# tracciamento solo per misura (mai Telegram). 0 = nessuno. Se sparisce subito, lo scarto era sospetto: `tools/radar_liste/audit_radar.py`.
+RADAR_AUDIT_1_SU = int(os.environ.get("RADAR_AUDIT_1_SU", "20") or 0)
 _radar_tracciati = set()
 
 # ---------------------------------------------------------------------------
@@ -574,14 +577,18 @@ def traccia_verdetto_v2(parsed, url, v2, t0=None):
     if not item_id or str(item_id) in _radar_tracciati:
         return False
     sem = v2["semaforo"]
+    audit = False
     if sem == "rosso":
-        if (v2.get("motivo") or "").split(":")[0] in MOTIVI_NON_OGGETTO or not RADAR_TRACCIA_ROSSI_1_SU:
+        non_oggetto = (v2.get("motivo") or "").split(":")[0] in MOTIVI_NON_OGGETTO
+        passo = RADAR_AUDIT_1_SU if non_oggetto else RADAR_TRACCIA_ROSSI_1_SU
+        if not passo:
             return False
         try:
-            if int(item_id) % RADAR_TRACCIA_ROSSI_1_SU:
+            if int(item_id) % passo:
                 return False
         except ValueError:
             return False
+        audit = True
     _radar_tracciati.add(str(item_id))
     if len(_radar_tracciati) > 20000:
         _radar_tracciati.clear()
@@ -590,10 +597,13 @@ def traccia_verdetto_v2(parsed, url, v2, t0=None):
     tr._tracc_esiti[str(item_id)] = ("RADAR_V2", None)
     tr._tracc_ctx[str(item_id)] = {k: v for k, v in {
         "semaforo": sem, "motivo": v2.get("motivo"), "rivendita": v2.get("rivendita"), "margine": v2.get("margine"),
-        "roi": v2.get("roi"), "n_comp": v2.get("n"), "jev": v2.get("jev"), "jev_motivo": v2.get("jev_motivo")}.items()
+        "roi": v2.get("roi"), "n_comp": v2.get("n"), "jev": v2.get("jev"), "jev_motivo": v2.get("jev_motivo"),
+        "audit": "si" if audit else None}.items()
         if v is not None}
     tr.tracc_avvia_serie(info, url, t0 or time.time(), offsets=RADAR_RICONTROLLI_SECONDI)
     log.info("RADAR TRACCIA AVVIO | item=%s | semaforo=%s | prezzo=%s", item_id, sem, prezzo)
+    if audit:
+        log.info("RADAR AUDIT | item=%s | motivo=%s | margine=%s | roi=%s", item_id, v2.get("motivo"), v2.get("margine"), v2.get("roi"))
     return True
 
 
