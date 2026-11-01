@@ -467,6 +467,14 @@ def testo_avviso_v2(parsed, url, v2, g=None):
     if RADAR_GEMINI:
         for n, r in enumerate(riga_gemini(g).split("\n")):
             giudizi.append(("👁 " if n == 0 else "💡 ") + _md(r))
+    if g and g.get("ricerca_modello"):
+        if v2.get("rivalutata"):
+            righe.append(f"🔁 Comparabili rifatti sul modello letto da Gemini: _{_md(v2.get('ricerca_rifatta') or g['ricerca_modello'])}_"
+                         + (" (ricerca vicina, non identica)" if v2.get("ricerca_semantica_usata") else ""))
+        elif v2.get("modello_non_verificato"):
+            righe.append(f"⚠️ Gemini legge il modello _{_md(g['ricerca_modello'])}_, diverso dai comparabili usati: nessun comparabile trovato, stima da verificare")
+        else:
+            righe.append(f"🔎 Modello (Gemini): _{_md(g['ricerca_modello'])}_")
     if giudizi:
         righe += [""] + giudizi
     link = (v2.get("link_comps") or [])
@@ -581,12 +589,19 @@ def spezza_didascalia(testo, massimo=MAX_DIDASCALIA):
     return testo[:taglio], testo[taglio:].strip("\n")
 
 
-async def _invia_radar(testo, foto=None, suono=False, ricerca=None):
+def url_annuncio_nel_testo(testo, url=None):
+    """Link dell'annuncio per il bottone: quello passato, altrimenti l'ULTIMA url Vinted del testo (le precedenti sono i comparabili). Pura."""
+    if url:
+        return url
+    trovati = _RE_URL_VINTED.findall(testo or "")
+    return trovati[-1] if trovati else None
+
+
+async def _invia_radar(testo, foto=None, suono=False, ricerca=None, url=None):
     """Messaggio del radar al chat privato: con la foto del tracker se c'e', altrimenti solo testo. Suono solo se `suono`.
-    Sempre il bottone 'Apri su Vinted' (link preso dal testo); didascalia lunga: il resto in un secondo messaggio silenzioso."""
+    Sempre il bottone 'Apri su Vinted' (link dell'annuncio, mai di un comparabile); didascalia lunga: il resto in un secondo messaggio silenzioso."""
     log.info("RADAR PRIVATO | inviato alla chat privata | foto=%s | ricerca=%s | testo=%s", "si" if foto else "no", ricerca or "-", testo.replace("\n", " / "))
-    m = _RE_URL_VINTED.search(testo)
-    url = m.group(0) if m else None
+    url = url_annuncio_nel_testo(testo, url)
     if foto:
         didascalia, resto = spezza_didascalia(testo)
         await telegram_send_photo(RADAR_CHAT_ID, foto, caption=didascalia, disable_notification=not suono, url_bottone=url)
@@ -600,7 +615,7 @@ async def _invia_radar(testo, foto=None, suono=False, ricerca=None):
 _radar_inviati = set()
 
 
-async def invia_verdetto_v2(parsed, url, v2, foto=None):
+async def invia_verdetto_v2(parsed, url, v2, foto=None, rivaluta=None):
     """Manda al chat degli avvisi i verdetti v2 in RADAR_SEMAFORI (verde con suono, giallo silenzioso), subito dopo
     l'analisi: prima l'invio passava solo dal vecchio ramo e i gialli non arrivavano mai. Anti-duplicato per annuncio.
     Ritorna True se ha inviato."""
@@ -620,10 +635,19 @@ async def invia_verdetto_v2(parsed, url, v2, foto=None):
             log.info("RADAR SCARTATO GEMINI | item=%s | semaforo=%s | conf=%s | motivo=%s | titolo=%s", item_id, v2.get("semaforo"), g.get("confidenza"),
                      g.get("motivo"), (parsed.get("title") or "")[:60])
             return False
+        if rivaluta and g and g.get("ricerca_modello"):
+            # Gemini ha letto il modello: se non e' quello dei comparabili, la stima si rifa' sul modello giusto (01/11, richiesta dell'utente).
+            v2_nuovo = await rivaluta(parsed, url, v2, g)
+            if v2_nuovo is not v2:
+                v2 = v2_nuovo
+                if not _da_mandare(v2):
+                    log.info("RADAR SCARTATO RIVALUTAZIONE | item=%s | semaforo=%s | margine=%s | motivo=%s | titolo=%s", item_id, v2.get("semaforo"),
+                             v2.get("margine"), v2.get("motivo"), (parsed.get("title") or "")[:60])
+                    return False
         testo = testo_avviso_v2(parsed, url, v2, g)
         # Il suono resta solo ai verdi confermati da Gemini (o senza controllo disponibile): un "da rivedere" arriva muto.
         suono = _con_suono(v2) and not (g and g["verdetto"] == "dubbio")
-        await _invia_radar(testo, foto, suono=suono, ricerca=parsed.get("query_name"))
+        await _invia_radar(testo, foto, suono=suono, ricerca=parsed.get("query_name"), url=url)
         return True
     except Exception:
         log.warning("Radar: verdetto v2 non inviato per %s:\n%s", item_id, traceback.format_exc())
@@ -636,7 +660,7 @@ async def _manda_semaforo_radar(item_id, titolo, prezzo, url, modello, buy_max, 
     try:
         testo = "\n".join([f"{pallino_semaforo(v2)} modello {modello} | {prezzo:g} € (buy max {buy_max:g} €)", titolo[:100]]
                           + _righe_v2(v2) + [url])
-        await _invia_radar(testo, foto, suono=_con_suono(v2))
+        await _invia_radar(testo, foto, suono=_con_suono(v2), url=url)
         log.info("RADAR MODELLO | item=%s | modello=%s | prezzo=%s | buy_max=%s", item_id, modello, prezzo, buy_max)
     except Exception:
         log.warning("Radar: semaforo non inviato per %s:\n%s", item_id, traceback.format_exc())
@@ -649,7 +673,7 @@ async def _manda_annuncio_senza_modello(item_id, titolo, prezzo, url, v2=None, f
         pall = pallino_semaforo(v2)
         intestazione = f"{pall} fuori matrice | {prezzo:g} €" if prezzo is not None else f"{pall} fuori matrice"
         testo = "\n".join([intestazione, titolo[:100]] + _righe_v2(v2) + [url])
-        await _invia_radar(testo, foto, suono=_con_suono(v2))
+        await _invia_radar(testo, foto, suono=_con_suono(v2), url=url)
         log.info("RADAR FUORI MATRICE | item=%s | prezzo=%s | titolo=%s", item_id, prezzo, titolo[:60])
     except Exception:
         log.warning("Radar: annuncio fuori matrice non inviato per %s:\n%s", item_id, traceback.format_exc())

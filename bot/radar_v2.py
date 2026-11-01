@@ -301,6 +301,90 @@ async def _verifica_comparabili(titolo, prezzo, brand, catalogo, testo, descrizi
             "query": usate, "link": link}, [p for _t, p in usati]
 
 
+def _token_ricerca(q):
+    return {t for t in re.findall(r"[a-z0-9]+", (q or "").lower()) if t}
+
+
+def ricerca_diversa(q_attuale, q_gemini):
+    """True se la ricerca di comparabili letta da Gemini (marca + modello esatto) NON coincide con quella usata finora:
+    parole di Gemini mancanti nella ricerca attuale, o ricerca attuale che ne ha di diverse con una sigla (parola con cifre). Pura."""
+    g, a = _token_ricerca(q_gemini), _token_ricerca(q_attuale)
+    if not g:
+        return False
+    if g == a:
+        return False
+    # La ricerca attuale contiene tutto quello che dice Gemini (piu' parole di contorno): stesso modello.
+    if g <= a and not any(any(c.isdigit() for c in t) for t in a - g):
+        return False
+    return len(g & a) / len(g | a) < 0.8
+
+
+async def rivaluta(parsed, url, v2, g):
+    """Se Gemini (foto, titolo, descrizione e sua conoscenza) legge un modello diverso da quello della ricerca di comparabili, rifa'
+    comparabili e giudizio di Jev sul modello giusto (ricerca_modello) o, se sono pochi, sulla ricerca semantica vicina (ricerca_semantica).
+    Margine e ROI restano calcolati dal codice. Ritorna un NUOVO dict v2 (con 'rivalutata'), oppure lo stesso v2 se non c'e' niente da rifare.
+    Con la ricerca semantica (o stima su 'simili') il semaforo non supera il giallo. Mai eccezioni."""
+    try:
+        if not v2 or not g or not g.get("ricerca_modello") or not v2.get("q"):
+            return v2
+        if not ricerca_diversa(v2["q"], g["ricerca_modello"]):
+            return v2
+        titolo, prezzo, brand, catalogo = v2.get("titolo") or "", _a_float(parsed.get("price"), None), v2.get("brand"), v2.get("catalogo")
+        descrizione = v2.get("_descrizione") or None
+        sped = v2.get("spedizione_eur")
+        item_id = _estrai_item_id_da_url(url)
+        usata, semantica, prezzi, n_grezzi = g["ricerca_modello"], False, [], 0
+        for q, sem in ((g["ricerca_modello"], False), (g.get("ricerca_semantica") or "", True)):
+            if not q or (sem and len(prezzi) >= RADAR_V2_SCALA_MIN):
+                continue
+            p, ng, _c = await _prezzi_simili(q, titolo, prezzo, brand, catalogo)
+            if p and len(p) > len(prezzi):
+                prezzi, n_grezzi, usata, semantica = p, ng, q, sem
+        log.info("RADAR RIVALUTA | item=%s | era=%s | gemini=%s | semantica=%s | n=%s | titolo=%s", item_id, v2["q"], usata, int(semantica), len(prezzi), titolo[:60])
+        if len(prezzi) < 2:
+            # Niente comparabili sul modello giusto: l'avviso resta ma la stima non e' verificata (al massimo giallo, dichiarato).
+            nuovo = {**v2, "modello_gemini": g["ricerca_modello"], "modello_non_verificato": True}
+            if nuovo.get("semaforo") == "verde":
+                nuovo["semaforo"] = "giallo"
+            return nuovo
+        stima = stima_mercato(prezzi, min_n=2)
+        v = valuta(prezzo, stima, spedizione_eur=sped)
+        info, ok_prezzi = await _verifica_comparabili(titolo, prezzo, brand, catalogo, usata, descrizione)
+        verificata = None
+        if info:
+            v_ver = valuta(prezzo, stima_mercato(ok_prezzi, min_n=3), spedizione_eur=sped)
+            verificata = {**info, "rivendita": v_ver.get("rivendita"), "margine": v_ver.get("margine"), "roi": v_ver.get("roi"), "semaforo": v_ver.get("semaforo")}
+            if info["n_usabili"] >= 3:
+                v = {**v, **v_ver}
+                prezzi = ok_prezzi
+                if (semantica or info["n_simili"] > 0 or len(info["query"]) > 1) and v.get("semaforo") == "verde":
+                    v["semaforo"] = "giallo"
+        if semantica and v.get("semaforo") == "verde":
+            v["semaforo"] = "giallo"
+        if v2.get("spedizione_stato") == UNKNOWN and v.get("semaforo") == "verde":
+            v["semaforo"] = "giallo"
+        jev, jev_conf, jev_simili, jev_motivo = await asyncio.to_thread(
+            giudica_completo, titolo, prezzo, prezzi, v.get("rivendita"), None, descrizione, _titoli_simili.get((usata, catalogo)))
+        link_comps = (verificata["link"] if verificata and verificata["n_usabili"] >= 3 else
+                      link_comparabili(_comps_simili.get((usata, catalogo)) or [], [_url_comps.get((usata, catalogo))])) if v.get("semaforo") in ("verde", "giallo") else []
+        nuovo = {**v2, **v, "q": usata, "n": len(prezzi), "n_grezzi": n_grezzi, "allargata": 1 if semantica else None, "verificata": verificata, "link_comps": link_comps,
+                 "jev": jev, "jev_conf": jev_conf, "jev_motivo": jev_motivo[0] if jev_motivo else None,
+                 "jev_motivo_frase": jev_motivo[1] if jev_motivo else None, "rivalutata": True, "modello_gemini": g["ricerca_modello"],
+                 "ricerca_rifatta": usata, "ricerca_semantica_usata": semantica}
+        if nuovo.get("spedizione_eur") is not None:
+            nuovo["costo_totale"] = round(costo_acquisto(prezzo, nuovo["spedizione_eur"]), 2)
+        db.scrivi_evento("radar_v2", item_id, brand, {"titolo": titolo[:120], "prezzo": prezzo, "brand": brand, "rivalutata": True, "q_prima": v2["q"], "q": usata, "semantica": semantica,
+                                                      "semaforo_prima": v2.get("semaforo"), "semaforo": nuovo.get("semaforo"), "rivendita": nuovo.get("rivendita"), "margine": nuovo.get("margine"),
+                                                      "roi": nuovo.get("roi"), "n_usati": len(prezzi), "jev": jev, "jev_conf": jev_conf})
+        log.info("RADAR RIVALUTATO | item=%s | prima=%s rivendita=%s | dopo=%s rivendita=%s margine=%s roi=%s | n=%s | jev=%s(%s) | q=%s",
+                 item_id, v2.get("semaforo"), v2.get("rivendita"), nuovo.get("semaforo"), nuovo.get("rivendita"), nuovo.get("margine"), nuovo.get("roi"),
+                 len(prezzi), jev, jev_conf, usata)
+        return nuovo
+    except Exception:
+        log.warning("Radar: rivalutazione non riuscita:\n%s", traceback.format_exc())
+        return v2
+
+
 def _rosso(motivo, n=0):
     """Risultato per un annuncio scartato: il messaggio mostra comunque il motivo dei comparabili."""
     return {"semaforo": "rosso", "rivendita": None, "margine": None, "roi": None, "n": n, "motivo": motivo,
@@ -469,8 +553,9 @@ async def analizza(parsed, url, foto=None, query_url=None):
                  identita["codice_modello"], titolo[:60])
         # Prova foto (25/10): la foto va a Jev solo con i semafori di JEV_FOTO_SEMAFORI (di default il verde).
         foto_jev = foto if v.get("semaforo") in JEV_FOTO_SEMAFORI else None
+        descrizione = _descrizioni.pop(url, None)
         jev, jev_conf, jev_simili, jev_motivo = await asyncio.to_thread(
-            giudica_completo, titolo, prezzo, prezzi, v.get("rivendita"), foto_jev, _descrizioni.pop(url, None), titoli_jev)
+            giudica_completo, titolo, prezzo, prezzi, v.get("rivendita"), foto_jev, descrizione, titoli_jev)
         if jev:
             log.info("RADAR V2 JEV | item=%s | giudizio=%s | confidenza=%s | simili=%s(%s) | motivo=%s | largo=%s | n=%s | titolo=%s", item_id, jev,
                      jev_conf, jev_simili[0] if jev_simili else "-", jev_simili[1] if jev_simili else "-", jev_motivo[0] if jev_motivo else "-", allargata or 0,
@@ -501,6 +586,8 @@ async def analizza(parsed, url, foto=None, query_url=None):
                 "qualita": qualita, "richiesto_mediano": v.get("richiesto_mediano"), "vendita_rapida": v.get("vendita_rapida"), "calibrazione": v.get("calibrazione"),
                 "roi": v.get("roi"), "n": len(prezzi), "n_grezzi": n_grezzi, "allargata": allargata, "motivo": v.get("motivo"),
                 "jev": jev, "jev_conf": jev_conf, "jev_motivo": jev_motivo[0] if jev_motivo else None,
-                "jev_motivo_frase": jev_motivo[1] if jev_motivo else None, "verificata": verificata, "link_comps": link_comps}
+                "jev_motivo_frase": jev_motivo[1] if jev_motivo else None, "verificata": verificata, "link_comps": link_comps,
+                # per la rivalutazione col modello letto da Gemini (non entrano negli eventi ne' nei messaggi)
+                "q": testo, "catalogo": catalogo, "brand": brand, "titolo": titolo, "_descrizione": (descrizione or "")[:1500]}
     except Exception:
         log.warning("Radar v2 ombra: annuncio non valutato:\n%s", traceback.format_exc())

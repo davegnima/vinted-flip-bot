@@ -109,7 +109,7 @@ def test_annuncio_fuori_matrice_ha_intestazione_chiara(monkeypatch):
     from bot import radar
     inviati = []
 
-    async def finto_invia(testo, foto, suono=False, ricerca=None):
+    async def finto_invia(testo, foto, suono=False, ricerca=None, url=None):
         inviati.append(testo)
 
     monkeypatch.setattr(radar, "RADAR_JEV_RICHIESTO", False)
@@ -128,7 +128,7 @@ def test_invia_verdetto_v2_gialli_e_verdi_una_volta(monkeypatch):
     from bot import radar
     inviati = []
 
-    async def finto_invia(testo, foto, suono=False, ricerca=None):
+    async def finto_invia(testo, foto, suono=False, ricerca=None, url=None):
         inviati.append((testo, suono))
 
     monkeypatch.setattr(radar, "RADAR_JEV_RICHIESTO", False)
@@ -555,3 +555,82 @@ def test_sigla_spezzata_si_unisce_nella_query():
     assert unisci_sigla("Sony h 1") == "sony h1"
     assert unisci_sigla("Sony i 3 giochi") == "sony i 3 giochi"  # vocale: articolo, non sigla
     assert "h1" in query_comp("Sony h 1", "sony").split()
+
+
+def test_bottone_usa_l_url_dell_annuncio_non_un_comparabile():
+    from bot import radar
+    testo = "🟡 *40 €*\nSwitch\n\n🔗 Comparabili da controllare:\n• 90 € https://www.vinted.it/items/111-comp\n\nhttps://www.vinted.it/items/999-giusto"
+    assert radar.url_annuncio_nel_testo(testo) == "https://www.vinted.it/items/999-giusto"
+    assert radar.url_annuncio_nel_testo(testo, "https://www.vinted.it/items/5-x") == "https://www.vinted.it/items/5-x"
+    assert radar.url_annuncio_nel_testo("niente link") is None
+
+
+def test_ricerca_diversa():
+    d = radar_v2.ricerca_diversa
+    assert d("nintendo switch", "nintendo switch oled") is True
+    assert d("nintendo switch oled", "nintendo switch oled") is False
+    assert d("dyson v11 absolute extra", "dyson v11 absolute") is False   # contorno senza sigle diverse
+    assert d("dyson v8 absolute", "dyson v11 absolute") is True            # sigla diversa
+    assert d("qualunque cosa", "") is False
+
+
+def test_invia_verdetto_v2_rivaluta_col_modello_di_gemini(monkeypatch):
+    import asyncio
+    from bot import radar
+    inviati = []
+
+    async def finto_invia(testo, foto, suono=False, ricerca=None, url=None):
+        inviati.append((testo, suono, url))
+
+    async def gemini(*a, **k):
+        return {"verdetto": "conferma", "confidenza": 0.9, "motivo": "ok", "ricerca_modello": "nintendo switch oled", "ricerca_semantica": "",
+                "rivendita_eur": None, "velocita_rivendita": "giorni", "velocita_base": "molto richiesta"}
+
+    chiamate = []
+
+    async def rivaluta(parsed, url, v2, g):
+        chiamate.append(g["ricerca_modello"])
+        return {**v2, "semaforo": "giallo", "rivalutata": True, "ricerca_rifatta": "nintendo switch oled", "rivendita": 150, "margine": 60, "roi": 150, "n": 8}
+
+    monkeypatch.setattr(radar, "RADAR_JEV_RICHIESTO", False)
+    monkeypatch.setattr(radar, "RADAR_SEMAFORI", {"verde", "giallo"})
+    monkeypatch.setattr(radar, "_invia_radar", finto_invia)
+    monkeypatch.setattr(radar, "radar_in_pausa", lambda *a, **k: False)
+    monkeypatch.setattr(radar, "controlla_gemini", gemini)
+    radar._radar_inviati.clear()
+    u = "https://www.vinted.it/items/910-switch"
+    assert asyncio.run(radar.invia_verdetto_v2({"title": "Switch", "price": "40"}, u, {"semaforo": "verde", "rivendita": 90}, rivaluta=rivaluta)) is True
+    testo, suono, url_bottone = inviati[0]
+    assert chiamate == ["nintendo switch oled"] and suono is False   # il verde e' diventato giallo: niente suono
+    assert url_bottone == u and "Comparabili rifatti sul modello letto da Gemini" in testo and "Velocità di rivendita stimata da Gemini" in testo
+
+    # se la rivalutazione la porta a rosso l'avviso non parte
+    async def rosso(parsed, url, v2, g):
+        return {**v2, "semaforo": "rosso", "motivo": "margine_basso"}
+
+    assert asyncio.run(radar.invia_verdetto_v2({"title": "Switch", "price": "40"}, "https://www.vinted.it/items/911-x", {"semaforo": "giallo"}, rivaluta=rosso)) is False
+    assert len(inviati) == 1
+
+
+def test_rivaluta_rifa_i_comparabili_sul_modello_di_gemini(monkeypatch):
+    import asyncio
+    cercate = []
+
+    async def prezzi_finti(testo, titolo, prezzo, brand=None, catalogo=None):
+        cercate.append(testo)
+        return ([140, 150, 160, 155, 145], 15, False) if testo == "nintendo switch oled" else ([60, 70], 15, False)
+
+    async def verifica_finta(*a, **k):
+        return None, []
+
+    monkeypatch.setattr(radar_v2, "_prezzi_simili", prezzi_finti)
+    monkeypatch.setattr(radar_v2, "_verifica_comparabili", verifica_finta)
+    monkeypatch.setattr(radar_v2, "giudica_completo", lambda *a, **k: ("affare_vero", 0.9, ("stesso_modello", 0.9), ("ok", "oggetto vero")))
+    monkeypatch.setattr(radar_v2.db, "scrivi_evento", lambda *a, **k: None)
+    v2 = {"semaforo": "verde", "q": "nintendo switch", "titolo": "Switch OLED", "brand": "nintendo", "catalogo": "3025", "spedizione_eur": 5.0, "spedizione_stato": "ESTIMATED",
+          "_descrizione": "", "rivendita": 65}
+    g = {"ricerca_modello": "nintendo switch oled", "ricerca_semantica": "nintendo switch console"}
+    nuovo = asyncio.run(radar_v2.rivaluta({"price": "40"}, "https://www.vinted.it/items/920-x", v2, g))
+    assert cercate == ["nintendo switch oled"] and nuovo["rivalutata"] and nuovo["q"] == "nintendo switch oled" and nuovo["rivendita"] > 100
+    # stesso modello: niente da rifare
+    assert asyncio.run(radar_v2.rivaluta({"price": "40"}, "https://www.vinted.it/items/921-x", v2, {"ricerca_modello": "nintendo switch"})) is v2
