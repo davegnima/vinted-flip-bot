@@ -445,6 +445,27 @@ def test_verifica_cerca_dalla_sigla_se_gli_stessi_modelli_sono_pochi(monkeypatch
     assert sorted(ok) == [30, 32, 35] and info["n_stesso"] == 3 and info["query"] == ["sony cuffie", "sony ch520"]
 
 
+def test_verifica_usa_i_simili_se_gli_stessi_modelli_sono_pochi(monkeypatch):
+    import asyncio
+    from bot import radar_v2
+    radar_v2._comps_simili.clear()
+    radar_v2._comps_simili[("canon eos", None)] = [("Canon EOS 4000D", 150), ("Canon EOS 2000D", 140), ("Canon EOS 1300D", 130), ("Canon cover", 5)]
+
+    async def finta_ricerca(q, *a, **k):
+        return [], 0, False
+
+    def finta_classifica(titolo, titoli, desc):
+        et = {"Canon EOS 4000D": "stesso_modello", "Canon EOS 2000D": "simile", "Canon EOS 1300D": "simile"}
+        return [(et.get(t, "altro"), 0.9) for t in titoli]
+
+    monkeypatch.setattr(radar_v2, "_prezzi_simili", finta_ricerca)
+    monkeypatch.setattr(radar_v2, "classifica_comparabili", finta_classifica)
+    monkeypatch.setattr(radar_v2, "query_alternative", lambda t, b, max_n=2: [])
+    info, ok = asyncio.run(radar_v2._verifica_comparabili("Canon EOS 4000D", 60, "canon", None, "canon eos"))
+    assert info["n_stesso"] == 1 and info["n_simili"] == 2 and info["n_usabili"] == 3
+    assert sorted(ok) == [130, 140, 150]  # il "altro" (cover) resta fuori
+
+
 def test_link_comparabili_i_piu_vicini_alla_mediana():
     from bot.testo import _normalizza_titolo_per_link as norm
     coppie = [("A uno", 10.0), ("B due", 90.0), ("C tre", 100.0), ("D quattro", 110.0), ("E cinque", 400.0), ("F senza", 95.0)]

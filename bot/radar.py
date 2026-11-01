@@ -408,7 +408,8 @@ def _righe_v2(v2):
     frase = v2.get("jev_motivo_frase")
     if ver and RADAR_VERIFICA:
         # i comparabili sono stati verificati uno per uno: la rivendita sopra e' quella grezza, qui quella sul solo stesso modello
-        righe.append(f"Verificati: {ver.get('n_stesso')} su {ver.get('n_giudicati')} stesso modello · rivendita {ver.get('rivendita')} € "
+        righe.append(f"Verificati: {ver.get('n_stesso')} su {ver.get('n_giudicati')} stesso modello"
+                     + (f" + {ver['n_simili']} simili della stessa famiglia" if ver.get("n_simili") else "") + f" · rivendita {ver.get('rivendita')} € "
                      f"· margine {ver.get('margine')} € · ROI {ver.get('roi')}%")
         frase = _frase_senza_simili(v2)
     if v2.get("jev"):
@@ -490,7 +491,7 @@ def perche_non_inviato(v2):
         return f"Jev non lo da' come affare ({v2.get('jev_motivo_frase') or v2.get('jev') or 'nessun giudizio'})"
     ver = v2.get("verificata")
     if RADAR_VERIFICA and ver and ver.get("semaforo") not in RADAR_SEMAFORI:
-        return f"comparabili verificati: solo {ver.get('n_stesso')} su {ver.get('n_giudicati')} sono lo stesso modello"
+        return f"comparabili verificati: solo {ver.get('n_stesso')} stesso modello e {ver.get('n_simili') or 0} simili su {ver.get('n_giudicati')}"
     return None
 
 
