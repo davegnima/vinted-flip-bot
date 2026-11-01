@@ -148,6 +148,10 @@ FAIR_VALUE_BRAND = {
     "boris bidjan saberi": ["bidjan", "saberi"], "sacai": ["sacai"],
     "kiko kostadinov": ["kostadinov"], "thom browne": ["thom browne"],
     "thesoloist": ["thesoloist", "the soloist"],
+    "zimmermann": ["zimmermann"], "cult gaia": ["cult gaia"], "greg lauren": ["greg lauren"], "bode": ["bode"],
+    "fuzzi": ["fuzzi"], "staud": ["staud"], "ulla johnson": ["ulla johnson"], "sea new york": ["sea new york"],
+    "saloni": ["saloni"], "veronica beard": ["veronica beard"], "la doublej": ["la doublej", "doublej"],
+    "self-portrait": ["self-portrait", "self portrait"], "jonathan simkhai": ["simkhai"],
 }
 
 # Livello di brand = fair value di una "camicia" in buono stato (base per i
@@ -172,8 +176,13 @@ FAIR_VALUE_LIVELLO_BRAND = {
     "kiko kostadinov": 90, "thom browne": 120, "thesoloist": 90,
     # brand del tracker senza riga in tabella (aggiunti il 2026-10-04: ieri meta' degli annunci non aveva semaforo)
     "prada": 60, "fendi": 80, "jacquemus": 45, "acne studios": 45, "barena venezia": 50,
+    # 1/11 boutique (lista dell'utente, nessun dato nei log): livelli prudenti da prezzi richiesti visti su Vinted, confidenza bassa
+    "greg lauren": 120, "bode": 120, "zimmermann": 80, "la doublej": 65, "ulla johnson": 60, "self-portrait": 55,
+    "cult gaia": 55, "sea new york": 40, "staud": 40, "saloni": 40, "veronica beard": 35, "jonathan simkhai": 40, "fuzzi": 30,
 }
-FAIR_VALUE_BRAND_NUOVI = {"prada", "fendi", "jacquemus", "acne studios", "barena venezia"}   # livello da conoscenza: confidenza bassa
+FAIR_VALUE_BRAND_NUOVI = {"prada", "fendi", "jacquemus", "acne studios", "barena venezia", "greg lauren", "bode", "zimmermann",
+                          "la doublej", "ulla johnson", "self-portrait", "cult gaia", "sea new york", "staud", "saloni",
+                          "veronica beard", "jonathan simkhai", "fuzzi"}   # livello da conoscenza: confidenza bassa
 FAIR_VALUE_LIVELLO_DEFAULT = _env_float("FAIR_VALUE_LIVELLO_DEFAULT", 45)  # brand mai visto: stima prudente, confidenza bassa
 FAIR_VALUE_FATTORE_CATEGORIA = {
     "camicia": 1.0, "blusa": 0.91, "maglia": 1.07, "t-shirt": 0.88, "canotta": 0.70,

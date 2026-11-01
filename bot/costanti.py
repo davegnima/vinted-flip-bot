@@ -15,6 +15,21 @@ VENDITORI_BLOCKLIST = {"valeryepippo", "firmadonna98", "cicciodonna779", "hadour
 BRAND_BLOCKLIST = {"intrend"}
 
 VINTED_BRAND_IDS = {
+    # 1/11 boutique/contemporary (lista dell'utente): id letti da vinted.it/.com/brand/<id> via ricerca web, NON verificati sul sito
+    "zimmermann": "172418",
+    "cult gaia": "425473",
+    "greg lauren": "2134258",
+    "bode": "531359",
+    "fuzzi": "227826",
+    "staud": "780806",
+    "ulla johnson": "375977",
+    "sea new york": "343921",
+    "saloni": "503339",
+    "veronica beard": "524820",
+    "la doublej": "2684886",
+    "self-portrait": "248126",
+    "jonathan simkhai": "473679",
+    "simkhai": "473679",
     "brunello cucinelli": "103740", "rick owens": "145654",
     "patagonia": "90804",
     "marni": "12251", "missoni": "4463", "jean paul gaultier": "4129",
