@@ -98,3 +98,9 @@ def test_query_comp_parte_dalla_serie_prima_della_sigla_modello():
     assert query_comp("Fotocamera Canon EOS 5D Mark IV", "Canon") == "canon eos 5d mark"
     # specifiche (2mp, 64gb) non sono sigle di modello
     assert query_comp("Console Nintendo Switch OLED 64GB bianca", "Nintendo") == "nintendo console switch oled"
+
+
+def test_nomi_candidati_spezza_il_titolo_sui_prodotti():
+    from bot.valore_mercato import nomi_candidati
+    assert nomi_candidati("Wash Buckler + Skylanders Swap Force", "Nintendo") == ["wash buckler", "skylanders swap force", "skylanders swap"]
+    assert nomi_candidati("Dyson", "Dyson") == []

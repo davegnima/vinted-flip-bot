@@ -336,3 +336,32 @@ def classifica_comparabili(titolo, titoli, descrizione=None):
     log.info("JEV COMPS | titolo=%s | n=%s | stesso=%s | input_tokens=%s", titolo[:60], len(out),
              sum(1 for c, _ in out if c == "stesso_modello"), token)
     return out
+
+
+def riconosci_prodotto(titolo, candidati, descrizione=None):
+    """(candidato scelto, confidenza) oppure None. Jev sceglie, tra nomi candidati presi dal titolo, quello che e' il PRODOTTO
+    venduto (es. 'Wash Buckler + Skylanders Swap Force' -> 'skylanders swap force'); 'nessuno' se non e' chiaro.
+    Bloccante: usarla con asyncio.to_thread."""
+    chiave = os.environ.get("TYPESAFE_API_KEY", "").strip()
+    candidati = [c for c in (candidati or []) if c][:6]
+    if not (JEV_GIUDICE and JEV_COMPS and chiave and len(candidati) >= 2):
+        return None
+    criteri = {f"n{i}": f"il prodotto venduto e' '{c}'" for i, c in enumerate(candidati)}
+    criteri["nessuno"] = "nessuno di questi nomi e' il prodotto principale venduto"
+    stato = f"Annuncio Vinted: {titolo}"
+    desc = " ".join((descrizione or "").split())[:MAX_DESCRIZIONE]
+    if desc:
+        stato += f"\nDescrizione del venditore: {desc}"
+    domanda = {"prodotto": {"type": "choice", "instructions": "Qual e' il nome del prodotto principale venduto in questo annuncio?",
+                            "criteria": criteri}}
+    try:
+        risposta = _chiama_jev({"model": MODELLO, "state": stato, "questions": domanda})
+        r = risposta["answers"]["prodotto"]
+        scelta, conf = r.get("choice"), r.get("confidence")
+    except Exception as e:  # noqa: BLE001 - Jev non deve bloccare il radar
+        log.warning("JEV PRODOTTO | non disponibile: %s", str(e)[:200])
+        return None
+    token = (risposta.get("usage") or {}).get("input_tokens")
+    nome = candidati[int(scelta[1:])] if isinstance(scelta, str) and scelta.startswith("n") and scelta[1:].isdigit() and int(scelta[1:]) < len(candidati) else None
+    log.info("JEV PRODOTTO | titolo=%s | scelto=%s(%s) | candidati=%s | input_tokens=%s", titolo[:60], nome or "nessuno", conf, candidati, token)
+    return (nome, conf) if nome else None
