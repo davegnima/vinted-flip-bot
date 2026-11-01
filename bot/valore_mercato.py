@@ -130,6 +130,27 @@ def query_comp(titolo, brand=None, max_parole=4):
     return " ".join((b + parole)[:max_parole])
 
 
+def query_alternative(titolo, brand=None, max_n=2):
+    """Ricerche alternative costruite dalla sigla del modello quando quella principale non trova lo stesso prodotto
+    (es. 'Sony cuffie bluetooth WH-CH520 nere' -> 'sony ch520', 'sony wh ch520'). Pura, nessun testo libero da modelli."""
+    parole = [w for w in re.findall(r"[\w'’]+", (titolo or "").lower()) if w not in _PAROLE_VUOTE and w not in _PAROLE_GENERICHE]
+    b = brand.lower().split() if brand else []
+    if b:
+        parole = [w for w in parole if w not in b]
+    out = []
+    for i, w in enumerate(parole):
+        if _e_sigla_modello(w):
+            out.append(" ".join(b + [w]))
+            if i > 0 and not parole[i - 1].isdigit():
+                out.append(" ".join(b + [parole[i - 1], w]))
+            break
+    visti = []
+    for q in out:
+        if q and len(q.split()) >= 2 and q not in visti:
+            visti.append(q)
+    return visti[:max_n]
+
+
 def stima_mercato(prezzi, min_n=MIN_COMPARABILI):
     """Stima dai prezzi richiesti di annunci simili. None se i comparabili sono troppo pochi.
 

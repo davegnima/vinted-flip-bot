@@ -14,7 +14,7 @@ from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 from bot import db, radar_appreso
 from bot.comps import _cerca_vinted_testo_diretto
-from bot.jev import classifica_comparabili, giudica_completo, prezzi_stesso_modello
+from bot.jev import JEV_COMPS, MAX_COMPS_VERIFICA, classifica_comparabili, giudica_completo, prezzi_stesso_modello
 from bot.config import SPEDIZIONE_STIMATA_EUR
 from bot.logger import log
 from bot.radar import RADAR_SPESA_MAX, parola_vietata, radar_in_pausa
@@ -22,7 +22,7 @@ from bot.radar_matrice import buy_max
 from bot.verdetto import _a_float, _estrai_item_id_da_url
 from bot.vinted_http import _vinted_get_con_retry
 from bot.vinted_scrape import _decodifica_stringa_json
-from bot.valore_mercato import comparabili_simili, e_un_pezzo, parse_comp, query_comp, solo_usato, stima_mercato, valuta
+from bot.valore_mercato import comparabili_simili, e_un_pezzo, parse_comp, query_alternative, query_comp, solo_usato, stima_mercato, valuta
 # ---- fine import ----
 
 RADAR_V2_OMBRA = os.environ.get("RADAR_V2_OMBRA", "0").strip() in ("1", "true", "si")
@@ -208,6 +208,34 @@ def testi_piu_larghi(testo, brand=None):
     return [t for i, t in enumerate(out) if t and t != testo and t not in out[:i]]
 
 
+async def _verifica_comparabili(titolo, prezzo, brand, catalogo, testo):
+    """Cerca comparabili SERI: Jev giudica ogni titolo (stesso modello / simile / altro); se gli stessi modelli sono meno di 3 si
+    provano le ricerche dalla sigla del modello (query_alternative) e si giudica l'insieme. Ritorna (info, prezzi dello stesso modello)
+    o (None, []) se non c'e' niente da giudicare."""
+    pool = list(_comps_simili.get((testo, catalogo)) or [])
+    usate = [testo]
+    ok = []
+    etichette = None
+    if len(pool) >= 3:
+        etichette = await asyncio.to_thread(classifica_comparabili, titolo, [t for t, _ in pool], None)
+        ok = prezzi_stesso_modello(pool, etichette)
+    for q in query_alternative(titolo, brand):
+        if len(ok) >= 3:
+            break
+        await _prezzi_simili(q, titolo, prezzo, brand, catalogo)
+        nuovi = [c for c in (_comps_simili.get((q, catalogo)) or []) if c not in pool]
+        if not nuovi:
+            continue
+        usate.append(q)
+        pool = (pool + nuovi)[:MAX_COMPS_VERIFICA]
+        if len(pool) >= 3:
+            etichette = await asyncio.to_thread(classifica_comparabili, titolo, [t for t, _ in pool], None)
+            ok = prezzi_stesso_modello(pool, etichette)
+    if not etichette:
+        return None, []
+    return {"n_giudicati": len(etichette), "n_stesso": len(ok), "query": usate}, ok
+
+
 def _rosso(motivo, n=0):
     """Risultato per un annuncio scartato: il messaggio mostra comunque il motivo dei comparabili."""
     return {"semaforo": "rosso", "rivendita": None, "margine": None, "roi": None, "n": n, "motivo": motivo,
@@ -307,27 +335,33 @@ async def analizza(parsed, url, foto=None, query_url=None):
         log.info("RADAR V2 OMBRA | item=%s | semaforo=%s | ok=%s | motivo=%s | prezzo=%s | rivendita=%s | margine=%s | roi=%s | n=%s | grezzi=%s | largo=%s | aff=%s | cache=%s | q=%s | ricerca=%s | titolo=%s",
                  item_id, v["semaforo"], v["ok"], v["motivo"], prezzo, v.get("rivendita"), v.get("margine"), v.get("roi"), len(prezzi),
                  n_grezzi, allargata or 0, v.get("affidabilita"), int(bool(dalla_cache)), testo, parsed.get("query_name") or "-", titolo[:60])
+        # Comparabili seri (01/11): Jev giudica ogni comparabile e, se gli stessi modelli sono pochi, si cerca dalla sigla del modello.
+        # La rivendita finale e' sul solo "stesso modello"; un rosso per pochi comparabili puo' diventare giallo (mai verde, niente suono).
+        verificata = None
+        titoli_jev = _titoli_simili.get((testo, catalogo))
+        if JEV_COMPS and (v.get("semaforo") in ("verde", "giallo") or v.get("motivo") == "pochi_comparabili"):
+            info, ok_prezzi = await _verifica_comparabili(titolo, prezzo, brand, catalogo, testo)
+            if info:
+                v_ver = valuta(prezzo, stima_mercato(ok_prezzi, min_n=3))
+                verificata = {**info, "rivendita": v_ver.get("rivendita"), "margine": v_ver.get("margine"), "roi": v_ver.get("roi"),
+                              "semaforo": v_ver.get("semaforo")}
+                log.info("RADAR V2 VERIFICATA | item=%s | prima=%s rivendita=%s | dopo=%s rivendita=%s margine=%s | stesso=%s/%s | q=%s | titolo=%s",
+                         item_id, v["semaforo"], v.get("rivendita"), v_ver.get("semaforo"), v_ver.get("rivendita"), v_ver.get("margine"),
+                         info["n_stesso"], info["n_giudicati"], "+".join(info["query"]), titolo[:60])
+                if info["n_stesso"] >= 3:
+                    cap = v.get("semaforo") != "verde" or allargata or len(info["query"]) > 1
+                    v = {**v, **v_ver}
+                    if cap and v.get("semaforo") == "verde":
+                        v["semaforo"] = "giallo"
+                    prezzi, titoli_jev = ok_prezzi, None
         # Prova foto (25/10): la foto va a Jev solo con i semafori di JEV_FOTO_SEMAFORI (di default il verde).
         foto_jev = foto if v.get("semaforo") in JEV_FOTO_SEMAFORI else None
         jev, jev_conf, jev_simili, jev_motivo = await asyncio.to_thread(
-            giudica_completo, titolo, prezzo, prezzi, v.get("rivendita"), foto_jev, _descrizioni.pop(url, None),
-            _titoli_simili.get((testo, catalogo)))
+            giudica_completo, titolo, prezzo, prezzi, v.get("rivendita"), foto_jev, _descrizioni.pop(url, None), titoli_jev)
         if jev:
             log.info("RADAR V2 JEV | item=%s | giudizio=%s | confidenza=%s | simili=%s(%s) | motivo=%s | largo=%s | n=%s | titolo=%s", item_id, jev,
                      jev_conf, jev_simili[0] if jev_simili else "-", jev_simili[1] if jev_simili else "-", jev_motivo[0] if jev_motivo else "-", allargata or 0,
                      len(prezzi), titolo[:60])
-        verificata = None
-        comps = _comps_simili.get((testo, catalogo))
-        if v.get("semaforo") in ("verde", "giallo") and comps and len(comps) >= 3:
-            etichette = await asyncio.to_thread(classifica_comparabili, titolo, [t for t, _ in comps], None)
-            if etichette:
-                ok_prezzi = prezzi_stesso_modello(comps, etichette)
-                v2 = valuta(prezzo, stima_mercato(ok_prezzi, min_n=3))
-                verificata = {"n_giudicati": len(etichette), "n_stesso": len(ok_prezzi), "rivendita": v2.get("rivendita"),
-                              "margine": v2.get("margine"), "roi": v2.get("roi"), "semaforo": v2.get("semaforo")}
-                log.info("RADAR V2 VERIFICATA | item=%s | prima=%s rivendita=%s | dopo=%s rivendita=%s margine=%s | stesso=%s/%s | titolo=%s",
-                         item_id, v["semaforo"], v.get("rivendita"), v2.get("semaforo"), v2.get("rivendita"), v2.get("margine"),
-                         len(ok_prezzi), len(etichette), titolo[:60])
         db.scrivi_evento("radar_v2", item_id, brand, {**dati, "verificata": verificata, "jev": jev, "jev_conf": jev_conf,
                                                       "jev_simili": jev_simili[0] if jev_simili else None,
                                                       "jev_simili_conf": jev_simili[1] if jev_simili else None,
