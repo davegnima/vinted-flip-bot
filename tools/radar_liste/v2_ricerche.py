@@ -54,6 +54,13 @@ ONDA4=[ # 01/11, categorie nuove (richiesta dell'utente: "altri affari da altre 
  ('V2 gamecube','gamecube',None,[3025,3026],50),('V2 nintendo 64','nintendo 64',None,[3025,3026],50),('V2 super nintendo','super nintendo snes',None,[3025,3026],50),
  ('V2 game boy advance','game boy advance',None,[3025,3026],50),
 ]
+ONDA5=[ # 01/11 (b), 10 filoni nuovi (strumenti musicali, retrogaming boutique, rete/casa smart, epilatori). PROVVISORIE: ricerche di testo strette SENZA catalog[] (id non noti, non inventati);
+ # dopo qualche ora si leggono i catalog[] veri dai log del worker e si aggiornano con POST /update_query/<id> (regola: nessuna ricerca per brand senza categoria). Tetti dalla proposta dell'utente.
+ ('V2 teenage engineering op-1','teenage engineering op-1',None,[],150),('V2 roland sp-404','roland sp-404',None,[],150),('V2 korg volca','korg volca',None,[],50),
+ ('V2 focusrite scarlett 2i2','focusrite scarlett 2i2',None,[],40),('V2 analogue pocket','analogue pocket',None,[],150),('V2 playdate','playdate console',None,[],100),
+ ('V2 netgear orbi','netgear orbi',None,[],80),('V2 tado termostato','tado termostato',None,[],60),('V2 philips lumea','philips lumea',None,[],100),
+ ('V2 braun silk expert pro 5','braun silk expert pro 5',None,[],100),
+]
 RISCHIO=('V2 alessi','V2 iittala','V2 rosenthal','V2 zwilling','V2 gopro','V2 dji', # 01/11 (b) potate: margine_basso 90% (prezzi 15-28 EUR) o 0 vendite veloci su 38 tracciate (URL in docs/analisi/radar-ricerche-potate-2026-11-01-b.json)
          'V2 games workshop','V2 smeg','V2 ginori', # 01/11 potate: 0 gialli/verdi su 24 h, 91-100% margine_basso (URL salvate in docs/analisi/radar-ricerche-potate-2026-11-01.json)
          'V2 airpods pro','V2 apple airpods','V2 omega uomo','V2 omega donna','V2 longines','V2 tudor','V2 montblanc penne', # repliche frequenti: fuori (piano 31/10)
@@ -94,6 +101,12 @@ if '--onda2' in sys.argv:
 if '--onda4' in sys.argv:
     gia=_nomi_sul_tracker()
     for nome,txt,br,cat,pt in ONDA4:
+        if nome in gia: continue
+        u='https://www.vinted.it/catalog?'+(f'search_text={urllib.parse.quote(txt)}&' if txt else '')+(f'brand_ids[]={B_[br]}&' if br else '')+''.join(f'catalog[]={i}&' for i in cat)+f"price_to={pt}&currency=EUR&order=newest_first"
+        post('/add_query',{'query':u,'query_name':nome}); print('ok',nome)
+if '--onda5' in sys.argv:
+    gia=_nomi_sul_tracker()
+    for nome,txt,br,cat,pt in ONDA5:
         if nome in gia: continue
         u='https://www.vinted.it/catalog?'+(f'search_text={urllib.parse.quote(txt)}&' if txt else '')+(f'brand_ids[]={B_[br]}&' if br else '')+''.join(f'catalog[]={i}&' for i in cat)+f"price_to={pt}&currency=EUR&order=newest_first"
         post('/add_query',{'query':u,'query_name':nome}); print('ok',nome)
