@@ -12,7 +12,7 @@ def test_semi_dell_utente():
 
 
 def test_cella_vuota_o_paese_ignoto_e_unknown():
-    assert costo_spedizione("Germania", "piccolo") == (SPEDIZIONE_STIMATA_EUR, UNKNOWN)
+    assert costo_spedizione("Germania", "medio") == (SPEDIZIONE_STIMATA_EUR, UNKNOWN)
     assert costo_spedizione("Francia", "medio") == (SPEDIZIONE_STIMATA_EUR, UNKNOWN)
     assert costo_spedizione(None, "piccolo") == (SPEDIZIONE_STIMATA_EUR, UNKNOWN)
 
@@ -55,3 +55,11 @@ def test_riga_costo_totale():
     riga = radar._riga_costo_totale({"costo_totale": 31.0, "spedizione_eur": 19.0, "spedizione_stato": "ESTIMATED", "paese": "Francia"})
     assert "31.00" in riga and "19.00" in riga and "stimata" in riga and "Francia" in riga
     assert radar._riga_costo_totale({}) == ""
+
+
+def test_altri_paesi_usano_la_francia():
+    from bot.spedizione import costo_spedizione, ESTIMATED, UNKNOWN
+    assert costo_spedizione("germania", "piccolo") == (5.0, ESTIMATED)
+    assert costo_spedizione("spagna", "ingombrante") == (20.0, ESTIMATED)
+    assert costo_spedizione("germania", "medio")[1] == UNKNOWN
+    assert costo_spedizione(None, "piccolo")[1] == UNKNOWN
