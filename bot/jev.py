@@ -263,7 +263,7 @@ def classifica_comparabili(titolo, titoli, descrizione=None):
     """[(scelta, confidenza)] uno per titolo (al massimo MAX_TITOLI_SIMILI) oppure None se Jev non e' attivo o non risponde.
     Scelte: stesso_modello / simile / altro. Bloccante: usarla con asyncio.to_thread."""
     chiave = os.environ.get("TYPESAFE_API_KEY", "").strip()
-    titoli = [t for t in (titoli or []) if t][:MAX_TITOLI_SIMILI]
+    titoli = [(t or "(senza titolo)") for t in (titoli or [])][:MAX_TITOLI_SIMILI]
     if not (JEV_GIUDICE and JEV_COMPS and chiave and titoli):
         return None
     stato = f"Annuncio Vinted: {titolo}"

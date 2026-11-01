@@ -336,6 +336,6 @@ async def analizza(parsed, url, foto=None, query_url=None):
         return {"semaforo": v.get("semaforo"), "rivendita": v.get("rivendita"), "margine": v.get("margine"),
                 "roi": v.get("roi"), "n": len(prezzi), "n_grezzi": n_grezzi, "allargata": allargata, "motivo": v.get("motivo"),
                 "jev": jev, "jev_conf": jev_conf, "jev_motivo": jev_motivo[0] if jev_motivo else None,
-                "jev_motivo_frase": jev_motivo[1] if jev_motivo else None}
+                "jev_motivo_frase": jev_motivo[1] if jev_motivo else None, "verificata": verificata}
     except Exception:
         log.warning("Radar v2 ombra: annuncio non valutato:\n%s", traceback.format_exc())
