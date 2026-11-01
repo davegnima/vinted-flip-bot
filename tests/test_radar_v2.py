@@ -742,3 +742,45 @@ def test_invia_radar_ripiega_sul_testo_se_la_foto_e_rifiutata(monkeypatch):
 
     monkeypatch.setattr(radar, "telegram_send_message", messaggio_ko)
     assert asyncio.run(radar._invia_radar("x", None)) is False
+
+
+def test_scartati_nel_merito_si_cancellano_gli_altri_no(monkeypatch):
+    import asyncio
+    from bot import radar
+    # Gemini scarta -> da cancellare
+    _prepara_invio(monkeypatch, gemini={"verdetto": "scarta", "confidenza": 1.0, "motivo": "rotto"})
+    esito = {}
+    asyncio.run(radar.invia_verdetto_v2({"title": "Gba", "price": "40"}, "https://www.vinted.it/items/930-x", V2_GIALLO, esito=esito))
+    assert esito["scartato"] and radar.da_cancellare(V2_GIALLO, esito)
+    # Telegram fallito, pausa e duplicato -> restano nel gruppo
+    _prepara_invio(monkeypatch, consegna=False)
+    esito = {}
+    asyncio.run(radar.invia_verdetto_v2({"title": "Gba", "price": "40"}, "https://www.vinted.it/items/931-x", V2_GIALLO, esito=esito))
+    assert not esito["scartato"] and not radar.da_cancellare(V2_GIALLO, esito)
+    _prepara_invio(monkeypatch)
+    monkeypatch.setattr(radar, "radar_in_pausa", lambda *a, **k: True)
+    esito = {}
+    asyncio.run(radar.invia_verdetto_v2({"title": "Gba", "price": "40"}, "https://www.vinted.it/items/932-x", V2_GIALLO, esito=esito))
+    assert not esito["scartato"] and not radar.da_cancellare(V2_GIALLO, esito)
+    # Jev non lo da' come affare -> scartato nel merito
+    _prepara_invio(monkeypatch)
+    monkeypatch.setattr(radar, "RADAR_JEV_RICHIESTO", True)
+    esito = {}
+    asyncio.run(radar.invia_verdetto_v2({"title": "Gba", "price": "40"}, "https://www.vinted.it/items/933-x", {**V2_GIALLO, "jev": "non_affare"}, esito=esito))
+    assert esito["scartato"]
+
+
+def test_gemini_stima_molto_bassa_scarta(monkeypatch):
+    import asyncio
+    from bot import radar
+    base = {"verdetto": "conferma", "confidenza": 0.9, "motivo": "ok"}
+    v2 = {**V2_GIALLO, "rivendita": 150.0}
+    inviati = _prepara_invio(monkeypatch, gemini={**base, "rivendita_eur": 65.0, "rivendita_confidenza": 0.8})
+    esito = {}
+    assert asyncio.run(radar.invia_verdetto_v2({"title": "Ixus", "price": "30"}, "https://www.vinted.it/items/934-x", v2, esito=esito)) is False
+    assert esito["scartato"] and inviati == [] and "Gemini stima la rivendita a 65" in esito["motivo"]
+    # stima vicina o confidenza bassa: parte
+    inviati = _prepara_invio(monkeypatch, gemini={**base, "rivendita_eur": 100.0, "rivendita_confidenza": 0.8})
+    assert asyncio.run(radar.invia_verdetto_v2({"title": "Ixus", "price": "30"}, "https://www.vinted.it/items/935-x", v2)) is True
+    inviati = _prepara_invio(monkeypatch, gemini={**base, "rivendita_eur": 65.0, "rivendita_confidenza": 0.3})
+    assert asyncio.run(radar.invia_verdetto_v2({"title": "Ixus", "price": "30"}, "https://www.vinted.it/items/936-x", v2)) is True
