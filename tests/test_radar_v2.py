@@ -148,7 +148,7 @@ def test_invia_verdetto_v2_gialli_e_verdi_una_volta(monkeypatch):
     assert asyncio.run(radar.invia_verdetto_v2(p, "https://www.vinted.it/items/902-x", {"semaforo": "verde"})) is True
     assert asyncio.run(radar.invia_verdetto_v2(p, "https://www.vinted.it/items/903-x", {"semaforo": "rosso"})) is False
     assert [x[1] for x in inviati] == [False, True]
-    assert inviati[0][0].startswith("🟡 40 €\nSwitch oled")
+    assert inviati[0][0].startswith("🟡 *40 €*\nSwitch oled")
     # il vecchio ramo non rimanda lo stesso annuncio
     asyncio.run(radar._manda_annuncio_senza_modello("901", "Switch oled", 40.0, u, {"semaforo": "giallo"}, None))
     assert len(inviati) == 2

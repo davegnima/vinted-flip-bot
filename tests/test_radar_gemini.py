@@ -113,3 +113,20 @@ def test_controlla_non_solleva(monkeypatch):
     monkeypatch.setattr(rg, "RADAR_GEMINI", False)
     assert asyncio.run(rg.controlla("Switch", 40.0, "https://x", None, "1")) is None
     rg._chiamate.clear()
+
+
+def test_testo_avviso_a_blocchi():
+    v2 = {"semaforo": "verde", "rivendita": 110, "margine": 53.8, "roi": 119, "n": 13, "costo_totale": 47.1, "spedizione_eur": 2.5,
+          "spedizione_stato": "ESTIMATED", "paese": "Italia", "richiesto_mediano": 130, "vendita_rapida": 95,
+          "qualita": {"punteggio": 72, "fascia": "media", "n": 13}, "jev": "affare_vero", "jev_conf": 0.9,
+          "link_comps": [("t", 100.0, "https://www.vinted.it/items/1-a")]}
+    g = {**OK, "rivendita_eur": 105, "rivendita_confidenza": 0.7, "rivendita_base": "usata tipica"}
+    t = radar.testo_avviso_v2({"title": "Switch_oled 64GB", "price": "40"}, "https://www.vinted.it/items/777-x", v2, g)
+    righe = t.split("\n")
+    assert righe[0].endswith("rivendita ~*110 €*") and "*40 €*" in righe[0]
+    assert "Switch\\_oled" in righe[1]          # il trattino basso non rompe il Markdown
+    assert any(r.startswith("💶 Margine *53.8 €*") for r in righe)
+    assert any(r.startswith("📦 Costo totale") for r in righe) and any(r.startswith("📊") for r in righe)
+    assert any(r.startswith("🧠 Jev") for r in righe) and any(r.startswith("👁 Gemini foto") for r in righe)
+    assert any(r.startswith("💡 Stima Gemini") for r in righe)
+    assert righe[-1] == "https://www.vinted.it/items/777-x" and righe[-2] == ""
