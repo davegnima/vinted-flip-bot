@@ -382,3 +382,30 @@ def test_classifica_titolo_vuoto_non_sfasa(monkeypatch):
     monkeypatch.setattr(jev, "_chiama_jev", finto)
     out = jev.classifica_comparabili("x", ["a", "", "c"])
     assert len(out) == 3 and set(visto["questions"]) == {"c0", "c1", "c2"}
+
+
+def test_query_alternative_dalla_sigla():
+    from bot.valore_mercato import query_alternative
+    alt = query_alternative("Sony cuffie bluetooth WH-CH520 nere", "sony")
+    assert alt and all(q.startswith("sony ") and "ch520" in q for q in alt)
+    assert query_alternative("Giacca elegante", "zara") == []
+
+
+def test_verifica_cerca_dalla_sigla_se_gli_stessi_modelli_sono_pochi(monkeypatch):
+    import asyncio
+    from bot import radar_v2
+    radar_v2._comps_simili.clear()
+    radar_v2._comps_simili[("sony cuffie", None)] = [("Sony cuffie vecchie", 10), ("Sony radio", 12), ("Sony altro", 14)]
+    radar_v2._comps_simili[("sony ch520", None)] = [("Sony WH-CH520 nere", 30), ("Sony WH-CH520 bianche", 32), ("Sony WH-CH520", 35)]
+
+    async def finta_ricerca(q, *a, **k):
+        return [], 0, False
+
+    def finta_classifica(titolo, titoli, desc):
+        return [("stesso_modello" if "CH520" in t else "altro", 0.9) for t in titoli]
+
+    monkeypatch.setattr(radar_v2, "_prezzi_simili", finta_ricerca)
+    monkeypatch.setattr(radar_v2, "classifica_comparabili", finta_classifica)
+    monkeypatch.setattr(radar_v2, "query_alternative", lambda t, b, max_n=2: ["sony ch520"])
+    info, ok = asyncio.run(radar_v2._verifica_comparabili("Sony WH-CH520", 15, "sony", None, "sony cuffie"))
+    assert sorted(ok) == [30, 32, 35] and info["n_stesso"] == 3 and info["query"] == ["sony cuffie", "sony ch520"]

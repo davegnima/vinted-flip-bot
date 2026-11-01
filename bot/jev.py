@@ -75,6 +75,7 @@ CRITERI_COMP = {
     "altro": "e' un altro oggetto, un accessorio, un ricambio o un lotto",
 }
 CONF_COMP_MIN = 0.6
+MAX_COMPS_VERIFICA = 20
 MAX_DESCRIZIONE = 600
 MAX_TITOLI_SIMILI = 15
 # Esiti del radar: stessa lista di prima, ora decisa dal codice.
@@ -263,7 +264,7 @@ def classifica_comparabili(titolo, titoli, descrizione=None):
     """[(scelta, confidenza)] uno per titolo (al massimo MAX_TITOLI_SIMILI) oppure None se Jev non e' attivo o non risponde.
     Scelte: stesso_modello / simile / altro. Bloccante: usarla con asyncio.to_thread."""
     chiave = os.environ.get("TYPESAFE_API_KEY", "").strip()
-    titoli = [(t or "(senza titolo)") for t in (titoli or [])][:MAX_TITOLI_SIMILI]
+    titoli = [(t or "(senza titolo)") for t in (titoli or [])][:MAX_COMPS_VERIFICA]
     if not (JEV_GIUDICE and JEV_COMPS and chiave and titoli):
         return None
     stato = f"Annuncio Vinted: {titolo}"
