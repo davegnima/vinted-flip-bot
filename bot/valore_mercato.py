@@ -39,10 +39,14 @@ _RE_PEZZO = re.compile(
     # 31/10 (terzo giro): accessori in piu' lingue e parti di passeggino visti come verdi/gialli sospetti
     r"watchst[äa]nder|ladestation|"
     r"soporte|chasis|ch[aâ]ssis|vestidura|regenhoes|regenhoezen|"
-    r"batteries (?:enduro|pour|de rechange)|recambio|repuesto|ersatzteile?|pi[èe]ces? d[ée]tach[ée]es?)\b", re.I)
+    r"batteries (?:enduro|pour|de rechange)|recambio|repuesto|ersatzteile?|pi[èe]ces? d[ée]tach[ée]es?|"
+    # 01/11: non-oggetti visti tra i gialli/verdi delle ricerche larghe (abbonamenti, dock di trasferimento, impugnature, media manager)
+    r"abbonament[oi]|abonnement|subscription|familiengruppe\w*|media manager|dock de transfert|docking station|batteriegriff)\b", re.I)
 # Titolo che inizia con la scatola ("Scatola Xbox series X"): e' l'imballo, non la console.
 _RE_SCATOLA_INIZIO = re.compile(
     r"^\s*(?:la )?(scatola|box|boite|boîte|karton|emballage|caja|accessori|accessoires?|accesorios|acess[oó]rios|"
+    # 01/11: titolo che inizia con dock, custodia o caricabatterie ("Dock Nintendo switch y mando", "Sacoche Switch", "Oplader accu Canon")
+    r"dock|docking|sacoche|oplader|chargeur|ladeger[äa]t|caricatore|caricabatterie|"
     r"[\w-]*zubeh[öo]r|accessor(?:y|ies))\b", re.I)
 # 31/10: parole generiche in IT/FR/ES/DE/EN che sporcano la ricerca dei comparabili (stato, taglia, colore, venditore)
 _PAROLE_GENERICHE = {"gebraucht", "neuwertig", "defekt", "très", "tres", "bon", "bonne", "état", "etat", "occasion", "bueno", "buen",

@@ -25,7 +25,7 @@ Il punto 3 e' oggi il piu' debole: si misura con `TRACCIATO_RADAR` e `operazioni
 5. **Ciclo di apprendimento**: i venduti veloci e le risposte nel gruppo aggiornano le soglie e la lista dei prodotti; i falsi alimentano `RADAR AUDIT`.
 
 ## Vincoli
-Niente Gemini nel non moda (solo Jev, 10 EUR/mese); banda sotto ~8 GB/giorno; io non visito vinted.it (regola 7): i dati arrivano dal bot; nessun numero stimato senza dichiararlo.
+Niente Gemini nel non moda (solo Jev, 20 EUR/mese dal 1/11); banda sotto ~30 GB/giorno (1 TB/mese dal 1/11); io non visito vinted.it (regola 7): i dati arrivano dal bot; nessun numero stimato senza dichiararlo.
 
 ## Metriche di successo
 Quota di affari veri tra gli avvisi (venduti entro 1 h senza falso), prodotti scoperti fuori lista che diventano ricerche, tempo dal messaggio all'avviso, MB/min.

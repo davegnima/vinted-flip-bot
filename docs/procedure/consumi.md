@@ -1,6 +1,6 @@
 # Consumi: banda proxy e quote Gemini
 
-**Scopo**: restare nei limiti (proxy 250 GB al mese; Gemini gratuito circa 500 richieste al giorno per account sui Flash Lite; chiave a pagamento con tetto `PAGAMENTO_MAX_RICHIESTE_GIORNO`).
+**Scopo**: restare nei limiti (proxy 1 TB al mese (dal 1/11; prima 250 GB); Gemini gratuito circa 500 richieste al giorno per account sui Flash Lite; chiave a pagamento con tetto `PAGAMENTO_MAX_RICHIESTE_GIORNO`).
 
 **Input**: nessuno; da fare dopo ogni cambio di volume (ricerche, ricontrolli, nuove pipeline) e nel recap.
 
@@ -16,4 +16,4 @@
 
 **Controllo finale**
 - [ ] GB/giorno calcolati su almeno 1 h di dati?
-- [ ] Proiezione mensile confrontata con 250 GB?
+- [ ] Proiezione mensile confrontata con 1 TB (1.000 GB)?
