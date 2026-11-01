@@ -1473,8 +1473,13 @@ async def on_new_message(event):
         text = event.message.message or ""
         # Radar (fase 0, solo osservazione): ricerche fuori dall'abbigliamento, smistate prima della pipeline moda.
         if e_messaggio_radar(text, event.chat_id):
-            url_radar = extract_url_from_text(text) or url_da_bottoni(event.message.buttons, "/items/")
+            url_radar = (extract_url_from_text(text) or url_da_bottoni(event.message.buttons, "/items/")
+                         or url_da_entita(event.message.entities, "/items/"))
             log.info("MESSAGGIO RADAR | msg_id=%s | item=%s", msg_id, _estrai_item_id_da_url(url_radar))
+            if not _estrai_item_id_da_url(url_radar):
+                # 01/11: messaggi del gruppo radar senza link all'annuncio (non sono annunci) ricevevano la risposta "semaforo non calcolato"
+                log.info("RADAR SENZA ANNUNCIO | msg_id=%s | testo=%s", msg_id, text[:200].replace("\n", " / "))
+                return
             _analisi_attive["n"] += 1
             try:
                 parsed_radar = parse_vinted_tracker_message(togli_marcatore(text))
