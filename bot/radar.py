@@ -22,6 +22,7 @@ import traceback
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from bot.radar_gemini import RADAR_GEMINI, controlla as controlla_gemini, riga_gemini
 from bot.verdetto import _a_float, _estrai_item_id_da_url
 from bot import db
 from bot.jev import descrizione_jev
@@ -556,9 +557,17 @@ async def invia_verdetto_v2(parsed, url, v2, foto=None):
         _radar_inviati.clear()
     try:
         prezzo = _a_float(parsed.get("price"), None)
+        # Controllo Gemini gratuito sulle foto (1/11): scarta rotti, repliche e oggetti diversi; se non risponde l'avviso parte con la riga che lo dichiara.
+        g = await controlla_gemini((parsed.get("title") or ""), prezzo, url, foto_tracker=foto, item_id=item_id)
+        if g and g["verdetto"] == "scarta":
+            log.info("RADAR SCARTATO GEMINI | item=%s | semaforo=%s | conf=%s | motivo=%s | titolo=%s", item_id, v2.get("semaforo"), g.get("confidenza"),
+                     g.get("motivo"), (parsed.get("title") or "")[:60])
+            return False
         intestazione = f"{pallino_semaforo(v2)} {prezzo:g} €" if prezzo is not None else pallino_semaforo(v2)
-        testo = "\n".join([intestazione, (parsed.get("title") or "")[:100]] + _righe_v2(v2) + [url])
-        await _invia_radar(testo, foto, suono=_con_suono(v2), ricerca=parsed.get("query_name"))
+        testo = "\n".join([intestazione, (parsed.get("title") or "")[:100]] + _righe_v2(v2) + [riga_gemini(g), url] if RADAR_GEMINI else [intestazione, (parsed.get("title") or "")[:100]] + _righe_v2(v2) + [url])
+        # Il suono resta solo ai verdi confermati da Gemini (o senza controllo disponibile): un "da rivedere" arriva muto.
+        suono = _con_suono(v2) and not (g and g["verdetto"] == "dubbio")
+        await _invia_radar(testo, foto, suono=suono, ricerca=parsed.get("query_name"))
         return True
     except Exception:
         log.warning("Radar: verdetto v2 non inviato per %s:\n%s", item_id, traceback.format_exc())
