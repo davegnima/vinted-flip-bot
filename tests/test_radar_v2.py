@@ -493,3 +493,32 @@ def test_ricambio_dal_titolo_non_cerca_comparabili(monkeypatch):
                                        "https://www.vinted.it/items/987654321-dyson-v8"))
     assert v2["motivo"] == "jev_tipo:ricambio" and v2["semaforo"] == "rosso"
     assert chiamate == []
+
+
+def test_spezza_didascalia_non_perde_nulla():
+    from bot.radar import spezza_didascalia
+    righe = [f"riga {i} " + "x" * 80 for i in range(20)]
+    testo = "\n".join(righe)
+    d, resto = spezza_didascalia(testo)
+    assert len(d) <= 1000 and d.endswith("x") and resto
+    assert (d + "\n" + resto) == testo
+    assert spezza_didascalia("corto") == ("corto", "")
+
+
+def test_invia_radar_bottone_e_resto(monkeypatch):
+    import asyncio
+    from bot import radar
+    inviati = []
+    async def foto_(chat, foto, caption=None, disable_notification=False, url_bottone=None):
+        inviati.append(("foto", len(caption), url_bottone))
+    async def msg_(chat, testo, disable_notification=False, reply_to=None, url_bottone=None):
+        inviati.append(("msg", len(testo), url_bottone))
+    monkeypatch.setattr(radar, "telegram_send_photo", foto_)
+    monkeypatch.setattr(radar, "telegram_send_message", msg_)
+    url = "https://www.vinted.it/items/123456789-x"
+    testo = "\n".join(["riga " + "y" * 90] * 15 + [url])
+    asyncio.run(radar._invia_radar(testo, foto=b"x"))
+    assert inviati[0][0] == "foto" and inviati[0][2] == url and inviati[1][0] == "msg"
+    inviati.clear()
+    asyncio.run(radar._invia_radar("ciao\n" + url))
+    assert inviati == [("msg", len("ciao\n" + url), url)]
