@@ -139,7 +139,12 @@ def _primo_message_id(resp):
         return None
 
 
-async def telegram_send_message(chat_id, text, disable_notification=False, reply_to=None):
+def _bottone_vinted(url):
+    """reply_markup JSON con il solo bottone 'Apri su Vinted' (radar), o None senza url. Pura."""
+    return json.dumps({"inline_keyboard": [[{"text": "🔗 Apri su Vinted", "url": url}]]}) if url else None
+
+
+async def telegram_send_message(chat_id, text, disable_notification=False, reply_to=None, url_bottone=None):
     MAX_LEN = 3500
     for i, chunk in enumerate(_spezza_per_telegram(text, MAX_LEN)):
         # Solo il primo pezzo risponde alla galleria: i successivi seguono
@@ -150,7 +155,7 @@ async def telegram_send_message(chat_id, text, disable_notification=False, reply
             json={
                 "chat_id": chat_id, "text": chunk, "parse_mode": "Markdown",
                 "disable_web_page_preview": True, "disable_notification": disable_notification,
-                **extra_reply,
+                **extra_reply, **({"reply_markup": _bottone_vinted(url_bottone)} if url_bottone and i == 0 else {}),
             },
         )
         if resp is not None and not resp.is_success:
@@ -160,16 +165,18 @@ async def telegram_send_message(chat_id, text, disable_notification=False, reply
                 json={
                     "chat_id": chat_id, "text": chunk,
                     "disable_web_page_preview": True, "disable_notification": disable_notification,
-                    **extra_reply,
+                    **extra_reply, **({"reply_markup": _bottone_vinted(url_bottone)} if url_bottone and i == 0 else {}),
                 },
             )
         _telegram_esito_ok(resp, "sendMessage", "senza parse_mode")
 
 
-async def telegram_send_photo(chat_id, photo_bytes, caption=None, disable_notification=False):
-    """Ritorna il message_id della foto inviata (None se fallita)."""
+async def telegram_send_photo(chat_id, photo_bytes, caption=None, disable_notification=False, url_bottone=None):
+    """Ritorna il message_id della foto inviata (None se fallita). Con `url_bottone` aggiunge 'Apri su Vinted'."""
     files = {"photo": ("photo.jpg", photo_bytes)}
     data = {"chat_id": chat_id, "disable_notification": disable_notification}
+    if url_bottone:
+        data["reply_markup"] = _bottone_vinted(url_bottone)
     if caption:
         data["caption"] = caption[:1024]
     resp = await _telegram_post("sendPhoto", data=data, files=files, timeout=30)

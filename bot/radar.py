@@ -508,14 +508,34 @@ def _con_suono(v2):
     return bool(v2) and v2.get("semaforo") == "verde"
 
 
+_RE_URL_VINTED = re.compile(r"https://www\.vinted\.[a-z.]+/items/\S+")
+MAX_DIDASCALIA = 1000
+
+
+def spezza_didascalia(testo, massimo=MAX_DIDASCALIA):
+    """(didascalia, resto): Telegram taglia le didascalie delle foto a 1024 caratteri, e il taglio mangiava i comparabili e il link.
+    Si spezza sull'ultimo a capo entro `massimo`; il resto va in un secondo messaggio. Pura."""
+    if len(testo) <= massimo:
+        return testo, ""
+    taglio = testo.rfind("\n", 0, massimo)
+    taglio = taglio if taglio > 0 else massimo
+    return testo[:taglio], testo[taglio:].strip("\n")
+
+
 async def _invia_radar(testo, foto=None, suono=False):
-    """Messaggio del radar al chat privato: con la foto del tracker se c'e', altrimenti solo testo. Suono solo se `suono`."""
+    """Messaggio del radar al chat privato: con la foto del tracker se c'e', altrimenti solo testo. Suono solo se `suono`.
+    Sempre il bottone 'Apri su Vinted' (link preso dal testo); didascalia lunga: il resto in un secondo messaggio silenzioso."""
     log.info("RADAR PRIVATO | inviato alla chat privata | foto=%s | testo=%s", "si" if foto else "no", testo.replace("\n", " / "))
+    m = _RE_URL_VINTED.search(testo)
+    url = m.group(0) if m else None
     if foto:
-        await telegram_send_photo(RADAR_CHAT_ID, foto, caption=testo, disable_notification=not suono)
+        didascalia, resto = spezza_didascalia(testo)
+        await telegram_send_photo(RADAR_CHAT_ID, foto, caption=didascalia, disable_notification=not suono, url_bottone=url)
         log.info("RADAR FOTO | inviata con foto (%d KB)", len(foto) // 1024)
+        if resto:
+            await telegram_send_message(RADAR_CHAT_ID, resto, disable_notification=True)
     else:
-        await telegram_send_message(RADAR_CHAT_ID, testo, disable_notification=not suono)
+        await telegram_send_message(RADAR_CHAT_ID, testo, disable_notification=not suono, url_bottone=url)
 
 
 _radar_inviati = set()
