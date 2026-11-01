@@ -145,11 +145,16 @@ def motivo_jev(risposte):
     return codice, frase
 
 
-def prezzi_stesso_modello(comps, etichette, conf_min=CONF_COMP_MIN):
-    """Prezzi dei comparabili che Jev giudica 'stesso_modello' con confidenza >= conf_min. `comps` = [(titolo, prezzo)],
+def comparabili_stesso_modello(comps, etichette, conf_min=CONF_COMP_MIN):
+    """Coppie (titolo, prezzo) che Jev giudica 'stesso_modello' con confidenza >= conf_min. `comps` = [(titolo, prezzo)],
     `etichette` = [(scelta, confidenza)] nello stesso ordine (puo' essere piu' corta: i comparabili oltre non sono giudicati). Pura."""
-    return [p for (_t, p), (scelta, conf) in zip(comps, etichette or [])
+    return [(t, p) for (t, p), (scelta, conf) in zip(comps, etichette or [])
             if scelta == "stesso_modello" and (conf is None or conf >= conf_min)]
+
+
+def prezzi_stesso_modello(comps, etichette, conf_min=CONF_COMP_MIN):
+    """Prezzi dei comparabili 'stesso_modello' (vedi comparabili_stesso_modello). Pura."""
+    return [p for _t, p in comparabili_stesso_modello(comps, etichette, conf_min)]
 
 
 def descrizione_jev(esito, conf, frase):

@@ -14,11 +14,12 @@ from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 from bot import db, radar_appreso
 from bot.comps import _cerca_vinted_testo_diretto
-from bot.jev import JEV_COMPS, MAX_COMPS_VERIFICA, classifica_comparabili, giudica_completo, prezzi_stesso_modello
+from bot.jev import JEV_COMPS, MAX_COMPS_VERIFICA, classifica_comparabili, comparabili_stesso_modello, giudica_completo, prezzi_stesso_modello
 from bot.config import SPEDIZIONE_STIMATA_EUR
 from bot.logger import log
 from bot.radar import RADAR_SPESA_MAX, parola_vietata, radar_in_pausa
 from bot.radar_matrice import buy_max
+from bot.testo import _normalizza_titolo_per_link
 from bot.verdetto import _a_float, _estrai_item_id_da_url
 from bot.vinted_http import _vinted_get_con_retry
 from bot.vinted_scrape import _decodifica_stringa_json
@@ -42,6 +43,7 @@ _visti = set()
 # Prova in ombra (31/10): descrizioni e titoli dei simili per Jev, senza richieste in piu' (la pagina e i comparabili si scaricano comunque).
 _descrizioni = {}
 _titoli_simili = {}
+_url_comps = {}  # (testo, catalogo) -> {(titolo normalizzato, prezzo 2 decimali): url dell'annuncio} per i link nei messaggi
 _comps_simili = {}  # (testo, catalogo) -> [(titolo, prezzo)] per il giudizio di Jev sui singoli comparabili
 _RE_DESCRIZIONE = re.compile(r'"description"\s*:\s*"((?:[^"\\]|\\.)*)"')
 
@@ -180,7 +182,7 @@ async def _prezzi_simili(testo, titolo, prezzo, brand=None, catalogo=None):
     if not _entro_il_tetto(adesso):
         return None, 0, False
     async with _sem:
-        risposta, ok, _mappa = await _cerca_vinted_testo_diretto(url_comparabili(testo, catalogo, brand))
+        risposta, ok, mappa = await _cerca_vinted_testo_diretto(url_comparabili(testo, catalogo, brand))
     if not ok:
         return None, 0, False
     comps = parse_comp(risposta)
@@ -190,9 +192,30 @@ async def _prezzi_simili(testo, titolo, prezzo, brand=None, catalogo=None):
     if len(_titoli_simili) > 500:
         _titoli_simili.clear()
         _comps_simili.clear()
+        _url_comps.clear()
+    _url_comps[chiave] = mappa or {}
     _titoli_simili[chiave] = [t for t, _ in usati]
     _comps_simili[chiave] = list(usati)
     return prezzi, len(comps), False
+
+
+def link_comparabili(coppie, mappe, n=4):
+    """[(titolo, prezzo, url)] dei comparabili con un link noto, i `n` piu' vicini alla mediana dei prezzi (quelli che reggono
+    la stima, non gli estremi). `mappe` = dizionari {(titolo normalizzato, prezzo 2f): url}. Pura (richiesta dell'utente, 01/11)."""
+    if not coppie:
+        return []
+    prezzi = sorted(p for _, p in coppie)
+    mediana = prezzi[len(prezzi) // 2]
+    out, visti = [], set()
+    for t, p in sorted(coppie, key=lambda c: abs(c[1] - mediana)):
+        chiave = (_normalizza_titolo_per_link(t), f"{p:.2f}")
+        url = next((m[chiave] for m in mappe if m and chiave in m), None)
+        if url and url not in visti:
+            visti.add(url)
+            out.append((t, p, url))
+        if len(out) >= n:
+            break
+    return out
 
 
 def testi_piu_larghi(testo, brand=None):
@@ -233,7 +256,8 @@ async def _verifica_comparabili(titolo, prezzo, brand, catalogo, testo):
             ok = prezzi_stesso_modello(pool, etichette)
     if not etichette:
         return None, []
-    return {"n_giudicati": len(etichette), "n_stesso": len(ok), "query": usate}, ok
+    link = link_comparabili(comparabili_stesso_modello(pool, etichette), [_url_comps.get((q, catalogo)) for q in usate])
+    return {"n_giudicati": len(etichette), "n_stesso": len(ok), "query": usate, "link": link}, ok
 
 
 def _rosso(motivo, n=0):
@@ -354,6 +378,13 @@ async def analizza(parsed, url, foto=None, query_url=None):
                     if cap and v.get("semaforo") == "verde":
                         v["semaforo"] = "giallo"
                     prezzi, titoli_jev = ok_prezzi, None
+        # Link dei comparabili nei messaggi (01/11): quelli verificati se ci sono, altrimenti i grezzi della ricerca usata.
+        link_comps = []
+        if v.get("semaforo") in ("verde", "giallo"):
+            if verificata and verificata["n_stesso"] >= 3:
+                link_comps = verificata.get("link") or []
+            else:
+                link_comps = link_comparabili(_comps_simili.get((testo, catalogo)) or [], [_url_comps.get((testo, catalogo))])
         # Prova foto (25/10): la foto va a Jev solo con i semafori di JEV_FOTO_SEMAFORI (di default il verde).
         foto_jev = foto if v.get("semaforo") in JEV_FOTO_SEMAFORI else None
         jev, jev_conf, jev_simili, jev_motivo = await asyncio.to_thread(
@@ -362,7 +393,7 @@ async def analizza(parsed, url, foto=None, query_url=None):
             log.info("RADAR V2 JEV | item=%s | giudizio=%s | confidenza=%s | simili=%s(%s) | motivo=%s | largo=%s | n=%s | titolo=%s", item_id, jev,
                      jev_conf, jev_simili[0] if jev_simili else "-", jev_simili[1] if jev_simili else "-", jev_motivo[0] if jev_motivo else "-", allargata or 0,
                      len(prezzi), titolo[:60])
-        db.scrivi_evento("radar_v2", item_id, brand, {**dati, "verificata": verificata, "jev": jev, "jev_conf": jev_conf,
+        db.scrivi_evento("radar_v2", item_id, brand, {**dati, "verificata": verificata, "link_comps": [list(c) for c in link_comps], "jev": jev, "jev_conf": jev_conf,
                                                       "jev_simili": jev_simili[0] if jev_simili else None,
                                                       "jev_simili_conf": jev_simili[1] if jev_simili else None,
                                                       "jev_motivo": jev_motivo[0] if jev_motivo else None,
@@ -370,6 +401,6 @@ async def analizza(parsed, url, foto=None, query_url=None):
         return {"semaforo": v.get("semaforo"), "rivendita": v.get("rivendita"), "margine": v.get("margine"),
                 "roi": v.get("roi"), "n": len(prezzi), "n_grezzi": n_grezzi, "allargata": allargata, "motivo": v.get("motivo"),
                 "jev": jev, "jev_conf": jev_conf, "jev_motivo": jev_motivo[0] if jev_motivo else None,
-                "jev_motivo_frase": jev_motivo[1] if jev_motivo else None, "verificata": verificata}
+                "jev_motivo_frase": jev_motivo[1] if jev_motivo else None, "verificata": verificata, "link_comps": link_comps}
     except Exception:
         log.warning("Radar v2 ombra: annuncio non valutato:\n%s", traceback.format_exc())
