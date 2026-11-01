@@ -261,8 +261,8 @@ def test_scocche_cinturini_e_campane_sono_pezzi():
 def test_scala_di_allargamento_e_testo_pulito():
     from bot.radar_v2 import testi_piu_larghi
     from bot.valore_mercato import query_comp
-    assert testi_piu_larghi("dyson v15 detect absolute", "Dyson") == ["dyson v15 detect", "dyson"]
-    assert testi_piu_larghi("dyson v15", "Dyson") == ["dyson"]
+    assert testi_piu_larghi("dyson v15 detect absolute", "Dyson") == ["dyson v15 detect"]
+    assert testi_piu_larghi("dyson v15", "Dyson") == []
     assert testi_piu_larghi("ps5 slim digital edition", None) == ["ps5 slim"]
     assert query_comp("Dyson V8 nero gebraucht très bon état", "Dyson") == "dyson v8"
     from bot import radar
