@@ -256,7 +256,10 @@ async def _verifica_comparabili(titolo, prezzo, brand, catalogo, testo):
     if len(pool) >= 3:
         etichette = await asyncio.to_thread(classifica_comparabili, titolo, [t for t, _ in pool], None)
         ok = prezzi_stesso_modello(pool, etichette)
-    for q in query_alternative(titolo, brand):
+    # Se i comparabili veri restano pochi si cerca ancora (richiesta dell'utente, 01/11): prima dalla sigla del modello,
+    # poi con ricerche piu' larghe (marca + 2 parole); Jev rigiudica ogni titolo. Al massimo 3 ricerche in piu'.
+    ricerche = list(dict.fromkeys(query_alternative(titolo, brand) + testi_piu_larghi(testo, brand)))[:3]
+    for q in ricerche:
         if len(ok) >= 3:
             break
         await _prezzi_simili(q, titolo, prezzo, brand, catalogo)
