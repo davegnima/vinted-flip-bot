@@ -14,7 +14,7 @@ from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 from bot import db, radar_appreso
 from bot.comps import _cerca_vinted_testo_diretto
-from bot.jev import giudica_completo
+from bot.jev import classifica_comparabili, giudica_completo, prezzi_stesso_modello
 from bot.config import SPEDIZIONE_STIMATA_EUR
 from bot.logger import log
 from bot.radar import RADAR_SPESA_MAX, parola_vietata, radar_in_pausa
@@ -42,6 +42,7 @@ _visti = set()
 # Prova in ombra (31/10): descrizioni e titoli dei simili per Jev, senza richieste in piu' (la pagina e i comparabili si scaricano comunque).
 _descrizioni = {}
 _titoli_simili = {}
+_comps_simili = {}  # (testo, catalogo) -> [(titolo, prezzo)] per il giudizio di Jev sui singoli comparabili
 _RE_DESCRIZIONE = re.compile(r'"description"\s*:\s*"((?:[^"\\]|\\.)*)"')
 
 
@@ -188,7 +189,9 @@ async def _prezzi_simili(testo, titolo, prezzo, brand=None, catalogo=None):
     _cache[chiave] = (adesso, prezzi, len(comps))
     if len(_titoli_simili) > 500:
         _titoli_simili.clear()
+        _comps_simili.clear()
     _titoli_simili[chiave] = [t for t, _ in usati]
+    _comps_simili[chiave] = list(usati)
     return prezzi, len(comps), False
 
 
@@ -301,9 +304,9 @@ async def analizza(parsed, url, foto=None, query_url=None):
         if allargata and v.get("semaforo") == "verde":
             v["semaforo"] = "giallo"
         dati = {**base, "q": testo, "fam": fam, "limite": limite, "n_grezzi": n_grezzi, "n_usati": len(prezzi), "cache": dalla_cache, "allargata": allargata, **v}
-        log.info("RADAR V2 OMBRA | item=%s | semaforo=%s | ok=%s | motivo=%s | prezzo=%s | rivendita=%s | margine=%s | roi=%s | n=%s | grezzi=%s | largo=%s | aff=%s | q=%s | ricerca=%s | titolo=%s",
+        log.info("RADAR V2 OMBRA | item=%s | semaforo=%s | ok=%s | motivo=%s | prezzo=%s | rivendita=%s | margine=%s | roi=%s | n=%s | grezzi=%s | largo=%s | aff=%s | cache=%s | q=%s | ricerca=%s | titolo=%s",
                  item_id, v["semaforo"], v["ok"], v["motivo"], prezzo, v.get("rivendita"), v.get("margine"), v.get("roi"), len(prezzi),
-                 n_grezzi, allargata or 0, v.get("affidabilita"), testo, parsed.get("query_name") or "-", titolo[:60])
+                 n_grezzi, allargata or 0, v.get("affidabilita"), int(bool(dalla_cache)), testo, parsed.get("query_name") or "-", titolo[:60])
         # Prova foto (25/10): la foto va a Jev solo con i semafori di JEV_FOTO_SEMAFORI (di default il verde).
         foto_jev = foto if v.get("semaforo") in JEV_FOTO_SEMAFORI else None
         jev, jev_conf, jev_simili, jev_motivo = await asyncio.to_thread(
@@ -313,7 +316,19 @@ async def analizza(parsed, url, foto=None, query_url=None):
             log.info("RADAR V2 JEV | item=%s | giudizio=%s | confidenza=%s | simili=%s(%s) | motivo=%s | largo=%s | n=%s | titolo=%s", item_id, jev,
                      jev_conf, jev_simili[0] if jev_simili else "-", jev_simili[1] if jev_simili else "-", jev_motivo[0] if jev_motivo else "-", allargata or 0,
                      len(prezzi), titolo[:60])
-        db.scrivi_evento("radar_v2", item_id, brand, {**dati, "jev": jev, "jev_conf": jev_conf,
+        verificata = None
+        comps = _comps_simili.get((testo, catalogo))
+        if v.get("semaforo") in ("verde", "giallo") and comps and len(comps) >= 3:
+            etichette = await asyncio.to_thread(classifica_comparabili, titolo, [t for t, _ in comps], None)
+            if etichette:
+                ok_prezzi = prezzi_stesso_modello(comps, etichette)
+                v2 = valuta(prezzo, stima_mercato(ok_prezzi, min_n=3))
+                verificata = {"n_giudicati": len(etichette), "n_stesso": len(ok_prezzi), "rivendita": v2.get("rivendita"),
+                              "margine": v2.get("margine"), "roi": v2.get("roi"), "semaforo": v2.get("semaforo")}
+                log.info("RADAR V2 VERIFICATA | item=%s | prima=%s rivendita=%s | dopo=%s rivendita=%s margine=%s | stesso=%s/%s | titolo=%s",
+                         item_id, v["semaforo"], v.get("rivendita"), v2.get("semaforo"), v2.get("rivendita"), v2.get("margine"),
+                         len(ok_prezzi), len(etichette), titolo[:60])
+        db.scrivi_evento("radar_v2", item_id, brand, {**dati, "verificata": verificata, "jev": jev, "jev_conf": jev_conf,
                                                       "jev_simili": jev_simili[0] if jev_simili else None,
                                                       "jev_simili_conf": jev_simili[1] if jev_simili else None,
                                                       "jev_motivo": jev_motivo[0] if jev_motivo else None,
