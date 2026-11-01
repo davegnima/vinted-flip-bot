@@ -5,7 +5,8 @@ import json
 from bot import radar, radar_gemini as rg
 
 OK = {"oggetto": "Nintendo Switch OLED", "corrisponde_al_titolo": "si", "funzionante": "si", "completo": "si", "danni_visibili": "nessuno",
-      "autenticita": "probabile", "verdetto": "conferma", "motivo": "console completa con dock", "confidenza": 0.9}
+      "autenticita": "probabile", "verdetto": "conferma", "motivo": "console completa con dock", "confidenza": 0.9,
+      "rivendita_eur": 0, "rivendita_confidenza": 0, "rivendita_base": ""}
 
 
 def test_leggi_risposta():
@@ -21,6 +22,21 @@ def test_righe():
     assert rg.riga_gemini(None).startswith("Gemini: non disponibile")
     assert rg.riga_gemini(OK) == "Gemini foto: confermato (confidenza 0,90), console completa con dock"
     assert "da rivedere" in rg.riga_gemini({**OK, "verdetto": "dubbio"})
+
+
+def test_stima_rivendita_gemini():
+    d = rg.leggi_risposta(json.dumps({**OK, "rivendita_eur": 110, "rivendita_confidenza": 0.7, "rivendita_base": "OLED usata tipica 100-120"}))
+    assert d["rivendita_eur"] == 110 and d["rivendita_confidenza"] == 0.7
+    riga = rg.riga_gemini(d)
+    assert "Stima Gemini della rivendita: circa 110 €" in riga and "confidenza 0,70" in riga and "OLED usata tipica" in riga
+    # 0 o testo = modello sconosciuto: nessuna stima mostrata
+    assert rg.leggi_risposta(json.dumps(OK))["rivendita_eur"] is None
+    assert "Stima Gemini" not in rg.riga_gemini(rg.leggi_risposta(json.dumps(OK)))
+    assert rg.leggi_risposta(json.dumps({**OK, "rivendita_eur": "x"}))["rivendita_eur"] is None
+
+
+def test_foto_fino_a_dieci():
+    assert rg.RADAR_GEMINI_FOTO == 10
 
 
 def test_testo_utente():
