@@ -17,6 +17,7 @@ BRAND_BLOCKLIST = {"intrend"}
 VINTED_BRAND_IDS = {
     # 1/11 boutique/contemporary (lista dell'utente): id letti da vinted.it/.com/brand/<id> via ricerca web, NON verificati sul sito
     # 1/11 (secondo giro, stesso metodo: id da ricerca web, non verificati)
+    "johnny was": "293108", "gudrun sjödén": "4691067", "gudrun sjoden": "4691067", "madhappy": "5100236",
     "henry beguelin": "203938",
     "lancel": "2827",
     "double d ranch": "3324780",
