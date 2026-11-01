@@ -151,6 +151,8 @@ FAIR_VALUE_BRAND = {
     "zimmermann": ["zimmermann"], "cult gaia": ["cult gaia"], "greg lauren": ["greg lauren"], "bode": ["bode"],
     "fuzzi": ["fuzzi"], "staud": ["staud"], "ulla johnson": ["ulla johnson"], "sea new york": ["sea new york"],
     "saloni": ["saloni"], "veronica beard": ["veronica beard"], "la doublej": ["la doublej", "doublej"],
+    "johnny was": ["johnny was"], "gudrun sjödén": ["gudrun sj"], "madhappy": ["madhappy"],
+    "henry beguelin": ["beguelin"], "lancel": ["lancel"], "double d ranch": ["double d ranch"],
     "self-portrait": ["self-portrait", "self portrait"], "jonathan simkhai": ["simkhai"],
 }
 
@@ -178,11 +180,44 @@ FAIR_VALUE_LIVELLO_BRAND = {
     "prada": 60, "fendi": 80, "jacquemus": 45, "acne studios": 45, "barena venezia": 50,
     # 1/11 boutique (lista dell'utente, nessun dato nei log): livelli prudenti da prezzi richiesti visti su Vinted, confidenza bassa
     "greg lauren": 120, "bode": 120, "zimmermann": 80, "la doublej": 65, "ulla johnson": 60, "self-portrait": 55,
-    "cult gaia": 55, "sea new york": 40, "staud": 40, "saloni": 40, "veronica beard": 35, "jonathan simkhai": 40, "fuzzi": 30,
+    # 1/11 terzo giro (stime prudenti da prezzi richiesti, confidenza bassa)
+    "by walid": 100,
+    "l.a.m.b.": 70,
+    "erdem": 90,
+    "emilia wickstead": 100,
+    "rosie assoulin": 100,
+    "agua bendita": 45,
+    "borgo de nor": 45,
+    "leo lin": 50,
+    "alémais": 45,
+    "juliet dunn": 40,
+    "celia b": 40,
+    "banjanan": 40,
+    "ciao lucia": 40,
+    "posse": 40,
+    "dragon diffusion": 45,
+    "jérôme dreyfuss": 40,
+    "kurt geiger": 30,
+    "radley": 30,
+    "mz wallace": 30,
+    "hill house home": 40,
+    "sézane": 40,
+    "oleana": 50,
+    "antik batik": 35,
+    "farm rio": 35,
+    "pink city prints": 35,
+    "cleobella": 35,
+    "the great": 35,
+    "pistola": 30,
+    "alex mill": 30,
+    "taylor stitch": 30,
+    "quince": 25,
+    "johnny was": 40, "gudrun sjödén": 35, "madhappy": 45, "henry beguelin": 45, "lancel": 35, "double d ranch": 50, "cult gaia": 55, "sea new york": 40, "staud": 40, "saloni": 40, "veronica beard": 35, "jonathan simkhai": 40, "fuzzi": 30,
 }
 FAIR_VALUE_BRAND_NUOVI = {"prada", "fendi", "jacquemus", "acne studios", "barena venezia", "greg lauren", "bode", "zimmermann",
                           "la doublej", "ulla johnson", "self-portrait", "cult gaia", "sea new york", "staud", "saloni",
-                          "veronica beard", "jonathan simkhai", "fuzzi"}   # livello da conoscenza: confidenza bassa
+                          "veronica beard", "jonathan simkhai", "fuzzi", "henry beguelin", "lancel", "double d ranch", "johnny was", "gudrun sjödén", "madhappy",
+                          "by walid", "l.a.m.b.", "erdem", "emilia wickstead", "rosie assoulin", "agua bendita", "borgo de nor", "leo lin", "alémais", "juliet dunn", "celia b", "banjanan", "ciao lucia", "posse", "dragon diffusion", "jérôme dreyfuss", "kurt geiger", "radley", "mz wallace", "hill house home", "sézane", "oleana", "antik batik", "farm rio", "pink city prints", "cleobella", "the great", "pistola", "alex mill", "taylor stitch", "quince"}   # livello da conoscenza: confidenza bassa
 FAIR_VALUE_LIVELLO_DEFAULT = _env_float("FAIR_VALUE_LIVELLO_DEFAULT", 45)  # brand mai visto: stima prudente, confidenza bassa
 FAIR_VALUE_FATTORE_CATEGORIA = {
     "camicia": 1.0, "blusa": 0.91, "maglia": 1.07, "t-shirt": 0.88, "canotta": 0.70,
