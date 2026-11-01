@@ -523,10 +523,10 @@ def spezza_didascalia(testo, massimo=MAX_DIDASCALIA):
     return testo[:taglio], testo[taglio:].strip("\n")
 
 
-async def _invia_radar(testo, foto=None, suono=False):
+async def _invia_radar(testo, foto=None, suono=False, ricerca=None):
     """Messaggio del radar al chat privato: con la foto del tracker se c'e', altrimenti solo testo. Suono solo se `suono`.
     Sempre il bottone 'Apri su Vinted' (link preso dal testo); didascalia lunga: il resto in un secondo messaggio silenzioso."""
-    log.info("RADAR PRIVATO | inviato alla chat privata | foto=%s | testo=%s", "si" if foto else "no", testo.replace("\n", " / "))
+    log.info("RADAR PRIVATO | inviato alla chat privata | foto=%s | ricerca=%s | testo=%s", "si" if foto else "no", ricerca or "-", testo.replace("\n", " / "))
     m = _RE_URL_VINTED.search(testo)
     url = m.group(0) if m else None
     if foto:
@@ -558,7 +558,7 @@ async def invia_verdetto_v2(parsed, url, v2, foto=None):
         prezzo = _a_float(parsed.get("price"), None)
         intestazione = f"{pallino_semaforo(v2)} {prezzo:g} €" if prezzo is not None else pallino_semaforo(v2)
         testo = "\n".join([intestazione, (parsed.get("title") or "")[:100]] + _righe_v2(v2) + [url])
-        await _invia_radar(testo, foto, suono=_con_suono(v2))
+        await _invia_radar(testo, foto, suono=_con_suono(v2), ricerca=parsed.get("query_name"))
         return True
     except Exception:
         log.warning("Radar: verdetto v2 non inviato per %s:\n%s", item_id, traceback.format_exc())
@@ -623,7 +623,8 @@ def traccia_verdetto_v2(parsed, url, v2, t0=None):
         "roi": v2.get("roi"), "n_comp": v2.get("n"), "jev": v2.get("jev"), "jev_motivo": v2.get("jev_motivo"),
         "audit": "si" if audit else None, "vendita_stimata": v2.get("rivendita"), "richiesto_med": v2.get("richiesto_mediano"),
         "qualita": (v2.get("qualita") or {}).get("punteggio"), "costo_tot": v2.get("costo_totale"),
-        "sped": v2.get("spedizione_stato"), "calib": v2.get("calibrazione")}.items()
+        "sped": v2.get("spedizione_stato"), "calib": v2.get("calibrazione"),
+        "ricerca": (str(parsed.get("query_name") or "")[:40] or None)}.items()
         if v is not None}
     tr.tracc_avvia_serie(info, url, t0 or time.time(), offsets=RADAR_RICONTROLLI_SECONDI)
     log.info("RADAR TRACCIA AVVIO | item=%s | semaforo=%s | prezzo=%s", item_id, sem, prezzo)

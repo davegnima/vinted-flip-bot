@@ -109,7 +109,7 @@ def test_annuncio_fuori_matrice_ha_intestazione_chiara(monkeypatch):
     from bot import radar
     inviati = []
 
-    async def finto_invia(testo, foto, suono=False):
+    async def finto_invia(testo, foto, suono=False, ricerca=None):
         inviati.append(testo)
 
     monkeypatch.setattr(radar, "RADAR_JEV_RICHIESTO", False)
@@ -128,7 +128,7 @@ def test_invia_verdetto_v2_gialli_e_verdi_una_volta(monkeypatch):
     from bot import radar
     inviati = []
 
-    async def finto_invia(testo, foto, suono=False):
+    async def finto_invia(testo, foto, suono=False, ricerca=None):
         inviati.append((testo, suono))
 
     monkeypatch.setattr(radar, "RADAR_JEV_RICHIESTO", False)
