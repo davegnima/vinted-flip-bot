@@ -457,6 +457,7 @@ async def analizza(parsed, url, foto=None, query_url=None):
                                                       "jev_motivo_frase": jev_motivo[1] if jev_motivo else None})
         return {"semaforo": v.get("semaforo"), "rivendita": v.get("rivendita"), "margine": v.get("margine"),
                 "spedizione_eur": sped_eur, "spedizione_stato": sped_stato, "costo_totale": v.get("costo_totale"), "paese": paese,
+                "richiesto_mediano": v.get("richiesto_mediano"), "vendita_rapida": v.get("vendita_rapida"), "calibrazione": v.get("calibrazione"),
                 "roi": v.get("roi"), "n": len(prezzi), "n_grezzi": n_grezzi, "allargata": allargata, "motivo": v.get("motivo"),
                 "jev": jev, "jev_conf": jev_conf, "jev_motivo": jev_motivo[0] if jev_motivo else None,
                 "jev_motivo_frase": jev_motivo[1] if jev_motivo else None, "verificata": verificata, "link_comps": link_comps}

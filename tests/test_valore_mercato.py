@@ -104,3 +104,14 @@ def test_nomi_candidati_spezza_il_titolo_sui_prodotti():
     from bot.valore_mercato import nomi_candidati
     assert nomi_candidati("Wash Buckler + Skylanders Swap Force", "Nintendo") == ["wash buckler", "skylanders swap force", "skylanders swap"]
     assert nomi_candidati("Dyson", "Dyson") == []
+
+
+def test_tre_prezzi_e_calibrazione():
+    from bot.valore_mercato import coefficiente_vendita
+    s = stima_mercato([70, 72, 75, 78, 80, 82, 85, 88, 90, 95])
+    assert s["richiesto_mediano"] == s["mediana"] and s["vendita_rapida"] == 70
+    assert s["vendita_stimata"] == s["rivendita"] == s["p25"] and s["calibrazione"] == "non_calibrato"
+    assert coefficiente_vendita([0.8] * 14) == (1.0, "non_calibrato")
+    assert coefficiente_vendita([0.8] * 15) == (0.8, "calibrato")
+    c = stima_mercato([70, 72, 75, 78, 80, 82, 85, 88, 90, 95], coeff=0.8, calibrazione="calibrato")
+    assert c["rivendita"] == round(c["p25"] * 0.8, 2) and c["calibrazione"] == "calibrato"
