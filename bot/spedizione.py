@@ -15,7 +15,7 @@ from bot.config import SPEDIZIONE_STIMATA_EUR
 VERIFIED, ESTIMATED, UNKNOWN = "VERIFIED", "ESTIMATED", "UNKNOWN"
 
 # Semi dell'utente (01/11): "piccolo e leggero Francia 5 EUR, pesante e ingombrante 20 EUR"; Italia piccolo = tariffa gia' in uso.
-# Le celle non elencate sono UNKNOWN finche' non ci sono costi letti dalla pagina. Si puo' sovrascrivere con la variabile
+# Ogni altro paese noto usa la riga della Francia. Le celle non elencate (es. 'medio') sono UNKNOWN finche' non ci sono costi letti dalla pagina. Si puo' sovrascrivere con la variabile
 # SPEDIZIONE_TARIFFE (JSON {"francia": {"medio": 9}}), senza toccare il codice.
 _TARIFFE_BASE = {
     "italia": {"piccolo": SPEDIZIONE_STIMATA_EUR, "ingombrante": 20.0},
@@ -58,7 +58,11 @@ def costo_spedizione(paese, classe, letto=None):
     usato nel calcolo ma con semaforo al massimo giallo. Pura."""
     if letto is not None and letto >= 0:
         return round(float(letto), 2), VERIFIED
-    eur = _tariffe().get((paese or "").strip().lower(), {}).get((classe or "").strip().lower())
+    tab = _tariffe()
+    p = (paese or "").strip().lower()
+    # Paese noto ma senza tabella propria (Germania, Spagna, ...): vale la riga della Francia (richiesta dell'utente, 01/11).
+    riga = tab.get(p) if p in tab else (tab.get("francia", {}) if p else {})
+    eur = riga.get((classe or "").strip().lower())
     if eur is None:
         return SPEDIZIONE_STIMATA_EUR, UNKNOWN
     return float(eur), ESTIMATED
