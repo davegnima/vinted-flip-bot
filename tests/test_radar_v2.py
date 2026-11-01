@@ -261,8 +261,8 @@ def test_scocche_cinturini_e_campane_sono_pezzi():
 def test_scala_di_allargamento_e_testo_pulito():
     from bot.radar_v2 import testi_piu_larghi
     from bot.valore_mercato import query_comp
-    assert testi_piu_larghi("dyson v15 detect absolute", "Dyson") == ["dyson v15 detect", "dyson"]
-    assert testi_piu_larghi("dyson v15", "Dyson") == ["dyson"]
+    assert testi_piu_larghi("dyson v15 detect absolute", "Dyson") == ["dyson v15 detect"]
+    assert testi_piu_larghi("dyson v15", "Dyson") == []
     assert testi_piu_larghi("ps5 slim digital edition", None) == ["ps5 slim"]
     assert query_comp("Dyson V8 nero gebraucht très bon état", "Dyson") == "dyson v8"
     from bot import radar
@@ -277,16 +277,16 @@ def test_allargamento_trova_comparabili_e_non_da_verde(monkeypatch):
     monkeypatch.setattr(radar_v2, "radar_in_pausa", lambda: False)
     monkeypatch.setattr(radar_v2.db, "scrivi_evento", lambda *a, **k: eventi.append(a))
     radar_v2._visti.clear(); radar_v2._cache.clear(); radar_v2._conteggio.update(giorno=None, n=0)
-    righe = "\n".join(f"- Dyson V8 aspirapolvere — €{p}" for p in (90, 95, 100, 105, 110, 115, 120, 125))
+    righe = "\n".join(f"- Dyson V8 Animal aspirapolvere — €{p}" for p in (90, 95, 100, 105, 110, 115, 120, 125))
 
     async def finto(url):
-        return (righe if "detect" not in url and "absolute" not in url else ""), True, {}
+        return (righe if "absolute" not in url else ""), True, {}
 
     async def senza_catalogo(url):
         return None
     monkeypatch.setattr(radar_v2, "_cerca_vinted_testo_diretto", finto)
     monkeypatch.setattr(radar_v2, "_catalogo_annuncio", senza_catalogo)
-    r = asyncio.run(radar_v2.analizza({"title": "Dyson V8 detect absolute", "price": "20", "brand": "Dyson"}, "https://www.vinted.it/items/555001-dyson"))
+    r = asyncio.run(radar_v2.analizza({"title": "Dyson V8 Animal Absolute detect", "price": "20", "brand": "Dyson"}, "https://www.vinted.it/items/555001-dyson"))
     assert r["allargata"] and r["n"] >= 6 and r["semaforo"] == "giallo"
 
 

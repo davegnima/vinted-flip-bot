@@ -233,15 +233,14 @@ async def _foto_comparabili(link_comps):
 
 
 def testi_piu_larghi(testo, brand=None):
-    """Ricerche piu' corte da provare quando i comparabili sono pochi: marca + 2 parole, poi solo la marca. Pura."""
+    """Ricerca piu' corta da provare quando i comparabili sono pochi: marca + 2 parole (mai la sola marca). Pura."""
     parole = (testo or "").split()
     b = (brand or "").lower().split()
     resto = parole[len(b):] if b and parole[:len(b)] == b else parole
     out = []
     if len(resto) > 2:
         out.append(" ".join(b + resto[:2]))
-    if b:
-        out.append(" ".join(b))
+    # Niente ricerca con la sola marca (01/11): "nintendo" per uno Skylanders dava 14 console da 160-220 EUR come comparabili.
     return [t for i, t in enumerate(out) if t and t != testo and t not in out[:i]]
 
 
