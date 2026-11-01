@@ -389,6 +389,10 @@ def _righe_v2(v2):
         righe.append(f"Comparabili: {n} trovati · rivendita {v2.get('rivendita')} € · margine {v2.get('margine')} € "
                      f"· ROI {v2.get('roi')}%")
         righe.append(f"Semaforo: {pallino} {v2.get('semaforo') or 'n.d.'}")
+    if v2.get("richiesto_mediano") is not None and v2.get("rivendita") is not None:
+        cal = "calibrata" if v2.get("calibrazione") == "calibrato" else "non calibrata sulle vendite reali"
+        righe.append(f"Prezzi: richiesto mediano {v2['richiesto_mediano']} € · vendita stimata {v2['rivendita']} € ({cal}) "
+                     f"· vendita rapida {v2.get('vendita_rapida')} € (il piu' basso tra i simili)")
     riga_costo = _riga_costo_totale(v2)
     if riga_costo:
         righe.append(riga_costo)

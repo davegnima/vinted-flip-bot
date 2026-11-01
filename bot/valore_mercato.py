@@ -167,10 +167,19 @@ def query_alternative(titolo, brand=None, max_n=2):
     return visti[:max_n]
 
 
-def stima_mercato(prezzi, min_n=MIN_COMPARABILI):
+def coefficiente_vendita(rapporti, min_casi=15):
+    """(coefficiente, stato): mediana di (prezzo di vendita reale / prezzo stimato) se ci sono almeno `min_casi` vendite reali,
+    altrimenti (1.0, 'non_calibrato'). Mai un coefficiente senza dati (regola 16). Pura."""
+    r = [x for x in (rapporti or []) if x and x > 0]
+    if len(r) < min_casi:
+        return 1.0, "non_calibrato"
+    return round(statistics.median(r), 3), "calibrato"
+
+
+def stima_mercato(prezzi, min_n=MIN_COMPARABILI, coeff=1.0, calibrazione="non_calibrato"):
     """Stima dai prezzi richiesti di annunci simili. None se i comparabili sono troppo pochi.
 
-    rivendita = 25° percentile dopo aver tolto i valori fuori scala (sotto 0,3x o sopra 3x la mediana).
+    rivendita (= vendita_stimata) = 25° percentile x coeff dopo aver tolto i valori fuori scala (sotto 0,3x o sopra 3x la mediana).
     La trattativa non e' qui: la applica margine_roi (SCONTO_TIPICO_TRATTATIVA_VENDITA).
     affidabilita': alta con >= 10 comparabili e fascia stretta (p75/p25 <= 1,6), media con >= 6, bassa altrimenti.
     """
@@ -185,8 +194,12 @@ def stima_mercato(prezzi, min_n=MIN_COMPARABILI):
     p25, mediana, p75 = q[0], q[1], q[2]
     stretta = p25 > 0 and p75 / p25 <= 1.6
     aff = "alta" if len(v) >= 10 and stretta else "media" if len(v) >= 6 else "bassa"
+    # Tre prezzi (01/11): richiesto_mediano = cosa chiede il mercato; vendita_stimata = su cui decide il radar (p25 x coefficiente
+    # calibrato sulle vendite reali, 1 finche' non ci sono dati); vendita_rapida = il piu' basso richiesto tra i simili (misura, non stima).
+    vendita = round(p25 * coeff, 2)
     return {"n": len(v), "minimo": v[0], "p25": round(p25, 2), "mediana": round(mediana, 2), "p75": round(p75, 2),
-            "massimo": v[-1], "rivendita": round(p25, 2), "affidabilita": aff}
+            "massimo": v[-1], "rivendita": vendita, "vendita_stimata": vendita, "richiesto_mediano": round(mediana, 2),
+            "vendita_rapida": v[0], "calibrazione": calibrazione, "affidabilita": aff}
 
 
 def tetto_dal_nuovo(rivendita, prezzo_nuovo, quota=QUOTA_NUOVO_USATO):
@@ -219,6 +232,8 @@ def valuta(prezzo, stima, prezzo_nuovo=None, spedizione_eur=SPEDIZIONE_STIMATA_E
     ok = marg >= RADAR_MARGINE_MIN and roi >= RADAR_ROI_MIN
     motivo = "ok" if ok else ("margine_basso" if marg < RADAR_MARGINE_MIN else "roi_basso")
     v = {"ok": ok, "motivo": motivo, "rivendita": riv, "margine": marg, "roi": roi,
-         "limitato_dal_nuovo": riv < stima["rivendita"], "affidabilita": stima["affidabilita"], "n": stima["n"]}
+         "limitato_dal_nuovo": riv < stima["rivendita"], "affidabilita": stima["affidabilita"], "n": stima["n"],
+         "richiesto_mediano": stima.get("richiesto_mediano"), "vendita_rapida": stima.get("vendita_rapida"),
+         "calibrazione": stima.get("calibrazione")}
     v["semaforo"] = semaforo(v)
     return v
