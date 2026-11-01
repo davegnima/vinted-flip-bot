@@ -29,7 +29,7 @@ from bot import tracciamento as tr
 from bot import radar_matrice as rm
 from bot.vinted_scrape import scrape_vinted_listing
 from bot.logger import log
-from bot.config import TELEGRAM_OWNER_CHAT_ID
+from bot.config import TELEGRAM_OWNER_CHAT_ID, TELEGRAM_ALERT_CHAT_ID
 from bot.telegram_api import telegram_send_message, telegram_send_photo
 # ---- fine import ----
 
@@ -316,8 +316,15 @@ def semaforo_radar(prezzo, buy_max):
 RADAR_SEMAFORI = {x.strip() for x in os.environ.get("RADAR_SEMAFORI", "verde,giallo").split(",") if x.strip()}
 if os.environ.get("RADAR_SOLO_VERDI", "0").strip() in ("1", "true", "si"):
     RADAR_SEMAFORI = {"verde"}
-# Chat dove arrivano gli avvisi del radar (31/10: "Annunci cervello", la stessa del Cervello della moda): RADAR_CHAT_ID, altrimenti l'owner.
-RADAR_CHAT_ID = (os.environ.get("RADAR_CHAT_ID") or "").strip() or TELEGRAM_OWNER_CHAT_ID
+# Chat dove arrivano gli avvisi del radar (1/11, utente: il gruppo "COMPRA Vinted" dei verdi della moda): RADAR_CHAT_ID, poi
+# TELEGRAM_ALERT_CHAT_ID (il gruppo COMPRA), poi l'owner.
+RADAR_CHAT_ID = (os.environ.get("RADAR_CHAT_ID") or "").strip() or TELEGRAM_ALERT_CHAT_ID or TELEGRAM_OWNER_CHAT_ID
+# Filtro Jev (1/11, utente): si manda solo cio' che Jev dichiara "affare" (niente rotti, ricambi, incompleti) con confidenza minima.
+RADAR_JEV_RICHIESTO = os.environ.get("RADAR_JEV_RICHIESTO", "1").strip() not in ("0", "false", "no", "")
+try:
+    RADAR_JEV_CONF_MIN = float(os.environ.get("RADAR_JEV_CONF_MIN", "0.7"))
+except ValueError:
+    RADAR_JEV_CONF_MIN = 0.7
 
 
 SEMAFORO_EMOJI = {"verde": "🟢", "giallo": "🟡", "rosso": "🔴"}
@@ -412,8 +419,14 @@ def da_cancellare(v2):
 
 
 def _da_mandare(v2):
-    """Solo i semafori in RADAR_SEMAFORI (verde e giallo): niente rossi, niente annunci senza verdetto."""
-    return bool(v2) and v2.get("semaforo") in RADAR_SEMAFORI
+    """Solo i semafori in RADAR_SEMAFORI (verde e giallo) e, con RADAR_JEV_RICHIESTO, solo se Jev dice affare con la confidenza
+    minima: niente rossi, niente annunci senza verdetto, niente rotti o ricambi."""
+    if not v2 or v2.get("semaforo") not in RADAR_SEMAFORI:
+        return False
+    if RADAR_JEV_RICHIESTO and not (v2.get("jev") == "affare_vero" and (v2.get("jev_conf") or 0) >= RADAR_JEV_CONF_MIN):
+        log.info("RADAR SCARTATO JEV | semaforo=%s | jev=%s | conf=%s | motivo=%s", v2.get("semaforo"), v2.get("jev"), v2.get("jev_conf"), v2.get("jev_motivo"))
+        return False
+    return True
 
 
 def _con_suono(v2):
