@@ -306,6 +306,39 @@ def precontrollo_tipo(titolo):
     return codice
 
 
+PAESI_JEV = ("italia", "francia", "germania", "spagna")
+CONF_PAESE_MIN = 0.6
+
+
+def stima_paese(titolo, descrizione=None):
+    """(paese, confidenza) del venditore stimato da Jev leggendo titolo e descrizione (lingua, valuta, citta', spedizioni), oppure None
+    se Jev e' spento, non risponde, il paese non e' chiaro o la confidenza e' < CONF_PAESE_MIN. Solo quando l'HTML non lo da'
+    (01/11, richiesta dell'utente). E' una stima: il chiamante la dichiara. Bloccante, poche decine di token."""
+    chiave = os.environ.get("TYPESAFE_API_KEY", "").strip()
+    if not (JEV_GIUDICE and chiave):
+        return None
+    stato = f"Annuncio Vinted: {titolo}"
+    desc = " ".join((descrizione or "").split())[:MAX_DESCRIZIONE]
+    if desc:
+        stato += f"\nDescrizione del venditore: {desc}"
+    criteri = {"italia": "scritto in italiano o con riferimenti all'Italia", "francia": "scritto in francese o con riferimenti alla Francia",
+               "germania": "scritto in tedesco o con riferimenti alla Germania", "spagna": "scritto in spagnolo o con riferimenti alla Spagna",
+               "non_chiaro": "altra lingua o nessun indizio sul paese del venditore"}
+    domanda = {"paese": {"type": "choice", "instructions": "In quale paese si trova probabilmente il venditore, dalla lingua e dai riferimenti del testo?",
+                         "criteria": criteri}}
+    try:
+        risposta = _chiama_jev({"model": MODELLO, "state": stato, "questions": domanda})
+        r = risposta["answers"]["paese"]
+        scelta, conf = r.get("choice"), r.get("confidence")
+    except Exception as e:  # noqa: BLE001 - la stima del paese non deve bloccare il radar
+        log.warning("JEV PAESE | non disponibile: %s", str(e)[:200])
+        return None
+    log.info("JEV PAESE | titolo=%s | paese=%s(%s) | desc=%s", titolo[:60], scelta, conf, len(desc))
+    if scelta in PAESI_JEV and (conf or 0) >= CONF_PAESE_MIN:
+        return scelta, conf
+    return None
+
+
 def confronta_foto_comparabili(titolo, foto, miniature):
     """[(scelta, confidenza), ...] una per miniatura, oppure None se Jev e' spento o non risponde. Bloccante.
     `foto` e `miniature` sono byte di immagini png/jpeg (max MAX_FOTO_COMPS miniature). Non influisce sull'esito."""

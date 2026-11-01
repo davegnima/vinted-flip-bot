@@ -374,6 +374,8 @@ def _riga_costo_totale(v2):
         return ""
     stato = _STATO_SPEDIZIONE.get(v2.get("spedizione_stato"), "n.d.")
     paese = f" da {v2['paese']}" if v2.get("paese") else ""
+    if paese and v2.get("paese_fonte") == "jev":
+        paese += " (paese stimato da Jev)"
     return f"Costo totale: {tot:.2f} € (spedizione {sped:.2f} € {stato}{paese}, protezione acquisti inclusa)"
 
 
