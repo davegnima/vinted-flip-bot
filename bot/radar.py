@@ -598,7 +598,9 @@ def traccia_verdetto_v2(parsed, url, v2, t0=None):
     tr._tracc_ctx[str(item_id)] = {k: v for k, v in {
         "semaforo": sem, "motivo": v2.get("motivo"), "rivendita": v2.get("rivendita"), "margine": v2.get("margine"),
         "roi": v2.get("roi"), "n_comp": v2.get("n"), "jev": v2.get("jev"), "jev_motivo": v2.get("jev_motivo"),
-        "audit": "si" if audit else None}.items()
+        "audit": "si" if audit else None, "vendita_stimata": v2.get("rivendita"), "richiesto_med": v2.get("richiesto_mediano"),
+        "qualita": (v2.get("qualita") or {}).get("punteggio"), "costo_tot": v2.get("costo_totale"),
+        "sped": v2.get("spedizione_stato"), "calib": v2.get("calibrazione")}.items()
         if v is not None}
     tr.tracc_avvia_serie(info, url, t0 or time.time(), offsets=RADAR_RICONTROLLI_SECONDI)
     log.info("RADAR TRACCIA AVVIO | item=%s | semaforo=%s | prezzo=%s", item_id, sem, prezzo)
