@@ -58,6 +58,7 @@ def _prova(monkeypatch, risposta, verdetto_v2=None):
 
     async def finto_invia(testo, foto, suono=False, ricerca=None, url=None):
         inviati.append((testo, suono))
+        return True
 
     async def finta_controlla(*a, **k):
         return risposta

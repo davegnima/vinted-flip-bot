@@ -145,7 +145,9 @@ def _bottone_vinted(url):
 
 
 async def telegram_send_message(chat_id, text, disable_notification=False, reply_to=None, url_bottone=None):
+    """Ritorna True se TUTTI i pezzi sono stati consegnati, False altrimenti (l'errore e' gia' nel log)."""
     MAX_LEN = 3500
+    tutti_ok = True
     for i, chunk in enumerate(_spezza_per_telegram(text, MAX_LEN)):
         # Solo il primo pezzo risponde alla galleria: i successivi seguono
         # comunque subito sotto, ripetere la citazione sarebbe solo rumore.
@@ -168,7 +170,8 @@ async def telegram_send_message(chat_id, text, disable_notification=False, reply
                     **extra_reply, **({"reply_markup": _bottone_vinted(url_bottone)} if url_bottone and i == 0 else {}),
                 },
             )
-        _telegram_esito_ok(resp, "sendMessage", "senza parse_mode")
+        tutti_ok = _telegram_esito_ok(resp, "sendMessage", "senza parse_mode") and tutti_ok
+    return tutti_ok
 
 
 async def telegram_send_photo(chat_id, photo_bytes, caption=None, disable_notification=False, url_bottone=None):

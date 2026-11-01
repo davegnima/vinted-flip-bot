@@ -1488,7 +1488,8 @@ async def on_new_message(event):
                 v2_radar = await radar_v2_analizza(parsed_radar, url_radar, foto=foto_radar,
                                                    query_url=url_da_bottoni(event.message.buttons, "/catalog"))
                 traccia_verdetto_v2(parsed_radar, url_radar, v2_radar, t0=t_ricevuto_bot)
-                await invia_verdetto_v2(parsed_radar, url_radar, v2_radar, foto=foto_radar, rivaluta=radar_v2_rivaluta)
+                esito_radar = {}
+                await invia_verdetto_v2(parsed_radar, url_radar, v2_radar, foto=foto_radar, rivaluta=radar_v2_rivaluta, esito=esito_radar)
                 cancellato = False
                 if RADAR_CANCELLA_SCARTI and da_cancellare(v2_radar):
                     try:
@@ -1500,7 +1501,7 @@ async def on_new_message(event):
                                     msg_id, type(exc).__name__)
                 if RADAR_RISPOSTA_GRUPPO and not cancellato:
                     try:
-                        testo_gruppo = testo_risposta_gruppo(v2_radar)
+                        testo_gruppo = testo_risposta_gruppo(v2_radar, esito_radar)
                         await event.reply(testo_gruppo, silent=True)
                         log.info("RADAR GRUPPO | risposta msg_id=%s | item=%s | testo=%s", msg_id, _estrai_item_id_da_url(url_radar),
                                  testo_gruppo.replace("\n", " / "))

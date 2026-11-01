@@ -111,6 +111,7 @@ def test_annuncio_fuori_matrice_ha_intestazione_chiara(monkeypatch):
 
     async def finto_invia(testo, foto, suono=False, ricerca=None, url=None):
         inviati.append(testo)
+        return True
 
     monkeypatch.setattr(radar, "RADAR_JEV_RICHIESTO", False)
     monkeypatch.setattr(radar, "RADAR_SEMAFORI", {"verde", "giallo"})
@@ -130,6 +131,7 @@ def test_invia_verdetto_v2_gialli_e_verdi_una_volta(monkeypatch):
 
     async def finto_invia(testo, foto, suono=False, ricerca=None, url=None):
         inviati.append((testo, suono))
+        return True
 
     monkeypatch.setattr(radar, "RADAR_JEV_RICHIESTO", False)
     monkeypatch.setattr(radar, "RADAR_SEMAFORI", {"verde", "giallo"})
@@ -581,6 +583,7 @@ def test_invia_verdetto_v2_rivaluta_col_modello_di_gemini(monkeypatch):
 
     async def finto_invia(testo, foto, suono=False, ricerca=None, url=None):
         inviati.append((testo, suono, url))
+        return True
 
     async def gemini(*a, **k):
         return {"verdetto": "conferma", "confidenza": 0.9, "motivo": "ok", "ricerca_modello": "nintendo switch oled", "ricerca_semantica": "",
@@ -634,3 +637,108 @@ def test_rivaluta_rifa_i_comparabili_sul_modello_di_gemini(monkeypatch):
     assert cercate == ["nintendo switch oled"] and nuovo["rivalutata"] and nuovo["q"] == "nintendo switch oled" and nuovo["rivendita"] > 100
     # stesso modello: niente da rifare
     assert asyncio.run(radar_v2.rivaluta({"price": "40"}, "https://www.vinted.it/items/921-x", v2, {"ricerca_modello": "nintendo switch"})) is v2
+
+
+def _prepara_invio(monkeypatch, gemini=None, consegna=True):
+    """Imposta i finti per invia_verdetto_v2 e ritorna la lista degli avvisi consegnati."""
+    from bot import radar
+    inviati = []
+
+    async def finto_invia(testo, foto, suono=False, ricerca=None, url=None):
+        if consegna:
+            inviati.append(testo)
+        return consegna
+
+    async def finta_gemini(*a, **k):
+        return gemini
+
+    monkeypatch.setattr(radar, "RADAR_JEV_RICHIESTO", False)
+    monkeypatch.setattr(radar, "RADAR_SEMAFORI", {"verde", "giallo"})
+    monkeypatch.setattr(radar, "_invia_radar", finto_invia)
+    monkeypatch.setattr(radar, "radar_in_pausa", lambda *a, **k: False)
+    monkeypatch.setattr(radar, "controlla_gemini", finta_gemini)
+    radar._radar_inviati.clear()
+    return inviati
+
+
+V2_GIALLO = {"semaforo": "giallo", "rivendita": 94.0, "margine": 60.4, "roi": 249.6, "n": 5}
+
+
+def test_risposta_gruppo_dice_inviato_solo_se_consegnato(monkeypatch):
+    import asyncio
+    from bot import radar
+    inviati = _prepara_invio(monkeypatch)
+    esito = {}
+    u = "https://www.vinted.it/items/920-x"
+    assert asyncio.run(radar.invia_verdetto_v2({"title": "Gba", "price": "40"}, u, V2_GIALLO, esito=esito)) is True
+    assert esito["inviato"] is True and len(inviati) == 1
+    assert "Inviato in COMPRA" in radar.testo_risposta_gruppo(V2_GIALLO, esito)
+    # secondo passaggio: duplicato, non parte e la riga lo dice
+    esito2 = {}
+    assert asyncio.run(radar.invia_verdetto_v2({"title": "Gba", "price": "40"}, u, V2_GIALLO, esito=esito2)) is False
+    riga = radar.testo_risposta_gruppo(V2_GIALLO, esito2)
+    assert "Non inviato in COMPRA: avviso gia' mandato" in riga and "Inviato in COMPRA" not in riga.replace("Non inviato in COMPRA", "")
+
+
+def test_risposta_gruppo_gemini_scarta(monkeypatch):
+    import asyncio
+    from bot import radar
+    inviati = _prepara_invio(monkeypatch, gemini={"verdetto": "scarta", "confidenza": 1.0, "motivo": "manca il caricabatterie"})
+    esito = {}
+    assert asyncio.run(radar.invia_verdetto_v2({"title": "Ps vita", "price": "30"}, "https://www.vinted.it/items/921-x", V2_GIALLO, esito=esito)) is False
+    assert inviati == []
+    riga = radar.testo_risposta_gruppo(V2_GIALLO, esito)
+    assert "Non inviato in COMPRA: Gemini lo scarta" in riga and "manca il caricabatterie" in riga
+
+
+def test_risposta_gruppo_rivalutazione_a_rosso_mostra_i_numeri_nuovi(monkeypatch):
+    import asyncio
+    from bot import radar
+    _prepara_invio(monkeypatch, gemini={"verdetto": "conferma", "confidenza": 0.9, "motivo": "ok", "ricerca_modello": "switch oled"})
+
+    async def rosso(parsed, url, v2, g):
+        return {**v2, "semaforo": "rosso", "motivo": "margine_basso", "margine": 36.5, "rivendita": 80.0}
+
+    esito = {}
+    vecchio = {**V2_GIALLO, "margine": 133.3, "rivendita": 245.0}
+    assert asyncio.run(radar.invia_verdetto_v2({"title": "Switch", "price": "40"}, "https://www.vinted.it/items/922-x", vecchio, rivaluta=rosso, esito=esito)) is False
+    riga = radar.testo_risposta_gruppo(vecchio, esito)
+    assert "margine 36.5" in riga and "133.3" not in riga
+    assert "Non inviato in COMPRA: rifatta la stima sul modello letto da Gemini" in riga
+
+
+def test_invio_fallito_non_blocca_il_ritentativo(monkeypatch):
+    import asyncio
+    from bot import radar
+    _prepara_invio(monkeypatch, consegna=False)
+    esito = {}
+    u = "https://www.vinted.it/items/923-x"
+    assert asyncio.run(radar.invia_verdetto_v2({"title": "Gba", "price": "40"}, u, V2_GIALLO, esito=esito)) is False
+    assert "Non inviato in COMPRA: Telegram non ha consegnato" in radar.testo_risposta_gruppo(V2_GIALLO, esito)
+    assert "923" not in radar._radar_inviati   # un invio fallito si puo' ritentare
+
+
+def test_invia_radar_ripiega_sul_testo_se_la_foto_e_rifiutata(monkeypatch):
+    import asyncio
+    from bot import radar
+    chiamate = []
+
+    async def foto_rifiutata(*a, **k):
+        chiamate.append("foto")
+        return None
+
+    async def messaggio(chat, testo, **k):
+        chiamate.append("testo")
+        return True
+
+    monkeypatch.setattr(radar, "telegram_send_photo", foto_rifiutata)
+    monkeypatch.setattr(radar, "telegram_send_message", messaggio)
+    assert asyncio.run(radar._invia_radar("🟡 prova\nhttps://www.vinted.it/items/1", b"x", url="https://www.vinted.it/items/1")) is True
+    assert chiamate == ["foto", "testo"]
+    chiamate.clear()
+
+    async def messaggio_ko(chat, testo, **k):
+        return False
+
+    monkeypatch.setattr(radar, "telegram_send_message", messaggio_ko)
+    assert asyncio.run(radar._invia_radar("x", None)) is False
