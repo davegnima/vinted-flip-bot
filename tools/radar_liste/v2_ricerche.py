@@ -5,6 +5,7 @@
 #      python3 v2_ricerche.py --aggiungi (aggiunge solo le OSS in osservazione, senza toccare le altre)
 #      python3 v2_ricerche.py --console  (aggiunge le 9 ricerche console e giochi dell'ondata 1, 31/10)
 #      python3 v2_ricerche.py --onda3    (aggiunge il resto della lista V2 non ancora sul tracker, senza categorie a rischio; 31/10)
+#      python3 v2_ricerche.py --onda4    (aggiunge le ricerche di categorie nuove: LEGO, pedali, retro games, strumenti; 01/11)
 #      python3 v2_ricerche.py --onda2    (aggiunge le 14 ricerche per brand di utensili, hi-fi, foto, casa, bimbi: raccolta dati larga, 31/10)
 import sys,os,re,html,json,urllib.request,urllib.parse
 QUI=os.path.dirname(os.path.abspath(__file__)); B='https://vinted-radar-production.up.railway.app'
@@ -45,6 +46,14 @@ ONDA2=[ # 31/10, raccolta dati larga (richiesta dell'utente): brand ovvi di cate
  ('V2 fujifilm','','fujifilm',[3075,3076],100),('V2 dji','','dji',[3723,3074],100),('V2 dyson','','dyson',[3543],100),
  ('V2 kitchenaid','','kitchenaid',[],80),('V2 stokke seggioloni','','stokke',[3450],60),('V2 bugaboo','','bugaboo',[1612],60),
 ]
+ONDA4=[ # 01/11, categorie nuove (richiesta dell'utente: "altri affari da altre categorie"). Ricerche di testo su prodotti precisi, senza id categoria
+ # inventati (solo 3025/3026 gia' visti nei log); tetto 50 EUR (regola 10). Il bot scarta i falsi con Jev + Gemini; da misurare con anomalie.py e RIEPILOGO BANDA.
+ ('V2 lego star wars','lego star wars',None,[],50),('V2 lego technic','lego technic',None,[],50),('V2 lego ideas icons','lego ideas icons',None,[],50),
+ ('V2 lego sigillato','lego sigillato',None,[],50),
+ ('V2 pedale boss','boss pedale chitarra',None,[],50),('V2 pedale electro harmonix','electro harmonix',None,[],50),('V2 pedale mxr','mxr pedale',None,[],50),
+ ('V2 gamecube','gamecube',None,[3025,3026],50),('V2 nintendo 64','nintendo 64',None,[3025,3026],50),('V2 super nintendo','super nintendo snes',None,[3025,3026],50),
+ ('V2 game boy advance','game boy advance',None,[3025,3026],50),
+]
 RISCHIO=('V2 alessi','V2 iittala','V2 rosenthal','V2 zwilling','V2 gopro','V2 dji', # 01/11 (b) potate: margine_basso 90% (prezzi 15-28 EUR) o 0 vendite veloci su 38 tracciate (URL in docs/analisi/radar-ricerche-potate-2026-11-01-b.json)
          'V2 games workshop','V2 smeg','V2 ginori', # 01/11 potate: 0 gialli/verdi su 24 h, 91-100% margine_basso (URL salvate in docs/analisi/radar-ricerche-potate-2026-11-01.json)
          'V2 airpods pro','V2 apple airpods','V2 omega uomo','V2 omega donna','V2 longines','V2 tudor','V2 montblanc penne', # repliche frequenti: fuori (piano 31/10)
@@ -79,6 +88,12 @@ if '--console' in sys.argv:
         post('/add_query',{'query':u,'query_name':nome}); print('ok',nome)
 if '--onda2' in sys.argv:
     for nome,txt,br,cat,pt in ONDA2:
+        u='https://www.vinted.it/catalog?'+(f'search_text={urllib.parse.quote(txt)}&' if txt else '')+(f'brand_ids[]={B_[br]}&' if br else '')+''.join(f'catalog[]={i}&' for i in cat)+f"price_to={pt}&currency=EUR&order=newest_first"
+        post('/add_query',{'query':u,'query_name':nome}); print('ok',nome)
+if '--onda4' in sys.argv:
+    gia=_nomi_sul_tracker()
+    for nome,txt,br,cat,pt in ONDA4:
+        if nome in gia: continue
         u='https://www.vinted.it/catalog?'+(f'search_text={urllib.parse.quote(txt)}&' if txt else '')+(f'brand_ids[]={B_[br]}&' if br else '')+''.join(f'catalog[]={i}&' for i in cat)+f"price_to={pt}&currency=EUR&order=newest_first"
         post('/add_query',{'query':u,'query_name':nome}); print('ok',nome)
 if '--onda3' in sys.argv:
