@@ -23,3 +23,16 @@ def test_identita_e_guasto():
     assert product_identity("Nintendo Switch", "Nintendo")["codice_modello"] is None
     assert guasto_nella_descrizione("Venduta per ricambi, non funziona") == "non funziona"
     assert guasto_nella_descrizione("Come nuova, funziona benissimo") is None
+
+
+def test_stima_paese_jev(monkeypatch):
+    from bot import jev
+    monkeypatch.setattr(jev, "JEV_GIUDICE", True)
+    monkeypatch.setenv("TYPESAFE_API_KEY", "x")
+    risp = {"answers": {"paese": {"choice": "francia", "confidence": 0.9}}}
+    monkeypatch.setattr(jev, "_chiama_jev", lambda corpo: risp)
+    assert jev.stima_paese("Appareil photo", "Vendu avec boite") == ("francia", 0.9)
+    risp["answers"]["paese"] = {"choice": "francia", "confidence": 0.3}
+    assert jev.stima_paese("Appareil photo") is None
+    risp["answers"]["paese"] = {"choice": "non_chiaro", "confidence": 0.95}
+    assert jev.stima_paese("Camera") is None

@@ -15,7 +15,7 @@ from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 from bot import db, radar_appreso
 from bot.comps import _cerca_vinted_testo_diretto, _miniature_comp
 from bot.foto import download_image_bytes, optimize_image_bytes
-from bot.jev import JEV_COMPS, JEV_FOTO_COMPS, MAX_COMPS_VERIFICA, MAX_FOTO_COMPS, classifica_comparabili, comparabili_stesso_modello, confronta_foto_comparabili, giudica_completo, precontrollo_tipo, prezzi_stesso_modello, riconosci_prodotto
+from bot.jev import JEV_COMPS, JEV_FOTO_COMPS, MAX_COMPS_VERIFICA, MAX_FOTO_COMPS, classifica_comparabili, comparabili_stesso_modello, confronta_foto_comparabili, giudica_completo, precontrollo_tipo, prezzi_stesso_modello, riconosci_prodotto, stima_paese
 from bot.config import SPEDIZIONE_STIMATA_EUR
 from bot.qualita_comps import fascia_numero, guasto_nella_descrizione, product_identity, punteggio_comparabili
 from bot.spedizione import UNKNOWN, campi_spedizione_da_html, classe_taglia, costo_spedizione, paese_da_html
@@ -250,7 +250,7 @@ def testi_piu_larghi(testo, brand=None):
     return [t for i, t in enumerate(out) if t and t != testo and t not in out[:i]]
 
 
-async def _verifica_comparabili(titolo, prezzo, brand, catalogo, testo):
+async def _verifica_comparabili(titolo, prezzo, brand, catalogo, testo, descrizione=None):
     """Cerca comparabili SERI: Jev giudica ogni titolo (stesso modello / simile / altro); se gli stessi modelli sono meno di 3 si
     provano le ricerche dalla sigla del modello (query_alternative) e si giudica l'insieme. Ritorna (info, prezzi dello stesso modello)
     o (None, []) se non c'e' niente da giudicare."""
@@ -259,7 +259,7 @@ async def _verifica_comparabili(titolo, prezzo, brand, catalogo, testo):
     ok = []
     etichette = None
     if len(pool) >= 3:
-        etichette = await asyncio.to_thread(classifica_comparabili, titolo, [t for t, _ in pool], None)
+        etichette = await asyncio.to_thread(classifica_comparabili, titolo, [t for t, _ in pool], descrizione)
         ok = prezzi_stesso_modello(pool, etichette)
     # Se i comparabili veri restano pochi si cerca ancora (richiesta dell'utente, 01/11): prima dalla sigla del modello,
     # poi con ricerche piu' larghe (marca + 2 parole); Jev rigiudica ogni titolo. Al massimo 3 ricerche in piu'.
@@ -267,7 +267,7 @@ async def _verifica_comparabili(titolo, prezzo, brand, catalogo, testo):
     if len(ok) < 3:
         # Riconoscimento del prodotto dal titolo (01/11): Jev sceglie il nome del prodotto, si cerca con marca + categoria + quel nome,
         # poi con la sua prima parola ("skylanders swap force", poi "skylanders"); mai la sola marca.
-        riconosciuto = await asyncio.to_thread(riconosci_prodotto, titolo, nomi_candidati(titolo, brand), None)
+        riconosciuto = await asyncio.to_thread(riconosci_prodotto, titolo, nomi_candidati(titolo, brand), descrizione)
         if riconosciuto:
             parole = riconosciuto[0].split()
             ricerche += [" ".join(([brand.lower()] if brand and brand.lower() not in riconosciuto[0] else []) + parole[:3]), parole[0]]
@@ -283,7 +283,7 @@ async def _verifica_comparabili(titolo, prezzo, brand, catalogo, testo):
         usate.append(q)
         pool = (pool + nuovi)[:MAX_COMPS_VERIFICA]
         if len(pool) >= 3:
-            etichette = await asyncio.to_thread(classifica_comparabili, titolo, [t for t, _ in pool], None)
+            etichette = await asyncio.to_thread(classifica_comparabili, titolo, [t for t, _ in pool], descrizione)
             ok = prezzi_stesso_modello(pool, etichette)
     if not etichette:
         return None, []
@@ -381,9 +381,15 @@ async def analizza(parsed, url, foto=None, query_url=None):
             return _rosso("descrizione_guasto")
         info_pag = _info_pagina.pop(url, None) or {}
         paese = info_pag.get("paese")
+        paese_fonte = "pagina" if paese else None
+        if not paese:
+            # Paese non nell'HTML: lo stima Jev da titolo e descrizione (01/11, richiesta dell'utente); resta una stima dichiarata.
+            stimato = await asyncio.to_thread(stima_paese, titolo, _descrizioni.get(url))
+            if stimato:
+                paese, paese_fonte = stimato[0], "jev"
         classe = classe_taglia(titolo)
         sped_eur, sped_stato = costo_spedizione(paese, classe)
-        log.info("SPEDIZIONE PAGINA | item=%s | paese=%s | classe=%s | stato=%s | eur=%s | campi=%s", item_id, paese or "-", classe, sped_stato,
+        log.info("SPEDIZIONE PAGINA | item=%s | paese=%s(%s) | classe=%s | stato=%s | eur=%s | campi=%s", item_id, paese or "-", paese_fonte or "-", classe, sped_stato,
                  sped_eur, ";".join(f"{k}={x}" for k, x in info_pag.get("campi") or []) or "-")
         prezzi, n_grezzi, dalla_cache = await _prezzi_simili(testo, titolo, prezzo, brand, catalogo)
         if prezzi is None:
@@ -414,7 +420,7 @@ async def analizza(parsed, url, foto=None, query_url=None):
         verificata = None
         titoli_jev = _titoli_simili.get((testo, catalogo))
         if JEV_COMPS and (v.get("semaforo") in ("verde", "giallo") or v.get("motivo") == "pochi_comparabili"):
-            info, ok_prezzi = await _verifica_comparabili(titolo, prezzo, brand, catalogo, testo)
+            info, ok_prezzi = await _verifica_comparabili(titolo, prezzo, brand, catalogo, testo, _descrizioni.get(url))
             if info:
                 v_ver = valuta(prezzo, stima_mercato(ok_prezzi, min_n=3), spedizione_eur=sped_eur)
                 verificata = {**info, "rivendita": v_ver.get("rivendita"), "margine": v_ver.get("margine"), "roi": v_ver.get("roi"),
@@ -467,14 +473,14 @@ async def analizza(parsed, url, foto=None, query_url=None):
                 jev_foto_comps = await asyncio.to_thread(confronta_foto_comparabili, titolo, foto, miniature)
                 log.info("RADAR V2 FOTO COMPS | item=%s | semaforo=%s | byte=%s | esito=%s | titolo=%s", item_id, v.get("semaforo"),
                          sum(len(m) for m in miniature), jev_foto_comps, titolo[:60])
-        db.scrivi_evento("radar_v2", item_id, brand, {**dati, "qualita": qualita, "identita": identita, "paese": paese, "classe": classe, "spedizione_eur": sped_eur, "spedizione_stato": sped_stato,
+        db.scrivi_evento("radar_v2", item_id, brand, {**dati, "qualita": qualita, "identita": identita, "paese": paese, "classe": classe, "paese_fonte": paese_fonte, "spedizione_eur": sped_eur, "spedizione_stato": sped_stato,
                                                       "costo_totale": v.get("costo_totale"), "jev_foto_comps": jev_foto_comps, "verificata": verificata, "link_comps": [list(c) for c in link_comps], "jev": jev, "jev_conf": jev_conf,
                                                       "jev_simili": jev_simili[0] if jev_simili else None,
                                                       "jev_simili_conf": jev_simili[1] if jev_simili else None,
                                                       "jev_motivo": jev_motivo[0] if jev_motivo else None,
                                                       "jev_motivo_frase": jev_motivo[1] if jev_motivo else None})
         return {"semaforo": v.get("semaforo"), "rivendita": v.get("rivendita"), "margine": v.get("margine"),
-                "spedizione_eur": sped_eur, "spedizione_stato": sped_stato, "costo_totale": v.get("costo_totale"), "paese": paese,
+                "spedizione_eur": sped_eur, "spedizione_stato": sped_stato, "costo_totale": v.get("costo_totale"), "paese": paese, "paese_fonte": paese_fonte,
                 "qualita": qualita, "richiesto_mediano": v.get("richiesto_mediano"), "vendita_rapida": v.get("vendita_rapida"), "calibrazione": v.get("calibrazione"),
                 "roi": v.get("roi"), "n": len(prezzi), "n_grezzi": n_grezzi, "allargata": allargata, "motivo": v.get("motivo"),
                 "jev": jev, "jev_conf": jev_conf, "jev_motivo": jev_motivo[0] if jev_motivo else None,
