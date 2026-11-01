@@ -56,7 +56,7 @@ def test_tetto_orario(monkeypatch):
 def _prova(monkeypatch, risposta, verdetto_v2=None):
     inviati = []
 
-    async def finto_invia(testo, foto, suono=False, ricerca=None):
+    async def finto_invia(testo, foto, suono=False, ricerca=None, url=None):
         inviati.append((testo, suono))
 
     async def finta_controlla(*a, **k):
@@ -130,3 +130,14 @@ def test_testo_avviso_a_blocchi():
     assert any(r.startswith("🧠 Jev") for r in righe) and any(r.startswith("👁 Gemini foto") for r in righe)
     assert any(r.startswith("💡 Stima Gemini") for r in righe)
     assert righe[-1] == "https://www.vinted.it/items/777-x" and righe[-2] == ""
+
+
+def test_velocita_e_ricerca_modello():
+    d = rg.leggi_risposta(json.dumps({**OK, "velocita_rivendita": "ore", "velocita_base": "molto richiesta", "ricerca_modello": "  Nintendo Switch OLED ",
+                                      "ricerca_semantica": "Nintendo Switch console"}))
+    assert d["velocita_rivendita"] == "ore" and d["ricerca_modello"] == "nintendo switch oled" and d["ricerca_semantica"] == "nintendo switch console"
+    riga = rg.riga_gemini(d)
+    assert "Velocità di rivendita stimata da Gemini: entro 24 ore (stima): molto richiesta" in riga
+    # valore fuori elenco o assente: nessuna velocita'
+    assert rg.leggi_risposta(json.dumps({**OK, "velocita_rivendita": "boh"}))["velocita_rivendita"] is None
+    assert "Velocità" not in rg.riga_gemini(rg.leggi_risposta(json.dumps(OK)))

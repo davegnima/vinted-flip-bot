@@ -42,12 +42,17 @@ Guarda le foto e il testo e rispondi solo sui fatti visibili o dichiarati:
 - rivendita_eur: la tua stima in EUR del prezzo realistico a cui questo esemplare, nelle condizioni che vedi, si rivende usato in Italia in tempi brevi (non il prezzo di listino ne' di un esemplare nuovo). Usa il modello e lo stato che leggi dalle foto. Se non conosci abbastanza il modello scrivi 0.
 - rivendita_confidenza: tra 0 e 1, quanto sei sicuro di quella stima (sotto 0,4 se il modello e' poco noto o le foto non bastano).
 - rivendita_base: max 100 caratteri, su cosa si basa la stima (es. 'modello comune, prezzi usati tipici 90-110').
+- velocita_rivendita: quanto ci mette tipicamente questo oggetto usato a vendersi in Italia a quel prezzo: "ore" (entro 24 h), "giorni" (entro una settimana), "settimane", "mesi". Usa la tua conoscenza del mercato dell'usato e di quanto e' richiesto il modello.
+- velocita_base: max 100 caratteri, su cosa si basa (es. 'console molto richiesta, si vende subito').
+- ricerca_modello: la ricerca di annunci SIMILI da fare su Vinted per trovare lo STESSO modello esatto che vedi/leggi (marca + modello + variante, 2-5 parole in minuscolo, senza condizioni ne' parole come usato/vendo). Es. 'nintendo switch oled', 'dyson v11 absolute'. Se non riconosci il modello scrivi "".
+- ricerca_semantica: una ricerca piu' larga ma ancora molto comparabile (stessa famiglia/serie, 2-4 parole), da usare solo se quella del modello esatto trova pochi annunci. Es. 'nintendo switch console'. Se non sai scrivi "".
 Nel dubbio tra scarta e dubbio scegli dubbio; nel dubbio tra dubbio e conferma scegli dubbio. Non inventare cio' che non vedi."""
 
 SCHEMA = {
     "type": "OBJECT",
     "propertyOrdering": ["oggetto", "corrisponde_al_titolo", "funzionante", "completo", "danni_visibili", "autenticita",
-                         "verdetto", "motivo", "confidenza", "rivendita_eur", "rivendita_confidenza", "rivendita_base"],
+                         "verdetto", "motivo", "confidenza", "rivendita_eur", "rivendita_confidenza", "rivendita_base",
+                         "velocita_rivendita", "velocita_base", "ricerca_modello", "ricerca_semantica"],
     "properties": {
         "oggetto": {"type": "STRING"},
         "corrisponde_al_titolo": {"type": "STRING", "enum": ["si", "no", "dubbio"]},
@@ -61,10 +66,17 @@ SCHEMA = {
         "rivendita_eur": {"type": "NUMBER"},
         "rivendita_confidenza": {"type": "NUMBER"},
         "rivendita_base": {"type": "STRING"},
+        "velocita_rivendita": {"type": "STRING", "enum": ["ore", "giorni", "settimane", "mesi"]},
+        "velocita_base": {"type": "STRING"},
+        "ricerca_modello": {"type": "STRING"},
+        "ricerca_semantica": {"type": "STRING"},
     },
     "required": ["oggetto", "corrisponde_al_titolo", "funzionante", "completo", "danni_visibili", "autenticita", "verdetto", "motivo", "confidenza",
-                 "rivendita_eur", "rivendita_confidenza", "rivendita_base"],
+                 "rivendita_eur", "rivendita_confidenza", "rivendita_base",
+                 "velocita_rivendita", "velocita_base", "ricerca_modello", "ricerca_semantica"],
 }
+
+VELOCITA = {"ore": "entro 24 ore", "giorni": "entro una settimana", "settimane": "in alcune settimane", "mesi": "lenta, anche mesi"}
 
 _chiamate = []   # istanti (time.time) delle chiamate dell'ultima ora: tetto RADAR_GEMINI_MAX_ORA
 
@@ -110,6 +122,10 @@ def leggi_risposta(testo):
     except (TypeError, ValueError):
         d["rivendita_confidenza"] = None
     d["rivendita_base"] = str(d.get("rivendita_base") or "")[:110]
+    d["velocita_rivendita"] = d.get("velocita_rivendita") if d.get("velocita_rivendita") in VELOCITA else None
+    d["velocita_base"] = str(d.get("velocita_base") or "")[:110]
+    for k in ("ricerca_modello", "ricerca_semantica"):
+        d[k] = " ".join(str(d.get(k) or "").lower().split())[:60]
     return d
 
 
@@ -146,10 +162,10 @@ async def controlla(titolo, prezzo, url, foto_tracker=None, item_id=None):
         testo, costo, _n = await chiama_gemini(SYSTEM_PROMPT, testo_utente(titolo, prezzo, descrizione, condizione), foto,
                                                grounding=False, response_schema=SCHEMA, ruolo="occhio")
         d = leggi_risposta(testo)
-        log.info("RADAR GEMINI | item=%s | verdetto=%s | conf=%s | oggetto=%s | funz=%s | completo=%s | danni=%s | autent=%s | foto=%s | %.1fs | rivendita_gem=%s | conf_riv=%s | motivo=%s | titolo=%s",
+        log.info("RADAR GEMINI | item=%s | verdetto=%s | conf=%s | oggetto=%s | funz=%s | completo=%s | danni=%s | autent=%s | foto=%s | %.1fs | rivendita_gem=%s | conf_riv=%s | velocita=%s | ric_modello=%s | ric_sem=%s | motivo=%s | titolo=%s",
                  item_id, d["verdetto"] if d else "nessuna_risposta", d.get("confidenza") if d else "-", (d or {}).get("oggetto", "-"),
                  (d or {}).get("funzionante", "-"), (d or {}).get("completo", "-"), (d or {}).get("danni_visibili", "-"),
-                 (d or {}).get("autenticita", "-"), len(foto), time.time() - t0, (d or {}).get("rivendita_eur"), (d or {}).get("rivendita_confidenza"), (d or {}).get("motivo", (testo or "")[:80]), (titolo or "")[:60])
+                 (d or {}).get("autenticita", "-"), len(foto), time.time() - t0, (d or {}).get("rivendita_eur"), (d or {}).get("rivendita_confidenza"), (d or {}).get("velocita_rivendita"), (d or {}).get("ricerca_modello"), (d or {}).get("ricerca_semantica"), (d or {}).get("motivo", (testo or "")[:80]), (titolo or "")[:60])
         return d
     except Exception as e:  # noqa: BLE001 - il controllo non deve mai fermare l'avviso
         log.warning("RADAR GEMINI | item=%s | errore: %s", item_id, e)
@@ -167,4 +183,6 @@ def riga_gemini(d):
         rc = d.get("rivendita_confidenza")
         riga += f"\nStima Gemini della rivendita: circa {d['rivendita_eur']:g} € (stima" + (f", confidenza {rc:.2f}".replace(".", ",") if rc is not None else "") + ")" \
                 + (f": {d['rivendita_base']}" if d.get("rivendita_base") else "")
+    if d.get("velocita_rivendita"):
+        riga += f"\nVelocità di rivendita stimata da Gemini: {VELOCITA[d['velocita_rivendita']]} (stima)" + (f": {d['velocita_base']}" if d.get("velocita_base") else "")
     return riga
