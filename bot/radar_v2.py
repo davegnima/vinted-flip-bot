@@ -15,7 +15,7 @@ from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 from bot import db, radar_appreso
 from bot.comps import _cerca_vinted_testo_diretto, _miniature_comp
 from bot.foto import download_image_bytes, optimize_image_bytes
-from bot.jev import JEV_COMPS, JEV_FOTO_COMPS, MAX_COMPS_VERIFICA, MAX_FOTO_COMPS, classifica_comparabili, comparabili_stesso_modello, confronta_foto_comparabili, giudica_completo, prezzi_stesso_modello, riconosci_prodotto
+from bot.jev import JEV_COMPS, JEV_FOTO_COMPS, MAX_COMPS_VERIFICA, MAX_FOTO_COMPS, classifica_comparabili, comparabili_stesso_modello, confronta_foto_comparabili, giudica_completo, precontrollo_tipo, prezzi_stesso_modello, riconosci_prodotto
 from bot.config import SPEDIZIONE_STIMATA_EUR
 from bot.logger import log
 from bot.radar import RADAR_SPESA_MAX, parola_vietata, radar_in_pausa
@@ -359,6 +359,13 @@ async def analizza(parsed, url, foto=None, query_url=None):
                 log.info("RADAR V2 OMBRA | item=%s | semaforo=rosso | ok=False | motivo=sopra_riferimento | prezzo=%s | limite=%s | n=%s | ricerca=%s",
                          item_id, prezzo, limite, rif["n"], parsed["query_name"])
                 return _rosso("sopra_riferimento", rif["n"])
+        # Ricambio, lotto, replica o rotto dal titolo (01/11): niente ricerca di comparabili (ne' banda ne' chiamate in piu').
+        scarto_tipo = await asyncio.to_thread(precontrollo_tipo, titolo)
+        if scarto_tipo:
+            db.scrivi_evento("radar_v2", item_id, brand, {**base, "ok": False, "motivo": "jev_tipo:" + scarto_tipo})
+            log.info("RADAR V2 OMBRA | item=%s | semaforo=rosso | ok=False | motivo=jev_tipo:%s | prezzo=%s | ricerca=%s | titolo=%s",
+                     item_id, scarto_tipo, prezzo, parsed.get("query_name") or "-", titolo[:60])
+            return _rosso("jev_tipo:" + scarto_tipo)
         catalogo = await _catalogo_annuncio(url)
         prezzi, n_grezzi, dalla_cache = await _prezzi_simili(testo, titolo, prezzo, brand, catalogo)
         if prezzi is None:

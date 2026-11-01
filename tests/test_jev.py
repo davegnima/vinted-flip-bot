@@ -269,3 +269,38 @@ def test_riconosci_prodotto_sceglie_il_nome_dal_titolo(monkeypatch):
     monkeypatch.setattr(jev, "_chiama_jev", lambda c: {"answers": {"prodotto": {"choice": "nessuno", "confidence": 0.9}}})
     assert jev.riconosci_prodotto("x", ["a b", "c d"]) is None
     assert jev.riconosci_prodotto("x", ["solo uno"]) is None
+
+
+def _precontrollo(monkeypatch, tipo, completo):
+    monkeypatch.setattr(jev, "JEV_GIUDICE", True)
+    monkeypatch.setattr(jev, "JEV_PRECONTROLLO", True)
+    monkeypatch.setenv("TYPESAFE_API_KEY", "k")
+    visto = {}
+
+    def finto(corpo):
+        visto.update(corpo)
+        return {"answers": {"tipo": {"choice": tipo[0], "confidence": tipo[1]},
+                            "completo": {"choice": completo[0], "confidence": completo[1]}}}
+    monkeypatch.setattr(jev, "_chiama_jev", finto)
+    return visto
+
+
+def test_precontrollo_scarta_ricambio_lotto_replica_e_rotto(monkeypatch):
+    visto = _precontrollo(monkeypatch, ("ricambio_accessorio", 0.9), ("si", 0.9))
+    assert jev.precontrollo_tipo("Cavo per Switch") == "ricambio"
+    assert set(visto["questions"]) == {"tipo", "completo"} and "Cavo" in visto["state"]
+    _precontrollo(monkeypatch, ("oggetto_principale", 0.9), ("no", 0.8))
+    assert jev.precontrollo_tipo("Switch rotta") == "guasto_incompleto"
+
+
+def test_precontrollo_lascia_passare_oggetti_veri_o_incerti(monkeypatch):
+    _precontrollo(monkeypatch, ("oggetto_principale", 0.9), ("non_dichiarato", 0.9))
+    assert jev.precontrollo_tipo("Nintendo Switch OLED") is None
+    _precontrollo(monkeypatch, ("replica_o_dubbio", 0.4), ("si", 0.9))
+    assert jev.precontrollo_tipo("Switch") is None
+
+
+def test_precontrollo_spento_senza_chiamate(monkeypatch):
+    monkeypatch.setattr(jev, "JEV_PRECONTROLLO", False)
+    monkeypatch.setattr(jev, "_chiama_jev", lambda c: (_ for _ in ()).throw(AssertionError("chiamata")))
+    assert jev.precontrollo_tipo("x") is None

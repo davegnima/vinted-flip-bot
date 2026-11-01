@@ -445,3 +445,21 @@ def test_estrai_miniature_vinted_e_id_da_url():
     assert _estrai_miniature_vinted(html) == {"123": "https://images1.vinted.net/t/ab/310x430/x.webp?s=1&v=2"}
     assert id_da_url_comp("https://www.vinted.it/items/123-slug") == "123"
     assert id_da_url_comp("https://x") is None
+
+
+def test_ricambio_dal_titolo_non_cerca_comparabili(monkeypatch):
+    import asyncio
+    from bot import radar_v2
+    monkeypatch.setattr(radar_v2, "precontrollo_tipo", lambda t: "ricambio")
+    chiamate = []
+
+    async def finto(*a, **k):
+        chiamate.append(a)
+        return None, 0, False
+    monkeypatch.setattr(radar_v2, "_prezzi_simili", finto)
+    monkeypatch.setattr(radar_v2, "RADAR_V2_OMBRA", True)
+    monkeypatch.setattr(radar_v2, "radar_in_pausa", lambda: False)
+    v2 = asyncio.run(radar_v2.analizza({"title": "Dyson V8 Animal aspirapolvere", "price": "40", "brand": "Dyson"},
+                                       "https://www.vinted.it/items/987654321-dyson-v8"))
+    assert v2["motivo"] == "jev_tipo:ricambio" and v2["semaforo"] == "rosso"
+    assert chiamate == []

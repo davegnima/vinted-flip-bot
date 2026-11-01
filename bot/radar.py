@@ -423,7 +423,7 @@ def testo_risposta_gruppo(v2):
 # Scarti che non sono l'oggetto intero (ricambio, accessorio, scatola, parola vietata, prezzo segnaposto, titolo generico):
 # il messaggio del tracker nel gruppo si cancella invece di rispondere (richiesta dell'utente, 31/10: niente rumore).
 RADAR_CANCELLA_SCARTI = os.environ.get("RADAR_CANCELLA_SCARTI", "1").strip() not in ("0", "false", "no", "")
-MOTIVI_NON_OGGETTO = ("parola_vietata", "pezzo_o_accessorio", "prezzo_segnaposto", "titolo_generico", "famiglia_senza_margine")
+MOTIVI_NON_OGGETTO = ("parola_vietata", "pezzo_o_accessorio", "prezzo_segnaposto", "titolo_generico", "famiglia_senza_margine", "jev_tipo")
 
 
 # Anche i rossi economici (margine/ROI bassi, sopra il riferimento, pochi comparabili) si cancellano dal gruppo
