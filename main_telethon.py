@@ -40,10 +40,12 @@ from telethon.sessions import StringSession
 from PIL import Image
 
 from bot import http_clients as hc
+from bot import db
 from bot.db import DB_FILE
 from bot.gemini_stato import ripristina_stato_gemini
 from bot.tracciamento import importa_tracciamento_jsonl, tracc_riprendi_serie
 from bot.feedback import parse_risposta, registra_feedback, registra_nota, ciclo_callback, _contesti, _ctx_item
+from bot.operazioni import parse_operazione, margine_reale
 from bot.radar_v2 import analizza as radar_v2_analizza
 from bot.radar import RADAR_CHAT_IDS, RADAR_RISPOSTA_GRUPPO, RADAR_CANCELLA_SCARTI, da_cancellare, testo_risposta_gruppo, radar_in_pausa, e_messaggio_radar, gestisci_annuncio_radar, traccia_verdetto_v2, invia_verdetto_v2, risolvi_gruppo_radar, togli_marcatore
 from bot.costanti import (
@@ -1271,6 +1273,34 @@ async def on_comando_venduto(event):
             await event.respond("⚠️ Comando /venduto fallito, vedi i log Railway.", parse_mode=None)
         except Exception:
             pass
+
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'(?i)^/(?:comprato|rivenduto)\s+\S+\s+\d'))
+async def on_comando_operazione(event):
+    """/comprato <item|url> <prezzo> [costi] e /rivenduto <item|url> <prezzo> [giorni]: registra acquisto e vendita reali
+    (tappa 5). La stima del bot per l'annuncio si legge dall'ultimo evento `radar_v2`; senza, il campo resta vuoto."""
+    try:
+        op = parse_operazione(event.raw_text)
+        if not op:
+            await event.respond("Uso: /comprato <link o id> <prezzo> [costi] oppure /rivenduto <link o id> <prezzo> [giorni]", parse_mode=None)
+            return
+        stima = None
+        for ev in reversed(db.leggi_eventi("radar_v2", limite=100000)):
+            if str(ev.get("item_id")) == op["item"]:
+                stima = ev.get("rivendita")
+                break
+        dati = {**op, "stima_bot": stima}
+        if op["tipo"] == "rivendita":
+            acq = [e for e in db.leggi_eventi("operazione") if e.get("item_id") == op["item"] and e.get("tipo") == "acquisto"]
+            if acq:
+                dati["margine"], dati["roi"] = margine_reale(acq[-1]["prezzo"], acq[-1].get("extra"), op["prezzo"])
+        db.scrivi_evento("operazione", op["item"], None, dati)
+        log.info("OPERAZIONE | " + " | ".join(f"{k}={v}" for k, v in dati.items() if v is not None))
+        await event.respond(f"Registrato {op['tipo']} {op['item']} a {op['prezzo']:g} EUR"
+                            + (f" (margine reale {dati['margine']:g} EUR, ROI {dati['roi']}%)" if dati.get("margine") is not None else ""),
+                            parse_mode=None)
+    except Exception:
+        log.error("Errore nel comando operazione:\n%s", traceback.format_exc())
 
 
 @client.on(events.NewMessage(outgoing=True, pattern=r'(?i)^/test_?proxy\b'))
