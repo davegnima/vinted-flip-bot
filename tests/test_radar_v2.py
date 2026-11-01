@@ -51,6 +51,7 @@ def test_righe_v2_e_filtro_solo_verdi(monkeypatch):
     ]
     assert radar._righe_v2(None) == ["Comparabili: non calcolati", "Semaforo: non calcolato"]
     assert radar.pallino_semaforo(v2) == "🟢" and radar.pallino_semaforo(None) == "🔎"
+    monkeypatch.setattr(radar, "RADAR_JEV_RICHIESTO", False)
     monkeypatch.setattr(radar, "RADAR_SEMAFORI", {"verde"})
     assert radar._da_mandare(v2) is True
     assert radar._da_mandare({"semaforo": "giallo"}) is False
@@ -111,6 +112,7 @@ def test_annuncio_fuori_matrice_ha_intestazione_chiara(monkeypatch):
     async def finto_invia(testo, foto, suono=False):
         inviati.append(testo)
 
+    monkeypatch.setattr(radar, "RADAR_JEV_RICHIESTO", False)
     monkeypatch.setattr(radar, "RADAR_SEMAFORI", {"verde", "giallo"})
     monkeypatch.setattr(radar, "_invia_radar", finto_invia)
     asyncio.run(radar._manda_annuncio_senza_modello("1", "Psp portatile", 30.0, "https://www.vinted.it/items/1", {"semaforo": "giallo"}, None))
@@ -129,6 +131,7 @@ def test_invia_verdetto_v2_gialli_e_verdi_una_volta(monkeypatch):
     async def finto_invia(testo, foto, suono=False):
         inviati.append((testo, suono))
 
+    monkeypatch.setattr(radar, "RADAR_JEV_RICHIESTO", False)
     monkeypatch.setattr(radar, "RADAR_SEMAFORI", {"verde", "giallo"})
     monkeypatch.setattr(radar, "_invia_radar", finto_invia)
     monkeypatch.setattr(radar, "radar_in_pausa", lambda *a, **k: False)
@@ -336,3 +339,18 @@ def test_traccia_verdetto_v2_gialli_verdi_sempre_rossi_a_campione(monkeypatch):
     assert not radar.traccia_verdetto_v2(p, u(130), None)
     assert tr._tracc_ctx["101"]["semaforo"] == "verde"
     assert len(partite) == 3 and partite[0][1] == radar.RADAR_RICONTROLLI_SECONDI
+
+
+def test_da_mandare_richiede_jev_affare(monkeypatch):
+    from bot import radar
+    monkeypatch.setattr(radar, "RADAR_JEV_RICHIESTO", True)
+    monkeypatch.setattr(radar, "RADAR_JEV_CONF_MIN", 0.7)
+    monkeypatch.setattr(radar, "RADAR_SEMAFORI", {"verde", "giallo"})
+    ok = {"semaforo": "giallo", "jev": "affare_vero", "jev_conf": 0.9}
+    assert radar._da_mandare(ok) is True
+    assert radar._da_mandare({**ok, "jev": "non_affare"}) is False
+    assert radar._da_mandare({**ok, "jev": "falso_o_ricambio"}) is False
+    assert radar._da_mandare({**ok, "jev_conf": 0.6}) is False
+    assert radar._da_mandare({"semaforo": "verde", "jev": None, "jev_conf": None}) is False
+    assert radar._da_mandare({**ok, "semaforo": "rosso"}) is False
+    assert radar.RADAR_CHAT_ID == (radar.TELEGRAM_ALERT_CHAT_ID or radar.TELEGRAM_OWNER_CHAT_ID)
