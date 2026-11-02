@@ -434,3 +434,38 @@ def riconosci_prodotto(titolo, candidati, descrizione=None):
     nome = candidati[int(scelta[1:])] if isinstance(scelta, str) and scelta.startswith("n") and scelta[1:].isdigit() and int(scelta[1:]) < len(candidati) else None
     log.info("JEV PRODOTTO | titolo=%s | scelto=%s(%s) | candidati=%s | input_tokens=%s", titolo[:60], nome or "nessuno", conf, candidati, token)
     return (nome, conf) if nome else None
+
+
+DOMANDA_AUTENTICITA = {
+    "instructions": "Il capo o la borsa nella foto sembra un articolo originale del brand indicato nel titolo?",
+    "criteria": {
+        "originale_plausibile": "l'articolo sembra coerente con il brand (etichetta, logo, lavorazione, stile) e non ci sono segni di falso",
+        "replica_probabile": "ci sono segni di replica o contraffazione (logo storto, etichetta strana, lavorazione scadente, stile non del brand)",
+        "altra_marca": "l'articolo sembra di un altro brand o senza marca, non di quello del titolo",
+        "non_chiaro": "dalla foto non si riesce a dirlo (etichetta o dettagli non visibili)",
+    },
+}
+CONF_AUTENTICITA_MIN = 0.6
+
+
+def giudica_autenticita(titolo, brand, foto):
+    """(scelta, confidenza) di Jev su una foto: l'articolo sembra originale del brand? Oppure None se Jev e' spento, manca la
+    foto o non risponde. E' un indizio dalla sola foto, non una certificazione. Bloccante: usarla con asyncio.to_thread."""
+    chiave = os.environ.get("TYPESAFE_API_KEY", "").strip()
+    formato = _formato_foto(foto)
+    if not (JEV_GIUDICE and chiave and formato):
+        return None
+    corpo = {"model": MODELLO,
+             "state": f"Annuncio Vinted: {titolo}\nBrand dichiarato: {brand}\nFoto dell'annuncio: {RIFERIMENTO_FOTO}",
+             "assets": {RIFERIMENTO_FOTO: {"type": "image", "data_base64": base64.b64encode(foto).decode(), "format": formato}},
+             "questions": {"autenticita": {"type": "choice", **DOMANDA_AUTENTICITA}}}
+    try:
+        risposta = _chiama_jev(corpo)
+        r = risposta["answers"]["autenticita"]
+        scelta, conf = r.get("choice"), r.get("confidence")
+    except Exception as e:  # noqa: BLE001 - la verifica foto non deve bloccare l'avviso
+        log.warning("JEV AUTENTICITA | non disponibile: %s", str(e)[:200])
+        return None
+    token = (risposta.get("usage") or {}).get("input_tokens")
+    log.info("JEV AUTENTICITA | titolo=%s | brand=%s | scelta=%s(%s) | input_tokens=%s", titolo[:60], brand, scelta, conf, token)
+    return scelta, conf
