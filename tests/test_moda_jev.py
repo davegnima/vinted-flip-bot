@@ -75,16 +75,17 @@ def test_fair_value_borse_lancel_e_kurt_geiger_dai_comparabili():
 
 
 def test_comparabili_con_link_e_diversi():
-    from bot.moda_jev import comparabili_con_link, comparabili_diversi, righe_messaggio
+    from bot.moda_jev import comparabili_con_link, molto_simili, righe_messaggio
     from bot.testo import _normalizza_titolo_per_link as norm
     coppie = [("Borsa A", 40.0), ("Borsa B", 60.0), ("Borsa C", 200.0), ("Borsa D", 55.0)]
     mappa = {(norm(t), f"{p:.2f}"): f"https://www.vinted.it/items/{i}-x" for i, (t, p) in enumerate(coppie, 1)}
     out = comparabili_con_link(coppie, [None, mappa], n=2)
     assert sorted(c[1] for c in out) == [55.0, 60.0]   # i piu' vicini alla mediana (60), non gli estremi
-    assert comparabili_diversi([("diverso", 0.9), ("diverso", 0.7), ("simile", 0.8)])
-    assert not comparabili_diversi([("diverso", 0.9), ("simile", 0.8), ("stesso_modello", 0.8)])
-    assert not comparabili_diversi([("diverso", 0.3), ("diverso", 0.2)])   # confidenza bassa: non conta
-    assert not comparabili_diversi(None)
+    # la foto conta solo se Jev trova il comparabile MOLTO simile (stesso_modello, confidenza >= 0,6); altrimenti nessun effetto
+    coppie = [(("A", 40.0, "u1"), b"x"), (("B", 55.0, "u2"), b"x"), (("C", 60.0, "u3"), b"x")]
+    assert [c[1] for c in molto_simili(coppie, [("stesso_modello", 0.8), ("simile", 0.9), ("stesso_modello", 0.4)])] == [40.0]
+    assert molto_simili(coppie, [("diverso", 0.9), ("simile", 0.9), ("non_chiaro", 0.9)]) == []
+    assert molto_simili(coppie, None) == [] and molto_simili([], [("stesso_modello", 0.9)]) == []
     righe = righe_messaggio({"rivendita": 60, "n": 4, "margine": 50, "roi": 150, "esempi": [], "autenticita": None,
                              "foto_comps": [("stesso_modello", 0.8), ("diverso", 0.7)]})
     assert any("Foto comparabili" in r and "molto simile" in r for r in righe)
@@ -118,3 +119,27 @@ def test_righe_messaggio_con_link_ai_comparabili():
            "link_comps": [("Borsa A", 40.0, "https://www.vinted.it/items/1-borsa-a")]}
     righe = righe_messaggio(ris)
     assert any("https://www.vinted.it/items/1-borsa-a" in r for r in righe)
+
+
+def test_verifica_usa_la_ricerca_testuale_senza_filtro_jev(monkeypatch):
+    """Caso Bottega Veneta blazer: i comparabili della ricerca testuale bastano, Jev non li svuota piu'; la foto conta solo se molto simile."""
+    import asyncio
+    from bot import moda_jev as mj
+    comps = [("Bottega Veneta blazer", p) for p in (150.0, 170.0, 180.0, 200.0, 220.0)]
+
+    async def cerca(url):
+        return "x", True, {}
+    monkeypatch.setattr(mj, "_cerca_vinted_testo_diretto", cerca)
+    monkeypatch.setattr(mj, "parse_comp", lambda r: comps)
+    monkeypatch.setattr(mj, "solo_usato", lambda c: c)
+    monkeypatch.setattr(mj, "comparabili_simili", lambda c, t, b: c)
+    monkeypatch.setattr(mj, "giudica_autenticita", lambda *a: ("non_chiaro", 0.56))
+    monkeypatch.setattr(mj, "optimize_image_bytes", lambda b, n: b)
+    monkeypatch.setattr(mj, "JEV_FOTO_COMPS", False)
+    async def nessun_gemini(*a, **k):
+        return None
+    monkeypatch.setattr(mj, "controlla_gemini", nessun_gemini)
+    info = {"title": "Bottega veneta navy blue blazer", "price": 50, "catalog_id": 2050,
+            "fair_value": {"brand": "bottega veneta", "fv": 211}}
+    ris = asyncio.run(mj.verifica(info, b"img", [b"img"]))
+    assert ris["esito"] == "conferma" and ris["n"] >= 3 and ris["rivendita"] and ris["rivendita"] > 100

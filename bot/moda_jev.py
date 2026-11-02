@@ -20,7 +20,7 @@ from bot.config import SPEDIZIONE_STIMATA_EUR
 from bot.costanti import VINTED_BRAND_IDS
 from bot.foto import download_image_bytes, optimize_image_bytes
 from bot.fair_value import FAIR_VALUE_BRAND_NUOVI
-from bot.jev import CONF_AUTENTICITA_MIN, DOMANDA_FOTO_COMP_MODA, JEV_FOTO_COMPS, MAX_FOTO_COMPS, classifica_comparabili, confronta_foto_comparabili, comparabili_simili as simili_jev, comparabili_stesso_modello, giudica_autenticita
+from bot.jev import CONF_AUTENTICITA_MIN, DOMANDA_FOTO_COMP_MODA, JEV_FOTO_COMPS, MAX_FOTO_COMPS, confronta_foto_comparabili, giudica_autenticita
 from bot.logger import log
 from bot.moda_gemini import controlla as controlla_gemini, e_replica, riga_messaggio as riga_gemini, serve_controllo
 from bot.testo import _normalizza_titolo_per_link
@@ -35,6 +35,9 @@ MODA_JEV_TUTTI = os.environ.get("MODA_JEV_TUTTI", "0").strip() in ("1", "true", 
 # Jev (comparabili, foto) o con "scartato dalla verifica". 0 = avviso trattenuto fino alla verifica.
 MODA_JEV_SUBITO = os.environ.get("MODA_JEV_SUBITO", "1").strip() not in ("0", "false", "no", "")
 MIN_COMPARABILI = 3
+# 02/11: la foto dei comparabili conta solo se Jev li trova MOLTO simili (stesso modello, confidenza >= soglia): allora il loro prezzo
+# diventa la rivendita; altrimenti resta la ricerca testuale come prima (Jev non scarta piu' i comparabili: era troppo stringente).
+CONF_FOTO_MOLTO_SIMILE = 0.6
 _conteggio = {"giorno": None, "n": 0}
 
 
@@ -81,19 +84,30 @@ def comparabili_con_link(coppie, mappe, n=MAX_FOTO_COMPS):
     return out
 
 
-def comparabili_diversi(confronti):
-    """True se la maggior parte delle miniature e' di un altro tipo di prodotto (scelta 'diverso' con confidenza >= 0,5). Pura."""
-    if not confronti:
-        return False
-    return sum(1 for sc, cf in confronti if sc == "diverso" and (cf or 0) >= 0.5) * 2 > len(confronti)
-
-
 async def _miniature_dei_comparabili(link_comps):
-    """Byte (ridotti a 512 px) delle miniature dei comparabili con link noto. Lista vuota se mancano."""
-    ids = [re.search(r"/items/(\d+)", c[2]) for c in link_comps]
-    urls = [u for u in (_miniature_comp.get(m.group(1)) for m in ids if m) if u][:MAX_FOTO_COMPS]
-    scaricate = await asyncio.gather(*(download_image_bytes(u) for u in urls), return_exceptions=True)
-    return [await asyncio.to_thread(optimize_image_bytes, b, 512) for b in scaricate if isinstance(b, bytes) and b]
+    """[(comparabile, byte)] delle miniature (ridotte a 512 px) dei comparabili con link noto e foto scaricabile: l'allineamento resta,
+    cosi' il confronto di Jev si riferisce al comparabile giusto. Lista vuota se mancano."""
+    con_foto = []
+    for c in link_comps:
+        m = re.search(r"/items/(\d+)", c[2])
+        u = _miniature_comp.get(m.group(1)) if m else None
+        if u:
+            con_foto.append((c, u))
+    con_foto = con_foto[:MAX_FOTO_COMPS]
+    scaricate = await asyncio.gather(*(download_image_bytes(u) for _c, u in con_foto), return_exceptions=True)
+    out = []
+    for (c, _u), b in zip(con_foto, scaricate):
+        if isinstance(b, bytes) and b:
+            out.append((c, await asyncio.to_thread(optimize_image_bytes, b, 512)))
+    return out
+
+
+def molto_simili(coppie, confronti, conf_min=CONF_FOTO_MOLTO_SIMILE):
+    """[(titolo, prezzo, url)] dei comparabili che Jev giudica MOLTO simili alla foto dell'annuncio (stesso_modello con confidenza >=
+    conf_min). `coppie` = [(comparabile, byte)] come da _miniature_dei_comparabili; `confronti` = [(scelta, conf)] nello stesso ordine. Pura."""
+    if not coppie or not confronti:
+        return []
+    return [c for (c, _b), (sc, cf) in zip(coppie, confronti) if sc == "stesso_modello" and (cf or 0) >= conf_min]
 
 
 def _entro_il_tetto():
@@ -142,7 +156,7 @@ def righe_messaggio(ris):
     """Righe (testo semplice) da aggiungere all'avviso: rivendita dai comparabili e giudizio sulla foto. Pura."""
     righe = []
     if ris.get("rivendita") is not None:
-        righe.append(f"🔎 Comparabili Vinted: {ris['n']} annunci, rivendita ~{ris['rivendita']:.0f} € "
+        righe.append(f"🔎 Comparabili Vinted{' (molto simili alla foto)' if ris.get('da_foto') else ''}: {ris['n']} annunci, rivendita ~{ris['rivendita']:.0f} € "
                      f"(margine ~{ris['margine']:.0f} €, ROI {ris['roi']:.0f}%)")
         link = ris.get("link_comps") or []
         if link:   # comparabili identificati, con il link all'annuncio (richiesta dell'utente, 02/11)
@@ -152,8 +166,7 @@ def righe_messaggio(ris):
             for t, p in (ris.get("esempi") or [])[:3]:
                 righe.append(f"• {p:g} € {t[:50]}")
     else:
-        righe.append("🔎 Comparabili Vinted di tipo diverso dalla foto: stima a priori, non verificata" if ris.get("motivo") == "comparabili_diversi"
-                     else "🔎 Comparabili Vinted non trovati: la stima resta quella a priori")
+        righe.append("🔎 Comparabili Vinted non trovati: la stima resta quella a priori")
     fc = ris.get("foto_comps")
     if fc:
         nomi = {"stesso_modello": "molto simile", "simile": "simile", "diverso": "diverso", "non_chiaro": "non chiaro"}
@@ -174,7 +187,7 @@ async def verifica(listing_info, foto, tutte_le_foto=None):
     """Dict {esito, motivo, n, rivendita, margine, roi, link, autenticita}. Mai eccezioni: in caso di errore 'non_verificato'."""
     fv = listing_info.get("fair_value") or {}
     brand = fv.get("brand")
-    ris = {"esito": "non_verificato", "motivo": "errore", "n": 0, "rivendita": None, "margine": None, "roi": None, "esempi": [], "autenticita": None, "foto_comps": None, "gemini": None, "link_comps": []}
+    ris = {"esito": "non_verificato", "motivo": "errore", "n": 0, "rivendita": None, "margine": None, "roi": None, "esempi": [], "autenticita": None, "foto_comps": None, "gemini": None, "link_comps": [], "da_foto": False}
     try:
         titolo = listing_info.get("title") or ""
         prezzo = float(listing_info.get("price") or 0)
@@ -201,12 +214,6 @@ async def verifica(listing_info, foto, tutte_le_foto=None):
                 break
         comps_pool = usate
         prezzi = [p for _t, p in comps_pool]
-        if len(comps_pool) >= MIN_COMPARABILI:
-            etichette = await asyncio.to_thread(classifica_comparabili, titolo, [t for t, _ in comps_pool], listing_info.get("description"))
-            if etichette:
-                veri = comparabili_stesso_modello(comps_pool, etichette) + simili_jev(comps_pool, etichette)
-                comps_pool = veri
-                prezzi = [p for _t, p in veri]
         link_comps = comparabili_con_link(comps_pool, mappe)
         stima = stima_mercato(prezzi, min_n=MIN_COMPARABILI)
         v = valuta(prezzo, stima, spedizione_eur=SPEDIZIONE_STIMATA_EUR) if stima else None
@@ -215,22 +222,25 @@ async def verifica(listing_info, foto, tutte_le_foto=None):
             # Vinted serve anche webp: Jev accetta solo png/jpeg, quindi si converte in jpeg (prima la foto non partiva: foto=-)
             foto_jpeg = await asyncio.to_thread(optimize_image_bytes, foto, 768)
             ris["autenticita"] = await asyncio.to_thread(giudica_autenticita, titolo, brand, foto_jpeg)
-        if JEV_FOTO_COMPS and foto_jpeg and v:
-            # foto dell'annuncio contro le miniature dei comparabili: stesso tipo di prodotto? Se la maggior parte e' di altro tipo la
-            # stima non regge e l'avviso parte non verificato (non scartato: l'errore di prezzo puo' essere vero)
-            miniature = await _miniature_dei_comparabili(link_comps)
-            if miniature:
-                ris["foto_comps"] = await asyncio.to_thread(confronta_foto_comparabili, titolo, foto_jpeg, miniature, DOMANDA_FOTO_COMP_MODA)
-                if comparabili_diversi(ris["foto_comps"]):
-                    log.info("MODA JEV COMPARABILI DIVERSI | brand=%s | confronti=%s | titolo=%s", brand, ris["foto_comps"], titolo[:60])
-                    v = None
+        if JEV_FOTO_COMPS and foto_jpeg and link_comps:
+            # foto dell'annuncio contro le miniature dei comparabili piu' vicini alla mediana: se Jev li trova MOLTO simili il loro prezzo
+            # diventa la rivendita (anche con pochi comparabili testuali); se no si torna alla stima testuale, senza foto
+            coppie = await _miniature_dei_comparabili(link_comps)
+            if coppie:
+                ris["foto_comps"] = await asyncio.to_thread(confronta_foto_comparabili, titolo, foto_jpeg, [b for _c, b in coppie], DOMANDA_FOTO_COMP_MODA)
+                vicini = molto_simili(coppie, ris["foto_comps"])
+                if vicini:
+                    stima_v = stima_mercato([c[1] for c in vicini], min_n=1)
+                    if stima_v:
+                        v = valuta(prezzo, stima_v, spedizione_eur=SPEDIZIONE_STIMATA_EUR)
+                        link_comps = vicini
+                        ris["da_foto"] = True
+                        log.info("MODA JEV FOTO | brand=%s | molto_simili=%s/%s | rivendita=%s | titolo=%s", brand, len(vicini), len(coppie), v.get("rivendita"), titolo[:60])
         if serve_controllo(ris["autenticita"], prezzo, (v or {}).get("rivendita")):
             # Jev non e' sicuro dell'originalita' (o il prezzo e' troppo basso): Gemini gratuito guarda tutte le foto
             ris["gemini"] = await controlla_gemini(titolo, brand, prezzo, listing_info.get("description"), tutte_le_foto or ([foto] if foto else []),
                                                    item_id=listing_info.get("item_id"))
         ris["esito"], ris["motivo"] = decidi(v, ris["autenticita"], ris["gemini"])
-        if v is None and ris["foto_comps"] and comparabili_diversi(ris["foto_comps"]):
-            ris["motivo"] = "comparabili_diversi"
         if v:
             ris.update(n=v.get("n") or len(prezzi), rivendita=v.get("rivendita"), margine=v.get("margine"), roi=v.get("roi"),
                        esempi=list(comps_pool[:3]), link_comps=link_comps)
