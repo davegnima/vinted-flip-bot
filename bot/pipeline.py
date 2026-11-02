@@ -6,11 +6,11 @@ import traceback
 from functools import partial
 
 
-from bot.scheda import aggiorna_scheda_jev, SOLO_SEMAFORO, avviso_solo_semaforo, testo_avviso_solo_semaforo, richiede_etichetta, invia_richiesta_etichetta, ANALISI_GEMINI_ATTIVA, STATO_ANALISI_COMPLETATA, STATO_ANALISI_INTERROTTA, _PermessoAnalisi, _aggiorna_stato_scheda, _invia_galleria_anticipata, _invia_risultato_telegram, aggiorna_preavviso, invia_galleria_dopo_lampo, invia_preavviso, riga_scarto_preavviso, componi_testi_verdetto
+from bot.scheda import aggiorna_scheda_jev, SOLO_SEMAFORO, avviso_solo_semaforo, testo_avviso_solo_semaforo, richiede_etichetta, invia_richiesta_etichetta, ANALISI_GEMINI_ATTIVA, STATO_ANALISI_COMPLETATA, STATO_ANALISI_INTERROTTA, _PermessoAnalisi, _aggiorna_stato_scheda, _invia_galleria_anticipata, _invia_risultato_telegram, aggiorna_preavviso, invia_galleria_dopo_lampo, invia_preavviso, riga_scarto_preavviso, componi_testi_verdetto, testo_preavviso
 from bot.verdetto import CERVELLO_CAMPIONI_EXTRA, _a_float, _estrai_item_id_da_url, _estrai_prezzi_da_pool_ricerca, _riepilogo_comp_per_fonte, calcola_verdetto, classifica_provenienza_comp, consolida_target_cervello, render_messaggio_verdetto, valida_payload_cervello
 from bot.config import GEMINI_SOGLIA_PREZZO_ALTO, TELEGRAM_ALERT_CHAT_ID, DEBUG_CONFRONTO_COMP_TELEGRAM, OCCHIO_OUTPUT_JSON, SOGLIA_MARGINE_ASSOLUTO_NOTIFICA, TELEGRAM_OWNER_CHAT_ID
 from bot.feedback import proponi_controllo, rischio_falso_da_scarto, rischio_falso_da_verdetto, contesto_annuncio
-from bot.moda_jev import tratteni_per_verifica, verifica as verifica_moda_jev, righe_messaggio as righe_moda_jev, riga_esito_scheda
+from bot.moda_jev import MODA_JEV_SUBITO, tratteni_per_verifica, verifica as verifica_moda_jev, righe_messaggio as righe_moda_jev, riga_esito_scheda
 from bot.fair_value import FAIR_VALUE_FILTRA, check_skip_rosso, catalogo_impara, check_skip_fair_value, fv_registra_gemini, fv_registra_rapida, stima_fair_value, valuta_preavviso, preavviso_con_suono, PREAVVISO_LAMPO
 from bot.prompts import GEMINI_CERVELLO_SYSTEM_PROMPT, GEMINI_OCCHI_SYSTEM_PROMPT, GEMINI_OCCHI_SYSTEM_PROMPT_JSON
 from bot.schemas import OCCHIO_RESPONSE_SCHEMA_GEMINI
@@ -106,8 +106,8 @@ def _preavviso_lampo(listing_info, url, cover_photo_bytes, msg_date, t_ricevuto_
         if not fv or fv.get("fonte_categoria") != "titolo":
             return
         attivo, regola = valuta_preavviso(fv, prezzo)
-        if not attivo or tratteni_per_verifica(fv, regola):
-            return   # i brand nuovi aspettano la verifica Jev (comparabili e foto): niente lampo
+        if not attivo or (tratteni_per_verifica(fv, regola) and not MODA_JEV_SUBITO):
+            return   # con MODA_JEV_SUBITO=0 l'avviso aspetta la verifica Jev (comparabili e foto): niente lampo
         info = dict(listing_info, fair_value=fv, preavviso=True, preavviso_suono=preavviso_con_suono(fv, prezzo))
         try:
             pezzi, sec = _calcola_tempi_pipeline(info, msg_date, t_ricevuto_bot)
@@ -272,7 +272,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
                      "".join(f" | {k}={v}" for k, v in _feat.items()
                              if k not in ("prezzo", "semaforo", "fv", "margine", "conf", "regola")))
             listing_info["verifica_jev"] = bool(listing_info["preavviso"] and tratteni_per_verifica(_fv_pre, _regola_pre))
-            if listing_info["preavviso"] and TELEGRAM_ALERT_CHAT_ID and not listing_info["verifica_jev"]:
+            if listing_info["preavviso"] and TELEGRAM_ALERT_CHAT_ID and (MODA_JEV_SUBITO or not listing_info["verifica_jev"]):
                 # l'invio parte appena le foto sono scaricate (album completo nel gruppo COMPRA, vedi sotto)
                 listing_info["preavviso_gruppo"] = True
             if _item_pre:
@@ -382,9 +382,15 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             if ris_jev["esito"] == "scarta":
                 listing_info["_motivo_scarto"] = "verifica Jev: " + ris_jev["motivo"]
                 _log_esito(listing_info, "SKIP_SOLO_SEMAFORO", sem=fv_sem.get("semaforo"), motivo="jev:" + ris_jev["motivo"])
+                if MODA_JEV_SUBITO:   # il messaggio era gia' partito: lo stesso messaggio dice che e' stato scartato
+                    await aggiorna_preavviso(stato, url, riga_finale=riga_scarto_preavviso("verifica Jev: " + ris_jev["motivo"], msg_id_galleria))
                 return
             listing_info["righe_jev"] = righe_moda_jev(ris_jev)
             _log_esito(listing_info, "SOLO_SEMAFORO", sem=fv_sem.get("semaforo"), margine=fv_sem.get("margine"))
+            if MODA_JEV_SUBITO and await aggiorna_preavviso(stato, url, testo_verdetto=testo_preavviso(dict(listing_info), url)):
+                log.info("AVVISO SOLO SEMAFORO | item=%s | prezzo=%s | sem=%s | jev=%s | aggiornato", _estrai_item_id_da_url(url),
+                         listing_info.get("price"), fv_sem.get("semaforo"), ris_jev["esito"])
+                return
             if not TELEGRAM_ALERT_CHAT_ID or await invia_preavviso(dict(listing_info), url, photo_bytes_list) is None:
                 await telegram_send_message(TELEGRAM_ALERT_CHAT_ID or TELEGRAM_OWNER_CHAT_ID, testo_avviso_solo_semaforo(listing_info, url, msg_id_galleria))
             log.info("AVVISO SOLO SEMAFORO | item=%s | prezzo=%s | sem=%s | jev=%s", _estrai_item_id_da_url(url),
