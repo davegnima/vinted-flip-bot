@@ -275,6 +275,9 @@ FAIR_VALUE_RIGORE_BASSA = _env_float("FAIR_VALUE_RIGORE_BASSA", 1.0)
 # buono stato -- stime da conoscenza di mercato, molto variabili per modello.
 FAIR_VALUE_BORSE = {
     "loewe": (200, 380, 700), "lemaire": (150, 260, 420), "miu miu": (170, 330, 600),
+    # 02/11: dai comparabili Vinted verificati con Jev (borse usate): Lancel 50-107 EUR, Kurt Geiger ~56 EUR. Il livello x fattore borsa
+    # (2,5) le gonfiava (Lancel 145, Kurt Geiger 99). Stime dai comparabili, campione piccolo.
+    "lancel": (40, 65, 110), "kurt geiger": (35, 55, 100),
 }
 
 # Moltiplicatori sulla stima di base (che rappresenta "buone condizioni").
