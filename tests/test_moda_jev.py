@@ -64,3 +64,11 @@ def test_tratteni_con_moda_jev_tutti(monkeypatch):
     assert mj.tratteni_per_verifica({"brand": "prada"}, "semaforo")
     assert mj.tratteni_per_verifica({"brand": "marni"}, "giallo_economico")
     assert not mj.tratteni_per_verifica({"brand": "prada"}, "no")
+
+
+def test_fair_value_borse_lancel_e_kurt_geiger_dai_comparabili():
+    """02/11: le borse Lancel e Kurt Geiger non devono tornare alle stime gonfiate (145 e 99) del fattore categoria."""
+    from bot.fair_value import stima_fair_value
+    for brand, massimo in (("lancel", 90), ("kurt geiger", 80)):
+        r = stima_fair_value({"brand": brand, "title": f"Borsa {brand} in pelle", "price": 15})
+        assert r and 40 <= r["fv"] <= massimo, (brand, r)
