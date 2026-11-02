@@ -377,7 +377,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
         fv_sem = listing_info.get("fair_value") or {}
         if listing_info.get("preavviso") and listing_info.get("verifica_jev"):
             # brand nuovo (stima a priori non misurata): comparabili Vinted + Jev + foto prima di avvisare (bot/moda_jev.py)
-            ris_jev = await verifica_moda_jev(listing_info, photo_bytes_list[0] if photo_bytes_list else None)
+            ris_jev = await verifica_moda_jev(listing_info, photo_bytes_list[0] if photo_bytes_list else None, photo_bytes_list)
             await aggiorna_scheda_jev(stato, riga_esito_scheda(ris_jev))
             if ris_jev["esito"] == "scarta":
                 listing_info["_motivo_scarto"] = "verifica Jev: " + ris_jev["motivo"]
