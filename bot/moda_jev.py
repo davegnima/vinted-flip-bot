@@ -144,8 +144,13 @@ def righe_messaggio(ris):
     if ris.get("rivendita") is not None:
         righe.append(f"🔎 Comparabili Vinted: {ris['n']} annunci, rivendita ~{ris['rivendita']:.0f} € "
                      f"(margine ~{ris['margine']:.0f} €, ROI {ris['roi']:.0f}%)")
-        for t, p in (ris.get("esempi") or [])[:3]:
-            righe.append(f"• {p:g} € {t[:50]}")
+        link = ris.get("link_comps") or []
+        if link:   # comparabili identificati, con il link all'annuncio (richiesta dell'utente, 02/11)
+            for t, p, u in link[:3]:
+                righe.append(f"• {p:g} € {t[:45]} {u}")
+        else:
+            for t, p in (ris.get("esempi") or [])[:3]:
+                righe.append(f"• {p:g} € {t[:50]}")
     else:
         righe.append("🔎 Comparabili Vinted di tipo diverso dalla foto: stima a priori, non verificata" if ris.get("motivo") == "comparabili_diversi"
                      else "🔎 Comparabili Vinted non trovati: la stima resta quella a priori")
@@ -169,7 +174,7 @@ async def verifica(listing_info, foto, tutte_le_foto=None):
     """Dict {esito, motivo, n, rivendita, margine, roi, link, autenticita}. Mai eccezioni: in caso di errore 'non_verificato'."""
     fv = listing_info.get("fair_value") or {}
     brand = fv.get("brand")
-    ris = {"esito": "non_verificato", "motivo": "errore", "n": 0, "rivendita": None, "margine": None, "roi": None, "esempi": [], "autenticita": None, "foto_comps": None, "gemini": None}
+    ris = {"esito": "non_verificato", "motivo": "errore", "n": 0, "rivendita": None, "margine": None, "roi": None, "esempi": [], "autenticita": None, "foto_comps": None, "gemini": None, "link_comps": []}
     try:
         titolo = listing_info.get("title") or ""
         prezzo = float(listing_info.get("price") or 0)
@@ -202,6 +207,7 @@ async def verifica(listing_info, foto, tutte_le_foto=None):
                 veri = comparabili_stesso_modello(comps_pool, etichette) + simili_jev(comps_pool, etichette)
                 comps_pool = veri
                 prezzi = [p for _t, p in veri]
+        link_comps = comparabili_con_link(comps_pool, mappe)
         stima = stima_mercato(prezzi, min_n=MIN_COMPARABILI)
         v = valuta(prezzo, stima, spedizione_eur=SPEDIZIONE_STIMATA_EUR) if stima else None
         foto_jpeg = None
@@ -212,7 +218,7 @@ async def verifica(listing_info, foto, tutte_le_foto=None):
         if JEV_FOTO_COMPS and foto_jpeg and v:
             # foto dell'annuncio contro le miniature dei comparabili: stesso tipo di prodotto? Se la maggior parte e' di altro tipo la
             # stima non regge e l'avviso parte non verificato (non scartato: l'errore di prezzo puo' essere vero)
-            miniature = await _miniature_dei_comparabili(comparabili_con_link(comps_pool, mappe))
+            miniature = await _miniature_dei_comparabili(link_comps)
             if miniature:
                 ris["foto_comps"] = await asyncio.to_thread(confronta_foto_comparabili, titolo, foto_jpeg, miniature, DOMANDA_FOTO_COMP_MODA)
                 if comparabili_diversi(ris["foto_comps"]):
@@ -227,7 +233,7 @@ async def verifica(listing_info, foto, tutte_le_foto=None):
             ris["motivo"] = "comparabili_diversi"
         if v:
             ris.update(n=v.get("n") or len(prezzi), rivendita=v.get("rivendita"), margine=v.get("margine"), roi=v.get("roi"),
-                       esempi=list(comps_pool[:3]))
+                       esempi=list(comps_pool[:3]), link_comps=link_comps)
         log.info("MODA JEV | item=%s | brand=%s | prezzo=%s | esito=%s | motivo=%s | n=%s | rivendita=%s | margine=%s | fv_stima=%s | foto=%s",
                  listing_info.get("item_id") or "-", brand, prezzo, ris["esito"], ris["motivo"], ris["n"], ris["rivendita"], ris["margine"],
                  fv.get("fv"), ris["autenticita"] or "-")

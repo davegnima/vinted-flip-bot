@@ -110,3 +110,11 @@ def test_gemini_moda_serve_controllo_e_decisione():
     ris = {"esito": "scarta", "motivo": "gemini:replica", "gemini": d}
     assert "Gemini" in riga_esito_scheda(ris)
     assert any("Gemini" in r for r in righe_messaggio({"rivendita": 60, "n": 4, "margine": 50, "roi": 150, "esempi": [], "autenticita": None, "gemini": d}))
+
+
+def test_righe_messaggio_con_link_ai_comparabili():
+    from bot.moda_jev import righe_messaggio
+    ris = {"rivendita": 60, "n": 3, "margine": 50, "roi": 150, "esempi": [("Borsa A", 40.0)], "autenticita": None,
+           "link_comps": [("Borsa A", 40.0, "https://www.vinted.it/items/1-borsa-a")]}
+    righe = righe_messaggio(ris)
+    assert any("https://www.vinted.it/items/1-borsa-a" in r for r in righe)
