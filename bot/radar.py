@@ -334,6 +334,10 @@ except ValueError:
     RADAR_JEV_CONF_MIN = 0.7
 
 
+# Brand senza vendite nei dati del tracciamento (1-2/11): avviso silenziato, il tracciamento continua.
+# Variabile: elenco separato da virgole (prefisso del brand), vuota = nessuno.
+RADAR_BRAND_SILENZIO = tuple(x.strip().lower() for x in os.environ.get("RADAR_BRAND_SILENZIO", "gopro,dji").split(",") if x.strip())
+
 SEMAFORO_EMOJI = {"verde": "🟢", "giallo": "🟡", "rosso": "🔴"}
 
 
@@ -564,6 +568,9 @@ def perche_non_inviato(v2):
     """None se l'avviso va mandato, altrimenti la frase che dice perche' no (per il gruppo e per i log). Pura."""
     if not v2 or v2.get("semaforo") not in RADAR_SEMAFORI:
         return "semaforo rosso: margine o ROI sotto soglia" if v2 and v2.get("semaforo") == "rosso" else "semaforo non calcolato"
+    marca = (v2.get("brand") or "").strip().lower()
+    if marca and RADAR_BRAND_SILENZIO and marca.startswith(RADAR_BRAND_SILENZIO):
+        return f"brand {v2.get('brand')} senza vendite veloci nei dati: avviso silenziato"
     if RADAR_JEV_RICHIESTO and not (v2.get("jev") == "affare_vero" and (v2.get("jev_conf") or 0) >= RADAR_JEV_CONF_MIN):
         if v2.get("jev") == "affare_vero":
             return f"Jev dice affare ma con confidenza {v2.get('jev_conf')} sotto la soglia {RADAR_JEV_CONF_MIN}"
