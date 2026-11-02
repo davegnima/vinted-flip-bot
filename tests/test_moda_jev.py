@@ -8,8 +8,10 @@ def test_url_comparabili_con_brand_categoria_e_testo():
     assert "brand_ids[]=172418" in u and "catalog[]=10" in u and "search_text=abito%20lungo" in u
 
 
-def test_url_comparabili_senza_id_brand_e_none():
-    assert mj.url_comparabili("marchio inesistente", "x", 1) is None
+def test_url_comparabili_senza_id_cerca_per_testo_con_il_brand():
+    u = mj.url_comparabili("marchio inesistente", "giacca", 5)
+    assert "brand_ids" not in u and "search_text=marchio%20inesistente%20giacca" in u and "catalog[]=5" in u
+    assert mj.url_comparabili(None, "x", 1) is None
 
 
 def test_decidi_conferma_se_i_comparabili_reggono_e_la_foto_e_ok():
@@ -54,3 +56,11 @@ def test_riga_esito_scheda_per_scarto_conferma_e_non_verificato():
     assert "replica probabile" in f
     assert "confermato" in mj.riga_esito_scheda({"esito": "conferma", "rivendita": 140, "margine": 90})
     assert "non trovati" in mj.riga_esito_scheda({"esito": "non_verificato"})
+
+
+def test_tratteni_con_moda_jev_tutti(monkeypatch):
+    monkeypatch.setattr(mj, "MODA_JEV", True)
+    monkeypatch.setattr(mj, "MODA_JEV_TUTTI", True)
+    assert mj.tratteni_per_verifica({"brand": "prada"}, "semaforo")
+    assert mj.tratteni_per_verifica({"brand": "marni"}, "giallo_economico")
+    assert not mj.tratteni_per_verifica({"brand": "prada"}, "no")

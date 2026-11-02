@@ -6,7 +6,7 @@ I brand in FAIR_VALUE_BRAND_NUOVI hanno un fair value stimato da me, non misurat
   3. Jev guarda la prima foto e dice se l'articolo sembra originale del brand (indizio dalla sola foto, non una certificazione).
 Esito: 'conferma' (margine >= 50 EUR e ROI >= 100% sui comparabili, foto non sospetta), 'scarta' (i comparabili non reggono il margine
 oppure la foto sembra falsa/altra marca), 'non_verificato' (comparabili non trovati o Jev spento: l'avviso parte con l'avvertenza).
-Spenta con MODA_JEV=0. Costo: poche chiamate Jev solo per i pochi avvisi dei brand nuovi; tetto MODA_JEV_MAX_GIORNO.
+Spenta con MODA_JEV=0; MODA_JEV_TUTTI=1 la estende a tutti gli avvisi (non solo ai brand nuovi). Costo: poche chiamate Jev solo per i pochi avvisi dei brand nuovi; tetto MODA_JEV_MAX_GIORNO.
 """
 import os
 import time
@@ -25,14 +25,19 @@ from bot.valore_mercato import comparabili_simili, parse_comp, query_comp, solo_
 # ---- fine import ----
 
 MODA_JEV = os.environ.get("MODA_JEV", "0").strip() in ("1", "true", "si")
-MODA_JEV_MAX_GIORNO = int(os.environ.get("MODA_JEV_MAX_GIORNO", "300") or 300)
+MODA_JEV_MAX_GIORNO = int(os.environ.get("MODA_JEV_MAX_GIORNO", "600") or 600)
+# 02/11 (richiesta dell'utente): la verifica vale per TUTTI gli avvisi della moda, non solo per i brand nuovi. 0 = solo brand nuovi.
+MODA_JEV_TUTTI = os.environ.get("MODA_JEV_TUTTI", "0").strip() in ("1", "true", "si")
 MIN_COMPARABILI = 3
 _conteggio = {"giorno": None, "n": 0}
 
 
 def tratteni_per_verifica(fv, regola):
-    """True se l'avviso va trattenuto fino alla verifica Jev: brand nuovo, regola brand_nuovo, MODA_JEV acceso. Pura."""
-    return bool(MODA_JEV and regola == "brand_nuovo" and (fv or {}).get("brand") in FAIR_VALUE_BRAND_NUOVI)
+    """True se l'avviso va trattenuto fino alla verifica Jev: con MODA_JEV_TUTTI ogni avviso (regola diversa da 'no'); altrimenti solo
+    la regola brand_nuovo sui brand nuovi. Pura."""
+    if not MODA_JEV or not regola or regola == "no":
+        return False
+    return bool(MODA_JEV_TUTTI or (regola == "brand_nuovo" and (fv or {}).get("brand") in FAIR_VALUE_BRAND_NUOVI))
 
 
 def id_brand(brand):
@@ -43,11 +48,13 @@ def id_brand(brand):
 def url_comparabili(brand, testo=None, catalogo=None):
     """Ricerca dei simili: brand_ids[] + categoria foglia dell'annuncio + parole del titolo (se ci sono). None senza id brand. Pura."""
     bid = id_brand(brand)
-    if not bid:
+    if not bid and not brand:
         return None
-    t = f"&search_text={quote(testo)}" if testo else ""
+    # senza id (brand storici fuori dalla tabella) il brand entra come parola di ricerca
+    t = f"&search_text={quote(testo if bid else ((brand or '') + ' ' + (testo or '')).strip())}" if (testo or not bid) else ""
     c = f"&catalog[]={catalogo}" if catalogo else ""
-    return f"https://www.vinted.it/catalog?brand_ids[]={bid}{c}{t}&order=newest_first"
+    b = f"brand_ids[]={bid}" if bid else "order=newest_first"
+    return f"https://www.vinted.it/catalog?{b}{c}{t}&order=newest_first"
 
 
 def _entro_il_tetto():
