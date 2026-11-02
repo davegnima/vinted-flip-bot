@@ -45,3 +45,12 @@ def test_righe_messaggio_con_e_senza_comparabili():
     assert any("7 annunci" in x for x in r) and any("sembra originale" in x for x in r)
     r2 = mj.righe_messaggio({"rivendita": None, "autenticita": None})
     assert any("non trovati" in x for x in r2) and any("non verificata" in x for x in r2)
+
+
+def test_riga_esito_scheda_per_scarto_conferma_e_non_verificato():
+    s = mj.riga_esito_scheda({"esito": "scarta", "motivo": "comparabili:margine_basso", "rivendita": 67.5, "n": 6, "margine": 15.5, "roi": 40})
+    assert "non avvisato" in s and "68" in s
+    f = mj.riga_esito_scheda({"esito": "scarta", "motivo": "foto:replica_probabile", "autenticita": ("replica_probabile", 0.9)})
+    assert "replica probabile" in f
+    assert "confermato" in mj.riga_esito_scheda({"esito": "conferma", "rivendita": 140, "margine": 90})
+    assert "non trovati" in mj.riga_esito_scheda({"esito": "non_verificato"})

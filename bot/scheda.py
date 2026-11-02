@@ -468,7 +468,7 @@ async def _invia_galleria_anticipata(listing_info, url, photo_bytes_list, stato=
         scheda = _scheda_annuncio_testo(listing_info, url, n_foto)
         if url:
             id_scheda = await telegram_send_with_buttons(
-                TELEGRAM_OWNER_CHAT_ID, scheda, url, None, disable_notification=not (listing_info.get("preavviso") and not listing_info.get("preavviso_gruppo")), reply_to=id_album,
+                TELEGRAM_OWNER_CHAT_ID, scheda, url, None, disable_notification=not (listing_info.get("preavviso") and not listing_info.get("preavviso_gruppo") and not listing_info.get("verifica_jev")), reply_to=id_album,
             )
             if stato is not None and id_scheda:
                 # Serve a modificare la riga di stato a fine analisi.
@@ -478,7 +478,7 @@ async def _invia_galleria_anticipata(listing_info, url, photo_bytes_list, stato=
                 stato["stato_testo_iniziale"] = _stato_analisi_testo(n_foto)
         else:
             await telegram_send_message(
-                TELEGRAM_OWNER_CHAT_ID, scheda, disable_notification=not (listing_info.get("preavviso") and not listing_info.get("preavviso_gruppo")), reply_to=id_album,
+                TELEGRAM_OWNER_CHAT_ID, scheda, disable_notification=not (listing_info.get("preavviso") and not listing_info.get("preavviso_gruppo") and not listing_info.get("verifica_jev")), reply_to=id_album,
             )
     except Exception:
         log.warning("Scheda annuncio non inviata:\n%s", traceback.format_exc())
@@ -669,6 +669,21 @@ async def _aggiorna_stato_scheda(stato, nuovo_stato):
         )
     except Exception:
         log.warning("Aggiornamento riga di stato della scheda non riuscito:\n%s", traceback.format_exc())
+
+
+async def aggiorna_scheda_jev(stato, riga):
+    """Sostituisce nella scheda della chat principale la riga di stato con l'esito della verifica Jev (modifica, nessuna
+    notifica). Mai bloccante."""
+    if not stato or not stato.get("msg_id_scheda"):
+        return
+    try:
+        testo = stato.get("testo_scheda") or ""
+        vecchio = stato.get("stato_testo_iniziale")
+        nuovo = _escapa_markdown_legacy(riga)
+        testo = testo.replace(vecchio, nuovo) if vecchio and vecchio in testo else testo + "\n" + nuovo
+        await telegram_edit_message(TELEGRAM_OWNER_CHAT_ID, stato["msg_id_scheda"], testo, stato.get("url_scheda"))
+    except Exception:
+        log.warning("Esito Jev non scritto nella scheda:\n%s", traceback.format_exc())
 
 
 def _compatta_testo(testo, max_len=900):

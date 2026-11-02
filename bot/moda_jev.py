@@ -17,6 +17,7 @@ from urllib.parse import quote
 from bot.comps import _cerca_vinted_testo_diretto
 from bot.config import SPEDIZIONE_STIMATA_EUR
 from bot.costanti import VINTED_BRAND_IDS
+from bot.foto import optimize_image_bytes
 from bot.fair_value import FAIR_VALUE_BRAND_NUOVI
 from bot.jev import CONF_AUTENTICITA_MIN, classifica_comparabili, comparabili_simili as simili_jev, comparabili_stesso_modello, giudica_autenticita
 from bot.logger import log
@@ -69,6 +70,21 @@ def decidi(valutazione, autenticita):
     if not valutazione.get("ok"):
         return "scarta", "comparabili:" + str(valutazione.get("motivo"))
     return "conferma", "ok"
+
+
+def riga_esito_scheda(ris):
+    """Riga (testo semplice) per la scheda della chat principale dopo la verifica: perche' l'avviso e' partito o no. Pura."""
+    a = ris.get("autenticita")
+    if ris.get("esito") == "scarta":
+        if str(ris.get("motivo", "")).startswith("foto:") and a:
+            return f"🚫 Jev: non avvisato, la foto sembra {a[0].replace('_', ' ')} ({(a[1] or 0):.0%})"
+        if ris.get("rivendita") is not None:
+            return (f"🚫 Jev: non avvisato, rivendita sui {ris['n']} comparabili ~{ris['rivendita']:.0f} € "
+                    f"(margine ~{ris['margine']:.0f} €, ROI {ris['roi']:.0f}%)")
+        return "🚫 Jev: non avvisato (" + str(ris.get("motivo")) + ")"
+    if ris.get("esito") == "conferma":
+        return f"✅ Jev: confermato, rivendita ~{ris['rivendita']:.0f} € (margine ~{ris['margine']:.0f} €), avviso mandato"
+    return "⚠️ Jev: comparabili non trovati, avviso mandato non verificato"
 
 
 def righe_messaggio(ris):
@@ -129,7 +145,9 @@ async def verifica(listing_info, foto):
         stima = stima_mercato(prezzi, min_n=MIN_COMPARABILI)
         v = valuta(prezzo, stima, spedizione_eur=SPEDIZIONE_STIMATA_EUR) if stima else None
         if foto:
-            ris["autenticita"] = await asyncio.to_thread(giudica_autenticita, titolo, brand, foto)
+            # Vinted serve anche webp: Jev accetta solo png/jpeg, quindi si converte in jpeg (prima la foto non partiva: foto=-)
+            foto_jpeg = await asyncio.to_thread(optimize_image_bytes, foto, 768)
+            ris["autenticita"] = await asyncio.to_thread(giudica_autenticita, titolo, brand, foto_jpeg)
         ris["esito"], ris["motivo"] = decidi(v, ris["autenticita"])
         if v:
             ris.update(n=v.get("n") or len(prezzi), rivendita=v.get("rivendita"), margine=v.get("margine"), roi=v.get("roi"),
