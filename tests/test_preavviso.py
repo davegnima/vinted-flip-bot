@@ -552,3 +552,11 @@ def test_esperimento_rosso_esclude_jpg_e_max_mara(monkeypatch):
     for brand in ("Jean Paul Gaultier", "Max Mara", "jean paul gaultier"):
         assert not check_skip_rosso({"fair_value": {**rosso, "brand": brand}, "price": 40})[0]   # va al Cervello
     assert check_skip_rosso({"fair_value": {**rosso, "brand": "Prada"}, "price": 40})[0]
+
+
+def test_preavviso_brand_nuovo_verde_con_margine_netto():
+    s = {**_stima("🟢", 105), "conf": "bassa", "brand": "zimmermann"}
+    assert valuta_preavviso(s, 10) == (True, "brand_nuovo")
+    assert valuta_preavviso({**s, "margine": 30}, 10) == (False, "no")                     # margine sotto 50
+    assert valuta_preavviso({**s, "semaforo": "🟡"}, 30) == (False, "no")                   # solo 🟢
+    assert valuta_preavviso({**s, "brand": "marni"}, 10) == (False, "no")                  # solo i brand nuovi
