@@ -15,6 +15,25 @@ VENDITORI_BLOCKLIST = {"valeryepippo", "firmadonna98", "cicciodonna779", "hadour
 BRAND_BLOCKLIST = {"intrend"}
 
 VINTED_BRAND_IDS = {
+    # 2/11 id letti da un agente dalla pagina del brand negli annunci (1 annuncio, tranne Tuckernuck: 2); NON verificati a mano
+    "tuckernuck": "2707908",
+    "hyacinth house": "22086249",
+    "mirth": "12187136",
+    "oliphant": "1154923",
+    "pomander place": "6347398",
+    "rococo sand": "1040934",
+    "carolina k": "1158092",
+    "printfresh": "10727138",
+    "the strike gold": "2421691",
+    "the great china wall": "795513",
+    "loretta caponi": "340775",
+    "cara cara": "4685555",
+    "goen.j": "2597736",
+    "hunter bell": "611381",
+    "fanm mon": "1198794",
+    "emporio sirenuse": "7650183",
+    "evereve": "559807",
+    "wildfang": "1962991",
     # 1/11 boutique/contemporary (lista dell'utente): id letti da vinted.it/.com/brand/<id> via ricerca web, NON verificati sul sito
     # 1/11 (terzo giro: id trovati da un agente con la ricerca web, 4 su 4 controllati a campione; non verificati sul sito)
     "by walid": "3656179",

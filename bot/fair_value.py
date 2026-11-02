@@ -207,6 +207,25 @@ FAIR_VALUE_LIVELLO_BRAND = {
     "farm rio": 35,
     "pink city prints": 35,
     "cleobella": 35,
+    # 2/11 livelli prudenti (stime, nessun dato)
+    "tuckernuck": 30,
+    "hyacinth house": 30,
+    "mirth": 30,
+    "oliphant": 30,
+    "pomander place": 30,
+    "rococo sand": 30,
+    "carolina k": 35,
+    "printfresh": 30,
+    "the strike gold": 30,
+    "the great china wall": 30,
+    "loretta caponi": 45,
+    "cara cara": 30,
+    "goen.j": 30,
+    "hunter bell": 30,
+    "fanm mon": 30,
+    "emporio sirenuse": 40,
+    "evereve": 30,
+    "wildfang": 30,
     "the great": 35,
     "pistola": 30,
     "alex mill": 30,
@@ -217,7 +236,7 @@ FAIR_VALUE_LIVELLO_BRAND = {
 FAIR_VALUE_BRAND_NUOVI = {"prada", "fendi", "jacquemus", "acne studios", "barena venezia", "greg lauren", "bode", "zimmermann",
                           "la doublej", "ulla johnson", "self-portrait", "cult gaia", "sea new york", "staud", "saloni",
                           "veronica beard", "jonathan simkhai", "fuzzi", "henry beguelin", "lancel", "double d ranch", "johnny was", "gudrun sjödén", "madhappy",
-                          "by walid", "l.a.m.b.", "erdem", "emilia wickstead", "rosie assoulin", "agua bendita", "borgo de nor", "leo lin", "alémais", "juliet dunn", "celia b", "banjanan", "ciao lucia", "posse", "dragon diffusion", "jérôme dreyfuss", "kurt geiger", "radley", "mz wallace", "hill house home", "sézane", "oleana", "antik batik", "farm rio", "pink city prints", "cleobella", "the great", "pistola", "alex mill", "taylor stitch", "quince"}   # livello da conoscenza: confidenza bassa
+                          "by walid", "l.a.m.b.", "erdem", "emilia wickstead", "rosie assoulin", "agua bendita", "borgo de nor", "leo lin", "alémais", "juliet dunn", "celia b", "banjanan", "ciao lucia", "posse", "dragon diffusion", "jérôme dreyfuss", "kurt geiger", "radley", "mz wallace", "hill house home", "sézane", "oleana", "antik batik", "farm rio", "pink city prints", "cleobella", "the great", "pistola", "alex mill", "taylor stitch", "quince", "tuckernuck", "hyacinth house", "mirth", "oliphant", "pomander place", "rococo sand", "carolina k", "printfresh", "the strike gold", "the great china wall", "loretta caponi", "cara cara", "goen.j", "hunter bell", "fanm mon", "emporio sirenuse", "evereve", "wildfang"}   # livello da conoscenza: confidenza bassa
 FAIR_VALUE_LIVELLO_DEFAULT = _env_float("FAIR_VALUE_LIVELLO_DEFAULT", 45)  # brand mai visto: stima prudente, confidenza bassa
 FAIR_VALUE_FATTORE_CATEGORIA = {
     "camicia": 1.0, "blusa": 0.91, "maglia": 1.07, "t-shirt": 0.88, "canotta": 0.70,
