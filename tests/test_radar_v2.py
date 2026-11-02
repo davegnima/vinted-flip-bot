@@ -1,6 +1,6 @@
 import asyncio
 
-from bot import radar_v2
+from bot import radar, radar_v2
 
 
 def test_url_comparabili_codifica_il_testo():
@@ -803,3 +803,15 @@ def test_parole_vietate_di_novembre_senza_falsi_positivi():
         assert parola_vietata(t), t
     for t in ("DJI Mini 3 Pro Fly More", "Heroquest completo", "RTX 3060 mai usata per mining", "Kit con drift controllato"):
         assert parola_vietata(t) is None, t
+
+
+def test_brand_silenziato_non_manda(monkeypatch):
+    monkeypatch.setattr(radar, "RADAR_SEMAFORI", {"verde", "giallo"})
+    monkeypatch.setattr(radar, "RADAR_JEV_RICHIESTO", False)
+    monkeypatch.setattr(radar, "RADAR_BRAND_SILENZIO", ("gopro", "dji"))
+    assert radar._da_mandare({"semaforo": "giallo", "brand": "GoPro"}) is False
+    assert "silenziato" in radar.perche_non_inviato({"semaforo": "giallo", "brand": "DJI Mini"})
+    assert radar._da_mandare({"semaforo": "giallo", "brand": "Nintendo"}) is True
+    assert radar._da_mandare({"semaforo": "giallo"}) is True
+    monkeypatch.setattr(radar, "RADAR_BRAND_SILENZIO", ())
+    assert radar._da_mandare({"semaforo": "giallo", "brand": "GoPro"}) is True

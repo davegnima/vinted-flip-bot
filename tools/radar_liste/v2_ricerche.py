@@ -15,9 +15,9 @@ V2=[ # nome, testo, brand (nome o None), catalog, tetto
  ('V2 posate christofle','','christofle',POSATE+[1961],50),('V2 posate sambonet','','sambonet',POSATE+[1961],50),
  ('V2 ginori','','richard ginori',STOV,50),('V2 baccarat','','baccarat',BIC+VASI,50),
  ('V2 lalique','','lalique',VASI,50),('V2 iittala','','iittala',STOV+BIC+VASI,50),
- ('V2 le creuset','','le creuset',[3507,3508,3510],50),('V2 staub','staub',None,[3507,3508,3510],50),('V2 smeg','','smeg',[],50),('V2 kitchenaid','','kitchenaid',[],50),
+ ('V2 staub','staub',None,[3507,3508,3510],50),('V2 smeg','','smeg',[],50),('V2 kitchenaid','','kitchenaid',[],50),
  ('V2 dyson','','dyson',[],50),('V2 thermomix','thermomix',None,[],50),
- ('V2 airpods pro','airpods pro',None,[3678],50),('V2 sony cuffie','','sony',[3678],50),('V2 switch oled','switch oled',None,[3025],50),
+ ('V2 airpods pro','airpods pro',None,[3678],50),('V2 switch oled','switch oled',None,[3025],50),
  ('V2 montblanc penne','','montblanc',[5456],50),('V2 omega uomo','','omega',[97],50),('V2 omega donna','','omega',[22],50),
  ('V2 stokke seggioloni','','stokke',[3450],50),('V2 babyzen','','babyzen',[1612],50),('V2 bugaboo','','bugaboo',[1612],50),
  ('V2 artemide','','artemide',LAMP,50),('V2 flos','','flos',LAMP,50),('V2 kartell','','kartell',LAMP,50),('V2 rosenthal','','rosenthal',STOV,50),
@@ -51,7 +51,7 @@ ONDA4=[ # 01/11, categorie nuove (richiesta dell'utente: "altri affari da altre 
  ('V2 lego star wars','lego star wars',None,[],50),('V2 lego technic','lego technic',None,[],50),('V2 lego ideas icons','lego ideas icons',None,[],50),
  
  ('V2 pedale boss','boss pedale chitarra',None,[],50),('V2 pedale electro harmonix','electro harmonix',None,[],50),('V2 pedale mxr','mxr pedale',None,[],50),
- ('V2 gamecube','gamecube',None,[3025,3026],50),('V2 nintendo 64','nintendo 64',None,[3025,3026],50),('V2 super nintendo','super nintendo snes',None,[3025,3026],50),
+ 
  ('V2 game boy advance','game boy advance',None,[3025,3026],50),
 ]
 ONDA5=[ # 01/11 (b), 10 filoni nuovi (strumenti musicali, retrogaming boutique, rete/casa smart, epilatori). PROVVISORIE: ricerche di testo strette SENZA catalog[] (id non noti, non inventati);
@@ -62,7 +62,7 @@ ONDA5=[ # 01/11 (b), 10 filoni nuovi (strumenti musicali, retrogaming boutique, 
  ('V2 braun silk expert pro 5','braun silk expert pro 5',None,[],100),
 ]
 ONDA6=[ # 01/11 (c), 39 ricerche dall'elenco 'High-Liquid' dell'utente. PROVVISORIE senza catalog[] (id non noti, non inventati); da correggere con i catalog[] letti nei log.
- # Escluse perche' gia' presenti o potate con dati: lego technic / star wars (solo rossi), kitchenaid (accessori), le creuset, staub, stokke, bugaboo (gia' sul tracker), op-1 / sp-404 / volca / scarlett (ONDA5).
+ # Escluse perche' gia' presenti o potate con dati (2/11: le creuset, sony cuffie, gamecube, nintendo 64, super nintendo, vendite entro 1 h 0-17%): lego technic / star wars (solo rossi), kitchenaid (accessori), le creuset, staub, stokke, bugaboo (gia' sul tracker), op-1 / sp-404 / volca / scarlett (ONDA5).
  ('V2 ryzen 7 5800x3d','ryzen 7 5800x3d',None,[],120), ('V2 ryzen 7 7800x3d','ryzen 7 7800x3d',None,[],150), ('V2 rtx 3060','rtx 3060',None,[],120), ('V2 rtx 3070','rtx 3070',None,[],150), ('V2 samsung 990 pro 1tb','samsung 990 pro 1tb',None,[],60), ('V2 logitech g pro x superlight','logitech g pro x superlight',None,[],50), ('V2 wooting 60he','wooting 60he',None,[],90), ('V2 elgato stream deck','elgato stream deck',None,[],60), ('V2 meta quest 3','meta quest 3',None,[],150), ('V2 dualsense edge','dualsense edge',None,[],90), ('V2 dji pocket 3','dji pocket 3',None,[],150), ('V2 dji mini 3 pro','dji mini 3 pro',None,[],150), ('V2 insta360 x3','insta360 x3',None,[],150), ('V2 gopro hero 12','gopro hero 12',None,[],150), ('V2 sony zv-1','sony zv-1',None,[],150), ('V2 sigma 16mm sony','sigma 16mm sony',None,[],100), ('V2 rode wireless go ii','rode wireless go ii',None,[],80), ('V2 dji mic 2','dji mic 2',None,[],120), ('V2 zoom h6','zoom h6',None,[],70), ('V2 dji ronin rs3','dji ronin rs3',None,[],150), ('V2 cybex cloud z','cybex cloud z',None,[],90), ('V2 berkel affettatrice','berkel affettatrice',None,[],150), ('V2 bullpadel vertex','bullpadel vertex',None,[],70), ('V2 babolat pure drive','babolat pure drive',None,[],50), ('V2 head speed pro','head speed pro',None,[],70), ('V2 garmin fenix 7','garmin fenix 7',None,[],150), ('V2 wahoo elemnt','wahoo elemnt',None,[],70), ('V2 garmin edge','garmin edge',None,[],80), ('V2 favero assioma','favero assioma',None,[],150), ('V2 comandante c40','comandante c40',None,[],80), ('V2 fellow stagg','fellow stagg',None,[],50), ('V2 eureka mignon','eureka mignon',None,[],100), ('V2 chord mojo','chord mojo',None,[],120), ('V2 fiio btr','fiio btr',None,[],40), ('V2 fanatec csl','fanatec csl',None,[],100), ('V2 thrustmaster warthog','thrustmaster warthog',None,[],120),
 ]
 RISCHIO=('V2 alessi','V2 iittala','V2 rosenthal','V2 zwilling','V2 gopro','V2 dji', # 01/11 (b) potate: margine_basso 90% (prezzi 15-28 EUR) o 0 vendite veloci su 38 tracciate (URL in docs/analisi/radar-ricerche-potate-2026-11-01-b.json)
