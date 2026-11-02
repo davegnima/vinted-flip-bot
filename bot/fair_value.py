@@ -148,7 +148,7 @@ FAIR_VALUE_BRAND = {
     "boris bidjan saberi": ["bidjan", "saberi"], "sacai": ["sacai"],
     "kiko kostadinov": ["kostadinov"], "thom browne": ["thom browne"],
     "thesoloist": ["thesoloist", "the soloist"],
-    "zimmermann": ["zimmermann"], "cult gaia": ["cult gaia"], "greg lauren": ["greg lauren"], "bode": ["bode"],
+    "zimmermann": ["zimmermann"], "cult gaia": ["cult gaia"], "greg lauren": ["greg lauren"],
     "fuzzi": ["fuzzi"], "staud": ["staud"], "ulla johnson": ["ulla johnson"], "sea new york": ["sea new york"],
     "saloni": ["saloni"], "veronica beard": ["veronica beard"], "la doublej": ["la doublej", "doublej"],
     "johnny was": ["johnny was"], "gudrun sjödén": ["gudrun sj"], "madhappy": ["madhappy"],
@@ -179,7 +179,7 @@ FAIR_VALUE_LIVELLO_BRAND = {
     # brand del tracker senza riga in tabella (aggiunti il 2026-10-04: ieri meta' degli annunci non aveva semaforo)
     "prada": 60, "fendi": 80, "jacquemus": 45, "acne studios": 45, "barena venezia": 50,
     # 1/11 boutique (lista dell'utente, nessun dato nei log): livelli prudenti da prezzi richiesti visti su Vinted, confidenza bassa
-    "greg lauren": 120, "bode": 120, "zimmermann": 80, "la doublej": 65, "ulla johnson": 60, "self-portrait": 55,
+    "greg lauren": 120, "zimmermann": 80, "la doublej": 65, "ulla johnson": 60, "self-portrait": 55,
     # 1/11 terzo giro (stime prudenti da prezzi richiesti, confidenza bassa)
     "by walid": 100,
     "l.a.m.b.": 70,
@@ -289,6 +289,7 @@ FAIR_VALUE_MARGINE_MIN_VERDE = _env_float("FAIR_VALUE_MARGINE_MIN_VERDE", 20)
 #    (i venduti entro 30 s dell'analisi del 2026-10-03 costavano quasi tutti <= 30 EUR).
 PREAVVISO_ATTIVO = os.environ.get("PREAVVISO_ATTIVO", "1").strip() != "0"
 PREAVVISO_MARGINE_MIN = _env_float("PREAVVISO_MARGINE_MIN", 25)
+PREAVVISO_MARGINE_NUOVI = _env_float("PREAVVISO_MARGINE_NUOVI", 50)   # margine rapido minimo per i brand nuovi a confidenza bassa
 PREAVVISO_PREZZO_BASSO = _env_float("PREAVVISO_PREZZO_BASSO", 20)   # 5/10: 52% di venduti rapidi a <=20 EUR, 22% a 20-40
 PREAVVISO_MARGINE_BASSO = _env_float("PREAVVISO_MARGINE_BASSO", 20)
 # Per brand (recap 5/10, venduti rapidi su 334 annunci): Acne Studios e Marni 6%, Jean Paul Gaultier 62% (base 25%).
@@ -331,6 +332,11 @@ def valuta_preavviso(stima, prezzo):
     if _giallo_economico(stima, prezzo):
         return True, "giallo_economico"
     if stima.get("conf") == "bassa":
+        # Brand nuovi (confidenza bassa per costruzione, livello da conoscenza): niente avviso salvo 🟢 con margine netto
+        # (2/11, recap: in 21 h zero avvisi dai brand boutique, ma Zimmermann 10 EUR e Kurt Geiger 10 EUR, entrambi 🟢 con margine > 100,
+        # sono stati venduti in 5-15 min). Spento con PREAVVISO_MARGINE_NUOVI=0.
+        if (PREAVVISO_MARGINE_NUOVI > 0 and sem == "🟢" and brand in FAIR_VALUE_BRAND_NUOVI and marg >= PREAVVISO_MARGINE_NUOVI):
+            return True, "brand_nuovo"
         return False, "no"
     if brand in PREAVVISO_BRAND_FACILI and marg >= PREAVVISO_MARGINE_FACILI:
         return True, "brand_facile"
