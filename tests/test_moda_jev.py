@@ -72,3 +72,19 @@ def test_fair_value_borse_lancel_e_kurt_geiger_dai_comparabili():
     for brand, massimo in (("lancel", 90), ("kurt geiger", 80)):
         r = stima_fair_value({"brand": brand, "title": f"Borsa {brand} in pelle", "price": 15})
         assert r and 40 <= r["fv"] <= massimo, (brand, r)
+
+
+def test_comparabili_con_link_e_diversi():
+    from bot.moda_jev import comparabili_con_link, comparabili_diversi, righe_messaggio
+    from bot.testo import _normalizza_titolo_per_link as norm
+    coppie = [("Borsa A", 40.0), ("Borsa B", 60.0), ("Borsa C", 200.0), ("Borsa D", 55.0)]
+    mappa = {(norm(t), f"{p:.2f}"): f"https://www.vinted.it/items/{i}-x" for i, (t, p) in enumerate(coppie, 1)}
+    out = comparabili_con_link(coppie, [None, mappa], n=2)
+    assert sorted(c[1] for c in out) == [55.0, 60.0]   # i piu' vicini alla mediana (60), non gli estremi
+    assert comparabili_diversi([("diverso", 0.9), ("diverso", 0.7), ("simile", 0.8)])
+    assert not comparabili_diversi([("diverso", 0.9), ("simile", 0.8), ("stesso_modello", 0.8)])
+    assert not comparabili_diversi([("diverso", 0.3), ("diverso", 0.2)])   # confidenza bassa: non conta
+    assert not comparabili_diversi(None)
+    righe = righe_messaggio({"rivendita": 60, "n": 4, "margine": 50, "roi": 150, "esempi": [], "autenticita": None,
+                             "foto_comps": [("stesso_modello", 0.8), ("diverso", 0.7)]})
+    assert any("Foto comparabili" in r and "molto simile" in r for r in righe)

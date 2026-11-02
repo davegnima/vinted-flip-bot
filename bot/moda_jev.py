@@ -9,18 +9,20 @@ oppure la foto sembra falsa/altra marca), 'non_verificato' (comparabili non trov
 Spenta con MODA_JEV=0; MODA_JEV_TUTTI=1 la estende a tutti gli avvisi (non solo ai brand nuovi). Costo: poche chiamate Jev solo per i pochi avvisi dei brand nuovi; tetto MODA_JEV_MAX_GIORNO.
 """
 import os
+import re
 import time
 import asyncio
 import traceback
 from urllib.parse import quote
 
-from bot.comps import _cerca_vinted_testo_diretto
+from bot.comps import _cerca_vinted_testo_diretto, _miniature_comp
 from bot.config import SPEDIZIONE_STIMATA_EUR
 from bot.costanti import VINTED_BRAND_IDS
-from bot.foto import optimize_image_bytes
+from bot.foto import download_image_bytes, optimize_image_bytes
 from bot.fair_value import FAIR_VALUE_BRAND_NUOVI
-from bot.jev import CONF_AUTENTICITA_MIN, classifica_comparabili, comparabili_simili as simili_jev, comparabili_stesso_modello, giudica_autenticita
+from bot.jev import CONF_AUTENTICITA_MIN, DOMANDA_FOTO_COMP_MODA, JEV_FOTO_COMPS, MAX_FOTO_COMPS, classifica_comparabili, confronta_foto_comparabili, comparabili_simili as simili_jev, comparabili_stesso_modello, giudica_autenticita
 from bot.logger import log
+from bot.testo import _normalizza_titolo_per_link
 from bot.valore_mercato import comparabili_simili, parse_comp, query_comp, solo_usato, stima_mercato, valuta
 # ---- fine import ----
 
@@ -58,6 +60,39 @@ def url_comparabili(brand, testo=None, catalogo=None):
     c = f"&catalog[]={catalogo}" if catalogo else ""
     b = f"brand_ids[]={bid}" if bid else "order=newest_first"
     return f"https://www.vinted.it/catalog?{b}{c}{t}&order=newest_first"
+
+
+def comparabili_con_link(coppie, mappe, n=MAX_FOTO_COMPS):
+    """[(titolo, prezzo, url)] dei `n` comparabili piu' vicini alla mediana dei prezzi che hanno un link noto. `mappe` = dizionari
+    {(titolo normalizzato, prezzo 2f): url} delle ricerche. Pura."""
+    if not coppie:
+        return []
+    prezzi = sorted(p for _, p in coppie)
+    mediana = prezzi[len(prezzi) // 2]
+    out, visti = [], set()
+    for t, p in sorted(coppie, key=lambda c: abs(c[1] - mediana)):
+        url = next((m[k] for m in mappe if m for k in [(_normalizza_titolo_per_link(t), f"{p:.2f}")] if k in m), None)
+        if url and url not in visti:
+            visti.add(url)
+            out.append((t, p, url))
+        if len(out) >= n:
+            break
+    return out
+
+
+def comparabili_diversi(confronti):
+    """True se la maggior parte delle miniature e' di un altro tipo di prodotto (scelta 'diverso' con confidenza >= 0,5). Pura."""
+    if not confronti:
+        return False
+    return sum(1 for sc, cf in confronti if sc == "diverso" and (cf or 0) >= 0.5) * 2 > len(confronti)
+
+
+async def _miniature_dei_comparabili(link_comps):
+    """Byte (ridotti a 512 px) delle miniature dei comparabili con link noto. Lista vuota se mancano."""
+    ids = [re.search(r"/items/(\d+)", c[2]) for c in link_comps]
+    urls = [u for u in (_miniature_comp.get(m.group(1)) for m in ids if m) if u][:MAX_FOTO_COMPS]
+    scaricate = await asyncio.gather(*(download_image_bytes(u) for u in urls), return_exceptions=True)
+    return [await asyncio.to_thread(optimize_image_bytes, b, 512) for b in scaricate if isinstance(b, bytes) and b]
 
 
 def _entro_il_tetto():
@@ -106,7 +141,12 @@ def righe_messaggio(ris):
         for t, p in (ris.get("esempi") or [])[:3]:
             righe.append(f"• {p:g} € {t[:50]}")
     else:
-        righe.append("🔎 Comparabili Vinted non trovati: la stima resta quella a priori")
+        righe.append("🔎 Comparabili Vinted di tipo diverso dalla foto: stima a priori, non verificata" if ris.get("motivo") == "comparabili_diversi"
+                     else "🔎 Comparabili Vinted non trovati: la stima resta quella a priori")
+    fc = ris.get("foto_comps")
+    if fc:
+        nomi = {"stesso_modello": "molto simile", "simile": "simile", "diverso": "diverso", "non_chiaro": "non chiaro"}
+        righe.append("🖼 Foto comparabili vs annuncio (Jev): " + ", ".join(nomi.get(sc, str(sc)) for sc, _cf in fc))
     a = ris.get("autenticita")
     if a:
         etichette = {"originale_plausibile": "sembra originale", "non_chiaro": "non si capisce dalla foto"}
@@ -120,7 +160,7 @@ async def verifica(listing_info, foto):
     """Dict {esito, motivo, n, rivendita, margine, roi, link, autenticita}. Mai eccezioni: in caso di errore 'non_verificato'."""
     fv = listing_info.get("fair_value") or {}
     brand = fv.get("brand")
-    ris = {"esito": "non_verificato", "motivo": "errore", "n": 0, "rivendita": None, "margine": None, "roi": None, "esempi": [], "autenticita": None}
+    ris = {"esito": "non_verificato", "motivo": "errore", "n": 0, "rivendita": None, "margine": None, "roi": None, "esempi": [], "autenticita": None, "foto_comps": None}
     try:
         titolo = listing_info.get("title") or ""
         prezzo = float(listing_info.get("price") or 0)
@@ -130,12 +170,13 @@ async def verifica(listing_info, foto):
             return ris
         # i comparabili cercano brand + categoria + prime parole del titolo; se sono pochi, solo brand + categoria
         testo = " ".join(query_comp(titolo, brand).split()[len((brand or "").split()):][:3])
-        comps_pool, usate = [], []
+        comps_pool, usate, mappe = [], [], []
         for t in ([testo, None] if testo else [None]):
             url_c = url_comparabili(brand, t, catalogo)
             if not url_c:
                 break
             risposta, ok, _mappa = await _cerca_vinted_testo_diretto(url_c)
+            mappe.append(_mappa)
             if not ok:
                 continue
             comps = [c for c in solo_usato(parse_comp(risposta)) if not (c[0] == titolo and abs(c[1] - prezzo) < 0.01)]
@@ -154,11 +195,23 @@ async def verifica(listing_info, foto):
                 prezzi = [p for _t, p in veri]
         stima = stima_mercato(prezzi, min_n=MIN_COMPARABILI)
         v = valuta(prezzo, stima, spedizione_eur=SPEDIZIONE_STIMATA_EUR) if stima else None
+        foto_jpeg = None
         if foto:
             # Vinted serve anche webp: Jev accetta solo png/jpeg, quindi si converte in jpeg (prima la foto non partiva: foto=-)
             foto_jpeg = await asyncio.to_thread(optimize_image_bytes, foto, 768)
             ris["autenticita"] = await asyncio.to_thread(giudica_autenticita, titolo, brand, foto_jpeg)
+        if JEV_FOTO_COMPS and foto_jpeg and v:
+            # foto dell'annuncio contro le miniature dei comparabili: stesso tipo di prodotto? Se la maggior parte e' di altro tipo la
+            # stima non regge e l'avviso parte non verificato (non scartato: l'errore di prezzo puo' essere vero)
+            miniature = await _miniature_dei_comparabili(comparabili_con_link(comps_pool, mappe))
+            if miniature:
+                ris["foto_comps"] = await asyncio.to_thread(confronta_foto_comparabili, titolo, foto_jpeg, miniature, DOMANDA_FOTO_COMP_MODA)
+                if comparabili_diversi(ris["foto_comps"]):
+                    log.info("MODA JEV COMPARABILI DIVERSI | brand=%s | confronti=%s | titolo=%s", brand, ris["foto_comps"], titolo[:60])
+                    v = None
         ris["esito"], ris["motivo"] = decidi(v, ris["autenticita"])
+        if v is None and ris["foto_comps"] and comparabili_diversi(ris["foto_comps"]):
+            ris["motivo"] = "comparabili_diversi"
         if v:
             ris.update(n=v.get("n") or len(prezzi), rivendita=v.get("rivendita"), margine=v.get("margine"), roi=v.get("roi"),
                        esempi=list(comps_pool[:3]))

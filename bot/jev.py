@@ -31,6 +31,17 @@ DOMANDA_FOTO_COMP = {
         "non_chiaro": "dalle foto non si capisce",
     },
 }
+
+# Moda (02/11, richiesta dell'utente): la miniatura e' dello stesso tipo di capo/accessorio e quanto somiglia?
+DOMANDA_FOTO_COMP_MODA = {
+    "instructions": "Il capo o accessorio di questa miniatura e' dello stesso tipo del capo di foto1 (es. borsa a mano e non scarpa, giacca e non camicia) e simile per forma, materiale e stile?",
+    "criteria": {
+        "stesso_modello": "stesso tipo di prodotto e molto simile (forma, materiale, stile)",
+        "simile": "stesso tipo di prodotto ma stile, materiale o dimensione diversi",
+        "diverso": "tipo di prodotto diverso o molto diverso",
+        "non_chiaro": "dalle foto non si capisce",
+    },
+}
 ENDPOINT = "https://api.typesafe.ai/v1/systemone"
 MODELLO = "jev-latest"
 HEADER_IMMAGINI = "TypeSafe-Danger-Zone-Images"
@@ -346,12 +357,13 @@ def stima_paese(titolo, descrizione=None):
     return None
 
 
-def confronta_foto_comparabili(titolo, foto, miniature):
+def confronta_foto_comparabili(titolo, foto, miniature, domanda=None):
     """[(scelta, confidenza), ...] una per miniatura, oppure None se Jev e' spento o non risponde. Bloccante.
     `foto` e `miniature` sono byte di immagini png/jpeg (max MAX_FOTO_COMPS miniature). Non influisce sull'esito."""
     chiave = os.environ.get("TYPESAFE_API_KEY", "").strip()
     if not (JEV_GIUDICE and JEV_FOTO_COMPS and chiave):
         return None
+    domanda = domanda or DOMANDA_FOTO_COMP
     immagini = [("foto1", foto)] + [(f"comp{i}", m) for i, m in enumerate(miniature[:MAX_FOTO_COMPS], 1)]
     assets = {}
     for nome, dati in immagini:
@@ -364,7 +376,7 @@ def confronta_foto_comparabili(titolo, foto, miniature):
         return None
     corpo = {"model": MODELLO, "assets": assets,
              "state": f"Annuncio Vinted: {titolo}\nFoto dell'annuncio: foto1\nMiniature di annunci simili: {', '.join(comp)}",
-             "questions": {n: {"type": "choice", **DOMANDA_FOTO_COMP, "instructions": DOMANDA_FOTO_COMP["instructions"].replace("questa miniatura", n)}
+             "questions": {n: {"type": "choice", **domanda, "instructions": domanda["instructions"].replace("questa miniatura", n)}
                            for n in comp}}
     try:
         risposta = _chiama_jev(corpo)
