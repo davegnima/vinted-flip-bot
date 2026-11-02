@@ -1,4 +1,4 @@
-from bot.fair_value import valuta_preavviso
+from bot.fair_value import valuta_preavviso, _valuta_preavviso_base as _valuta_base   # _valuta_base: regole base, senza i candidati da verificare
 from bot.scheda import _scheda_annuncio_testo, dati_deboli
 
 
@@ -106,7 +106,7 @@ def test_categoria_dal_catalogo_vinted():
 
 
 def test_preavviso_non_scatta_con_stima_debole():
-    assert valuta_preavviso({**_stima("🟢", 60), "conf": "bassa"}, 10) == (False, "no")
+    assert _valuta_base({**_stima("🟢", 60), "conf": "bassa"}, 10) == (False, "no")
 
 
 def test_taratura_brand_in_piu_della_globale():
@@ -556,7 +556,7 @@ def test_esperimento_rosso_esclude_jpg_e_max_mara(monkeypatch):
 
 def test_preavviso_brand_nuovo_verde_con_margine_netto():
     s = {**_stima("🟢", 105), "conf": "bassa", "brand": "zimmermann"}
-    assert valuta_preavviso(s, 10) == (True, "brand_nuovo")
-    assert valuta_preavviso({**s, "margine": 30}, 10) == (False, "no")                     # margine sotto 50
-    assert valuta_preavviso({**s, "semaforo": "🟡"}, 30) == (False, "no")                   # solo 🟢
-    assert valuta_preavviso({**s, "brand": "marni"}, 10) == (False, "no")                  # solo i brand nuovi
+    assert _valuta_base(s, 10) == (True, "brand_nuovo")
+    assert _valuta_base({**s, "margine": 30}, 10) == (False, "no")                     # margine sotto 50
+    assert _valuta_base({**s, "semaforo": "🟡"}, 30) == (False, "no")                   # solo 🟢
+    assert _valuta_base({**s, "brand": "marni"}, 10) == (False, "no")                  # solo i brand nuovi

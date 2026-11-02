@@ -143,3 +143,18 @@ def test_verifica_usa_la_ricerca_testuale_senza_filtro_jev(monkeypatch):
             "fair_value": {"brand": "bottega veneta", "fv": 211}}
     ris = asyncio.run(mj.verifica(info, b"img", [b"img"]))
     assert ris["esito"] == "conferma" and ris["n"] >= 3 and ris["rivendita"] and ris["rivendita"] > 100
+
+
+def test_giallo_con_margine_e_roi_promettenti_va_a_jev_senza_invio_immediato():
+    from bot.fair_value import valuta_preavviso, REGOLA_DA_VERIFICARE
+    # Kurt Geiger 30 EUR, 🟡, fair value 82, margine 52: la regola base dice 'no', ma ROI +173% -> da verificare con Jev
+    assert valuta_preavviso({"semaforo": "🟡", "margine": 52, "conf": "media", "brand": "kurt geiger", "fv": 82}, 30) == (True, REGOLA_DA_VERIFICARE)
+    # margine sotto 50, o ROI sotto 100%: resta 'no'
+    assert valuta_preavviso({"semaforo": "🟡", "margine": 40, "conf": "media", "brand": "kurt geiger", "fv": 70}, 30) == (False, "no")
+    assert valuta_preavviso({"semaforo": "🟡", "margine": 52, "conf": "media", "brand": "kurt geiger", "fv": 152}, 100) == (False, "no")
+    assert valuta_preavviso({"semaforo": "🔴", "margine": 80, "conf": "media", "brand": "kurt geiger", "fv": 110}, 30) == (False, "no")
+
+
+def test_da_verificare_viene_sempre_trattenuto_per_jev(monkeypatch):
+    monkeypatch.setattr(mj, "MODA_JEV", True)
+    assert mj.tratteni_per_verifica({"brand": "kurt geiger"}, "da_verificare") is True
