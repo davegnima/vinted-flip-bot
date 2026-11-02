@@ -223,6 +223,12 @@ def testo_preavviso(listing_info, url=None, riga_finale=RIGA_PREAVVISO_IN_ATTESA
     for riga in (_righe_dettagli_annuncio(listing_info), esc(_riga_fair_value_testo(fv) or "")):
         if riga:
             righe.append(riga)
+    righe_jev = listing_info.get("righe_jev")
+    if righe_jev:
+        # brand nuovo verificato con comparabili e foto (bot/moda_jev.py): il messaggio nasce gia' con l'esito, niente "in attesa"
+        righe += [esc(r) for r in righe_jev]
+        if riga_finale == RIGA_PREAVVISO_IN_ATTESA:
+            riga_finale = RIGA_JEV_VERIFICATO
     if url:
         righe.append(f"[vedi su Vinted]({url})")
     if riga_query(listing_info):
@@ -255,6 +261,7 @@ def riga_scarto_preavviso(motivo, msg_id=None, interrotta=False):
     return testa + (f"\n[messaggio originale nell'altra chat]({link})" if link else "")
 
 
+RIGA_JEV_VERIFICATO = "🚦 Brand nuovo: semaforo + comparabili Vinted + foto (Jev), senza Cervello"
 RIGA_SOLO_SEMAFORO = "⚠️ Cervello non disponibile: avviso dal solo semaforo (stima rapida, non verificata)"
 RIGA_SOLO_SEMAFORO_SCELTO = "🚦 Avviso dal solo semaforo (stima rapida, senza AI): autenticita' non verificata"
 
