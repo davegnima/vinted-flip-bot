@@ -28,6 +28,9 @@ MODA_JEV = os.environ.get("MODA_JEV", "0").strip() in ("1", "true", "si")
 MODA_JEV_MAX_GIORNO = int(os.environ.get("MODA_JEV_MAX_GIORNO", "600") or 600)
 # 02/11 (richiesta dell'utente): la verifica vale per TUTTI gli avvisi della moda, non solo per i brand nuovi. 0 = solo brand nuovi.
 MODA_JEV_TUTTI = os.environ.get("MODA_JEV_TUTTI", "0").strip() in ("1", "true", "si")
+# 02/11 (richiesta dell'utente): l'avviso parte SUBITO (come prima della verifica) e lo stesso messaggio viene aggiornato con l'esito
+# Jev (comparabili, foto) o con "scartato dalla verifica". 0 = avviso trattenuto fino alla verifica.
+MODA_JEV_SUBITO = os.environ.get("MODA_JEV_SUBITO", "1").strip() not in ("0", "false", "no", "")
 MIN_COMPARABILI = 3
 _conteggio = {"giorno": None, "n": 0}
 
