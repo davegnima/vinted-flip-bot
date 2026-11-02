@@ -69,7 +69,9 @@ RISCHIO=('V2 alessi','V2 iittala','V2 rosenthal','V2 zwilling','V2 gopro','V2 dj
          'V2 games workshop','V2 smeg','V2 ginori', # 01/11 potate: 0 gialli/verdi su 24 h, 91-100% margine_basso (URL salvate in docs/analisi/radar-ricerche-potate-2026-11-01.json)
          'V2 airpods pro','V2 apple airpods','V2 omega uomo','V2 omega donna','V2 longines','V2 tudor','V2 montblanc penne', # repliche frequenti: fuori (piano 31/10)
          'V2 lalique','V2 babyzen','V2 flos','V2 venini','V2 nuna','V2 lego star wars','V2 lego technic','V2 game boy', # 01/11 (c) tolte dal tracker: 0 annunci in 24 h (lalique, babyzen, flos, venini, nuna) o solo rossi (lego star wars 310, lego technic 106, game boy 16)
-         'V2 thermomix','V2 kitchenaid') # 31/10 13:30: senza catalog[] solo rumore (thermomix limite=0, kitchenaid accessori); rimesse solo con l'id categoria visto nei log
+         'V2 thermomix','V2 kitchenaid',
+         # 02/11 potatura per resa (richiesta dell'utente: banda): 0 venduti entro 1 h tra gialli e verdi in 36 h. Copia completa in docs/analisi/radar-ricerche-potate-2026-11-02.json
+         'Audio','Giochi','Golf','V2 analogue pocket','V2 artemide','V2 babolat pure drive','V2 baccarat','V2 bang olufsen','V2 berkel affettatrice','V2 braun silk expert pro 5','V2 bugaboo','V2 bullpadel vertex','V2 chord mojo','V2 comandante c40','V2 dewalt','V2 dji mic 2','V2 dji mini 3 pro','V2 dji pocket 3','V2 dji ronin rs3','V2 dualsense edge','V2 elgato stream deck','V2 eureka mignon','V2 fanatec csl','V2 favero assioma','V2 fellow stagg','V2 festool','V2 fiio btr','V2 focusrite scarlett 2i2','V2 fujifilm','V2 game boy advance','V2 garmin','V2 garmin fenix 7','V2 giochi switch ps5','V2 gopro hero 12','V2 head speed pro','V2 insta360 x3','V2 joolz','V2 korg volca','V2 lego ideas icons','V2 logitech g pro x superlight','V2 makita','V2 marantz','V2 meta quest 3','V2 milwaukee','V2 netgear orbi','V2 pedale boss','V2 pedale electro harmonix','V2 pedale mxr','V2 philips lumea','V2 playdate','V2 posate christofle','V2 posate sambonet','V2 rode wireless go ii','V2 roland sp-404','V2 rtx 3060','V2 rtx 3070','V2 ryzen 7 5800x3d','V2 ryzen 7 7800x3d','V2 samsung 990 pro 1tb','V2 sennheiser','V2 sigma 16mm sony','V2 sony zv-1','V2 staub','V2 steam deck','V2 steam deck prova senza categoria','V2 stokke seggioloni','V2 tado termostato','V2 technics','V2 teenage engineering op-1','V2 thrustmaster warthog','V2 wahoo elemnt','V2 wooting 60he','V2 xbox series x','V2 zoom h6') # 31/10 13:30: senza catalog[] solo rumore (thermomix limite=0, kitchenaid accessori); rimesse solo con l'id categoria visto nei log
 def _nomi_sul_tracker():
     return {html.unescape(re.search(r'name="query_name"[^>]*value="([^"]*)"',m.group(2)).group(1)).split(' :: ')[0]
             for m in re.finditer(r'action="/update_query/(\d+)"(.*?)</form>',get('/queries'),flags=re.S)}
@@ -105,19 +107,19 @@ if '--onda2' in sys.argv:
 if '--onda4' in sys.argv:
     gia=_nomi_sul_tracker()
     for nome,txt,br,cat,pt in ONDA4:
-        if nome in gia: continue
+        if nome in gia or nome in RISCHIO: continue
         u='https://www.vinted.it/catalog?'+(f'search_text={urllib.parse.quote(txt)}&' if txt else '')+(f'brand_ids[]={B_[br]}&' if br else '')+''.join(f'catalog[]={i}&' for i in cat)+f"price_to={pt}&currency=EUR&order=newest_first"
         post('/add_query',{'query':u,'query_name':nome}); print('ok',nome)
 if '--onda5' in sys.argv:
     gia=_nomi_sul_tracker()
     for nome,txt,br,cat,pt in ONDA5:
-        if nome in gia: continue
+        if nome in gia or nome in RISCHIO: continue
         u='https://www.vinted.it/catalog?'+(f'search_text={urllib.parse.quote(txt)}&' if txt else '')+(f'brand_ids[]={B_[br]}&' if br else '')+''.join(f'catalog[]={i}&' for i in cat)+f"price_to={pt}&currency=EUR&order=newest_first"
         post('/add_query',{'query':u,'query_name':nome}); print('ok',nome)
 if '--onda6' in sys.argv:
     gia=_nomi_sul_tracker()
     for nome,txt,br,cat,pt in ONDA6:
-        if nome in gia: continue
+        if nome in gia or nome in RISCHIO: continue
         u='https://www.vinted.it/catalog?'+f'search_text={urllib.parse.quote(txt)}&'+''.join(f'catalog[]={i}&' for i in cat)+f"price_to={pt}&currency=EUR&order=newest_first"
         post('/add_query',{'query':u,'query_name':nome}); print('ok',nome)
 if '--onda3' in sys.argv:
