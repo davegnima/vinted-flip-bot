@@ -22,6 +22,7 @@ from bot.foto import download_image_bytes, optimize_image_bytes
 from bot.fair_value import FAIR_VALUE_BRAND_NUOVI
 from bot.jev import CONF_AUTENTICITA_MIN, DOMANDA_FOTO_COMP_MODA, JEV_FOTO_COMPS, MAX_FOTO_COMPS, classifica_comparabili, confronta_foto_comparabili, comparabili_simili as simili_jev, comparabili_stesso_modello, giudica_autenticita
 from bot.logger import log
+from bot.moda_gemini import controlla as controlla_gemini, e_replica, riga_messaggio as riga_gemini, serve_controllo
 from bot.testo import _normalizza_titolo_per_link
 from bot.valore_mercato import comparabili_simili, parse_comp, query_comp, solo_usato, stima_mercato, valuta
 # ---- fine import ----
@@ -105,9 +106,12 @@ def _entro_il_tetto():
     return True
 
 
-def decidi(valutazione, autenticita):
+def decidi(valutazione, autenticita, gemini=None):
     """(esito, motivo) dalle due verifiche. `valutazione` = dict di valuta() o None se i comparabili mancano; `autenticita` =
-    (scelta, confidenza) o None. Il falso scarta sempre; senza comparabili l'avviso parte non verificato. Pura."""
+    (scelta, confidenza) o None; `gemini` = dict del controllo Gemini su tutte le foto o None. Il falso scarta sempre; senza comparabili
+    l'avviso parte non verificato. Pura."""
+    if e_replica(gemini):
+        return "scarta", "gemini:replica"
     if autenticita and autenticita[0] in ("replica_probabile", "altra_marca") and (autenticita[1] or 0) >= CONF_AUTENTICITA_MIN:
         return "scarta", "foto:" + autenticita[0]
     if valutazione is None:
@@ -121,6 +125,8 @@ def riga_esito_scheda(ris):
     """Riga (testo semplice) per la scheda della chat principale dopo la verifica: perche' l'avviso e' partito o no. Pura."""
     a = ris.get("autenticita")
     if ris.get("esito") == "scarta":
+        if ris.get("motivo") == "gemini:replica":
+            return f"🚫 Gemini: non avvisato, indizi di replica nelle foto ({((ris.get('gemini') or {}).get('confidenza') or 0):.0%})"
         if str(ris.get("motivo", "")).startswith("foto:") and a:
             return f"🚫 Jev: non avvisato, la foto sembra {a[0].replace('_', ' ')} ({(a[1] or 0):.0%})"
         if ris.get("rivendita") is not None:
@@ -147,6 +153,9 @@ def righe_messaggio(ris):
     if fc:
         nomi = {"stesso_modello": "molto simile", "simile": "simile", "diverso": "diverso", "non_chiaro": "non chiaro"}
         righe.append("🖼 Foto comparabili vs annuncio (Jev): " + ", ".join(nomi.get(sc, str(sc)) for sc, _cf in fc))
+    g = riga_gemini(ris.get("gemini"))
+    if g:
+        righe.append(g)
     a = ris.get("autenticita")
     if a:
         etichette = {"originale_plausibile": "sembra originale", "non_chiaro": "non si capisce dalla foto"}
@@ -156,11 +165,11 @@ def righe_messaggio(ris):
     return righe
 
 
-async def verifica(listing_info, foto):
+async def verifica(listing_info, foto, tutte_le_foto=None):
     """Dict {esito, motivo, n, rivendita, margine, roi, link, autenticita}. Mai eccezioni: in caso di errore 'non_verificato'."""
     fv = listing_info.get("fair_value") or {}
     brand = fv.get("brand")
-    ris = {"esito": "non_verificato", "motivo": "errore", "n": 0, "rivendita": None, "margine": None, "roi": None, "esempi": [], "autenticita": None, "foto_comps": None}
+    ris = {"esito": "non_verificato", "motivo": "errore", "n": 0, "rivendita": None, "margine": None, "roi": None, "esempi": [], "autenticita": None, "foto_comps": None, "gemini": None}
     try:
         titolo = listing_info.get("title") or ""
         prezzo = float(listing_info.get("price") or 0)
@@ -209,7 +218,11 @@ async def verifica(listing_info, foto):
                 if comparabili_diversi(ris["foto_comps"]):
                     log.info("MODA JEV COMPARABILI DIVERSI | brand=%s | confronti=%s | titolo=%s", brand, ris["foto_comps"], titolo[:60])
                     v = None
-        ris["esito"], ris["motivo"] = decidi(v, ris["autenticita"])
+        if serve_controllo(ris["autenticita"], prezzo, (v or {}).get("rivendita")):
+            # Jev non e' sicuro dell'originalita' (o il prezzo e' troppo basso): Gemini gratuito guarda tutte le foto
+            ris["gemini"] = await controlla_gemini(titolo, brand, prezzo, listing_info.get("description"), tutte_le_foto or ([foto] if foto else []),
+                                                   item_id=listing_info.get("item_id"))
+        ris["esito"], ris["motivo"] = decidi(v, ris["autenticita"], ris["gemini"])
         if v is None and ris["foto_comps"] and comparabili_diversi(ris["foto_comps"]):
             ris["motivo"] = "comparabili_diversi"
         if v:

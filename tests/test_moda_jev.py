@@ -88,3 +88,25 @@ def test_comparabili_con_link_e_diversi():
     righe = righe_messaggio({"rivendita": 60, "n": 4, "margine": 50, "roi": 150, "esempi": [], "autenticita": None,
                              "foto_comps": [("stesso_modello", 0.8), ("diverso", 0.7)]})
     assert any("Foto comparabili" in r and "molto simile" in r for r in righe)
+
+
+def test_gemini_moda_serve_controllo_e_decisione():
+    from bot import moda_gemini as g
+    from bot.moda_jev import decidi, riga_esito_scheda, righe_messaggio
+    # Jev sicuro dell'originale e prezzo normale: niente chiamata; foto poco chiara o prezzo troppo basso: controllo
+    assert not g.serve_controllo(("originale_plausibile", 0.8), 30, 100)
+    assert g.serve_controllo(("originale_plausibile", 0.4), 30, 100)
+    assert g.serve_controllo(("non_chiaro", 0.9), 30, 100)
+    assert g.serve_controllo(None, 30, 100)
+    assert g.serve_controllo(("originale_plausibile", 0.9), 10, 100)   # 10 < 25% di 100
+    d = g.leggi_risposta('{"autenticita":"replica","confidenza":0.85,"indizi":"logo storto","motivo":"logo storto"}')
+    assert g.e_replica(d)
+    assert not g.e_replica(g.leggi_risposta('{"autenticita":"replica","confidenza":0.5,"indizi":"","motivo":""}'))
+    assert not g.e_replica(g.leggi_risposta('{"autenticita":"dubbia","confidenza":0.95,"indizi":"","motivo":""}'))
+    assert g.leggi_risposta("[ERRORE x]") is None and g.leggi_risposta('{"autenticita":"boh"}') is None
+    ok = {"ok": True}
+    assert decidi(ok, None, d) == ("scarta", "gemini:replica")
+    assert decidi(ok, None, None)[0] == "conferma"
+    ris = {"esito": "scarta", "motivo": "gemini:replica", "gemini": d}
+    assert "Gemini" in riga_esito_scheda(ris)
+    assert any("Gemini" in r for r in righe_messaggio({"rivendita": 60, "n": 4, "margine": 50, "roi": 150, "esempi": [], "autenticita": None, "gemini": d}))
