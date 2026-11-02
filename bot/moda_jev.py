@@ -46,7 +46,7 @@ def tratteni_per_verifica(fv, regola):
     la regola brand_nuovo sui brand nuovi. Pura."""
     if not MODA_JEV or not regola or regola == "no":
         return False
-    return bool(MODA_JEV_TUTTI or (regola == "brand_nuovo" and (fv or {}).get("brand") in FAIR_VALUE_BRAND_NUOVI))
+    return bool(MODA_JEV_TUTTI or regola == "da_verificare" or (regola == "brand_nuovo" and (fv or {}).get("brand") in FAIR_VALUE_BRAND_NUOVI))
 
 
 def id_brand(brand):

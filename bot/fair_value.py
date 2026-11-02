@@ -341,8 +341,31 @@ def _giallo_economico(stima, prezzo):
                 and 0 < prezzo <= PREAVVISO_GIALLO_PREZZO_MAX)
 
 
+# 02/11 (utente: "perche' non fa la ricerca comparabili con Jev e tutta la trafila?"): un 🟢/🟡 che la regola del preavviso scarta ma la cui
+# stima rapida promette margine >= PREAVVISO_DA_VERIFICARE_MARGINE e ROI >= 100% (fair value >= 2x il prezzo) va comunque a Jev
+# (comparabili Vinted + foto + Gemini). L'avviso parte SOLO se la verifica conferma (niente invio immediato, niente rumore).
+# Spento con PREAVVISO_DA_VERIFICARE=0.
+PREAVVISO_DA_VERIFICARE = (os.environ.get("PREAVVISO_DA_VERIFICARE", "1").strip() != "0"
+                           and os.environ.get("MODA_JEV", "1").strip() not in ("0", "false", "no", ""))   # senza Jev nessun candidato
+PREAVVISO_DA_VERIFICARE_MARGINE = _env_float("PREAVVISO_DA_VERIFICARE_MARGINE", 50)
+REGOLA_DA_VERIFICARE = "da_verificare"
+
+
 def valuta_preavviso(stima, prezzo):
-    """(scatta, regola): push immediato sulla scheda anticipata. Pura. Senza stima o con confidenza bassa non scatta."""
+    """(scatta, regola): push sulla scheda anticipata. Pura. Se la regola base non scatta, i candidati con margine e ROI promettenti
+    escono con regola 'da_verificare' (solo dopo la verifica Jev)."""
+    scatta, regola = _valuta_preavviso_base(stima, prezzo)
+    if scatta or not PREAVVISO_DA_VERIFICARE or not stima or not prezzo or prezzo <= 0 or stima.get("semaforo") not in ("🟢", "🟡"):
+        return scatta, regola
+    marg = stima.get("margine")
+    if ((stima.get("brand") or "").lower() in PREAVVISO_BRAND_ESCLUSI or marg is None
+            or marg < PREAVVISO_DA_VERIFICARE_MARGINE or marg < prezzo):
+        return scatta, regola
+    return True, REGOLA_DA_VERIFICARE
+
+
+def _valuta_preavviso_base(stima, prezzo):
+    """Regole del preavviso senza i candidati da verificare. Pura. Senza stima o con confidenza bassa non scatta."""
     if not PREAVVISO_ATTIVO or not stima or prezzo is None or prezzo <= 0:
         return False, "no"
     sem, marg = stima.get("semaforo"), stima.get("margine")
