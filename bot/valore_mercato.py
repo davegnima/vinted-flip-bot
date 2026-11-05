@@ -232,7 +232,7 @@ def semaforo(v):
     return "giallo" if n >= 2 else "rosso"
 
 
-def valuta(prezzo, stima, prezzo_nuovo=None, spedizione_eur=SPEDIZIONE_STIMATA_EUR, rischio_falsi=1, rischio_guasti=1):
+def valuta(prezzo, stima, prezzo_nuovo=None, spedizione_eur=SPEDIZIONE_STIMATA_EUR, rischio_falsi=1, rischio_guasti=1, margine_min=None, roi_min=None):
     """Verdetto economico di un annuncio da `prezzo` EUR. Pura.
 
     Ritorna dict con rivendita, margine, roi, ok (margine >= RADAR_MARGINE_MIN e ROI >= RADAR_ROI_MIN) e motivo.
@@ -242,8 +242,10 @@ def valuta(prezzo, stima, prezzo_nuovo=None, spedizione_eur=SPEDIZIONE_STIMATA_E
         return {"ok": False, "motivo": "pochi_comparabili", "rivendita": None, "margine": None, "roi": None, "semaforo": "rosso"}
     riv = tetto_dal_nuovo(stima["rivendita"], prezzo_nuovo)
     marg, roi = margine_roi(prezzo, riv, spedizione_eur, rischio_falsi, rischio_guasti)
-    ok = marg >= RADAR_MARGINE_MIN and roi >= RADAR_ROI_MIN
-    motivo = "ok" if ok else ("margine_basso" if marg < RADAR_MARGINE_MIN else "roi_basso")
+    m_min = RADAR_MARGINE_MIN if margine_min is None else margine_min   # soglie diverse per la moda (5/11): margine_min/roi_min
+    r_min = RADAR_ROI_MIN if roi_min is None else roi_min
+    ok = marg >= m_min and roi >= r_min
+    motivo = "ok" if ok else ("margine_basso" if marg < m_min else "roi_basso")
     v = {"ok": ok, "motivo": motivo, "rivendita": riv, "margine": marg, "roi": roi,
          "limitato_dal_nuovo": riv < stima["rivendita"], "affidabilita": stima["affidabilita"], "n": stima["n"],
          "richiesto_mediano": stima.get("richiesto_mediano"), "vendita_rapida": stima.get("vendita_rapida"),
