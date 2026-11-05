@@ -609,6 +609,32 @@ def spezza_didascalia(testo, massimo=MAX_DIDASCALIA):
     return testo[:taglio], testo[taglio:].strip("\n")
 
 
+def compatta_didascalia(testo, massimo=MAX_DIDASCALIA):
+    """Fa stare l'avviso nella didascalia della foto (5/11, richiesta dell'utente: niente secondo messaggio): accorcia con '…' le righe
+    di testo piu' lunghe (giudizi di Jev e Gemini, motivi) senza mai toccare i link ('•' e url), poi toglie le righe 💡 e 📊 se serve.
+    Se non basta, il testo resta com'e' e lo spezza `spezza_didascalia`. Pura."""
+    if len(testo) <= massimo:
+        return testo
+    righe = testo.split("\n")
+    protetta = lambda r: r.startswith(("•", "http", "🔗", "💶", "🟢", "🟡", "🔴")) or not r
+    MIN_RIGA = 90
+    for _ in range(len(righe) * 3 + 5):
+        totale = len("\n".join(righe))
+        if totale <= massimo:
+            return "\n".join(righe)
+        cand = [k for k, r in enumerate(righe) if not protetta(r) and len(r) > MIN_RIGA]
+        if not cand:
+            break
+        i = max(cand, key=lambda k: len(righe[k]))
+        tenuti = max(MIN_RIGA, len(righe[i]) - (totale - massimo) - 1)
+        righe[i] = righe[i][:tenuti].rstrip(" \\_*") + "…"
+    for marca in ("💡", "📊", "🔁", "🔎"):       # in ordine di importanza crescente: prima cade la stima di Gemini
+        if len("\n".join(righe)) <= massimo:
+            break
+        righe = [r for r in righe if not r.startswith(marca)]
+    return "\n".join(righe)
+
+
 def url_annuncio_nel_testo(testo, url=None):
     """Link dell'annuncio per il bottone: quello passato, altrimenti l'ULTIMA url Vinted del testo (le precedenti sono i comparabili). Pura."""
     if url:
@@ -625,7 +651,7 @@ async def _invia_radar(testo, foto=None, suono=False, ricerca=None, url=None):
     consegnato = False
     con_foto = False
     if foto:
-        didascalia, resto = spezza_didascalia(testo)
+        didascalia, resto = spezza_didascalia(compatta_didascalia(testo))
         if await telegram_send_photo(RADAR_CHAT_ID, foto, caption=didascalia, disable_notification=not suono, url_bottone=url):
             consegnato = con_foto = True
             log.info("RADAR FOTO | inviata con foto (%d KB)", len(foto) // 1024)
