@@ -40,3 +40,20 @@ def test_scheda_da_json_item():
 def test_intestazioni():
     h = va._intestazioni("tok", "anon")
     assert h["Authorization"] == "Bearer tok" and h["x-anon-id"] == "anon" and h["Sec-Fetch-Mode"] == "cors"
+
+
+def test_jev_autenticita_usa_tutte_le_foto(monkeypatch):
+    from bot import jev
+    visti = {}
+    monkeypatch.setenv("TYPESAFE_API_KEY", "k")
+    monkeypatch.setattr(jev, "JEV_GIUDICE", True)
+
+    def finta(corpo):
+        visti.update(corpo)
+        return {"answers": {"autenticita": {"choice": "originale_plausibile", "confidence": 0.9}}, "usage": {}}
+    monkeypatch.setattr(jev, "_chiama_jev", finta)
+    png = b"\x89PNG\r\n\x1a\n" + b"0" * 10
+    r = jev.giudica_autenticita("Borsa", "prada", [png] * 9)
+    assert r == ("originale_plausibile", 0.9)
+    assert len(visti["assets"]) == jev.MAX_FOTO_AUTENTICITA
+    assert jev.giudica_autenticita("Borsa", "prada", png) == r

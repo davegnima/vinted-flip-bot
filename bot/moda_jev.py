@@ -20,7 +20,7 @@ from bot.config import SPEDIZIONE_STIMATA_EUR
 from bot.costanti import VINTED_BRAND_IDS
 from bot.foto import download_image_bytes, optimize_image_bytes
 from bot.fair_value import FAIR_VALUE_BRAND_NUOVI
-from bot.jev import CONF_AUTENTICITA_MIN, DOMANDA_FOTO_COMP_MODA, JEV_FOTO_COMPS, MAX_FOTO_COMPS, confronta_foto_comparabili, giudica_autenticita
+from bot.jev import CONF_AUTENTICITA_MIN, MAX_FOTO_AUTENTICITA, DOMANDA_FOTO_COMP_MODA, JEV_FOTO_COMPS, MAX_FOTO_COMPS, confronta_foto_comparabili, giudica_autenticita
 from bot.logger import log
 from bot.moda_gemini import controlla as controlla_gemini, e_replica, riga_messaggio as riga_gemini, serve_controllo
 from bot.testo import _normalizza_titolo_per_link
@@ -221,7 +221,10 @@ async def verifica(listing_info, foto, tutte_le_foto=None):
         if foto:
             # Vinted serve anche webp: Jev accetta solo png/jpeg, quindi si converte in jpeg (prima la foto non partiva: foto=-)
             foto_jpeg = await asyncio.to_thread(optimize_image_bytes, foto, 768)
-            ris["autenticita"] = await asyncio.to_thread(giudica_autenticita, titolo, brand, foto_jpeg)
+            # 5/11 (utente): Jev guarda TUTTE le foto (fino a JEV_AUTENTICITA_FOTO), non solo la prima: etichette, wash tag, made in, hardware
+            altre = [f for f in (tutte_le_foto or [])[1:MAX_FOTO_AUTENTICITA] if f]
+            tutte_jpeg = [foto_jpeg] + [await asyncio.to_thread(optimize_image_bytes, f, 768) for f in altre]
+            ris["autenticita"] = await asyncio.to_thread(giudica_autenticita, titolo, brand, tutte_jpeg)
         if JEV_FOTO_COMPS and foto_jpeg and link_comps:
             # foto dell'annuncio contro le miniature dei comparabili piu' vicini alla mediana: se Jev li trova MOLTO simili il loro prezzo
             # diventa la rivendita (anche con pochi comparabili testuali); se no si torna alla stima testuale, senza foto
