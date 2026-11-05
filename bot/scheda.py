@@ -205,6 +205,17 @@ def _testa_prezzo_brand(listing_info):
 RIGA_PREAVVISO_IN_ATTESA = "_preavviso del semaforo: la valutazione completa arriva dopo_"
 
 
+def _riga_semaforo_passo(fv):
+    """Primo passo dei messaggi verificati: cosa dice il semaforo e da dove viene (tabella a priori per brand e categoria, non annunci reali)
+    con la sua confidenza. Il vecchio '~+90 €' in testata era questo margine. Testo gia' escapato. Pura."""
+    if not fv or fv.get("fv") is None:
+        return None
+    conf = {"alta": "alta", "media": "media", "bassa": "bassa", "stima": "stima di mercato"}.get(fv.get("conf"), fv.get("conf") or "n.d.")
+    margine = f", margine ~{fv['margine']:.0f} €" if fv.get("margine") is not None else ""
+    intervallo = f" ({fv['minimo']}-{fv['massimo']})" if fv.get("minimo") is not None and fv.get("massimo") is not None else ""
+    return _escapa_markdown_legacy(f"🚦 Stima rapida {fv.get('semaforo') or ''} ~{fv['fv']} €{intervallo}{margine} · confidenza {conf} (tabella brand+categoria, non annunci)")
+
+
 def testo_preavviso(listing_info, url=None, riga_finale=RIGA_PREAVVISO_IN_ATTESA, riga_tempi=None, compatto=False):
     """Messaggio breve del PREAVVISO (gruppo COMPRA): prima riga = fulmine, semaforo, margine rapido, prezzo e brand
     (e' quello che compare nell'anteprima della notifica), poi titolo, dettagli, fair value rapido, link e riga finale
@@ -214,13 +225,15 @@ def testo_preavviso(listing_info, url=None, riga_finale=RIGA_PREAVVISO_IN_ATTESA
     testa = _testa_prezzo_brand(listing_info) or ""
     marca = "⚡ " + (f"{fv['semaforo']} ~+{fv['margine']:.0f} € · " if fv.get("margine") is not None and fv.get("semaforo") else "")
     riv = listing_info.get("rivendita_jev") if listing_info.get("righe_jev") else None
-    if riv:
-        # dopo la verifica Jev stessa intestazione del radar: "🟢 *15 €* ➜ rivendita ~*270 €*" (5/11); niente stima rapida, che la contraddirebbe
+    verdetto = listing_info.get("riga_verdetto_jev") if listing_info.get("righe_jev") else None
+    if listing_info.get("righe_jev"):
+        # dopo la verifica Jev: verdetto in chiaro in cima, poi intestazione "🟢 *15 €* ➜ rivendita ~*270 €*" (come il radar) oppure, se scartato,
+        # solo prezzo e brand; la stima rapida del semaforo resta come primo passo, spiegata (5/11, utente: 'da dove deriva il ~+90?')
         prezzo = _a_float(listing_info.get("price"), None)
         brand = (listing_info.get("brand") or "").strip()
-        marca = (fv.get("semaforo") or "🟢") + " "
-        testa = (f"*{prezzo:g} €*" if prezzo is not None else "") + f" ➜ rivendita ~*{riv:g} €*" + (f" · 🏷️ {esc(brand)}" if brand and brand != "?" else "")
-        righe = [marca + testa, esc(listing_info.get("title") or "Annuncio")]
+        sem = fv.get("semaforo") or "🟢"
+        testa = (f"*{prezzo:g} €*" if prezzo is not None else "") + (f" ➜ rivendita ~*{riv:g} €*" if riv else "") + (f" · 🏷️ {esc(brand)}" if brand and brand != "?" else "")
+        righe = ([esc(verdetto)] if verdetto else []) + [sem + " " + testa, esc(listing_info.get("title") or "Annuncio")]
     else:
         righe = [marca + "*" + testa + "*", esc(listing_info.get("title") or "Annuncio")]
     if compatto:
@@ -229,7 +242,8 @@ def testo_preavviso(listing_info, url=None, riga_finale=RIGA_PREAVVISO_IN_ATTESA
         esito, _, resto = (riga_finale or "").partition("\n")
         link = [f"[vedi su Vinted]({url})"] if url else []   # l'album non ha il bottone: il link resta sempre nel testo
         return "\n".join([esito] + righe + link + ([resto] if resto else []))
-    for riga in (_righe_dettagli_annuncio(listing_info), "" if riv else esc(_riga_fair_value_testo(fv) or "")):
+    riga_sem = _riga_semaforo_passo(fv) if listing_info.get("righe_jev") else esc(_riga_fair_value_testo(fv) or "")
+    for riga in (_righe_dettagli_annuncio(listing_info), _riga_venditore_annuncio(listing_info) if listing_info.get("righe_jev") else None, riga_sem):
         if riga:
             righe.append(riga)
     righe_jev = listing_info.get("righe_jev")
@@ -237,7 +251,7 @@ def testo_preavviso(listing_info, url=None, riga_finale=RIGA_PREAVVISO_IN_ATTESA
         # brand nuovo verificato con comparabili e foto (bot/moda_jev.py): il messaggio nasce gia' con l'esito, niente "in attesa"
         righe += [esc(r) for r in righe_jev]
         if riga_finale == RIGA_PREAVVISO_IN_ATTESA:
-            riga_finale = RIGA_JEV_VERIFICATO
+            riga_finale = "" if any(r.startswith("⏭") for r in righe_jev) else RIGA_JEV_VERIFICATO
     if url:
         righe.append(f"[vedi su Vinted]({url})")
     if riga_query(listing_info):
@@ -270,7 +284,7 @@ def riga_scarto_preavviso(motivo, msg_id=None, interrotta=False):
     return testa + (f"\n[messaggio originale nell'altra chat]({link})" if link else "")
 
 
-RIGA_JEV_VERIFICATO = "🚦 Verificato: comparabili Vinted + foto. Indizio, non certificazione"
+RIGA_JEV_VERIFICATO = "ℹ️ Legit check = indizio dalle foto, non certificazione"
 RIGA_SOLO_SEMAFORO = "⚠️ Cervello non disponibile: avviso dal solo semaforo (stima rapida, non verificata)"
 RIGA_SOLO_SEMAFORO_SCELTO = "🚦 Avviso dal solo semaforo (stima rapida, senza AI): autenticita' non verificata"
 
