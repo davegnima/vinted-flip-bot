@@ -36,6 +36,11 @@ MODA_JEV_TUTTI = os.environ.get("MODA_JEV_TUTTI", "0").strip() in ("1", "true", 
 # Jev (comparabili, foto) o con "scartato dalla verifica". 0 = avviso trattenuto fino alla verifica.
 MODA_JEV_SUBITO = os.environ.get("MODA_JEV_SUBITO", "1").strip() not in ("0", "false", "no", "")
 MIN_COMPARABILI = 3
+# 5/11 (utente): Jev scarta sul margine solo sotto i 40 EUR (prima 50, soglia del radar); il ROI minimo resta quello di sempre.
+try:
+    MODA_JEV_MARGINE_MIN = float(os.environ.get("MODA_JEV_MARGINE_MIN", "40"))
+except ValueError:
+    MODA_JEV_MARGINE_MIN = 40.0
 # 02/11: la foto dei comparabili conta solo se Jev li trova MOLTO simili (stesso modello, confidenza >= soglia): allora il loro prezzo
 # diventa la rivendita; altrimenti resta la ricerca testuale come prima (Jev non scarta piu' i comparabili: era troppo stringente).
 CONF_FOTO_MOLTO_SIMILE = 0.6
@@ -161,7 +166,7 @@ def riga_verdetto(ris):
             if mot.endswith("roi_basso"):
                 dove = f"ROI {ris['roi']:.0f}% (serve almeno 100%)"
             else:
-                dove = f"margine ~{ris['margine']:.0f} € (serve almeno 50 €)"
+                dove = f"margine ~{ris['margine']:.0f} € (serve almeno {MODA_JEV_MARGINE_MIN:g} €)"
             return f"🚫 SCARTATO: i {ris['n']} comparabili danno rivendita ~{ris['rivendita']:.0f} €, {dove}"
         return "🚫 SCARTATO: " + riga_esito_scheda(ris).replace("🚫 ", "").replace("Jev: non avvisato, ", "").replace("Gemini: non avvisato, ", "")
     if ris.get("esito") == "conferma":
@@ -269,7 +274,7 @@ async def verifica(listing_info, foto, tutte_le_foto=None):
         prezzi = [p for _t, p in comps_pool]
         link_comps = comparabili_con_link(comps_pool, mappe)
         stima = stima_mercato(prezzi, min_n=MIN_COMPARABILI)
-        v = valuta(prezzo, stima, spedizione_eur=SPEDIZIONE_STIMATA_EUR) if stima else None
+        v = valuta(prezzo, stima, spedizione_eur=SPEDIZIONE_STIMATA_EUR, margine_min=MODA_JEV_MARGINE_MIN) if stima else None
         foto_jpeg = None
         if foto:
             # Vinted serve anche webp: Jev accetta solo png/jpeg, quindi si converte in jpeg (prima la foto non partiva: foto=-)
@@ -284,7 +289,7 @@ async def verifica(listing_info, foto, tutte_le_foto=None):
                 if vicini:
                     stima_v = stima_mercato([c[1] for c in vicini], min_n=1)
                     if stima_v:
-                        v = valuta(prezzo, stima_v, spedizione_eur=SPEDIZIONE_STIMATA_EUR)
+                        v = valuta(prezzo, stima_v, spedizione_eur=SPEDIZIONE_STIMATA_EUR, margine_min=MODA_JEV_MARGINE_MIN)
                         link_comps = vicini
                         ris["da_foto"] = True
                         log.info("MODA JEV FOTO | brand=%s | molto_simili=%s/%s | rivendita=%s | titolo=%s", brand, len(vicini), len(coppie), v.get("rivendita"), titolo[:60])

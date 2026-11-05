@@ -172,7 +172,7 @@ def test_messaggio_a_passi_per_lo_scarto_sui_comparabili():
            "autenticita": None, "gemini": None, "legit_saltato": True, "prezzi_comps": (45.0, 60.0),
            "link_comps": [("t", 60.0, "https://www.vinted.it/items/1-a")]}
     verdetto = mj.riga_verdetto(ris)
-    assert verdetto.startswith("🚫 SCARTATO") and "~52 €" in verdetto and "~18 €" in verdetto and "almeno 50" in verdetto
+    assert verdetto.startswith("🚫 SCARTATO") and "~52 €" in verdetto and "~18 €" in verdetto and "almeno 40" in verdetto
     righe = mj.righe_messaggio(ris, "zimmermann")
     testo = "\n".join(righe)
     assert "da 45 a 60 €" in testo and "fiducia bassa" in testo and "Legit check non fatto" in testo
@@ -211,3 +211,12 @@ def test_verifica_salta_il_legit_check_se_i_comparabili_scartano(monkeypatch):
     info = {"title": "Nightwear", "price": 25, "catalog_id": 123, "fair_value": {"brand": "zimmermann", "fv": 115}}
     ris = asyncio.run(mj.verifica(info, b"img", [b"img"]))
     assert ris["esito"] == "scarta" and ris["legit_saltato"] is True and chiamato == []
+
+
+def test_valuta_moda_soglia_margine_40():
+    """5/11 (utente): Jev scarta per margine solo sotto i 40 EUR; il radar resta a 50."""
+    from bot.valore_mercato import valuta
+    stima = {"mediana": 100.0, "n": 6, "prezzi": [90, 95, 100, 105, 110, 100], "conf": "media"}
+    import inspect
+    assert "margine_min" in inspect.signature(valuta).parameters
+    assert mj.MODA_JEV_MARGINE_MIN == 40.0
