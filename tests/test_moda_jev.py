@@ -95,11 +95,17 @@ def test_gemini_moda_serve_controllo_e_decisione():
     from bot import moda_gemini as g
     from bot.moda_jev import decidi, riga_esito_scheda, righe_messaggio
     # Jev sicuro dell'originale e prezzo normale: niente chiamata; foto poco chiara o prezzo troppo basso: controllo
+    assert g.serve_controllo(("originale_plausibile", 0.8), 30, 100)   # dal 5/11 il controllo approfondito vale per ogni avviso
+    g.MODA_GEMINI_SEMPRE = False
     assert not g.serve_controllo(("originale_plausibile", 0.8), 30, 100)
     assert g.serve_controllo(("originale_plausibile", 0.4), 30, 100)
     assert g.serve_controllo(("non_chiaro", 0.9), 30, 100)
     assert g.serve_controllo(None, 30, 100)
     assert g.serve_controllo(("originale_plausibile", 0.9), 10, 100)   # 10 < 25% di 100
+    g.MODA_GEMINI_SEMPRE = True
+    d2 = g.leggi_risposta('{"autenticita":"altra_marca","confidenza":0.9,"etichetta_letta":"Kapitales","made_in":"China","prova_acquisto":"fattura","indizi":"x","motivo":"y"}')
+    assert g.e_replica(d2) and d2["prova_acquisto"] == "fattura"
+    assert "made in China" in g.riga_messaggio(d2) and "fattura" in g.riga_messaggio(d2)
     d = g.leggi_risposta('{"autenticita":"replica","confidenza":0.85,"indizi":"logo storto","motivo":"logo storto"}')
     assert g.e_replica(d)
     assert not g.e_replica(g.leggi_risposta('{"autenticita":"replica","confidenza":0.5,"indizi":"","motivo":""}'))

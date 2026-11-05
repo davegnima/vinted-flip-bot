@@ -449,27 +449,40 @@ def riconosci_prodotto(titolo, candidati, descrizione=None):
 
 
 DOMANDA_AUTENTICITA = {
-    "instructions": "Il capo o la borsa nella foto sembra un articolo originale del brand indicato nel titolo?",
+    "instructions": ("Guarda TUTTE le foto dell'annuncio (etichetta interna, etichetta di lavaggio con 'Made in' e composizione, logo, cuciture, zip e hardware, "
+                     "fattura/scontrino/cartellino se presenti). Il capo o la borsa sembra un articolo originale del brand indicato nel titolo? "
+                     "Il prezzo non conta."),
     "criteria": {
-        "originale_plausibile": "l'articolo sembra coerente con il brand (etichetta, logo, lavorazione, stile) e non ci sono segni di falso",
-        "replica_probabile": "ci sono segni di replica o contraffazione (logo storto, etichetta strana, lavorazione scadente, stile non del brand)",
-        "altra_marca": "l'articolo sembra di un altro brand o senza marca, non di quello del titolo",
-        "non_chiaro": "dalla foto non si riesce a dirlo (etichetta o dettagli non visibili)",
+        "originale_plausibile": "i dettagli visibili sono coerenti con il brand (etichetta, font, paese di produzione, logo, lavorazione, hardware) e non ci sono segni di falso",
+        "replica_probabile": ("ci sono segni concreti di replica: font o logo sbagliato, etichetta strana o incoerente, 'Made in' non coerente con il brand, "
+                              "lavorazione scadente, hardware economico, o il venditore dice replica/riproduzione"),
+        "altra_marca": "l'etichetta o l'articolo e' di un altro marchio o senza marca, non di quello del titolo",
+        "non_chiaro": "dalle foto non si riesce a dirlo (etichetta o dettagli non visibili)",
     },
 }
 CONF_AUTENTICITA_MIN = 0.6
+try:
+    MAX_FOTO_AUTENTICITA = max(1, int(os.environ.get("JEV_AUTENTICITA_FOTO", "5") or 5))
+except ValueError:
+    MAX_FOTO_AUTENTICITA = 5
 
 
 def giudica_autenticita(titolo, brand, foto):
-    """(scelta, confidenza) di Jev su una foto: l'articolo sembra originale del brand? Oppure None se Jev e' spento, manca la
-    foto o non risponde. E' un indizio dalla sola foto, non una certificazione. Bloccante: usarla con asyncio.to_thread."""
+    """(scelta, confidenza) di Jev sulle foto: l'articolo sembra originale del brand? Oppure None se Jev e' spento, mancano foto utilizzabili
+    o non risponde. `foto` = byte di una foto o lista di foto (png/jpeg, al massimo MAX_FOTO_AUTENTICITA). E' un indizio dalle foto, non una
+    certificazione. Bloccante: usarla con asyncio.to_thread."""
     chiave = os.environ.get("TYPESAFE_API_KEY", "").strip()
-    formato = _formato_foto(foto)
-    if not (JEV_GIUDICE and chiave and formato):
+    elenco = foto if isinstance(foto, (list, tuple)) else [foto]
+    assets = {}
+    for dati in elenco:
+        formato = _formato_foto(dati)
+        if formato and len(assets) < MAX_FOTO_AUTENTICITA:
+            assets[f"foto{len(assets) + 1}"] = {"type": "image", "data_base64": base64.b64encode(dati).decode(), "format": formato}
+    if not (JEV_GIUDICE and chiave and assets):
         return None
     corpo = {"model": MODELLO,
-             "state": f"Annuncio Vinted: {titolo}\nBrand dichiarato: {brand}\nFoto dell'annuncio: {RIFERIMENTO_FOTO}",
-             "assets": {RIFERIMENTO_FOTO: {"type": "image", "data_base64": base64.b64encode(foto).decode(), "format": formato}},
+             "state": f"Annuncio Vinted: {titolo}\nBrand dichiarato: {brand}\nFoto dell'annuncio: {', '.join(assets)}",
+             "assets": assets,
              "questions": {"autenticita": {"type": "choice", **DOMANDA_AUTENTICITA}}}
     try:
         risposta = _chiama_jev(corpo)
@@ -479,5 +492,5 @@ def giudica_autenticita(titolo, brand, foto):
         log.warning("JEV AUTENTICITA | non disponibile: %s", str(e)[:200])
         return None
     token = (risposta.get("usage") or {}).get("input_tokens")
-    log.info("JEV AUTENTICITA | titolo=%s | brand=%s | scelta=%s(%s) | input_tokens=%s", titolo[:60], brand, scelta, conf, token)
+    log.info("JEV AUTENTICITA | titolo=%s | brand=%s | foto=%d | scelta=%s(%s) | input_tokens=%s", titolo[:60], brand, len(assets), scelta, conf, token)
     return scelta, conf
