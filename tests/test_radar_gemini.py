@@ -127,7 +127,7 @@ def test_testo_avviso_a_blocchi():
     assert righe[0].endswith("rivendita ~*110 €*") and "*40 €*" in righe[0]
     assert "Switch\\_oled" in righe[1]          # il trattino basso non rompe il Markdown
     assert any(r.startswith("💶 Margine *53.8 €*") for r in righe)
-    assert any(r.startswith("📦 Costo totale") for r in righe) and any(r.startswith("📊") for r in righe)
+    assert any(r.startswith("📦 Totale") for r in righe) and any(r.startswith("📊") for r in righe)
     assert any(r.startswith("🧠 Jev") for r in righe) and any(r.startswith("👁 Gemini foto") for r in righe)
     assert any(r.startswith("💡 Stima Gemini") for r in righe)
     assert righe[-1] == "https://www.vinted.it/items/777-x" and righe[-2] == ""

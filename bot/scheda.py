@@ -213,14 +213,23 @@ def testo_preavviso(listing_info, url=None, riga_finale=RIGA_PREAVVISO_IN_ATTESA
     fv = listing_info.get("fair_value") or {}
     testa = _testa_prezzo_brand(listing_info) or ""
     marca = "⚡ " + (f"{fv['semaforo']} ~+{fv['margine']:.0f} € · " if fv.get("margine") is not None and fv.get("semaforo") else "")
-    righe = [marca + "*" + testa + "*", esc(listing_info.get("title") or "Annuncio")]
+    riv = listing_info.get("rivendita_jev") if listing_info.get("righe_jev") else None
+    if riv:
+        # dopo la verifica Jev stessa intestazione del radar: "🟢 *15 €* ➜ rivendita ~*270 €*" (5/11); niente stima rapida, che la contraddirebbe
+        prezzo = _a_float(listing_info.get("price"), None)
+        brand = (listing_info.get("brand") or "").strip()
+        marca = (fv.get("semaforo") or "🟢") + " "
+        testa = (f"*{prezzo:g} €*" if prezzo is not None else "") + f" ➜ rivendita ~*{riv:g} €*" + (f" · 🏷️ {esc(brand)}" if brand and brand != "?" else "")
+        righe = [marca + testa, esc(listing_info.get("title") or "Annuncio")]
+    else:
+        righe = [marca + "*" + testa + "*", esc(listing_info.get("title") or "Annuncio")]
     if compatto:
         # preavviso rimasto senza verdetto: l'esito (scartato/interrotto) in cima, poi solo testata e titolo con il semaforo
         # (richiesta del 10/10: il messaggio riporta il verdetto finale, non lo concatena al preavviso)
         esito, _, resto = (riga_finale or "").partition("\n")
         link = [f"[vedi su Vinted]({url})"] if url else []   # l'album non ha il bottone: il link resta sempre nel testo
         return "\n".join([esito] + righe + link + ([resto] if resto else []))
-    for riga in (_righe_dettagli_annuncio(listing_info), esc(_riga_fair_value_testo(fv) or "")):
+    for riga in (_righe_dettagli_annuncio(listing_info), "" if riv else esc(_riga_fair_value_testo(fv) or "")):
         if riga:
             righe.append(riga)
     righe_jev = listing_info.get("righe_jev")
@@ -261,7 +270,7 @@ def riga_scarto_preavviso(motivo, msg_id=None, interrotta=False):
     return testa + (f"\n[messaggio originale nell'altra chat]({link})" if link else "")
 
 
-RIGA_JEV_VERIFICATO = "🚦 Brand nuovo: semaforo + comparabili Vinted + foto (Jev), senza Cervello"
+RIGA_JEV_VERIFICATO = "🚦 Verificato: comparabili Vinted + foto. Indizio, non certificazione"
 RIGA_SOLO_SEMAFORO = "⚠️ Cervello non disponibile: avviso dal solo semaforo (stima rapida, non verificata)"
 RIGA_SOLO_SEMAFORO_SCELTO = "🚦 Avviso dal solo semaforo (stima rapida, senza AI): autenticita' non verificata"
 

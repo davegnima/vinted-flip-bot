@@ -153,33 +153,35 @@ def riga_esito_scheda(ris):
 
 
 def righe_messaggio(ris):
-    """Righe (testo semplice) da aggiungere all'avviso: rivendita dai comparabili e giudizio sulla foto. Pura."""
+    """Righe (testo semplice) da aggiungere all'avviso, nello stesso ordine e con le stesse icone del radar (5/11, richiesta dell'utente):
+    💶 margine/ROI/comparabili, 🖼 foto dei comparabili, 🧠 Jev, 👁 Gemini, 🔗 link ai comparabili. Pura."""
     righe = []
     if ris.get("rivendita") is not None:
-        righe.append(f"🔎 Comparabili Vinted{' (molto simili alla foto)' if ris.get('da_foto') else ''}: {ris['n']} annunci, rivendita ~{ris['rivendita']:.0f} € "
-                     f"(margine ~{ris['margine']:.0f} €, ROI {ris['roi']:.0f}%)")
-        link = ris.get("link_comps") or []
-        if link:   # comparabili identificati, con il link all'annuncio (richiesta dell'utente, 02/11)
-            for t, p, u in link[:3]:
-                righe.append(f"• {p:g} € {t[:45]} {u}")
-        else:
-            for t, p in (ris.get("esempi") or [])[:3]:
-                righe.append(f"• {p:g} € {t[:50]}")
+        righe.append(f"💶 Margine ~{ris['margine']:.0f} € · ROI {ris['roi']:.0f}% · {ris['n']} comparabili"
+                     + (" (molto simili alla foto)" if ris.get("da_foto") else ""))
     else:
-        righe.append("🔎 Comparabili Vinted non trovati: la stima resta quella a priori")
+        righe.append("💶 Comparabili Vinted non trovati: la stima resta quella a priori")
     fc = ris.get("foto_comps")
     if fc:
         nomi = {"stesso_modello": "molto simile", "simile": "simile", "diverso": "diverso", "non_chiaro": "non chiaro"}
-        righe.append("🖼 Foto comparabili vs annuncio (Jev): " + ", ".join(nomi.get(sc, str(sc)) for sc, _cf in fc))
+        righe.append("🖼 Foto comparabili vs annuncio: " + ", ".join(nomi.get(sc, str(sc)) for sc, _cf in fc))
+    a = ris.get("autenticita")
+    if a:
+        etichette = {"originale_plausibile": "sembra originale", "non_chiaro": "non si capisce", "replica_probabile": "replica probabile",
+                     "altra_marca": "altra marca"}
+        righe.append(f"🧠 Jev (foto): {etichette.get(a[0], a[0])} ({(a[1] or 0):.0%})")
+    else:
+        righe.append("🧠 Jev (foto): autenticita' non verificata")
     g = riga_gemini(ris.get("gemini"))
     if g:
         righe.append(g)
-    a = ris.get("autenticita")
-    if a:
-        etichette = {"originale_plausibile": "sembra originale", "non_chiaro": "non si capisce dalla foto"}
-        righe.append(f"🔍 Foto (Jev): {etichette.get(a[0], a[0])} ({(a[1] or 0):.0%}). Indizio dalla foto, non certificazione")
+    link = ris.get("link_comps") or []
+    if link:   # comparabili identificati, con il link all'annuncio (richiesta dell'utente, 02/11)
+        righe += ["", "🔗 Comparabili da controllare:"] + [f"• {p:g} € {u}" for _t, p, u in link[:3]]
     else:
-        righe.append("🔍 Autenticita' non verificata")
+        esempi = (ris.get("esempi") or [])[:3]
+        if esempi:
+            righe += ["", "🔗 Comparabili:"] + [f"• {p:g} € {t[:50]}" for t, p in esempi]
     return righe
 
 

@@ -387,6 +387,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
                     await aggiorna_preavviso(stato, url, riga_finale=riga_scarto_preavviso("verifica Jev: " + ris_jev["motivo"], msg_id_galleria))
                 return
             listing_info["righe_jev"] = righe_moda_jev(ris_jev)
+            listing_info["rivendita_jev"] = ris_jev.get("rivendita")   # per l'intestazione "prezzo ➜ rivendita" (5/11)
             _log_esito(listing_info, "SOLO_SEMAFORO", sem=fv_sem.get("semaforo"), margine=fv_sem.get("margine"))
             if listing_info.get("jev_subito") and await aggiorna_preavviso(stato, url, testo_verdetto=testo_preavviso(dict(listing_info), url)):
                 log.info("AVVISO SOLO SEMAFORO | item=%s | prezzo=%s | sem=%s | jev=%s | aggiornato", _estrai_item_id_da_url(url),
