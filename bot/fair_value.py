@@ -315,7 +315,19 @@ PREAVVISO_MARGINE_NUOVI = _env_float("PREAVVISO_MARGINE_NUOVI", 50)   # margine 
 PREAVVISO_PREZZO_BASSO = _env_float("PREAVVISO_PREZZO_BASSO", 20)   # 5/10: 52% di venduti rapidi a <=20 EUR, 22% a 20-40
 PREAVVISO_MARGINE_BASSO = _env_float("PREAVVISO_MARGINE_BASSO", 20)
 # Per brand (recap 5/10, venduti rapidi su 334 annunci): Acne Studios e Marni 6%, Jean Paul Gaultier 62% (base 25%).
-PREAVVISO_BRAND_ESCLUSI = [b.strip().lower() for b in os.environ.get("PREAVVISO_BRAND_ESCLUSI", "acne studios,marni").split(",") if b.strip()]
+# 5/11 (TRACCIATO 31/10-3/11, 1.337 annunci con esito): Lancel 128 annunci, 29 avvisi, 4 veloci (14%; il brand vende veloce il 9% contro il 24% medio).
+PREAVVISO_BRAND_ESCLUSI = [b.strip().lower() for b in os.environ.get("PREAVVISO_BRAND_ESCLUSI", "acne studios,marni,lancel").split(",") if b.strip()]
+# Prezzo massimo per brand (formato "brand:EUR,brand:EUR") oltre il quale la regola base non avvisa. Max Mara (5/11, 144 annunci, 85 avvisi):
+# il semaforo non distingue (🟢 25% veloci, 🔴 23%; avvisi 25% contro 43% di tutti gli avvisi); veloci solo fino a 8 EUR (8 su 15 = 53%, campione piccolo).
+# Oltre il tetto resta il percorso 'da_verificare' (margine >= PREAVVISO_DA_VERIFICARE_MARGINE, solo dopo Jev). Vuoto = nessun tetto.
+PREAVVISO_PREZZO_MAX_BRAND = {}
+for _voce in os.environ.get("PREAVVISO_PREZZO_MAX_BRAND", "max mara:8").split(","):
+    _b, _, _p = _voce.rpartition(":")
+    try:
+        if _b.strip():
+            PREAVVISO_PREZZO_MAX_BRAND[_b.strip().lower()] = float(_p)
+    except ValueError:
+        pass
 PREAVVISO_BRAND_FACILI = [b.strip().lower() for b in os.environ.get("PREAVVISO_BRAND_FACILI", "jean paul gaultier").split(",") if b.strip()]
 PREAVVISO_MARGINE_FACILI = _env_float("PREAVVISO_MARGINE_FACILI", 10)
 # Suono solo per i migliori: fair value rapido / prezzo >= soglia (63% di venduti rapidi con >=4) o brand facile. Gli
@@ -373,6 +385,8 @@ def _valuta_preavviso_base(stima, prezzo):
         return False, "no"
     brand = (stima.get("brand") or "").lower()
     if brand in PREAVVISO_BRAND_ESCLUSI:
+        return False, "no"
+    if brand in PREAVVISO_PREZZO_MAX_BRAND and prezzo > PREAVVISO_PREZZO_MAX_BRAND[brand]:
         return False, "no"
     if _giallo_economico(stima, prezzo):
         return True, "giallo_economico"

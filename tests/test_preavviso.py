@@ -560,3 +560,11 @@ def test_preavviso_brand_nuovo_verde_con_margine_netto():
     assert _valuta_base({**s, "margine": 30}, 10) == (False, "no")                     # margine sotto 50
     assert _valuta_base({**s, "semaforo": "🟡"}, 30) == (False, "no")                   # solo 🟢
     assert _valuta_base({**s, "brand": "marni"}, 10) == (False, "no")                  # solo i brand nuovi
+
+
+def test_brand_lancel_escluso_e_max_mara_con_tetto_di_prezzo():
+    s = dict(_stima("🟢", 60), brand="lancel")
+    assert _valuta_base(s, 20) == (False, "no")
+    mm = dict(_stima("🟢", 60), brand="max mara")
+    assert _valuta_base(mm, 40) == (False, "no")
+    assert _valuta_base(mm, 6) == (True, "semaforo")
