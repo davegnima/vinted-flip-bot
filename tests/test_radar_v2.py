@@ -815,3 +815,15 @@ def test_brand_silenziato_non_manda(monkeypatch):
     assert radar._da_mandare({"semaforo": "giallo"}) is True
     monkeypatch.setattr(radar, "RADAR_BRAND_SILENZIO", ())
     assert radar._da_mandare({"semaforo": "giallo", "brand": "GoPro"}) is True
+
+
+def test_compatta_didascalia_fa_stare_l_avviso_in_una_didascalia_senza_toccare_i_link():
+    lungo = "x" * 400
+    testo = "\n".join(["🟡 *50 €*  ➜  rivendita ~*200 €*", "Nintendo 3DS XL", "", "💶 Margine *124 €* · ROI *223%* · 7 comparabili",
+                       "🧠 Jev: " + lungo, "👁 Gemini foto: " + lungo, "💡 Stima Gemini: " + lungo, "", "🔗 Comparabili da controllare:",
+                       "• 230 € https://www.vinted.it/items/1-a", "• 220 € https://www.vinted.it/items/2-b", "", "https://www.vinted.it/items/9-z"])
+    out = radar.compatta_didascalia(testo)
+    assert len(out) <= radar.MAX_DIDASCALIA
+    assert "https://www.vinted.it/items/1-a" in out and "https://www.vinted.it/items/2-b" in out and out.endswith("items/9-z")
+    assert "💶 Margine *124 €*" in out
+    assert radar.spezza_didascalia(out)[1] == ""     # nessun secondo messaggio
