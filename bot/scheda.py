@@ -216,6 +216,13 @@ def _riga_semaforo_passo(fv):
     return _escapa_markdown_legacy(f"🚦 Stima rapida {fv.get('semaforo') or ''} ~{fv['fv']} €{intervallo}{margine} · confidenza {conf} (tabella brand+categoria, non annunci)")
 
 
+def _riga_titolo(listing_info, url=None):
+    """Titolo dell'annuncio; con l'url diventa il link all'annuncio (5/11, utente: il 'vedi su Vinted' in fondo veniva tagliato
+    dalla didascalia da 1024 caratteri, il titolo sta in alto e non cade mai). Pura."""
+    titolo = _escapa_markdown_legacy(listing_info.get("title") or "Annuncio")
+    return f"[{titolo}]({url})" if url else titolo
+
+
 def testo_preavviso(listing_info, url=None, riga_finale=RIGA_PREAVVISO_IN_ATTESA, riga_tempi=None, compatto=False):
     """Messaggio breve del PREAVVISO (gruppo COMPRA): prima riga = fulmine, semaforo, margine rapido, prezzo e brand
     (e' quello che compare nell'anteprima della notifica), poi titolo, dettagli, fair value rapido, link e riga finale
@@ -233,9 +240,9 @@ def testo_preavviso(listing_info, url=None, riga_finale=RIGA_PREAVVISO_IN_ATTESA
         brand = (listing_info.get("brand") or "").strip()
         sem = fv.get("semaforo") or "🟢"
         testa = (f"*{prezzo:g} €*" if prezzo is not None else "") + (f" ➜ rivendita ~*{riv:g} €*" if riv else "") + (f" · 🏷️ {esc(brand)}" if brand and brand != "?" else "")
-        righe = ([esc(verdetto)] if verdetto else []) + [sem + " " + testa, esc(listing_info.get("title") or "Annuncio")]
+        righe = ([esc(verdetto)] if verdetto else []) + [sem + " " + testa, _riga_titolo(listing_info, url)]
     else:
-        righe = [marca + "*" + testa + "*", esc(listing_info.get("title") or "Annuncio")]
+        righe = [marca + "*" + testa + "*", _riga_titolo(listing_info, url)]
     if compatto:
         # preavviso rimasto senza verdetto: l'esito (scartato/interrotto) in cima, poi solo testata e titolo con il semaforo
         # (richiesta del 10/10: il messaggio riporta il verdetto finale, non lo concatena al preavviso)

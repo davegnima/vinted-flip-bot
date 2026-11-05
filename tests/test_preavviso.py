@@ -568,3 +568,16 @@ def test_brand_lancel_escluso_e_max_mara_con_tetto_di_prezzo():
     mm = dict(_stima("🟢", 60), brand="max mara")
     assert _valuta_base(mm, 40) == (False, "no")
     assert _valuta_base(mm, 6) == (True, "semaforo")
+
+
+def test_titolo_e_link_all_annuncio_e_sopravvive_alla_didascalia():
+    """5/11 (utente): il link all'annuncio sta sul titolo, in alto: la didascalia da 1024 non lo taglia."""
+    from bot.scheda import testo_preavviso, didascalia_verdetto
+    url = "https://www.vinted.it/items/10676999999-maglia"
+    info = {"title": "Maglia Brunello Cucinelli", "price": 15.0, "brand": "Brunello Cucinelli", "url": url,
+            "fair_value": {"semaforo": "🟢", "margine": 78.0, "valore": 93},
+            "righe_jev": ["🔎 Comparabili " + "x" * 400, "👁 Gemini " + "y" * 400, "⚡ Velocità"],
+            "riga_verdetto_jev": "✅ CONFERMATO", "rivendita_jev": 135.0}
+    t = testo_preavviso(info, url)
+    assert f"[Maglia Brunello Cucinelli]({url})" in t
+    assert f"[Maglia Brunello Cucinelli]({url})" in didascalia_verdetto(t)
