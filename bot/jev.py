@@ -467,6 +467,33 @@ except ValueError:
     MAX_FOTO_AUTENTICITA = 5
 
 
+# Stesse domande del controllo Gemini sulle foto (bot/moda_gemini.py): etichetta, paese di produzione, lavorazione, documenti (5/11, utente).
+# Vanno nella stessa chiamata dell'autenticita' (le foto si pagano una volta sola).
+DOMANDE_LEGIT = {
+    "etichetta": {
+        "instructions": "Guarda l'etichetta principale (collo/interno) e quella di taglia: font, proporzioni, materiale, cucitura sono coerenti con il brand del titolo?",
+        "criteria": {"coerente": "etichetta leggibile e coerente con il brand", "incoerente": "etichetta leggibile ma con font, proporzioni o materiale sbagliati, o di un altro marchio",
+                     "non_visibile": "nessuna etichetta leggibile nelle foto"}},
+    "made_in": {
+        "instructions": ("Guarda l'etichetta di lavaggio: il paese dopo 'Made in' e la composizione sono coerenti con il brand? Prada, Miu Miu, Loro Piana, Brunello Cucinelli, "
+                         "Bottega Veneta e Fendi producono l'abbigliamento in Italia: un paese asiatico e' un'incoerenza forte. Se non conosci la produzione abituale del brand, "
+                         "il paese da solo non e' un segnale."),
+        "criteria": {"coerente": "paese e composizione leggibili e coerenti con il brand", "incoerente": "paese o composizione incoerenti con il brand",
+                     "non_visibile": "etichetta di lavaggio o 'Made in' non leggibili"}},
+    "lavorazione": {
+        "instructions": "Logo, ricami, cuciture, zip e hardware (peso, incisioni, finitura), fodera sono coerenti con un articolo originale del brand?",
+        "criteria": {"coerente": "lavorazione e dettagli coerenti con l'originale", "sospetta": "dettagli grossolani, hardware economico, logo o cuciture sbagliate",
+                     "non_valutabile": "dettagli non visibili o foto troppo vaghe"}},
+    "prova": {
+        "instructions": "Nelle foto si vede una prova di acquisto o accessori (cartellino, scontrino, fattura, certificato, scatola, dustbag)? Non sono mai una prova da soli.",
+        "criteria": {"nessuna": "nessun documento o accessorio visibile", "cartellino": "cartellino del brand ancora attaccato",
+                     "documento": "scontrino, fattura o certificato visibile", "scatola_dustbag": "scatola o dustbag visibile"}},
+}
+class Autenticita(tuple):
+    """(scelta, confidenza) come prima, con in piu' `dettagli`: {domanda: (scelta, confidenza)} per etichetta, made_in, lavorazione, prova."""
+    dettagli = {}
+
+
 def giudica_autenticita(titolo, brand, foto):
     """(scelta, confidenza) di Jev sulle foto: l'articolo sembra originale del brand? Oppure None se Jev e' spento, mancano foto utilizzabili
     o non risponde. `foto` = byte di una foto o lista di foto (png/jpeg, al massimo MAX_FOTO_AUTENTICITA). E' un indizio dalle foto, non una
@@ -483,14 +510,18 @@ def giudica_autenticita(titolo, brand, foto):
     corpo = {"model": MODELLO,
              "state": f"Annuncio Vinted: {titolo}\nBrand dichiarato: {brand}\nFoto dell'annuncio: {', '.join(assets)}",
              "assets": assets,
-             "questions": {"autenticita": {"type": "choice", **DOMANDA_AUTENTICITA}}}
+             "questions": {"autenticita": {"type": "choice", **DOMANDA_AUTENTICITA},
+                           **{k: {"type": "choice", **d} for k, d in DOMANDE_LEGIT.items()}}}
     try:
         risposta = _chiama_jev(corpo)
         r = risposta["answers"]["autenticita"]
         scelta, conf = r.get("choice"), r.get("confidence")
+        dettagli = {k: ((risposta["answers"].get(k) or {}).get("choice"), (risposta["answers"].get(k) or {}).get("confidence")) for k in DOMANDE_LEGIT}
     except Exception as e:  # noqa: BLE001 - la verifica foto non deve bloccare l'avviso
         log.warning("JEV AUTENTICITA | non disponibile: %s", str(e)[:200])
         return None
     token = (risposta.get("usage") or {}).get("input_tokens")
     log.info("JEV AUTENTICITA | titolo=%s | brand=%s | foto=%d | scelta=%s(%s) | input_tokens=%s", titolo[:60], brand, len(assets), scelta, conf, token)
-    return scelta, conf
+    esito = Autenticita((scelta, conf))
+    esito.dettagli = dettagli
+    return esito

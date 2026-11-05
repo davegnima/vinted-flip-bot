@@ -44,7 +44,7 @@ def test_tratteni_solo_per_brand_nuovo_con_regola_brand_nuovo(monkeypatch):
 
 def test_righe_messaggio_con_e_senza_comparabili():
     r = mj.righe_messaggio({"rivendita": 140, "n": 7, "margine": 90, "roi": 400, "esempi": [("Abito", 120)], "autenticita": ("originale_plausibile", 0.8)})
-    assert any("7 comparabili" in x for x in r) and any("sembra originale" in x for x in r)
+    assert any("Comparabili Vinted: 7" in x for x in r) and any("sembra originale" in x for x in r)
     r2 = mj.righe_messaggio({"rivendita": None, "autenticita": None})
     assert any("non trovati" in x for x in r2) and any("non verificata" in x for x in r2)
 
@@ -164,3 +164,50 @@ def test_giallo_con_margine_e_roi_promettenti_va_a_jev_senza_invio_immediato():
 def test_da_verificare_viene_sempre_trattenuto_per_jev(monkeypatch):
     monkeypatch.setattr(mj, "MODA_JEV", True)
     assert mj.tratteni_per_verifica({"brand": "kurt geiger"}, "da_verificare") is True
+
+
+def test_messaggio_a_passi_per_lo_scarto_sui_comparabili():
+    """Caso Zimmermann Nightwear (5/11): l'utente vuole vedere cosa ha fermato l'annuncio, con i numeri, e che il legit check non e' stato fatto."""
+    ris = {"esito": "scarta", "motivo": "comparabili:margine_basso", "n": 3, "rivendita": 52.5, "margine": 17.8, "roi": 71.0, "esempi": [],
+           "autenticita": None, "gemini": None, "legit_saltato": True, "prezzi_comps": (45.0, 60.0),
+           "link_comps": [("t", 60.0, "https://www.vinted.it/items/1-a")]}
+    verdetto = mj.riga_verdetto(ris)
+    assert verdetto.startswith("🚫 SCARTATO") and "~52 €" in verdetto and "~18 €" in verdetto and "almeno 50" in verdetto
+    righe = mj.righe_messaggio(ris, "zimmermann")
+    testo = "\n".join(righe)
+    assert "da 45 a 60 €" in testo and "fiducia bassa" in testo and "Legit check non fatto" in testo
+    assert "https://www.vinted.it/items/1-a" in testo and "Velocità" in testo
+
+
+def test_messaggio_conferma_mostra_le_domande_del_legit_check_di_jev():
+    from bot.jev import Autenticita
+    a = Autenticita(("originale_plausibile", 0.8))
+    a.dettagli = {"etichetta": ("coerente", 0.9), "made_in": ("incoerente", 0.7), "lavorazione": (None, None), "prova": ("nessuna", 0.9)}
+    ris = {"esito": "conferma", "motivo": "ok", "n": 9, "rivendita": 140, "margine": 90, "roi": 200, "esempi": [], "autenticita": a, "gemini": None,
+           "link_comps": [], "prezzi_comps": (120.0, 160.0)}
+    testo = "\n".join(mj.righe_messaggio(ris))
+    assert "fiducia alta" in testo and "etichetta: coerente (90%)" in testo and "made in: INCOERENTE (70%)" in testo and "lavorazione" not in testo
+    assert mj.riga_verdetto(ris).startswith("✅ CONFERMATO")
+
+
+def test_verifica_salta_il_legit_check_se_i_comparabili_scartano(monkeypatch):
+    import asyncio
+    comps = [("Zimmermann nightwear", p) for p in (45.0, 52.5, 60.0)]
+
+    async def cerca(url):
+        return "x", True, {}
+    chiamato = []
+    monkeypatch.setattr(mj, "_cerca_vinted_testo_diretto", cerca)
+    monkeypatch.setattr(mj, "parse_comp", lambda r: comps)
+    monkeypatch.setattr(mj, "solo_usato", lambda c: c)
+    monkeypatch.setattr(mj, "comparabili_simili", lambda c, t, b: c)
+    monkeypatch.setattr(mj, "giudica_autenticita", lambda *a: chiamato.append("jev") or ("originale_plausibile", 0.9))
+    monkeypatch.setattr(mj, "optimize_image_bytes", lambda b, n: b)
+    monkeypatch.setattr(mj, "JEV_FOTO_COMPS", False)
+
+    async def gemini(*a, **k):
+        chiamato.append("gemini")
+    monkeypatch.setattr(mj, "controlla_gemini", gemini)
+    info = {"title": "Nightwear", "price": 25, "catalog_id": 123, "fair_value": {"brand": "zimmermann", "fv": 115}}
+    ris = asyncio.run(mj.verifica(info, b"img", [b"img"]))
+    assert ris["esito"] == "scarta" and ris["legit_saltato"] is True and chiamato == []

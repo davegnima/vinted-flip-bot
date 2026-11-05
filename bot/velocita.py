@@ -85,3 +85,14 @@ def semaforo_corretto(semaforo, brand, dati=None, prezzo=None):
     if VELOCITA_SOLO_ROSSO and nuovo != "🔴" and semaforo != "🔴":
         nuovo = semaforo
     return nuovo, round(lift, 2)
+
+
+def riga_velocita(brand, dati=None, n_min=20):
+    """Riga di testo con la velocita' MISURATA del brand (annunci tracciati venduti o prenotati entro 15 min), oppure l'avviso che non ci sono dati
+    abbastanza. Niente stime: sono i numeri di velocita.json. Pura."""
+    dati = dati or _DATI
+    n, veloci = dati["brand"].get(str(brand or "").lower(), (0.0, 0.0))
+    base = dati["base"]
+    if n < n_min:
+        return f"⚡ Velocità: nessun dato sul brand (media {base:.0%} venduti entro 15 min)"
+    return f"⚡ Velocità brand: {veloci / n:.0%} venduti entro 15 min (~{n:.0f} annunci tracciati, media {base:.0%})"

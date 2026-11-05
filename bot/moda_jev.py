@@ -22,6 +22,7 @@ from bot.foto import download_image_bytes, optimize_image_bytes
 from bot.fair_value import FAIR_VALUE_BRAND_NUOVI
 from bot.jev import CONF_AUTENTICITA_MIN, MAX_FOTO_AUTENTICITA, DOMANDA_FOTO_COMP_MODA, JEV_FOTO_COMPS, MAX_FOTO_COMPS, confronta_foto_comparabili, giudica_autenticita
 from bot.logger import log
+from bot.velocita import riga_velocita
 from bot.moda_gemini import controlla as controlla_gemini, e_replica, riga_messaggio as riga_gemini, serve_controllo
 from bot.testo import _normalizza_titolo_per_link
 from bot.valore_mercato import comparabili_simili, parse_comp, query_comp, solo_usato, stima_mercato, valuta
@@ -152,29 +153,79 @@ def riga_esito_scheda(ris):
     return "⚠️ Jev: comparabili non trovati, avviso mandato non verificato"
 
 
-def righe_messaggio(ris):
-    """Righe (testo semplice) da aggiungere all'avviso, nello stesso ordine e con le stesse icone del radar (5/11, richiesta dell'utente):
-    💶 margine/ROI/comparabili, 🖼 foto dei comparabili, 🧠 Jev, 👁 Gemini, 🔗 link ai comparabili. Pura."""
+def riga_verdetto(ris):
+    """Prima riga del messaggio: la decisione di Jev in chiaro, con il numero che l'ha decisa (5/11, utente: 'capire cosa l'ha fermato'). Pura."""
+    mot = str(ris.get("motivo", ""))
+    if ris.get("esito") == "scarta":
+        if mot.startswith("comparabili:") and ris.get("rivendita") is not None:
+            if mot.endswith("roi_basso"):
+                dove = f"ROI {ris['roi']:.0f}% (serve almeno 100%)"
+            else:
+                dove = f"margine ~{ris['margine']:.0f} € (serve almeno 50 €)"
+            return f"🚫 SCARTATO: i {ris['n']} comparabili danno rivendita ~{ris['rivendita']:.0f} €, {dove}"
+        return "🚫 SCARTATO: " + riga_esito_scheda(ris).replace("🚫 ", "").replace("Jev: non avvisato, ", "").replace("Gemini: non avvisato, ", "")
+    if ris.get("esito") == "conferma":
+        return f"✅ CONFERMATO: rivendita ~{ris['rivendita']:.0f} €, margine ~{ris['margine']:.0f} €, ROI {ris['roi']:.0f}%"
+    return "⚠️ NON VERIFICATO: comparabili non trovati, resta la stima rapida"
+
+
+def _fiducia_comparabili(n):
+    """Fiducia nella stima dai comparabili, solo dal loro numero (regola pratica, non una misura): 8+ alta, 4-7 media, meno bassa. Pura."""
+    return "alta" if n >= 8 else "media" if n >= 4 else "bassa"
+
+
+def _riga_dettagli_legit(dettagli):
+    """'etichetta: coerente (80%) · made in: coerente (70%) · ...' dalle risposte di Jev (solo quelle date). Pura."""
+    nomi = {"etichetta": "etichetta", "made_in": "made in", "lavorazione": "lavorazione", "prova": "documenti"}
+    valori = {"coerente": "coerente", "incoerente": "INCOERENTE", "non_visibile": "non visibile", "sospetta": "SOSPETTA",
+              "non_valutabile": "non valutabile", "nessuna": "nessuno", "cartellino": "cartellino", "documento": "scontrino/fattura",
+              "scatola_dustbag": "scatola/dustbag"}
+    parti = []
+    for k, nome in nomi.items():
+        r = (dettagli or {}).get(k)
+        if r and r[0]:
+            parti.append(f"{nome}: {valori.get(r[0], r[0])}" + (f" ({r[1]:.0%})" if r[1] is not None else ""))
+    return " · ".join(parti)
+
+
+def righe_messaggio(ris, brand=None):
+    """Righe (testo semplice) dei passi di verifica, nello stesso ordine e con le stesse icone del radar (5/11, richiesta dell'utente):
+    🔎 comparabili con numeri e fiducia, 🖼 foto dei comparabili, 🧠 legit check di Jev con le stesse domande di Gemini, 👁 Gemini, ⚡ velocita',
+    🔗 link ai comparabili. Se il legit check non e' stato fatto (gia' scartato sui prezzi) lo dice. Pura."""
     righe = []
     if ris.get("rivendita") is not None:
-        righe.append(f"💶 Margine ~{ris['margine']:.0f} € · ROI {ris['roi']:.0f}% · {ris['n']} comparabili"
-                     + (" (molto simili alla foto)" if ris.get("da_foto") else ""))
+        n = ris.get("n") or 0
+        riga = f"🔎 Comparabili Vinted: {n}, rivendita ~{ris['rivendita']:.0f} €"
+        pc = ris.get("prezzi_comps")
+        if pc and pc[0] != pc[1]:
+            riga += f" (da {pc[0]:g} a {pc[1]:g} €)"
+        riga += f" · margine ~{ris['margine']:.0f} € · ROI {ris['roi']:.0f}% · fiducia {_fiducia_comparabili(n)}"
+        riga += " (molto simili alla foto)" if ris.get("da_foto") else ""
+        righe.append(riga)
     else:
-        righe.append("💶 Comparabili Vinted non trovati: la stima resta quella a priori")
+        righe.append("🔎 Comparabili Vinted non trovati: resta la stima rapida, non verificata")
     fc = ris.get("foto_comps")
     if fc:
         nomi = {"stesso_modello": "molto simile", "simile": "simile", "diverso": "diverso", "non_chiaro": "non chiaro"}
         righe.append("🖼 Foto comparabili vs annuncio: " + ", ".join(nomi.get(sc, str(sc)) for sc, _cf in fc))
     a = ris.get("autenticita")
-    if a:
-        etichette = {"originale_plausibile": "sembra originale", "non_chiaro": "non si capisce", "replica_probabile": "replica probabile",
-                     "altra_marca": "altra marca"}
-        righe.append(f"🧠 Jev (foto): {etichette.get(a[0], a[0])} ({(a[1] or 0):.0%})")
+    if ris.get("legit_saltato"):
+        righe.append("⏭ Legit check non fatto: già scartato sui prezzi dei comparabili")
     else:
-        righe.append("🧠 Jev (foto): autenticita' non verificata")
-    g = riga_gemini(ris.get("gemini"))
-    if g:
-        righe.append(g)
+        if a:
+            etichette = {"originale_plausibile": "sembra originale", "non_chiaro": "non si capisce", "replica_probabile": "replica probabile",
+                         "altra_marca": "altra marca"}
+            righe.append(f"🧠 Legit check Jev (foto): {etichette.get(a[0], a[0])} ({(a[1] or 0):.0%})")
+            det = _riga_dettagli_legit(getattr(a, "dettagli", None))
+            if det:
+                righe.append("   " + det)
+        else:
+            righe.append("🧠 Legit check Jev (foto): non eseguito o senza risposta")
+        g = riga_gemini(ris.get("gemini"))
+        if g:
+            righe.append(g)
+    if brand is not None:
+        righe.append(riga_velocita(brand))
     link = ris.get("link_comps") or []
     if link:   # comparabili identificati, con il link all'annuncio (richiesta dell'utente, 02/11)
         righe += ["", "🔗 Comparabili da controllare:"] + [f"• {p:g} € {u}" for _t, p, u in link[:3]]
@@ -223,10 +274,6 @@ async def verifica(listing_info, foto, tutte_le_foto=None):
         if foto:
             # Vinted serve anche webp: Jev accetta solo png/jpeg, quindi si converte in jpeg (prima la foto non partiva: foto=-)
             foto_jpeg = await asyncio.to_thread(optimize_image_bytes, foto, 768)
-            # 5/11 (utente): Jev guarda TUTTE le foto (fino a JEV_AUTENTICITA_FOTO), non solo la prima: etichette, wash tag, made in, hardware
-            altre = [f for f in (tutte_le_foto or [])[1:MAX_FOTO_AUTENTICITA] if f]
-            tutte_jpeg = [foto_jpeg] + [await asyncio.to_thread(optimize_image_bytes, f, 768) for f in altre]
-            ris["autenticita"] = await asyncio.to_thread(giudica_autenticita, titolo, brand, tutte_jpeg)
         if JEV_FOTO_COMPS and foto_jpeg and link_comps:
             # foto dell'annuncio contro le miniature dei comparabili piu' vicini alla mediana: se Jev li trova MOLTO simili il loro prezzo
             # diventa la rivendita (anche con pochi comparabili testuali); se no si torna alla stima testuale, senza foto
@@ -241,7 +288,15 @@ async def verifica(listing_info, foto, tutte_le_foto=None):
                         link_comps = vicini
                         ris["da_foto"] = True
                         log.info("MODA JEV FOTO | brand=%s | molto_simili=%s/%s | rivendita=%s | titolo=%s", brand, len(vicini), len(coppie), v.get("rivendita"), titolo[:60])
-        if serve_controllo(ris["autenticita"], prezzo, (v or {}).get("rivendita")):
+        if v is not None and not v.get("ok"):
+            # 5/11 (utente): se i comparabili scartano gia' l'annuncio il legit check (Jev e Gemini, token e quota) non serve
+            ris["legit_saltato"] = True
+        elif foto_jpeg:
+            # 5/11 (utente): Jev guarda TUTTE le foto (fino a JEV_AUTENTICITA_FOTO), non solo la prima: etichette, wash tag, made in, hardware
+            altre = [f for f in (tutte_le_foto or [])[1:MAX_FOTO_AUTENTICITA] if f]
+            tutte_jpeg = [foto_jpeg] + [await asyncio.to_thread(optimize_image_bytes, f, 768) for f in altre]
+            ris["autenticita"] = await asyncio.to_thread(giudica_autenticita, titolo, brand, tutte_jpeg)
+        if not ris.get("legit_saltato") and serve_controllo(ris["autenticita"], prezzo, (v or {}).get("rivendita")):
             # Jev non e' sicuro dell'originalita' (o il prezzo e' troppo basso): Gemini gratuito guarda tutte le foto
             ris["gemini"] = await controlla_gemini(titolo, brand, prezzo, listing_info.get("description"), tutte_le_foto or ([foto] if foto else []),
                                                    item_id=listing_info.get("item_id"))
@@ -249,6 +304,9 @@ async def verifica(listing_info, foto, tutte_le_foto=None):
         if v:
             ris.update(n=v.get("n") or len(prezzi), rivendita=v.get("rivendita"), margine=v.get("margine"), roi=v.get("roi"),
                        esempi=list(comps_pool[:3]), link_comps=link_comps)
+            pz = sorted(p for p in ([c[1] for c in link_comps] if ris.get("da_foto") else [c[1] for c in comps_pool]))
+            if pz:
+                ris["prezzi_comps"] = (pz[0], pz[-1])
         log.info("MODA JEV | item=%s | brand=%s | prezzo=%s | esito=%s | motivo=%s | n=%s | rivendita=%s | margine=%s | fv_stima=%s | foto=%s",
                  listing_info.get("item_id") or "-", brand, prezzo, ris["esito"], ris["motivo"], ris["n"], ris["rivendita"], ris["margine"],
                  fv.get("fv"), ris["autenticita"] or "-")

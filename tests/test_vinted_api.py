@@ -57,3 +57,19 @@ def test_jev_autenticita_usa_tutte_le_foto(monkeypatch):
     assert r == ("originale_plausibile", 0.9)
     assert len(visti["assets"]) == jev.MAX_FOTO_AUTENTICITA
     assert jev.giudica_autenticita("Borsa", "prada", png) == r
+
+
+def test_jev_autenticita_porta_anche_le_domande_del_legit_check(monkeypatch):
+    from bot import jev
+    visti = {}
+    monkeypatch.setenv("TYPESAFE_API_KEY", "k")
+    monkeypatch.setattr(jev, "JEV_GIUDICE", True)
+
+    def finta(corpo):
+        visti.update(corpo)
+        return {"answers": {"autenticita": {"choice": "originale_plausibile", "confidence": 0.9},
+                            "etichetta": {"choice": "coerente", "confidence": 0.8}, "made_in": {"choice": "non_visibile", "confidence": 0.7}}, "usage": {}}
+    monkeypatch.setattr(jev, "_chiama_jev", finta)
+    r = jev.giudica_autenticita("Borsa", "prada", b"\x89PNG\r\n\x1a\n" + b"0" * 10)
+    assert r == ("originale_plausibile", 0.9) and set(visti["questions"]) == {"autenticita", "etichetta", "made_in", "lavorazione", "prova"}
+    assert r.dettagli["etichetta"] == ("coerente", 0.8) and r.dettagli["lavorazione"] == (None, None)
