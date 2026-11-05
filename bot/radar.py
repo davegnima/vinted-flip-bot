@@ -450,7 +450,7 @@ def testo_avviso_v2(parsed, url, v2, g=None):
     if v2.get("costo_totale") is not None and v2.get("spedizione_eur") is not None:
         stato = _STATO_SPEDIZIONE.get(v2.get("spedizione_stato"), "n.d.")
         paese = f" da {_md(v2['paese'])}" if v2.get("paese") else ""
-        righe.append(f"📦 Costo totale *{v2['costo_totale']:.2f} €* (spedizione {v2['spedizione_eur']:.2f} € {stato}{paese}, protezione inclusa)")
+        righe.append(f"📦 Totale *{v2['costo_totale']:.2f} €* (spedizione {v2['spedizione_eur']:.2f} € {stato}{paese})")
     prezzi = []
     if v2.get("richiesto_mediano") is not None and v2.get("rivendita") is not None:
         prezzi.append(f"richiesto mediano {v2['richiesto_mediano']} €")
@@ -486,7 +486,7 @@ def testo_avviso_v2(parsed, url, v2, g=None):
         righe += [""] + giudizi
     link = (v2.get("link_comps") or [])
     if link:
-        righe += ["", "🔗 Comparabili da controllare:"] + [f"• {p:g} € {u}" for _t, p, u in link]
+        righe += ["", "🔗 Comparabili da controllare:"] + [f"• {p:g} € {u}" for _t, p, u in link[:3]]
     righe += ["", url]
     return "\n".join(righe)
 

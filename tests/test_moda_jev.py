@@ -44,7 +44,7 @@ def test_tratteni_solo_per_brand_nuovo_con_regola_brand_nuovo(monkeypatch):
 
 def test_righe_messaggio_con_e_senza_comparabili():
     r = mj.righe_messaggio({"rivendita": 140, "n": 7, "margine": 90, "roi": 400, "esempi": [("Abito", 120)], "autenticita": ("originale_plausibile", 0.8)})
-    assert any("7 annunci" in x for x in r) and any("sembra originale" in x for x in r)
+    assert any("7 comparabili" in x for x in r) and any("sembra originale" in x for x in r)
     r2 = mj.righe_messaggio({"rivendita": None, "autenticita": None})
     assert any("non trovati" in x for x in r2) and any("non verificata" in x for x in r2)
 

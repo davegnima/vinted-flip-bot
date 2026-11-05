@@ -133,7 +133,7 @@ def riga_messaggio(d):
     if d.get("prova_acquisto") and d["prova_acquisto"] != "nessuna":
         extra.append(f"visibile: {d['prova_acquisto'].replace('_', '/')}")
     dettagli = f" [{'; '.join(extra)}]" if extra else ""
-    return f"🕵️ Gemini (tutte le foto): {etichetta}{conf}" + (f", {d['motivo']}" if d.get("motivo") else "") + dettagli + ". Indizio dalle foto, non certificazione"
+    return f"👁 Gemini (tutte le foto): {etichetta}{conf}" + (f", {d['motivo']}" if d.get("motivo") else "") + dettagli
 
 
 async def controlla(titolo, brand, prezzo, descrizione, foto, item_id=None):
