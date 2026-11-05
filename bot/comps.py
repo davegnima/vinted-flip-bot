@@ -12,6 +12,7 @@ from bot.config import RESELLBOT_ATTIVO
 from bot.resellbot import _cerca_ebay_sold_via_resellbot
 from bot.comps_filtri import campione_pagina_vinted, campione_scheda_vinted, _estrai_articoli_da_alt_vinted, _estrai_mappa_url_comp_vinted, _estrai_miniature_vinted, _filtra_comp_per_brand_sottolinee, _filtra_comp_per_categoria, _rimuovi_comp_autoreferenziale
 from bot.vinted_http import _vinted_get_con_retry
+from bot import vinted_api
 from bot.vinted_search import build_vinted_search_url, build_vinted_visual_search_url
 from bot.logger import log
 from bot import http_clients as hc
@@ -67,6 +68,19 @@ async def _cerca_vinted_testo_diretto(url):
     Contratto di ritorno comune alle fonti: (testo, ok, mappa_url), con il
     testo nel formato '- titolo — €prezzo' una riga per articolo e mappa_url
     (vedi _estrai_mappa_url_comp_vinted) per riattaccare i link ai comp."""
+    # 5/11: prima l'API con token anonimo (le pagine HTML danno la shell 'Session refresh'); l'HTML resta come ripiego.
+    try:
+        via_api = await asyncio.wait_for(vinted_api.cerca_catalogo(url), timeout=TIMEOUT_SCRAPE_DIRETTO_VINTED_TESTO_TOTALE_SECONDI)
+    except Exception as e:
+        log.info("Comp Vinted testo: API errore %s -- %s", type(e).__name__, url)
+        via_api = None
+    if via_api:
+        testo_api, mappa_api, miniature_api = via_api
+        _miniature_comp.update(miniature_api)
+        if len(_miniature_comp) > MAX_MINIATURE_COMP:
+            _miniature_comp.clear()
+        return testo_api, True, mappa_api
+
     motivo = None
     try:
         resp = await asyncio.wait_for(
