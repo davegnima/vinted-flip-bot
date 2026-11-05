@@ -14,6 +14,7 @@ from bot.config import MAX_GALLERY_PHOTOS
 from bot.proxy import _logga_riepilogo_banda
 from bot.tracciamento import _tracc_estrai_segnali, _tracc_stato
 from bot.vinted_http import _vinted_get_con_retry
+from bot import vinted_api
 from bot.logger import log
 from bot.categorie import scegli_materiale_per_ricerca
 # ---- fine import ----
@@ -395,6 +396,10 @@ def _estrai_foto_da_json_item(testo_json):
     return out
 
 
+# {id annuncio: scheda API} per completare descrizione/taglia quando la pagina HTML e' solo la shell.
+_SCHEDE_API = {}
+
+
 async def _foto_da_api_vinted(url):
     """Fallback (21/10): quando la pagina annuncio arriva senza foto (shell
     JavaScript di ~19 KB con status 200, osservata su decine di proxy diversi),
@@ -404,6 +409,17 @@ async def _foto_da_api_vinted(url):
     if not m:
         return {}
     id_item = m.group(1)
+    # 5/11: prima l'API con token anonimo (senza Bearer risponde 401); l'endpoint vecchio resta come ripiego.
+    try:
+        scheda = await vinted_api.scheda_annuncio(id_item)
+    except Exception:
+        log.warning("FOTO API | item=%s errore API con token:\n%s", id_item, traceback.format_exc())
+        scheda = {}
+    if scheda.get("foto"):
+        _SCHEDE_API[id_item] = scheda
+        if len(_SCHEDE_API) > 200:
+            _SCHEDE_API.pop(next(iter(_SCHEDE_API)))
+        return scheda["foto"]
     try:
         resp = await _vinted_get_con_retry(
             f"https://www.vinted.it/api/v2/items/{id_item}", timeout=15, max_retries=2,
@@ -497,6 +513,11 @@ async def scrape_vinted_listing(url, includi_guardaroba=True):
             foto_api = await _foto_da_api_vinted(url)
             if foto_api:
                 result["photo_urls"] = list(foto_api.values())[:MAX_GALLERY_PHOTOS]
+                _id_api = re.search(r'/items/(\d+)', url or "")
+                _sch = _SCHEDE_API.get(_id_api.group(1)) if _id_api else None
+                if _sch:
+                    result["description"] = result["description"] or _sch.get("descrizione")
+                    result["size"] = result["size"] or _sch.get("taglia")
 
         # --- diagnostica temporanea (aggiunta 2026-09-24, utente): dal
         # 23/09 pomeriggio TUTTI gli scrape restituiscono 0 foto pur senza
