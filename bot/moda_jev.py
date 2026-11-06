@@ -19,7 +19,8 @@ from bot.comps import _cerca_vinted_testo_diretto, _miniature_comp
 from bot.config import SPEDIZIONE_STIMATA_EUR
 from bot.costanti import VINTED_BRAND_IDS
 from bot.foto import download_image_bytes, optimize_image_bytes
-from bot.fair_value import FAIR_VALUE_BRAND_NUOVI
+from bot.comps_filtri import BRAND_SOTTOLINEE_DA_ESCLUDERE
+from bot.fair_value import FAIR_VALUE_BRAND_NUOVI, FAIR_VALUE_SOTTOLINEE
 from bot.jev import CONF_AUTENTICITA_MIN, MAX_FOTO_AUTENTICITA, DOMANDA_FOTO_COMP_MODA, JEV_FOTO_COMPS, MAX_FOTO_COMPS, confronta_foto_comparabili, giudica_autenticita
 from bot.logger import log
 from bot.velocita import riga_velocita
@@ -77,6 +78,29 @@ def url_comparabili(brand, testo=None, catalogo=None):
     c = f"&catalog[]={catalogo}" if catalogo else ""
     b = f"brand_ids[]={bid}" if bid else "order=newest_first"
     return f"https://www.vinted.it/catalog?{b}{c}{t}&order=newest_first"
+
+
+def linea_dal_testo(testo, brand):
+    """Nome della sottolinea del brand scritta nel testo ('weekend max mara' da 'Cappotto Weekend MaxMara'), o None. Pura."""
+    t = (testo or "").lower()
+    for nome, pattern in FAIR_VALUE_SOTTOLINEE.get((brand or "").strip().lower(), {}).items():
+        if re.search(pattern, t):
+            return nome
+    return None
+
+
+def filtra_per_linea(comps, titolo, brand):
+    """6/11 (utente): Weekend Max Mara non e' Max Mara. Se l'annuncio dichiara una sottolinea tiene solo i comparabili che la nominano;
+    se non ne dichiara, toglie quelli che nominano una sottolinea nota del brand (fascia di prezzo diversa). Un comparabile che non
+    nomina la linea resta tra quelli della linea principale: dal solo titolo non si puo' sapere. Pura."""
+    b = (brand or "").strip().lower()
+    linea = linea_dal_testo(f"{titolo} {brand or ''}", b)
+    pattern_tutti = list(FAIR_VALUE_SOTTOLINEE.get(b, {}).values())
+    parole = [x for x in BRAND_SOTTOLINEE_DA_ESCLUDERE.get(b, [])]
+    if linea:
+        pat = FAIR_VALUE_SOTTOLINEE[b][linea]
+        return [(t, p) for t, p in comps if re.search(pat, t.lower())]
+    return [(t, p) for t, p in comps if not any(re.search(x, t.lower()) for x in pattern_tutti) and not any(w in t.lower() for w in parole)]
 
 
 def comparabili_con_link(coppie, mappe, n=MAX_FOTO_COMPS):
@@ -326,6 +350,13 @@ async def verifica(listing_info, foto, tutte_le_foto=None):
             return ris
         # i comparabili cercano brand + categoria + prime parole del titolo; se sono pochi, solo brand + categoria
         testo = " ".join(query_comp(titolo, brand).split()[len((brand or "").split()):][:3])
+        linea = linea_dal_testo(f"{titolo} {brand or ''}", (brand or "").strip().lower())
+        if linea:
+            ris["linea"] = linea
+            # la linea (es. "weekend") entra nella ricerca anche se non e' nelle prime parole del titolo
+            parola = linea.replace(brand.strip().lower(), "").strip() or linea
+            if parola not in testo.lower():
+                testo = f"{parola} {testo}".strip()
         comps_pool, usate, mappe = [], [], []
         for t in ([testo, None] if testo else [None]):
             url_c = url_comparabili(brand, t, catalogo)
@@ -336,6 +367,7 @@ async def verifica(listing_info, foto, tutte_le_foto=None):
             if not ok:
                 continue
             comps = [c for c in solo_usato(parse_comp(risposta)) if not (c[0] == titolo and abs(c[1] - prezzo) < 0.01)]
+            comps = filtra_per_linea(comps, titolo, brand)
             if t:
                 comps = comparabili_simili(comps, t, brand)
             usate = comps
