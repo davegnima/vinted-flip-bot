@@ -53,3 +53,14 @@ def test_cooldown_scaduto_o_key_rimossa_non_si_ripristinano(monkeypatch):
 
 
 
+
+
+def test_esito_radar_finisce_nel_db(db_pulito):
+    """La serie del radar si archivia come `tracciato_radar` (non solo nei log) e si legge dall'archivio."""
+    from bot import archivio_radar, tracciamento as tr
+    tr._tracc_ctx["77"] = {"ricerca": "V2 test", "semaforo": "giallo", "_x": 1}
+    tr._tracc_scrivi_finale("77", "marca", 20, [(60, "attivo"), (300, "venduto")], radar=True)
+    ev = db.leggi_eventi("tracciato_radar", 0)
+    assert len(ev) == 1 and ev[0]["ricerca"] == "V2 test" and ev[0]["stato"] == "venduto" and ev[0]["venduto_s"] == 300
+    assert "_x" not in ev[0]
+    assert archivio_radar.riepilogo_per_ricerca(ev)["V2 test"]["venduti_1h"] == 1

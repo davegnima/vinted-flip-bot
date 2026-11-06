@@ -266,6 +266,13 @@ def _tracc_scrivi_finale(item_id, brand, prezzo, storia, radar=False):
         log.info(_riga_tracciato(item_id, brand, prezzo, storia, ctx, prefisso="TRACCIATO_RADAR" if radar else "TRACCIATO"))
         if not radar:
             db.scrivi_evento("tracciato", item_id, brand, {"prezzo": prezzo, **ctx, "storia": storia})
+        else:
+            # archivio permanente (volume /data): gli esiti del radar si leggono dal DB, non dai log
+            stato, classe, venduto_s = _tracc_esito_finale(storia)
+            db.scrivi_evento("tracciato_radar", item_id, brand,
+                             {"prezzo": prezzo, **{k: v for k, v in ctx.items() if not k.startswith("_")},
+                              "stato": stato, "classe": classe, "venduto_s": venduto_s,
+                              "controlli": len(storia), "incompleto": "no", "storia": storia})
         db.elimina_serie(item_id)
         _tracc_ctx.pop(item_id, None)
         _tracc_pref.pop(item_id, None)
@@ -446,7 +453,8 @@ def tracc_riprendi_serie(adesso=None):
             if r["storia"] and r["storia"][-1][1] == "venduto":
                 # serie gia' chiusa (venduto) che aspettava il verdetto del bot quando il worker e' ripartito
                 _tracc_ctx[item_id] = {k: v for k, v in (r.get("ctx") or {}).items() if k != "_pref"}
-                _tracc_scrivi_finale(item_id, r["brand"], r["prezzo"], [tuple(x) for x in r["storia"]])
+                _tracc_scrivi_finale(item_id, r["brand"], r["prezzo"], [tuple(x) for x in r["storia"]],
+                                    radar=list(r["offsets"]) != list(TRACCIAMENTO_SERIE_SECONDI))
                 continue
             fatti = {o for o, _ in r["storia"]}
             restanti = [o for o in r["offsets"] if o not in fatti]
