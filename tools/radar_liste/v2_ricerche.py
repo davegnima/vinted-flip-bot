@@ -75,7 +75,8 @@ ONDA7=[ # 06/11, giro del sabato anticipato: mondi nuovi scelti dal mercato, non
  ('V2 lego millennium falcon','lego millennium falcon',None,[],150),('V2 game boy color','game boy color',None,[],50),('V2 sega mega drive','sega mega drive',None,[],50),
  ('V2 garmin forerunner 255','garmin forerunner 255',None,[],80),('V2 shimano dura-ace','shimano dura-ace',None,[],80),('V2 brompton','brompton',None,[],150),
 ]
-RISCHIO=('Obiettivi', # 06/11 potata: 3 venduti entro 1 h su 17 validi (copia in docs/analisi/radar-ricerche-potate-2026-11-06.json)
+RISCHIO=('Casa e lampade','V2 leica','Obiettivi', # 06/11 (b) potate: 0 gialli/verdi su 9 verdetti ciascuna (copia in docs/analisi/radar-ricerche-potate-2026-11-06-b.json)
+         # 06/11 potata: 3 venduti entro 1 h su 17 validi (copia in docs/analisi/radar-ricerche-potate-2026-11-06.json)
          'V2 alessi','V2 iittala','V2 rosenthal','V2 zwilling','V2 gopro','V2 dji', # 01/11 (b) potate: margine_basso 90% (prezzi 15-28 EUR) o 0 vendite veloci su 38 tracciate (URL in docs/analisi/radar-ricerche-potate-2026-11-01-b.json)
          'V2 games workshop','V2 smeg','V2 ginori', # 01/11 potate: 0 gialli/verdi su 24 h, 91-100% margine_basso (URL salvate in docs/analisi/radar-ricerche-potate-2026-11-01.json)
          'V2 airpods pro','V2 apple airpods','V2 omega uomo','V2 omega donna','V2 longines','V2 tudor','V2 montblanc penne', # repliche frequenti: fuori (piano 31/10)
