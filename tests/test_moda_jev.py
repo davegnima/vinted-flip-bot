@@ -1,4 +1,4 @@
-"""Verifica Jev dei brand nuovi della moda (bot/moda_jev.py): URL dei comparabili, decisione, righe del messaggio."""
+"""Verifica Jev dei brand nuovi della moda (bot/mj.py): URL dei comparabili, decisione, righe del messaggio."""
 import tests.conftest  # noqa: F401
 from bot import moda_jev as mj
 
@@ -264,3 +264,11 @@ def test_prezzi_troppo_dispersi_non_confermano():
     ris = {"esito": "non_verificato", "motivo": "prezzi_dispersi", "n": 4, "rivendita": 80.0, "margine": 64.0, "roi": 752.0, "dispersione": 3.4}
     assert "3.4 volte" in mj.riga_verdetto(ris)
     assert any("prezzi molto dispersi" in r for r in mj.righe_messaggio(ris))
+
+
+def test_filtra_per_linea_weekend_non_e_max_mara():
+    assert mj.linea_dal_testo("Cappotto Weekend Max Mara", "max mara") == "weekend max mara"
+    comps = [("Cappotto Weekend Max Mara", 90.0), ("Cappotto Max Mara lana", 250.0), ("Cappotto Max Mara Studio", 120.0), ("Cappotto Sportmax", 100.0)]
+    assert mj.filtra_per_linea(comps, "Cappotto Weekend Max Mara", "max mara") == [("Cappotto Weekend Max Mara", 90.0)]
+    assert mj.filtra_per_linea(comps, "Cappotto Max Mara lana", "max mara") == [("Cappotto Max Mara lana", 250.0)]
+    assert mj.filtra_per_linea(comps, "Giacca", "prada") == comps
