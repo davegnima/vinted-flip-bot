@@ -307,3 +307,11 @@ def test_fair_value_impara_dai_comparabili_jev(monkeypatch, tmp_path):
     nuovo = fvm.fv_ricalibra(righe)
     assert nuovo["cult gaia|vestito"]["n"] == 6
     assert nuovo["cult gaia|vestito"]["fv"] == 150
+
+
+def test_messaggio_recuperato_si_compone_senza_riga_finale():
+    from bot.scheda import testo_preavviso
+    li = {"title": "Robe Sea New York", "price": 49, "brand": "Sea New York", "fair_value": {"brand": "sea new york", "semaforo": "🔴", "fv": 58, "margine": 9, "roi": 18, "conf": "bassa", "minimo": 34, "massimo": 98},
+          "righe_jev": ["🔎 12 comparabili 90-200 €"], "riga_verdetto_jev": "✅ CONFERMATO: rivendita ~140 €", "rivendita_jev": 140.0}
+    t = testo_preavviso(li, "https://www.vinted.it/items/1-x", riga_finale="")
+    assert "CONFERMATO" in t and "vinted.it/items/1" in t

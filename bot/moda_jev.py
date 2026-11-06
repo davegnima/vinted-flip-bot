@@ -444,7 +444,8 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
             # Jev 'in ombra' (annunci che il semaforo scarta): niente foto ne' Gemini, serve solo la rivendita dei comparabili per imparare
             ris["ombra"] = True
             if v:
-                ris.update(n=v.get("n") or len(prezzi), rivendita=v.get("rivendita"), margine=v.get("margine"), roi=v.get("roi"), motivo="ombra")
+                ris.update(n=v.get("n") or len(prezzi), rivendita=v.get("rivendita"), margine=v.get("margine"), roi=v.get("roi"), motivo="ombra",
+                           ok_comps=bool(v.get("ok")))   # ok_comps: i comparabili da soli darebbero margine e ROI sufficienti
                 if stima and stima.get("p25"):
                     ris["dispersione"] = stima["p75"] / stima["p25"]
             log.info("MODA JEV OMBRA | item=%s | brand=%s | prezzo=%s | n=%s | rivendita=%s | dispersione=%s | fv_stima=%s | linea=%s",
