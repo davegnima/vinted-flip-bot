@@ -73,3 +73,22 @@ def test_jev_autenticita_porta_anche_le_domande_del_legit_check(monkeypatch):
     r = jev.giudica_autenticita("Borsa", "prada", b"\x89PNG\r\n\x1a\n" + b"0" * 10)
     assert r == ("originale_plausibile", 0.9) and set(visti["questions"]) == {"autenticita", "etichetta", "made_in", "lavorazione", "prova"}
     assert r.dettagli["etichetta"] == ("coerente", 0.8) and r.dettagli["lavorazione"] == (None, None)
+
+
+def test_jev_autenticita_riprova_con_la_sola_autenticita_su_http_400(monkeypatch):
+    import io
+    import urllib.error
+    from bot import jev
+    corpi = []
+    monkeypatch.setenv("TYPESAFE_API_KEY", "k")
+    monkeypatch.setattr(jev, "JEV_GIUDICE", True)
+
+    def finta(corpo):
+        corpi.append(set(corpo["questions"]))
+        if len(corpo["questions"]) > 1:
+            raise urllib.error.HTTPError("u", 400, "Bad Request", {}, io.BytesIO(b"bad question"))
+        return {"answers": {"autenticita": {"choice": "originale_plausibile", "confidence": 0.8}}, "usage": {}}
+    monkeypatch.setattr(jev, "_chiama_jev", finta)
+    r = jev.giudica_autenticita("Borsa", "prada", b"\x89PNG\r\n\x1a\n" + b"0" * 10)
+    assert r == ("originale_plausibile", 0.8) and len(corpi) == 2 and corpi[1] == {"autenticita"}
+    assert r.dettagli["etichetta"] == (None, None)
