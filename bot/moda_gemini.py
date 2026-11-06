@@ -38,8 +38,11 @@ COSA CERCARE (in ogni foto)
 2. Etichetta di lavaggio/composizione: paese dopo "Made in", composizione, codice prodotto; etichetta taglia (stile ed epoca).
 3. Logo, ricami, serigrafie, cuciture, zip e hardware (peso, incisioni, finitura), fodera, codici a rilievo o numeri di serie.
 4. Documenti e accessori: fattura, scontrino, cartellino, certificato, dustbag, scatola. Registra solo cio' che si vede; non sono mai una prova da soli.
-5. Marchio diverso: se l'etichetta mostra un nome diverso o non correlato al brand dichiarato (non una sottolinea della stessa maison) -> autenticita "altra_marca".
-6. Il nome di un tessuto (es. Loro Piana, Cerruti) non e' il brand del capo.
+5. Linea: scrivi in "linea_etichetta" la sottolinea stampata sull'etichetta principale (es. "Weekend", "Marella", "Sportmax", "MM6", "See by Chloe",
+   "M Missoni"); "principale" se si legge solo il marchio madre; "non_leggibile" se l'etichetta non si legge. Il titolo puo' dire solo "Max Mara" anche
+   se l'etichetta e' Weekend: conta l'etichetta, non il titolo.
+6. Marchio diverso: se l'etichetta mostra un nome diverso o non correlato al brand dichiarato (non una sottolinea della stessa maison) -> autenticita "altra_marca".
+7. Il nome di un tessuto (es. Loro Piana, Cerruti) non e' il brand del capo.
 
 PAESE DI PRODUZIONE
 - Prada, Miu Miu, Loro Piana, Brunello Cucinelli, Bottega Veneta, Fendi producono l'abbigliamento in Italia: "Made in" asiatico (Cina, Bangladesh, Vietnam, India...) e' un'incoerenza forte,
@@ -58,10 +61,11 @@ Non calcolare prezzi, margini o decisioni. Risposta breve: campi a poche parole,
 
 SCHEMA = {
     "type": "OBJECT",
-    "propertyOrdering": ["autenticita", "confidenza", "etichetta_letta", "made_in", "prova_acquisto", "indizi", "motivo"],
+    "propertyOrdering": ["autenticita", "confidenza", "linea_etichetta", "etichetta_letta", "made_in", "prova_acquisto", "indizi", "motivo"],
     "properties": {
         "autenticita": {"type": "STRING", "enum": ["probabile", "dubbia", "replica", "altra_marca", "non_verificabile"]},
         "confidenza": {"type": "NUMBER"},
+        "linea_etichetta": {"type": "STRING"},
         "etichetta_letta": {"type": "STRING"},
         "made_in": {"type": "STRING"},
         "prova_acquisto": {"type": "STRING", "enum": ["nessuna", "cartellino", "scontrino", "fattura", "certificato", "scatola_dustbag"]},
@@ -107,7 +111,7 @@ def leggi_risposta(testo):
         d["confidenza"] = max(0.0, min(1.0, float(d.get("confidenza"))))
     except (TypeError, ValueError):
         d["confidenza"] = None
-    for campo in ("etichetta_letta", "made_in"):
+    for campo in ("etichetta_letta", "made_in", "linea_etichetta"):
         d[campo] = str(d.get(campo) or "")[:60]
     d["prova_acquisto"] = d.get("prova_acquisto") if d.get("prova_acquisto") in ("cartellino", "scontrino", "fattura", "certificato", "scatola_dustbag") else "nessuna"
     d["indizi"] = str(d.get("indizi") or "")[:160]

@@ -269,6 +269,14 @@ def test_prezzi_troppo_dispersi_non_confermano():
 def test_filtra_per_linea_weekend_non_e_max_mara():
     assert mj.linea_dal_testo("Cappotto Weekend Max Mara", "max mara") == "weekend max mara"
     comps = [("Cappotto Weekend Max Mara", 90.0), ("Cappotto Max Mara lana", 250.0), ("Cappotto Max Mara Studio", 120.0), ("Cappotto Sportmax", 100.0)]
-    assert mj.filtra_per_linea(comps, "Cappotto Weekend Max Mara", "max mara") == [("Cappotto Weekend Max Mara", 90.0)]
-    assert mj.filtra_per_linea(comps, "Cappotto Max Mara lana", "max mara") == [("Cappotto Max Mara lana", 250.0)]
-    assert mj.filtra_per_linea(comps, "Giacca", "prada") == comps
+    assert mj.filtra_per_linea(comps, "max mara", "weekend max mara") == [("Cappotto Weekend Max Mara", 90.0)]
+    assert mj.filtra_per_linea(comps, "max mara", None) == [("Cappotto Max Mara lana", 250.0)]
+    assert mj.filtra_per_linea(comps, "prada", None) == comps
+
+
+def test_linea_da_descrizione_e_da_etichetta():
+    assert mj.linea_dal_testo("Cappotto Max Mara", "max mara", "Cappotto Weekend Max Mara taglia 40") == "weekend max mara"
+    assert mj.linea_dal_testo("Cappotto Max Mara", "max mara", "Indossato solo nel weekend, ottime condizioni") is None
+    assert mj.linea_da_etichetta("Weekend", "max mara") == (True, "weekend max mara")
+    assert mj.linea_da_etichetta("principale", "max mara") == (True, None)
+    assert mj.linea_da_etichetta("non_leggibile", "max mara") == (False, None)

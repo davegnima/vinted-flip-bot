@@ -80,23 +80,46 @@ def url_comparabili(brand, testo=None, catalogo=None):
     return f"https://www.vinted.it/catalog?{b}{c}{t}&order=newest_first"
 
 
-def linea_dal_testo(testo, brand):
-    """Nome della sottolinea del brand scritta nel testo ('weekend max mara' da 'Cappotto Weekend MaxMara'), o None. Pura."""
+def linea_dal_testo(testo, brand, descrizione=None):
+    """Nome della sottolinea del brand scritta nel titolo o nella descrizione ('weekend max mara' da 'Cappotto Weekend MaxMara'), o None.
+    Nella descrizione la parola sola non basta ('l'ho usato nel weekend'): il nome del brand deve stare a meno di 25 caratteri. Pura."""
+    b = (brand or "").strip().lower()
+    regole = FAIR_VALUE_SOTTOLINEE.get(b, {})
     t = (testo or "").lower()
-    for nome, pattern in FAIR_VALUE_SOTTOLINEE.get((brand or "").strip().lower(), {}).items():
+    for nome, pattern in regole.items():
         if re.search(pattern, t):
             return nome
+    d = (descrizione or "").lower()
+    compatto = b.replace(" ", r"\s*")
+    for nome, pattern in regole.items():
+        for m in re.finditer(pattern, d):
+            vicino = d[max(0, m.start() - 25):m.end() + 25]
+            if re.search(compatto, vicino) or re.search(re.escape(nome), vicino):
+                return nome
     return None
 
 
-def filtra_per_linea(comps, titolo, brand):
-    """6/11 (utente): Weekend Max Mara non e' Max Mara. Se l'annuncio dichiara una sottolinea tiene solo i comparabili che la nominano;
-    se non ne dichiara, toglie quelli che nominano una sottolinea nota del brand (fascia di prezzo diversa). Un comparabile che non
-    nomina la linea resta tra quelli della linea principale: dal solo titolo non si puo' sapere. Pura."""
+def linea_da_etichetta(etichetta, brand):
+    """(nota, linea) dalla linea che Gemini ha letto sull'etichetta: nota=False se non l'ha letta; ('principale', 'mainline', 'brand') -> (True, None);
+    un nome di sottolinea riconosciuto -> (True, nome). Pura."""
+    e = (etichetta or "").strip().lower()
+    if not e or e in ("non_leggibile", "non leggibile", "n/d", "-"):
+        return False, None
+    if e in ("principale", "mainline", "main", "brand", "linea principale"):
+        return True, None
+    for nome, pattern in FAIR_VALUE_SOTTOLINEE.get((brand or "").strip().lower(), {}).items():
+        if re.search(pattern, e) or nome in e:
+            return True, nome
+    return False, None
+
+
+def filtra_per_linea(comps, brand, linea):
+    """6/11 (utente): Weekend Max Mara non e' Max Mara. Con una sottolinea dichiarata tiene solo i comparabili che la nominano; senza,
+    toglie quelli che nominano una sottolinea nota del brand (fascia di prezzo diversa). Un comparabile che non nomina la linea resta tra
+    quelli della linea principale: dal solo titolo non si puo' sapere. Pura."""
     b = (brand or "").strip().lower()
-    linea = linea_dal_testo(f"{titolo} {brand or ''}", b)
     pattern_tutti = list(FAIR_VALUE_SOTTOLINEE.get(b, {}).values())
-    parole = [x for x in BRAND_SOTTOLINEE_DA_ESCLUDERE.get(b, [])]
+    parole = BRAND_SOTTOLINEE_DA_ESCLUDERE.get(b, [])
     if linea:
         pat = FAIR_VALUE_SOTTOLINEE[b][linea]
         return [(t, p) for t, p in comps if re.search(pat, t.lower())]
@@ -348,36 +371,40 @@ async def verifica(listing_info, foto, tutte_le_foto=None):
         if not _entro_il_tetto():
             ris["motivo"] = "tetto_giornaliero"
             return ris
-        # i comparabili cercano brand + categoria + prime parole del titolo; se sono pochi, solo brand + categoria
-        testo = " ".join(query_comp(titolo, brand).split()[len((brand or "").split()):][:3])
-        linea = linea_dal_testo(f"{titolo} {brand or ''}", (brand or "").strip().lower())
+        # i comparabili cercano brand + categoria + prime parole del titolo; se sono pochi, solo brand + categoria.
+        # La linea (es. Weekend per Max Mara) si legge da titolo e descrizione; se le foto dicono altro si rifa' la ricerca (vedi sotto).
+        linea = linea_dal_testo(f"{titolo} {brand or ''}", brand, listing_info.get("description"))
+
+        async def cerca(linea):
+            testo = " ".join(query_comp(titolo, brand).split()[len((brand or "").split()):][:3])
+            if linea:
+                # la linea (es. "weekend") entra nella ricerca anche se non e' nelle prime parole del titolo
+                parola = linea.replace((brand or "").strip().lower(), "").strip() or linea
+                if parola not in testo.lower():
+                    testo = f"{parola} {testo}".strip()
+            usate, mappe = [], []
+            for t in ([testo, None] if testo else [None]):
+                url_c = url_comparabili(brand, t, catalogo)
+                if not url_c:
+                    break
+                risposta, ok, _mappa = await _cerca_vinted_testo_diretto(url_c)
+                mappe.append(_mappa)
+                if not ok:
+                    continue
+                comps = [c for c in solo_usato(parse_comp(risposta)) if not (c[0] == titolo and abs(c[1] - prezzo) < 0.01)]
+                comps = filtra_per_linea(comps, brand, linea)
+                if t:
+                    comps = comparabili_simili(comps, t, brand)
+                usate = comps
+                if len(comps) >= MIN_COMPARABILI:
+                    break
+            st = stima_mercato([p for _t, p in usate], min_n=MIN_COMPARABILI)
+            return usate, comparabili_con_link(usate, mappe), st, (valuta(prezzo, st, spedizione_eur=SPEDIZIONE_STIMATA_EUR, margine_min=MODA_JEV_MARGINE_MIN) if st else None)
+
         if linea:
             ris["linea"] = linea
-            # la linea (es. "weekend") entra nella ricerca anche se non e' nelle prime parole del titolo
-            parola = linea.replace(brand.strip().lower(), "").strip() or linea
-            if parola not in testo.lower():
-                testo = f"{parola} {testo}".strip()
-        comps_pool, usate, mappe = [], [], []
-        for t in ([testo, None] if testo else [None]):
-            url_c = url_comparabili(brand, t, catalogo)
-            if not url_c:
-                break
-            risposta, ok, _mappa = await _cerca_vinted_testo_diretto(url_c)
-            mappe.append(_mappa)
-            if not ok:
-                continue
-            comps = [c for c in solo_usato(parse_comp(risposta)) if not (c[0] == titolo and abs(c[1] - prezzo) < 0.01)]
-            comps = filtra_per_linea(comps, titolo, brand)
-            if t:
-                comps = comparabili_simili(comps, t, brand)
-            usate = comps
-            if len(comps) >= MIN_COMPARABILI:
-                break
-        comps_pool = usate
+        comps_pool, link_comps, stima, v = await cerca(linea)
         prezzi = [p for _t, p in comps_pool]
-        link_comps = comparabili_con_link(comps_pool, mappe)
-        stima = stima_mercato(prezzi, min_n=MIN_COMPARABILI)
-        v = valuta(prezzo, stima, spedizione_eur=SPEDIZIONE_STIMATA_EUR, margine_min=MODA_JEV_MARGINE_MIN) if stima else None
         foto_jpeg = None
         if foto:
             # Vinted serve anche webp: Jev accetta solo png/jpeg, quindi si converte in jpeg (prima la foto non partiva: foto=-)
@@ -408,6 +435,16 @@ async def verifica(listing_info, foto, tutte_le_foto=None):
             # Jev non e' sicuro dell'originalita' (o il prezzo e' troppo basso): Gemini gratuito guarda tutte le foto
             ris["gemini"] = await controlla_gemini(titolo, brand, prezzo, listing_info.get("description"), tutte_le_foto or ([foto] if foto else []),
                                                    item_id=listing_info.get("item_id"))
+        if ris["gemini"]:
+            nota, linea_foto = linea_da_etichetta(ris["gemini"].get("linea_etichetta"), brand)
+            if nota and linea_foto != linea:
+                # l'etichetta in foto dice un'altra linea (es. titolo "Max Mara", etichetta "Weekend"): stima rifatta sulla linea vera
+                log.info("MODA JEV LINEA | item=%s | brand=%s | titolo/descrizione=%s | etichetta=%s", listing_info.get("item_id") or "-", brand, linea or "principale", linea_foto or "principale")
+                linea = linea_foto
+                ris["linea"], ris["linea_da_foto"] = linea, True
+                comps_pool, link_comps, stima, v = await cerca(linea)
+                prezzi = [p for _t, p in comps_pool]
+                ris["da_foto"], ris["foto_comps"] = False, None
         ris["esito"], ris["motivo"] = decidi(v, ris["autenticita"], ris["gemini"], ris["foto_comps"],
                                          None if ris["da_foto"] or not stima or not stima.get("p25") else stima["p75"] / stima["p25"])
         if v:
