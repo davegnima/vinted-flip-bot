@@ -318,7 +318,7 @@ def test_tempi_da_caricato_con_testo_relativo():
 
 def test_taratura_brand_da_env():
     from bot.fair_value import FAIR_VALUE_TARATURA_BRAND, _fattori_da_env
-    assert FAIR_VALUE_TARATURA_BRAND == {"missoni": 1.10, "brunello cucinelli": 1.15}
+    assert FAIR_VALUE_TARATURA_BRAND == {"missoni": 1.10, "brunello cucinelli": 1.26, "prada": 1.30}
     assert _fattori_da_env("Prada=1.3, rotto, x=abc ,=2") == {"prada": 1.3}
     assert _fattori_da_env("") == {}
 

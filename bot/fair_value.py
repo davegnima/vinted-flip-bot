@@ -265,8 +265,11 @@ def _fattori_da_env(testo):
 
 
 # In piu' del fattore globale (Missoni: solo prima linea). Modificabile da Railway: FAIR_VALUE_TARATURA_BRAND.
+# 6/11, da 249 verifiche Jev (3 giorni, rivendita p25 dei comparabili / stima del semaforo, mediana per brand): Prada x1,45 (n=37, 59% venduti
+# in fretta), Cucinelli x1,19 (n=15, 55%). Fattore = 1 + n/(n+15) x (rapporto-1), tetto 1,30: Prada 1,30; Cucinelli 1,15 x 1,10 = 1,26.
+# NON toccati: Missoni 1,20 (15% veloci), Max Mara 1,04, JPG 1,15 (19%), Lancel 0,84 (8%: abbassare e' rimandato dall'utente).
 FAIR_VALUE_TARATURA_BRAND = _fattori_da_env(os.environ.get(
-    "FAIR_VALUE_TARATURA_BRAND", "missoni=1.10,brunello cucinelli=1.15"))
+    "FAIR_VALUE_TARATURA_BRAND", "missoni=1.10,brunello cucinelli=1.26,prada=1.30"))
 # Le stime a confidenza bassa ora hanno un colore (prima ⚪), con soglie moltiplicate per questo fattore. Dal
 # 2026-10-07 vale 1 (era 1,5): nei dati 4-7/10 un 🟢 a confidenza bassa vendeva veloce quanto uno ad alta (33% vs 36%)
 # e con le nuove soglie del semaforo il fattore 1,5 scartava proprio la fascia x3-4, la piu' redditizia.
