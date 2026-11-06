@@ -158,6 +158,43 @@ def riga_esito_scheda(ris):
     return "⚠️ Jev: comparabili non trovati, avviso mandato non verificato"
 
 
+def _stato_originalita(ris):
+    """('replica'|'dubbio'|'non_chiaro'|'ok'|'nessuno', parti): sintesi dei controlli di autenticita' (Jev sulle foto, risposte del legit check di Jev,
+    Gemini su tutte le foto) per il messaggio. Il caso peggiore vince; una replica probabile con confidenza bassa conta comunque (6/11, utente:
+    non declassare, ma far vedere subito se e' originale). Pura."""
+    a = ris.get("autenticita")
+    g = ris.get("gemini")
+    parti, stato = [], "nessuno"
+
+    def peggio(nuovo_stato):
+        ordine = ["nessuno", "ok", "non_chiaro", "dubbio", "replica"]
+        return nuovo_stato if ordine.index(nuovo_stato) > ordine.index(stato) else stato
+    if a and a[0]:
+        etichette = {"originale_plausibile": "sembra originale", "non_chiaro": "non si capisce", "replica_probabile": "replica probabile", "altra_marca": "altra marca"}
+        parti.append(f"Jev foto: {etichette.get(a[0], a[0])}" + (f" ({a[1]:.0%})" if a[1] is not None else ""))
+        stato = peggio({"originale_plausibile": "ok", "non_chiaro": "non_chiaro"}.get(a[0], "replica"))
+        for nome, r in (getattr(a, "dettagli", None) or {}).items():
+            if r and r[0] in ("incoerente", "sospetta"):
+                parti.append(f"{nome.replace('_', ' ')} {r[0].upper()}")
+                stato = peggio("dubbio")
+    if g and g.get("autenticita"):
+        etichette = {"probabile": "coerente", "dubbia": "dubbio", "replica": "replica", "altra_marca": "altro marchio", "non_verificabile": "non verificabile"}
+        parti.append(f"Gemini foto: {etichette.get(g['autenticita'], g['autenticita'])}" + (f" ({g['confidenza']:.0%})" if g.get("confidenza") is not None else ""))
+        stato = peggio({"probabile": "ok", "non_verificabile": "non_chiaro", "dubbia": "dubbio"}.get(g["autenticita"], "replica"))
+    return stato, parti
+
+
+def riga_originalita(ris):
+    """Riga in evidenza subito sotto il verdetto: l'annuncio sembra originale o no, con chi lo dice (6/11, utente: 'piu' visibilita' immediata di se
+    e' originale o no', senza declassare l'avviso). None se scartato (il verdetto spiega gia' il perche') o se il legit check e' stato saltato. Pura."""
+    if ris.get("esito") == "scarta" or ris.get("legit_saltato"):
+        return None
+    stato, parti = _stato_originalita(ris)
+    testa = {"replica": "🚨 POSSIBILE REPLICA", "dubbio": "⚠️ AUTENTICITÀ DA CONTROLLARE", "non_chiaro": "❓ Autenticità non chiara",
+             "ok": "✅ Sembra originale", "nessuno": "❔ Autenticità non verificata"}[stato]
+    return testa + (" · " + " · ".join(parti) if parti else "")
+
+
 def riga_verdetto(ris):
     """Prima riga del messaggio: la decisione di Jev in chiaro, con il numero che l'ha decisa (5/11, utente: 'capire cosa l'ha fermato'). Pura."""
     mot = str(ris.get("motivo", ""))
@@ -170,7 +207,8 @@ def riga_verdetto(ris):
             return f"🚫 SCARTATO: i {ris['n']} comparabili danno rivendita ~{ris['rivendita']:.0f} €, {dove}"
         return "🚫 SCARTATO: " + riga_esito_scheda(ris).replace("🚫 ", "").replace("Jev: non avvisato, ", "").replace("Gemini: non avvisato, ", "")
     if ris.get("esito") == "conferma":
-        return f"✅ CONFERMATO: rivendita ~{ris['rivendita']:.0f} €, margine ~{ris['margine']:.0f} €, ROI {ris['roi']:.0f}%"
+        tag = {"replica": " · 🚨 possibile replica", "dubbio": " · ⚠️ autenticità dubbia"}.get(_stato_originalita(ris)[0], "")   # visibile gia' nell'anteprima
+        return f"✅ CONFERMATO: rivendita ~{ris['rivendita']:.0f} €, margine ~{ris['margine']:.0f} €, ROI {ris['roi']:.0f}%{tag}"
     return "⚠️ NON VERIFICATO: comparabili non trovati, resta la stima rapida"
 
 

@@ -240,7 +240,8 @@ def testo_preavviso(listing_info, url=None, riga_finale=RIGA_PREAVVISO_IN_ATTESA
         brand = (listing_info.get("brand") or "").strip()
         sem = fv.get("semaforo") or "🟢"
         testa = (f"*{prezzo:g} €*" if prezzo is not None else "") + (f" ➜ rivendita ~*{riv:g} €*" if riv else "") + (f" · 🏷️ {esc(brand)}" if brand and brand != "?" else "")
-        righe = ([esc(verdetto)] if verdetto else []) + [sem + " " + testa, _riga_titolo(listing_info, url)]
+        originalita = listing_info.get("riga_originalita_jev")   # subito sotto il verdetto: originale o no (6/11)
+        righe = ([esc(verdetto)] if verdetto else []) + ([esc(originalita)] if originalita else []) + [sem + " " + testa, _riga_titolo(listing_info, url)]
     else:
         righe = [marca + "*" + testa + "*", _riga_titolo(listing_info, url)]
     if compatto:

@@ -220,3 +220,23 @@ def test_valuta_moda_soglia_margine_40():
     import inspect
     assert "margine_min" in inspect.signature(valuta).parameters
     assert mj.MODA_JEV_MARGINE_MIN == 40.0
+
+
+def test_riga_originalita_mostra_subito_replica_dubbio_e_ok():
+    """6/11 (utente): non declassare i confermati con 'replica probabile', ma far vedere subito se sono originali."""
+    from bot.moda_jev import riga_originalita, riga_verdetto
+    from bot.jev import Autenticita
+    base = {"esito": "conferma", "motivo": "ok", "n": 5, "rivendita": 135.0, "margine": 103.0, "roi": 541.0}
+    r = dict(base, autenticita=("replica_probabile", 0.36), gemini={"autenticita": "dubbia", "confidenza": 0.6})
+    riga = riga_originalita(r)
+    assert riga.startswith("🚨 POSSIBILE REPLICA") and "36%" in riga and "Gemini foto: dubbio (60%)" in riga
+    assert "possibile replica" in riga_verdetto(r) and riga_verdetto(r).startswith("✅ CONFERMATO")
+    assert riga_originalita(dict(base, autenticita=("originale_plausibile", 0.76))).startswith("✅ Sembra originale")
+    assert "possibile" not in riga_verdetto(dict(base, autenticita=("originale_plausibile", 0.76)))
+    assert riga_originalita(dict(base, autenticita=("non_chiaro", 0.4))).startswith("❓")
+    assert riga_originalita(dict(base, autenticita=None)).startswith("❔")
+    assert riga_originalita(dict(base, esito="scarta", autenticita=("replica_probabile", 0.9))) is None
+    assert riga_originalita(dict(base, legit_saltato=True)) is None
+    a = Autenticita(("originale_plausibile", 0.7))
+    a.dettagli = {"etichetta": ("incoerente", 0.8)}
+    assert riga_originalita(dict(base, autenticita=a)).startswith("⚠️ AUTENTICITÀ DA CONTROLLARE")
