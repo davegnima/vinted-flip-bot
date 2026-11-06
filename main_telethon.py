@@ -1278,12 +1278,12 @@ async def on_comando_venduto(event):
 
 def _testo_report_radar(ore=24):
     dal = time.time() - ore * 3600
-    righe, candidati = archivio_radar.report_giornaliero(db.leggi_eventi("radar_v2", dal), db.leggi_eventi("tracciato_radar", dal), ore)
+    righe, candidati, velocita = archivio_radar.report_giornaliero(db.leggi_eventi("radar_v2", dal), db.leggi_eventi("tracciato_radar", dal), ore)
     for r in righe:
-        log.info("REPORT RADAR (%s h) | %s", ore, r)
+        log.info("REPORT RADAR (%s h) | %s | tot=%s verdi=%s gialli=%s gv_venduti=%s/%s scarto=%s", ore, r["nome"], r["tot"], r["verdi"], r["gialli"], r["gv_venduti"], r["gv"], r["motivo"])
     if candidati:
-        log.info("REPORT RADAR (%s h) | candidate alla potatura: %s", ore, ", ".join(candidati))
-    return archivio_radar.testo_report(righe, candidati, ore)
+        log.info("REPORT RADAR (%s h) | da potare: %s", ore, ", ".join(candidati))
+    return archivio_radar.testo_report(righe, candidati, velocita, ore)
 
 
 async def ciclo_report_radar():
@@ -1308,7 +1308,7 @@ async def on_comando_report_radar(event):
     """/report_radar [ore=24]: report per ricerca dal DB (verdetti, gialli/verdi, scarto piu' frequente, candidate alla potatura)."""
     try:
         ore = max(1, int(event.pattern_match.group(1) or 24))
-        await event.respond(_testo_report_radar(ore), parse_mode=None)
+        await event.respond(_testo_report_radar(ore), parse_mode='md')
     except Exception:
         log.warning("REPORT RADAR fallito:\n%s", traceback.format_exc())
 
