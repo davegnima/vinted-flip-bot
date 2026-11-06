@@ -728,6 +728,9 @@ FAIR_VALUE_APPRESO = {}
 _FV_PESO_PARTENZA = {"alta": 4.0, "media": 3.0, "bassa": 2.0, "stima": 1.5}
 _FV_PESO_GEMINI = 1.0
 _FV_PESO_UMANO = 3.0
+_FV_PESO_JEV = 1.0           # 6/11: un campione = la rivendita (p25) dei comparabili di una verifica Jev; il mercato, non un giudizio
+_FV_JEV_N_MIN = 5            # meno di 5 comparabili: non si impara
+_FV_JEV_DISPERSIONE_MAX = 2.5
 _FV_NUOVE_RIGHE_PER_RICALCOLO = 10
 _fv_righe_da_ricalcolo = [0]
 
@@ -792,6 +795,25 @@ def fv_registra_rapida(listing_info, url, scartato=False):
         "fv": stima["fv"] if stima else None, "conf": stima["conf"] if stima else None,
         "semaforo": stima["semaforo"] if stima else None, "scartato": bool(scartato),
     })
+
+
+def fv_registra_jev(listing_info, url, ris):
+    """6/11 (utente: 'impara dai comparabili'): archivia la rivendita (p25) dei comparabili di una verifica Jev. Vale come campione solo con
+    almeno 5 comparabili affidabili (non 'non simili', non troppo dispersi, non dedotti dalla foto). Se l'etichetta ha corretto la linea
+    (Weekend per Max Mara) la chiave e' la linea. Mai eccezioni."""
+    try:
+        item_id = _estrai_item_id_da_url(url) if url else None
+        riv = (ris or {}).get("rivendita")
+        if not item_id or not riv:
+            return
+        disp = (ris or {}).get("dispersione")
+        valido = bool(((ris.get("n") or 0) >= _FV_JEV_N_MIN) and not ris.get("da_foto")
+                      and ris.get("motivo") not in ("comparabili_non_simili", "prezzi_dispersi", "comparabili_non_trovati")
+                      and (disp is None or disp <= _FV_JEV_DISPERSIONE_MAX))
+        _fv_scrivi({"tipo": "jev", "item_id": str(item_id), "vendita": riv, "n": ris.get("n"), "dispersione": disp,
+                    "linea": ris.get("linea"), "valido": valido, "ombra": bool(ris.get("ombra"))})
+    except Exception:
+        log.warning("Campione Jev non registrato:\n%s", traceback.format_exc())
 
 
 def fv_classifica_campione(listing_info, decisione, occhio_json=None, legit=None):
@@ -865,6 +887,8 @@ def fv_unisci(righe):
             d["gemini"] = r
         elif r.get("tipo") == "umana":
             d["umana"] = r
+        elif r.get("tipo") == "jev":
+            d["jev"] = r
     return per_item
 
 
@@ -890,6 +914,12 @@ def fv_ricalibra(righe=None):
         # la chiave del brand viene dall'etichetta letta da Gemini (puo' essere
         # una sottolinea), altrimenti da quella del titolo
         brand = g.get("chiave_brand") if g.get("valido") else rap.get("brand")
+        j = d.get("jev") or {}
+        if j.get("valido") and j.get("vendita") and cat:
+            # comparabili Jev: la chiave e' la linea letta (se c'e') altrimenti il brand dell'annuncio
+            bj = j.get("linea") or rap.get("brand")
+            if bj:
+                campioni.setdefault(f"{bj}|{cat}", []).append((j["vendita"] / (rap.get("molt") or 1.0), _FV_PESO_JEV))
         if not brand or not cat:
             continue
         molt = rap.get("molt") or 1.0
