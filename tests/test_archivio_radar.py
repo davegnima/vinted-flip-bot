@@ -23,3 +23,16 @@ def test_csv_ha_intestazione_e_righe():
     t = a.righe_csv([_ev("A", "rosso")]).splitlines()
     assert t[0].startswith("ts,item_id,ricerca")
     assert len(t) == 2
+
+
+def test_report_giornaliero_candidati_e_motivi():
+    from bot import archivio_radar as a
+    t = 1000000.0
+    v2 = [{"ts": t - 10, "ricerca": "A", "semaforo": "rosso", "motivo": "margine_basso"} for _ in range(12)]
+    v2 += [{"ts": t - 10, "ricerca": "B", "semaforo": "giallo", "motivo": "ok"}, {"ts": t - 10, "ricerca": "B", "semaforo": "rosso", "motivo": "parola_vietata:x"},
+           {"ts": t - 99999, "ricerca": "C", "semaforo": "rosso", "motivo": "x"}]
+    righe, cand = a.report_giornaliero(v2, [], ore=24, adesso=t)
+    assert cand == ["A"]
+    assert any(r.startswith("A: 12 verdetti") and "margine_basso (12)" in r for r in righe)
+    assert not any(r.startswith("C") for r in righe)
+    assert "Candidate alla potatura" in a.testo_report(righe, cand)

@@ -1276,6 +1276,43 @@ async def on_comando_venduto(event):
             pass
 
 
+def _testo_report_radar(ore=24):
+    dal = time.time() - ore * 3600
+    righe, candidati = archivio_radar.report_giornaliero(db.leggi_eventi("radar_v2", dal), db.leggi_eventi("tracciato_radar", dal), ore)
+    for r in righe:
+        log.info("REPORT RADAR (%s h) | %s", ore, r)
+    if candidati:
+        log.info("REPORT RADAR (%s h) | candidate alla potatura: %s", ore, ", ".join(candidati))
+    return archivio_radar.testo_report(righe, candidati, ore)
+
+
+async def ciclo_report_radar():
+    """Ogni giorno alle REPORT_RADAR_ORA_UTC (default 5, 0 = spento con -1) manda al proprietario il report delle ultime 24 h. Non solleva."""
+    ora = int(os.environ.get("REPORT_RADAR_ORA_UTC", "5") or 5)
+    if ora < 0:
+        return
+    ultimo = None
+    while True:
+        await asyncio.sleep(300)
+        try:
+            adesso = time.gmtime()
+            if adesso.tm_hour == ora and ultimo != adesso.tm_yday:
+                ultimo = adesso.tm_yday
+                await telegram_send_message(TELEGRAM_OWNER_CHAT_ID, _testo_report_radar(24), disable_notification=True)
+        except Exception:
+            log.warning("REPORT RADAR giornaliero fallito:\n%s", traceback.format_exc())
+
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'(?i)^/report_?radar(?:\s+(\d+))?\s*$'))
+async def on_comando_report_radar(event):
+    """/report_radar [ore=24]: report per ricerca dal DB (verdetti, gialli/verdi, scarto piu' frequente, candidate alla potatura)."""
+    try:
+        ore = max(1, int(event.pattern_match.group(1) or 24))
+        await event.respond(_testo_report_radar(ore), parse_mode=None)
+    except Exception:
+        log.warning("REPORT RADAR fallito:\n%s", traceback.format_exc())
+
+
 @client.on(events.NewMessage(outgoing=True, pattern=r'(?i)^/esporta_?radar(?:\s+(\d+))?\s*$'))
 async def on_comando_esporta_radar(event):
     """/esporta_radar [giorni=7]: invia il CSV di tutti gli esiti del radar salvati nel DB (volume /data) e scrive nei log
@@ -1643,6 +1680,7 @@ async def main():
         await risolvi_gruppo_radar(client)
         asyncio.get_event_loop().create_task(watchdog_messaggi())
         asyncio.get_event_loop().create_task(ciclo_callback())
+        asyncio.get_event_loop().create_task(ciclo_report_radar())
         _battito["t"] = time.time()
         asyncio.get_event_loop().create_task(_battito_loop())
         _thread_blocco()
