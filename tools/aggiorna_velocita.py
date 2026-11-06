@@ -26,7 +26,8 @@ from bot.fair_value import _brand_fair_value  # noqa: E402
 VELOCI = ("AFFARE", "MEDIO AFFARE", "PRENOTATO")   # prenotato nella prima ora = domanda alta
 # Scarti dell'Occhio/Cervello per falso (campo `motivo` di TRACCIATO) o `legit=probabilmente_falso`: un falso venduto
 # subito non e' un affare vero (17/10: Prada a 10 EUR falso, venduto in fretta). Pesa meno nel credito di velocita'.
-MOTIVI_FALSO = ("[FALSO CONCLAMATO", "[ANNUNCIO FRAUDOLENTO", "[BRAND NON CORRISPONDENTE", "[TESSUTO NON E' IL BRAND", "[NON ORIGINALE")
+MOTIVI_FALSO = ("[FALSO CONCLAMATO", "[ANNUNCIO FRAUDOLENTO", "[BRAND NON CORRISPONDENTE", "[TESSUTO NON E' IL BRAND", "[NON ORIGINALE",
+                "jev:gemini:replica", "jev:foto:")   # 6/11: scarti Jev/Gemini per replica (17 veloci su 66 scarti: in gran parte falsi venduti in fretta)
 PESO_FALSO = 0.25   # stima dichiarata, non misurata: regolabile con --peso-falso
 
 

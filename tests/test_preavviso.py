@@ -581,3 +581,14 @@ def test_titolo_e_link_all_annuncio_e_sopravvive_alla_didascalia():
     t = testo_preavviso(info, url)
     assert f"[Maglia Brunello Cucinelli]({url})" in t
     assert f"[Maglia Brunello Cucinelli]({url})" in didascalia_verdetto(t)
+
+
+def test_riga_originalita_sta_subito_sotto_il_verdetto():
+    from bot.scheda import testo_preavviso, didascalia_verdetto
+    url = "https://www.vinted.it/items/10676999999-maglia"
+    info = {"title": "Maglia", "price": 15.0, "brand": "Brunello Cucinelli", "url": url, "fair_value": {"semaforo": "🟢", "margine": 78.0, "valore": 93},
+            "righe_jev": ["🔎 Comparabili " + "x" * 600, "👁 Gemini " + "y" * 600], "riga_verdetto_jev": "✅ CONFERMATO · 🚨 possibile replica",
+            "riga_originalita_jev": "🚨 POSSIBILE REPLICA · Jev foto: replica probabile (36%)", "rivendita_jev": 135.0}
+    righe = testo_preavviso(info, url).split("\n")
+    assert righe[0].startswith("✅ CONFERMATO") and righe[1].startswith("🚨 POSSIBILE REPLICA")
+    assert didascalia_verdetto("\n".join(righe)).split("\n")[1].startswith("🚨 POSSIBILE REPLICA")
