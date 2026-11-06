@@ -418,7 +418,7 @@ async def analizza(parsed, url, foto=None, query_url=None):
         titolo = parsed.get("title") or ""
         prezzo = _a_float(parsed.get("price"), None)
         brand = parsed.get("brand")
-        base = {"titolo": titolo[:120], "prezzo": prezzo, "brand": brand}
+        base = {"titolo": titolo[:120], "prezzo": prezzo, "brand": brand, "ricerca": (str(parsed.get("query_name") or "")[:40] or None)}
         if prezzo is None or prezzo <= 0 or (RADAR_SPESA_MAX and prezzo > RADAR_SPESA_MAX):
             _log_saltato("prezzo_assente" if prezzo is None else f"prezzo_fuori:{prezzo:g}", url)
             return
