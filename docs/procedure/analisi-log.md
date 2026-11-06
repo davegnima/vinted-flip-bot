@@ -7,7 +7,8 @@
 **Passi**
 1. Controllo puntuale: `filter` stretto, `startDate` vicino, `limit` 20-40. Annuncio singolo: l'id tra virgolette. Dopo un deploy: solo righe dopo `"Vinted Oracle avviato"`.
 2. Analisi su ore: filtro largo (es. `"| ESITO |" OR "RICONTROLLO LAMPO"`), finestre di 3-6 h, `limit` 500 (finisce in file solo oltre ~80.000 caratteri). Controllare primo e ultimo timestamp: se il limite taglia, scaricare altre finestre. Moda: seguire `docs/recap.md`.
-3. Radar: `"RADAR | item"` (promossi), `"esito=RADAR_L1" AND "stato=venduto"` (vendite), `"RADAR SCARTO"` (scarti). Con python: promossi per modulo, brand, catalogo, prezzo mediano; venduti ed entro 15 min per modulo; venduti rapidi con prezzo >= 25 EUR.
+3. Radar, ARCHIVIO PERMANENTE (6/11, richiesta dell'utente: niente richieste inline ai log): ogni serie chiusa del radar e' salvata nel DB sul volume `/data` come evento `tracciato_radar` (stessi campi della riga `TRACCIATO_RADAR`, piu' `storia`). Lettura: `db.leggi_eventi("tracciato_radar", dal_ts)`; funzioni in `bot/archivio_radar.py`; comando Telegram dell'utente `/esporta_radar [giorni]` invia il CSV di tutti i casi e scrive nei log una riga `RIEPILOGO RICERCHE` per ricerca (annunci, validi, venduti entro 1 h, gialli/verdi). Le analisi per ricerca partono da qui; i log restano per i controlli puntuali. Prima del 6/11 sera gli esiti sono solo nei log.
+   Radar (log): `"RADAR | item"` (promossi), `"esito=RADAR_L1" AND "stato=venduto"` (vendite), `"RADAR SCARTO"` (scarti). Con python: promossi per modulo, brand, catalogo, prezzo mediano; venduti ed entro 15 min per modulo; venduti rapidi con prezzo >= 25 EUR.
 4. Elaborare i file con `python3 -I`, mai incollare righe a mano; per un conteggio esatto rifare la richiesta.
 5. Banda: `consumi.md`. Se volume o banda sono fuori misura, correggere subito e dirlo.
 6. Traffico basso: dirlo e aspettare, non rileggere in loop.

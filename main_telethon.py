@@ -41,6 +41,7 @@ from PIL import Image
 
 from bot import http_clients as hc
 from bot import db
+from bot import archivio_radar
 from bot.db import DB_FILE
 from bot.gemini_stato import ripristina_stato_gemini
 from bot.tracciamento import importa_tracciamento_jsonl, tracc_riprendi_serie
@@ -1273,6 +1274,23 @@ async def on_comando_venduto(event):
             await event.respond("⚠️ Comando /venduto fallito, vedi i log Railway.", parse_mode=None)
         except Exception:
             pass
+
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'(?i)^/esporta_?radar(?:\s+(\d+))?\s*$'))
+async def on_comando_esporta_radar(event):
+    """/esporta_radar [giorni=7]: invia il CSV di tutti gli esiti del radar salvati nel DB (volume /data) e scrive nei log
+    una riga RIEPILOGO RICERCHE per ricerca (annunci, validi, venduti entro 1 h, gialli/verdi): niente estrazioni dai log."""
+    try:
+        giorni = int(event.pattern_match.group(1) or 7)
+        eventi = db.leggi_eventi("tracciato_radar", time.time() - giorni * 86400)
+        for riga in archivio_radar.righe_riepilogo(eventi, giorni):
+            log.info(riga)
+        from io import BytesIO
+        f = BytesIO(archivio_radar.righe_csv(eventi).encode("utf-8"))
+        f.name = f"radar_esiti_{giorni}g.csv"
+        await client.send_file(event.chat_id, f, caption=f"Esiti radar ultimi {giorni} giorni: {len(eventi)} annunci")
+    except Exception:
+        log.warning("ESPORTA RADAR fallito:\n%s", traceback.format_exc())
 
 
 @client.on(events.NewMessage(outgoing=True, pattern=r'(?i)^/(?:comprato|rivenduto)\s+\S+\s+\d'))
