@@ -65,7 +65,18 @@ ONDA6=[ # 01/11 (c), 39 ricerche dall'elenco 'High-Liquid' dell'utente. PROVVISO
  # Escluse perche' gia' presenti o potate con dati (2/11: le creuset, sony cuffie, gamecube, nintendo 64, super nintendo, vendite entro 1 h 0-17%): lego technic / star wars (solo rossi), kitchenaid (accessori), le creuset, staub, stokke, bugaboo (gia' sul tracker), op-1 / sp-404 / volca / scarlett (ONDA5).
  ('V2 ryzen 7 5800x3d','ryzen 7 5800x3d',None,[],120), ('V2 ryzen 7 7800x3d','ryzen 7 7800x3d',None,[],150), ('V2 rtx 3060','rtx 3060',None,[],120), ('V2 rtx 3070','rtx 3070',None,[],150), ('V2 samsung 990 pro 1tb','samsung 990 pro 1tb',None,[],60), ('V2 logitech g pro x superlight','logitech g pro x superlight',None,[],50), ('V2 wooting 60he','wooting 60he',None,[],90), ('V2 elgato stream deck','elgato stream deck',None,[],60), ('V2 meta quest 3','meta quest 3',None,[],150), ('V2 dualsense edge','dualsense edge',None,[],90), ('V2 dji pocket 3','dji pocket 3',None,[],150), ('V2 dji mini 3 pro','dji mini 3 pro',None,[],150), ('V2 insta360 x3','insta360 x3',None,[],150), ('V2 gopro hero 12','gopro hero 12',None,[],150), ('V2 sony zv-1','sony zv-1',None,[],150), ('V2 sigma 16mm sony','sigma 16mm sony',None,[],100), ('V2 rode wireless go ii','rode wireless go ii',None,[],80), ('V2 dji mic 2','dji mic 2',None,[],120), ('V2 zoom h6','zoom h6',None,[],70), ('V2 dji ronin rs3','dji ronin rs3',None,[],150), ('V2 cybex cloud z','cybex cloud z',None,[],90), ('V2 berkel affettatrice','berkel affettatrice',None,[],150), ('V2 bullpadel vertex','bullpadel vertex',None,[],70), ('V2 babolat pure drive','babolat pure drive',None,[],50), ('V2 head speed pro','head speed pro',None,[],70), ('V2 garmin fenix 7','garmin fenix 7',None,[],150), ('V2 wahoo elemnt','wahoo elemnt',None,[],70), ('V2 garmin edge','garmin edge',None,[],80), ('V2 favero assioma','favero assioma',None,[],150), ('V2 comandante c40','comandante c40',None,[],80), ('V2 fellow stagg','fellow stagg',None,[],50), ('V2 eureka mignon','eureka mignon',None,[],100), ('V2 chord mojo','chord mojo',None,[],120), ('V2 fiio btr','fiio btr',None,[],40), ('V2 fanatec csl','fanatec csl',None,[],100), ('V2 thrustmaster warthog','thrustmaster warthog',None,[],120),
 ]
-RISCHIO=('V2 alessi','V2 iittala','V2 rosenthal','V2 zwilling','V2 gopro','V2 dji', # 01/11 (b) potate: margine_basso 90% (prezzi 15-28 EUR) o 0 vendite veloci su 38 tracciate (URL in docs/analisi/radar-ricerche-potate-2026-11-01-b.json)
+ONDA7=[ # 06/11, giro del sabato anticipato: mondi nuovi scelti dal mercato, non dai dati del tracker (utensili, hi-fi, strumenti, foto analogica, Lego, retrogaming, GPS sportivi, bici, design). Ricerche di modello stretto, tetto circa meta' della rivendita veloce, niente price_from.
+ # SENZA catalog[] (id non visti nei log, non inventati): da correggere con gli id letti dal worker.
+ ('V2 hilti','hilti',None,[],100),('V2 metabo','metabo 18v',None,[],50),('V2 bosch professional','bosch professional gsr',None,[],50),
+ ('V2 marshall stanmore','marshall stanmore',None,[],80),('V2 yamaha hs8','yamaha hs8',None,[],80),('V2 technics sl-1200','technics sl-1200',None,[],150),
+ ('V2 roland juno','roland juno',None,[],150),('V2 fender squier stratocaster','fender squier stratocaster',None,[],60),
+ ('V2 contax t2','contax t2',None,[],150),('V2 rolleiflex','rolleiflex',None,[],150),('V2 hasselblad 500','hasselblad 500',None,[],150),
+ ('V2 canon ae-1','canon ae-1',None,[],50),('V2 nikon fm2','nikon fm2',None,[],70),('V2 olympus mju','olympus mju',None,[],60),
+ ('V2 lego millennium falcon','lego millennium falcon',None,[],150),('V2 game boy color','game boy color',None,[],50),('V2 sega mega drive','sega mega drive',None,[],50),
+ ('V2 garmin forerunner 255','garmin forerunner 255',None,[],80),('V2 shimano dura-ace','shimano dura-ace',None,[],80),('V2 brompton','brompton',None,[],150),
+]
+RISCHIO=('Obiettivi', # 06/11 potata: 3 venduti entro 1 h su 17 validi (copia in docs/analisi/radar-ricerche-potate-2026-11-06.json)
+         'V2 alessi','V2 iittala','V2 rosenthal','V2 zwilling','V2 gopro','V2 dji', # 01/11 (b) potate: margine_basso 90% (prezzi 15-28 EUR) o 0 vendite veloci su 38 tracciate (URL in docs/analisi/radar-ricerche-potate-2026-11-01-b.json)
          'V2 games workshop','V2 smeg','V2 ginori', # 01/11 potate: 0 gialli/verdi su 24 h, 91-100% margine_basso (URL salvate in docs/analisi/radar-ricerche-potate-2026-11-01.json)
          'V2 airpods pro','V2 apple airpods','V2 omega uomo','V2 omega donna','V2 longines','V2 tudor','V2 montblanc penne', # repliche frequenti: fuori (piano 31/10)
          'V2 lalique','V2 babyzen','V2 flos','V2 venini','V2 nuna','V2 lego star wars','V2 lego technic','V2 game boy', # 01/11 (c) tolte dal tracker: 0 annunci in 24 h (lalique, babyzen, flos, venini, nuna) o solo rossi (lego star wars 310, lego technic 106, game boy 16)
@@ -119,6 +130,12 @@ if '--onda5' in sys.argv:
 if '--onda6' in sys.argv:
     gia=_nomi_sul_tracker()
     for nome,txt,br,cat,pt in ONDA6:
+        if nome in gia or nome in RISCHIO: continue
+        u='https://www.vinted.it/catalog?'+f'search_text={urllib.parse.quote(txt)}&'+''.join(f'catalog[]={i}&' for i in cat)+f"price_to={pt}&currency=EUR&order=newest_first"
+        post('/add_query',{'query':u,'query_name':nome}); print('ok',nome)
+if '--onda7' in sys.argv:
+    gia=_nomi_sul_tracker()
+    for nome,txt,br,cat,pt in ONDA7:
         if nome in gia or nome in RISCHIO: continue
         u='https://www.vinted.it/catalog?'+f'search_text={urllib.parse.quote(txt)}&'+''.join(f'catalog[]={i}&' for i in cat)+f"price_to={pt}&currency=EUR&order=newest_first"
         post('/add_query',{'query':u,'query_name':nome}); print('ok',nome)
