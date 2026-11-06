@@ -20,7 +20,7 @@ from bot.config import SPEDIZIONE_STIMATA_EUR
 from bot.costanti import VINTED_BRAND_IDS
 from bot.foto import download_image_bytes, optimize_image_bytes
 from bot.comps_filtri import BRAND_SOTTOLINEE_DA_ESCLUDERE
-from bot.fair_value import FAIR_VALUE_BRAND_NUOVI, FAIR_VALUE_SOTTOLINEE
+from bot.fair_value import FAIR_VALUE_APPRESO, FAIR_VALUE_BRAND_NUOVI, FAIR_VALUE_SOTTOLINEE, _jsonl_append
 from bot.jev import CONF_AUTENTICITA_MIN, MAX_FOTO_AUTENTICITA, DOMANDA_FOTO_COMP_MODA, JEV_FOTO_COMPS, MAX_FOTO_COMPS, confronta_foto_comparabili, giudica_autenticita
 from bot.logger import log
 from bot.velocita import riga_velocita
@@ -78,6 +78,41 @@ def url_comparabili(brand, testo=None, catalogo=None):
     c = f"&catalog[]={catalogo}" if catalogo else ""
     b = f"brand_ids[]={bid}" if bid else "order=newest_first"
     return f"https://www.vinted.it/catalog?{b}{c}{t}&order=newest_first"
+
+
+MODA_JEV_OMBRA = os.environ.get("MODA_JEV_OMBRA", "1").strip() not in ("0", "false", "no", "")
+try:
+    MODA_JEV_OMBRA_MAX_ORA = int(os.environ.get("MODA_JEV_OMBRA_MAX_ORA", "20") or 20)
+except ValueError:
+    MODA_JEV_OMBRA_MAX_ORA = 20
+LEGIT_APPRESO_FILE = os.environ.get("LEGIT_APPRESO_FILE", "/data/legit_appreso.jsonl")
+_ombra_chiamate = []   # istanti dell'ultima ora: tetto MODA_JEV_OMBRA_MAX_ORA (ogni ricerca costa banda proxy)
+
+
+def serve_ombra(fv, adesso=None):
+    """True se un annuncio che il semaforo scarta vale una ricerca di comparabili 'in ombra': brand noto con stima poco sicura
+    (confidenza bassa o a priori), e sotto il tetto orario. Registra la chiamata. Pura a parte il contatore."""
+    if not MODA_JEV_OMBRA or not fv or not fv.get("brand") or fv.get("conf") not in ("bassa", "stima"):
+        return False
+    adesso = adesso if adesso is not None else time.time()
+    while _ombra_chiamate and adesso - _ombra_chiamate[0] > 3600:
+        _ombra_chiamate.pop(0)
+    if len(_ombra_chiamate) >= MODA_JEV_OMBRA_MAX_ORA:
+        return False
+    _ombra_chiamate.append(adesso)
+    return True
+
+
+def registra_legit(listing_info, brand, gemini, linea=None):
+    """Archivia cosa Gemini ha letto sull'etichetta e il suo giudizio (/data/legit_appreso.jsonl), per confrontare in futuro le etichette
+    nuove con quelle gia' viste. Per ora SOLO registrazione: il giudizio di Gemini non e' una certificazione, non decide nulla. Mai eccezioni."""
+    try:
+        if gemini:
+            _jsonl_append(LEGIT_APPRESO_FILE, {"item": listing_info.get("item_id"), "brand": brand, "linea": linea, "autenticita": gemini.get("autenticita"),
+                                               "conf": gemini.get("confidenza"), "etichetta": gemini.get("etichetta_letta"), "linea_etichetta": gemini.get("linea_etichetta"),
+                                               "made_in": gemini.get("made_in"), "indizi": gemini.get("indizi"), "motivo": gemini.get("motivo")}, "legit_appreso")
+    except Exception:
+        pass
 
 
 def linea_dal_testo(testo, brand, descrizione=None):
@@ -359,7 +394,7 @@ def righe_messaggio(ris, brand=None):
     return righe
 
 
-async def verifica(listing_info, foto, tutte_le_foto=None):
+async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=False):
     """Dict {esito, motivo, n, rivendita, margine, roi, link, autenticita}. Mai eccezioni: in caso di errore 'non_verificato'."""
     fv = listing_info.get("fair_value") or {}
     brand = fv.get("brand")
@@ -405,6 +440,16 @@ async def verifica(listing_info, foto, tutte_le_foto=None):
             ris["linea"] = linea
         comps_pool, link_comps, stima, v = await cerca(linea)
         prezzi = [p for _t, p in comps_pool]
+        if solo_comparabili:
+            # Jev 'in ombra' (annunci che il semaforo scarta): niente foto ne' Gemini, serve solo la rivendita dei comparabili per imparare
+            ris["ombra"] = True
+            if v:
+                ris.update(n=v.get("n") or len(prezzi), rivendita=v.get("rivendita"), margine=v.get("margine"), roi=v.get("roi"), motivo="ombra")
+                if stima and stima.get("p25"):
+                    ris["dispersione"] = stima["p75"] / stima["p25"]
+            log.info("MODA JEV OMBRA | item=%s | brand=%s | prezzo=%s | n=%s | rivendita=%s | dispersione=%s | fv_stima=%s | linea=%s",
+                     listing_info.get("item_id") or "-", brand, prezzo, ris["n"], ris["rivendita"], ris.get("dispersione"), fv.get("fv"), ris.get("linea"))
+            return ris
         foto_jpeg = None
         if foto:
             # Vinted serve anche webp: Jev accetta solo png/jpeg, quindi si converte in jpeg (prima la foto non partiva: foto=-)
@@ -435,6 +480,7 @@ async def verifica(listing_info, foto, tutte_le_foto=None):
             # Jev non e' sicuro dell'originalita' (o il prezzo e' troppo basso): Gemini gratuito guarda tutte le foto
             ris["gemini"] = await controlla_gemini(titolo, brand, prezzo, listing_info.get("description"), tutte_le_foto or ([foto] if foto else []),
                                                    item_id=listing_info.get("item_id"))
+        registra_legit(listing_info, brand, ris["gemini"], linea)
         if ris["gemini"]:
             nota, linea_foto = linea_da_etichetta(ris["gemini"].get("linea_etichetta"), brand)
             if nota and linea_foto != linea:
@@ -456,9 +502,10 @@ async def verifica(listing_info, foto, tutte_le_foto=None):
                 ris["prezzi_comps"] = (pz[0], pz[-1])
             if stima and stima.get("p25") and not ris.get("da_foto"):
                 ris["dispersione"] = stima["p75"] / stima["p25"]
-        log.info("MODA JEV | item=%s | brand=%s | prezzo=%s | esito=%s | motivo=%s | n=%s | rivendita=%s | margine=%s | fv_stima=%s | foto=%s",
+        log.info("MODA JEV | item=%s | brand=%s | prezzo=%s | esito=%s | motivo=%s | n=%s | rivendita=%s | margine=%s | fv_stima=%s | foto=%s | appreso=%s",
                  listing_info.get("item_id") or "-", brand, prezzo, ris["esito"], ris["motivo"], ris["n"], ris["rivendita"], ris["margine"],
-                 fv.get("fv"), ris["autenticita"] or "-")
+                 fv.get("fv"), ris["autenticita"] or "-",
+                 (FAIR_VALUE_APPRESO.get(f"{ris.get('linea') or brand}|{fv.get('categoria')}") or {}).get("fv", "-"))
     except Exception:
         log.warning("Moda Jev: verifica non riuscita:\n%s", traceback.format_exc())
     return ris

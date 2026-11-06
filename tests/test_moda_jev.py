@@ -280,3 +280,30 @@ def test_linea_da_descrizione_e_da_etichetta():
     assert mj.linea_da_etichetta("Weekend", "max mara") == (True, "weekend max mara")
     assert mj.linea_da_etichetta("principale", "max mara") == (True, None)
     assert mj.linea_da_etichetta("non_leggibile", "max mara") == (False, None)
+
+
+def test_serve_ombra_solo_brand_con_stima_poco_sicura_e_sotto_il_tetto(monkeypatch):
+    mj._ombra_chiamate.clear()
+    monkeypatch.setattr(mj, "MODA_JEV_OMBRA", True)
+    monkeypatch.setattr(mj, "MODA_JEV_OMBRA_MAX_ORA", 2)
+    assert not mj.serve_ombra({"brand": "cult gaia", "conf": "alta"})
+    assert not mj.serve_ombra({"brand": None, "conf": "bassa"})
+    assert mj.serve_ombra({"brand": "cult gaia", "conf": "bassa"}, adesso=1000)
+    assert mj.serve_ombra({"brand": "cult gaia", "conf": "stima"}, adesso=1001)
+    assert not mj.serve_ombra({"brand": "cult gaia", "conf": "bassa"}, adesso=1002)   # tetto orario
+    assert mj.serve_ombra({"brand": "cult gaia", "conf": "bassa"}, adesso=5000)       # passata un'ora
+    mj._ombra_chiamate.clear()
+
+
+def test_fair_value_impara_dai_comparabili_jev(monkeypatch, tmp_path):
+    from bot import fair_value as fvm
+    monkeypatch.setattr(fvm, "FAIR_VALUE_APPRESO_FILE", str(tmp_path / "a.json"))
+    righe = []
+    for i in range(6):
+        righe.append({"tipo": "rapida", "item_id": str(i), "brand": "cult gaia", "categoria": "vestito", "molt": 1.0})
+        righe.append({"tipo": "jev", "item_id": str(i), "vendita": 150.0, "n": 8, "dispersione": 1.6, "valido": True})
+    righe.append({"tipo": "rapida", "item_id": "x", "brand": "cult gaia", "categoria": "vestito", "molt": 1.0})
+    righe.append({"tipo": "jev", "item_id": "x", "vendita": 900.0, "n": 8, "dispersione": 4.0, "valido": False})   # non valido: ignorato
+    nuovo = fvm.fv_ricalibra(righe)
+    assert nuovo["cult gaia|vestito"]["n"] == 6
+    assert nuovo["cult gaia|vestito"]["fv"] == 150
