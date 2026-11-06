@@ -63,10 +63,29 @@ def _motivo_base(m):
     return str(m or "-").split(":")[0].split("(")[0]
 
 
+def velocita_per_semaforo(eventi_tracciati, dal_ts=0.0):
+    """{semaforo: {validi, venduti, mediana_s}} sugli esiti chiusi: venduti = etichetta 'venduto' entro 1 h. Il tempo e' quello del
+    controllo che l'ha visto (60/300/900/3600 s dall'arrivo del bot, non dalla pubblicazione). Pura."""
+    r = {}
+    for ev in eventi_tracciati:
+        if ev.get("ts", 0) < dal_ts or not con_esito_valido(ev):
+            continue
+        d = r.setdefault(ev.get("semaforo") or "rosso", {"validi": 0, "venduti": 0, "tempi": []})
+        d["validi"] += 1
+        if ev.get("stato") == "venduto" and _venduto_entro(ev):
+            d["venduti"] += 1
+            d["tempi"].append(ev["venduto_s"])
+    out = {}
+    for k, d in r.items():
+        t = sorted(d["tempi"])
+        out[k] = {"validi": d["validi"], "venduti": d["venduti"], "mediana_s": t[len(t) // 2] if t else None}
+    return out
+
+
 def report_giornaliero(eventi_v2, eventi_tracciati, ore=24, adesso=None, min_potatura=12):
-    """Report per ricerca sulle ultime `ore`: verdetti (rosso/giallo/verde), motivo di scarto piu' frequente, gialli/verdi
-    venduti entro 1 h (dagli esiti chiusi) e candidati alla potatura (>= min_potatura verdetti e 0 gialli/verdi). Pura:
-    lavora su eventi `radar_v2` e `tracciato_radar` gia' letti dal DB. Ritorna (righe, candidati)."""
+    """Report per ricerca sulle ultime `ore`. Ritorna (righe, candidati, velocita): righe = dict per ricerca (nome, tot, verdi, gialli,
+    motivo, motivo_n, gv, gv_venduti); candidati = ricerche con >= min_potatura verdetti e 0 gialli/verdi; velocita = velocita_per_semaforo.
+    Pura: lavora su eventi `radar_v2` e `tracciato_radar` gia' letti dal DB."""
     dal = (adesso or time.time()) - ore * 3600
     r = {}
     for ev in eventi_v2:
@@ -82,22 +101,39 @@ def report_giornaliero(eventi_v2, eventi_tracciati, ore=24, adesso=None, min_pot
     righe, candidati = [], []
     for nome, d in sorted(r.items(), key=lambda kv: -(kv[1]["rosso"] + kv[1]["giallo"] + kv[1]["verde"])):
         tot = d["rosso"] + d["giallo"] + d["verde"]
-        top = max(d["motivi"].items(), key=lambda kv: kv[1]) if d["motivi"] else None
+        top = max(d["motivi"].items(), key=lambda kv: kv[1]) if d["motivi"] else ("", 0)
         e = esiti.get(nome, {})
-        righe.append(f"{nome}: {tot} verdetti, {d['verde']} verdi, {d['giallo']} gialli"
-                     + (f", scarto piu' frequente {top[0]} ({top[1]})" if top else "")
-                     + (f", gv venduti 1h {e.get('gialli_verdi_venduti', 0)}/{e.get('gialli_verdi', 0)}" if e.get("gialli_verdi") else ""))
+        righe.append({"nome": nome, "tot": tot, "verdi": d["verde"], "gialli": d["giallo"], "motivo": top[0], "motivo_n": top[1],
+                      "gv": e.get("gialli_verdi", 0), "gv_venduti": e.get("gialli_verdi_venduti", 0)})
         if tot >= min_potatura and d["giallo"] + d["verde"] == 0:
             candidati.append(nome)
-    return righe, candidati
+    return righe, candidati, velocita_per_semaforo(eventi_tracciati, dal)
 
 
-def testo_report(righe, candidati, ore=24, max_righe=25):
-    """Testo Telegram (senza Markdown) del report giornaliero."""
-    t = [f"Report radar ultime {ore} h ({len(righe)} ricerche con verdetti)"]
-    t += righe[:max_righe]
+def _tempo(s):
+    if s is None:
+        return "-"
+    return f"{int(s // 60)}m" if s < 3600 else f"{s / 3600:.1f}h"
+
+
+def testo_report(righe, candidati, velocita, ore=24, max_righe=22):
+    """Testo Telegram in blocco monospace (tabella allineata, Markdown ```): una riga per ricerca, poi la velocita' di vendita."""
+    def pct(d):
+        return f"{100 * d['venduti'] // d['validi']}%" if d and d["validi"] else "-"
+    t = [f"Radar ultime {ore} h", "```", f"{'ricerca':<15}{'tot':>4}{'V':>3}{'G':>3} {'venduti':>7}  scarto"]
+    for r in righe[:max_righe]:
+        vend = f"{r['gv_venduti']}/{r['gv']}" if r["gv"] else "-"
+        t.append(f"{r['nome'][:14]:<15}{r['tot']:>4}{r['verdi']:>3}{r['gialli']:>3} {vend:>7}  {r['motivo'][:15]}")
     if len(righe) > max_righe:
-        t.append(f"... e altre {len(righe) - max_righe}")
+        t.append(f"... altre {len(righe) - max_righe} ricerche")
+    t.append("```")
+    t.append("V verdi, G gialli. 'venduti' = gialli/verdi venduti entro 1 h su quelli con esito chiuso.")
+    if velocita:
+        t.append("Velocita' di vendita (esiti chiusi, entro 1 h):")
+        for sem in ("verde", "giallo", "rosso"):
+            d = velocita.get(sem)
+            if d:
+                t.append(f"- {sem}: {d['venduti']}/{d['validi']} venduti ({pct(d)}), mediana {_tempo(d['mediana_s'])}")
     if candidati:
-        t.append("Candidate alla potatura (0 gialli/verdi): " + ", ".join(candidati))
+        t.append("Da potare (0 gialli/verdi): " + ", ".join(candidati))
     return "\n".join(t)

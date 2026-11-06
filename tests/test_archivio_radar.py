@@ -31,8 +31,13 @@ def test_report_giornaliero_candidati_e_motivi():
     v2 = [{"ts": t - 10, "ricerca": "A", "semaforo": "rosso", "motivo": "margine_basso"} for _ in range(12)]
     v2 += [{"ts": t - 10, "ricerca": "B", "semaforo": "giallo", "motivo": "ok"}, {"ts": t - 10, "ricerca": "B", "semaforo": "rosso", "motivo": "parola_vietata:x"},
            {"ts": t - 99999, "ricerca": "C", "semaforo": "rosso", "motivo": "x"}]
-    righe, cand = a.report_giornaliero(v2, [], ore=24, adesso=t)
+    righe, cand, vel = a.report_giornaliero(v2, [], ore=24, adesso=t)
     assert cand == ["A"]
-    assert any(r.startswith("A: 12 verdetti") and "margine_basso (12)" in r for r in righe)
-    assert not any(r.startswith("C") for r in righe)
-    assert "Candidate alla potatura" in a.testo_report(righe, cand)
+    assert righe[0]["nome"] == "A" and righe[0]["tot"] == 12 and righe[0]["motivo"] == "margine_basso"
+    assert not any(r["nome"] == "C" for r in righe)
+    tr = [{"ts": t - 5, "semaforo": "giallo", "stato": "venduto", "venduto_s": 300, "storia": [1], "incompleto": "no"},
+          {"ts": t - 5, "semaforo": "giallo", "stato": "attivo", "storia": [1], "incompleto": "no"}]
+    v = a.velocita_per_semaforo(tr, t - 100)
+    assert v["giallo"] == {"validi": 2, "venduti": 1, "mediana_s": 300}
+    txt = a.testo_report(righe, cand, v)
+    assert "```" in txt and "giallo: 1/2 venduti (50%), mediana 5m" in txt and "Da potare" in txt
