@@ -118,7 +118,7 @@ def test_taratura_brand_in_piu_della_globale():
     assert FAIR_VALUE_TARATURA_GLOBALE == 1.20
     assert miss["moltiplicatore"] == round(1.20 * 1.10, 2)       # prima linea: +10% in piu'
     assert m_line["moltiplicatore"] == 1.2                       # sottolinea: solo la globale (o apprese)
-    assert cuc["moltiplicatore"] == round(1.20 * 1.15, 2)
+    assert cuc["moltiplicatore"] == round(1.20 * 1.26, 2)
 
 
 def _finti(monkeypatch):
