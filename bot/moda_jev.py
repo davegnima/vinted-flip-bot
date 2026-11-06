@@ -41,6 +41,13 @@ try:
     MODA_JEV_MARGINE_MIN = float(os.environ.get("MODA_JEV_MARGINE_MIN", "40"))
 except ValueError:
     MODA_JEV_MARGINE_MIN = 40.0
+# 6/11 (utente): limite alla dispersione. Sui comparabili del testo (dopo aver tolto i fuori scala, come fa stima_mercato) il rapporto
+# p75/p25 dei prezzi sopra questa soglia dice che non c'e' un prezzo di mercato: niente CONFERMATO, resta la stima rapida. Soglia SCELTA,
+# non misurata (la fascia "stretta" di stima_mercato e' 1,6); si regola con MODA_JEV_DISPERSIONE_MAX, 0 = spento.
+try:
+    MODA_JEV_DISPERSIONE_MAX = float(os.environ.get("MODA_JEV_DISPERSIONE_MAX", "2.5") or 0)
+except ValueError:
+    MODA_JEV_DISPERSIONE_MAX = 2.5
 # 02/11: la foto dei comparabili conta solo se Jev li trova MOLTO simili (stesso modello, confidenza >= soglia): allora il loro prezzo
 # diventa la rivendita; altrimenti resta la ricerca testuale come prima (Jev non scarta piu' i comparabili: era troppo stringente).
 CONF_FOTO_MOLTO_SIMILE = 0.6
@@ -136,7 +143,7 @@ def comparabili_non_simili(foto_comps):
     return "diverso" in scelte and not any(sc in ("simile", "stesso_modello") for sc in scelte)
 
 
-def decidi(valutazione, autenticita, gemini=None, foto_comps=None):
+def decidi(valutazione, autenticita, gemini=None, foto_comps=None, dispersione=None):
     """(esito, motivo) dalle due verifiche. `valutazione` = dict di valuta() o None se i comparabili mancano; `autenticita` =
     (scelta, confidenza) o None; `gemini` = dict del controllo Gemini su tutte le foto o None. Il falso scarta sempre; senza comparabili
     l'avviso parte non verificato. Pura."""
@@ -150,6 +157,8 @@ def decidi(valutazione, autenticita, gemini=None, foto_comps=None):
         return "scarta", "comparabili:" + str(valutazione.get("motivo"))
     if comparabili_non_simili(foto_comps):
         return "non_verificato", "comparabili_non_simili"
+    if MODA_JEV_DISPERSIONE_MAX and dispersione and dispersione > MODA_JEV_DISPERSIONE_MAX:
+        return "non_verificato", "prezzi_dispersi"
     return "conferma", "ok"
 
 
@@ -167,6 +176,8 @@ def riga_esito_scheda(ris):
         return "🚫 Jev: non avvisato (" + str(ris.get("motivo")) + ")"
     if ris.get("esito") == "conferma":
         return f"✅ Jev: confermato, rivendita ~{ris['rivendita']:.0f} € (margine ~{ris['margine']:.0f} €), avviso mandato"
+    if ris.get("motivo") == "prezzi_dispersi":
+        return "⚠️ Jev: i prezzi dei comparabili sono troppo diversi tra loro, rivendita non affidabile, avviso mandato non verificato"
     if ris.get("motivo") == "comparabili_non_simili":
         return "⚠️ Jev: i comparabili non assomigliano alla foto, rivendita non affidabile, avviso mandato non verificato"
     return "⚠️ Jev: comparabili non trovati, avviso mandato non verificato"
@@ -226,6 +237,9 @@ def riga_verdetto(ris):
     if mot == "comparabili_non_simili" and ris.get("rivendita") is not None:
         return (f"⚠️ NON VERIFICATO: i {ris['n']} comparabili non assomigliano alla foto (la rivendita ~{ris['rivendita']:.0f} € dai loro prezzi "
                 "non e' affidabile), resta la stima rapida")
+    if mot == "prezzi_dispersi" and ris.get("rivendita") is not None:
+        return (f"⚠️ NON VERIFICATO: i {ris['n']} comparabili hanno prezzi troppo diversi tra loro (il quarto piu' alto vale {ris['dispersione']:.1f} volte "
+                f"il piu' basso): la rivendita ~{ris['rivendita']:.0f} € non e' affidabile, resta la stima rapida")
     return "⚠️ NON VERIFICATO: comparabili non trovati, resta la stima rapida"
 
 
@@ -262,6 +276,7 @@ def righe_messaggio(ris, brand=None):
         riga += f" · margine ~{ris['margine']:.0f} € · ROI {ris['roi']:.0f}% · fiducia {_fiducia_comparabili(n)}"
         riga += " (molto simili alla foto)" if ris.get("da_foto") else ""
         riga += " · ⚠️ NON simili alla foto: rivendita non affidabile" if ris.get("motivo") == "comparabili_non_simili" else ""
+        riga += " · ⚠️ prezzi molto dispersi" if ris.get("motivo") == "prezzi_dispersi" else ""
         righe.append(riga)
     else:
         righe.append("🔎 Comparabili Vinted non trovati: resta la stima rapida, non verificata")
@@ -361,13 +376,17 @@ async def verifica(listing_info, foto, tutte_le_foto=None):
             # Jev non e' sicuro dell'originalita' (o il prezzo e' troppo basso): Gemini gratuito guarda tutte le foto
             ris["gemini"] = await controlla_gemini(titolo, brand, prezzo, listing_info.get("description"), tutte_le_foto or ([foto] if foto else []),
                                                    item_id=listing_info.get("item_id"))
-        ris["esito"], ris["motivo"] = decidi(v, ris["autenticita"], ris["gemini"], ris["foto_comps"])
+        ris["esito"], ris["motivo"] = decidi(v, ris["autenticita"], ris["gemini"], ris["foto_comps"],
+                                         None if ris["da_foto"] or not stima or not stima.get("p25") else stima["p75"] / stima["p25"])
         if v:
             ris.update(n=v.get("n") or len(prezzi), rivendita=v.get("rivendita"), margine=v.get("margine"), roi=v.get("roi"),
                        esempi=list(comps_pool[:3]), link_comps=link_comps)
-            pz = sorted(p for p in ([c[1] for c in link_comps] if ris.get("da_foto") else [c[1] for c in comps_pool]))
+            # la fascia mostrata e' quella usata davvero (fuori scala gia' tolti da stima_mercato), non il minimo e massimo grezzi
+            pz = sorted(c[1] for c in link_comps) if ris.get("da_foto") else ([stima["minimo"], stima["massimo"]] if stima else sorted(prezzi))
             if pz:
                 ris["prezzi_comps"] = (pz[0], pz[-1])
+            if stima and stima.get("p25") and not ris.get("da_foto"):
+                ris["dispersione"] = stima["p75"] / stima["p25"]
         log.info("MODA JEV | item=%s | brand=%s | prezzo=%s | esito=%s | motivo=%s | n=%s | rivendita=%s | margine=%s | fv_stima=%s | foto=%s",
                  listing_info.get("item_id") or "-", brand, prezzo, ris["esito"], ris["motivo"], ris["n"], ris["rivendita"], ris["margine"],
                  fv.get("fv"), ris["autenticita"] or "-")
