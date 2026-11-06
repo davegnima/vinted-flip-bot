@@ -22,10 +22,10 @@ Venduto in fretta non vuol dire affare: un falso a prezzo basso (es. Prada a 10 
 Recall e "veloci persi" si calcolano sui veloci veri (veloci meno segnalati falsi). Un brand con molti veloci ma quasi tutti segnalati falsi (es. Prada a prezzo basso) non e' un brand che ruota: non e' un segnale per il semaforo.
 
 ## Esperimento "rosso senza Cervello" (dal 18/10)
-Ogni 🔴 sotto 50 EUR salta il Cervello (`SALTA_CERVELLO_ROSSO_TUTTI`; motivo `[ROSSO SICURO - ESPERIMENTO]`, esito `SKIP_ROSSO`). Ogni mattina riportare: quanti `SKIP_ROSSO` con quel motivo, quanti veloci veri fra loro (soglia di alert: > 15%, riferimento prima dell'esperimento 9% dei 🔴 con Cervello), quali brand ricorrenti, e i COMPRA/TRATTA 🟢/🟡 del giorno (non devono calare). Con >= 30 casi decidere se tenerlo, limitarlo per brand o toglierlo.
+Esperimento `SKIP_ROSSO` (Cervello saltato sui 🔴): superato. In `SOLO_SEMAFORO` il Cervello non gira mai, quindi `SKIP_ROSSO` non esiste piu' nei log (0 su 345 il 5/11) e non va misurato. Dei 🔴 riportare solo il tasso di veloci veri (`SKIP_SOLO_SEMAFORO` con sem 🔴; 5/11: 5 su 92, 5%) e i COMPRA/TRATTA 🟢/🟡 del giorno (non devono calare).
 
 ## Ritardo pubblicazione -> messaggio (dal 18/10)
-La riga TRACCIATO ha `caricato=` (testo della pagina allo scrape: 'Proprio adesso' per gli annunci freschi, non i secondi; riportare la quota di 'Proprio adesso' contro 'N minuti fa' e il tasso di veloci veri per gruppo) e `pub_tg` (secondi da pubblicazione su Vinted al messaggio del tracker, assente se la pagina da' solo minuti). Riportare: mediana e p90, quota > 30 s, e il tasso di veloci veri per fascia (<= 10 s, 10-30 s, > 30 s). Senza questo numero non si decide se velocizzare il tracker (`STATO.md` 0ax: ogni ricerca e' gia' riletta ogni ~3 s).
+`pub_tg` NON si monitora piu' (6/11, utente): la pagina dice 'Proprio adesso' (= probabilmente entro il primo minuto) senza secondi, quindi il ritardo pubblicazione -> messaggio non e' misurabile e non va proposto ne' riportato.
 
 ## Apprendimento dalla rotazione
 L'etichetta e' la classe di vendita (solo `venduto`), non il feedback manuale (l'utente compra ~0,5% dei COMPRA). Obiettivo: un semaforo cosi' buono da togliere quasi del tutto il Cervello e tenere il solo controllo di autenticita'. Ogni giorno:

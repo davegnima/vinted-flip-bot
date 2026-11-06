@@ -240,3 +240,17 @@ def test_riga_originalita_mostra_subito_replica_dubbio_e_ok():
     a = Autenticita(("originale_plausibile", 0.7))
     a.dettagli = {"etichetta": ("incoerente", 0.8)}
     assert riga_originalita(dict(base, autenticita=a)).startswith("⚠️ AUTENTICITÀ DA CONTROLLARE")
+
+
+def test_comparabili_tutti_diversi_dalla_foto_non_confermano():
+    """6/11 (utente): sacca Miu Miu a 5 EUR, comparabili da 3 a 600 EUR giudicati 'diverso' dalle foto: niente CONFERMATO."""
+    diversi = [("diverso", 0.9), ("diverso", 0.8), ("diverso", 0.9)]
+    assert mj.decidi({"ok": True}, ("originale_plausibile", 0.9), None, diversi) == ("non_verificato", "comparabili_non_simili")
+    # basta un comparabile simile per tenere la stima testuale; senza confronto foto nulla cambia
+    assert mj.decidi({"ok": True}, ("originale_plausibile", 0.9), None, diversi + [("simile", 0.7)]) == ("conferma", "ok")
+    assert mj.decidi({"ok": True}, ("originale_plausibile", 0.9), None, [("non_chiaro", 0.5)] * 2) == ("conferma", "ok")
+    assert mj.decidi({"ok": True}, ("originale_plausibile", 0.9)) == ("conferma", "ok")
+    ris = {"esito": "non_verificato", "motivo": "comparabili_non_simili", "n": 4, "rivendita": 80.0, "margine": 64.0, "roi": 752.0,
+           "prezzi_comps": (3.0, 600.0), "foto_comps": diversi}
+    assert "non assomigliano alla foto" in mj.riga_verdetto(ris)
+    assert any("NON simili alla foto" in r for r in mj.righe_messaggio(ris))

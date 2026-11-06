@@ -126,7 +126,17 @@ def _entro_il_tetto():
     return True
 
 
-def decidi(valutazione, autenticita, gemini=None):
+def comparabili_non_simili(foto_comps):
+    """True se Jev, guardando le foto, non trova NESSUN comparabile simile all'annuncio (almeno uno 'diverso', nessun 'simile'/'stesso_modello'):
+    la rivendita dai prezzi dei comparabili non e' un riferimento valido (6/11, utente: sacca Miu Miu a 5 EUR contro comparabili da 3 a 600 EUR).
+    Pura."""
+    if not foto_comps:
+        return False
+    scelte = [sc for sc, _cf in foto_comps]
+    return "diverso" in scelte and not any(sc in ("simile", "stesso_modello") for sc in scelte)
+
+
+def decidi(valutazione, autenticita, gemini=None, foto_comps=None):
     """(esito, motivo) dalle due verifiche. `valutazione` = dict di valuta() o None se i comparabili mancano; `autenticita` =
     (scelta, confidenza) o None; `gemini` = dict del controllo Gemini su tutte le foto o None. Il falso scarta sempre; senza comparabili
     l'avviso parte non verificato. Pura."""
@@ -138,6 +148,8 @@ def decidi(valutazione, autenticita, gemini=None):
         return "non_verificato", "comparabili_non_trovati"
     if not valutazione.get("ok"):
         return "scarta", "comparabili:" + str(valutazione.get("motivo"))
+    if comparabili_non_simili(foto_comps):
+        return "non_verificato", "comparabili_non_simili"
     return "conferma", "ok"
 
 
@@ -155,6 +167,8 @@ def riga_esito_scheda(ris):
         return "🚫 Jev: non avvisato (" + str(ris.get("motivo")) + ")"
     if ris.get("esito") == "conferma":
         return f"✅ Jev: confermato, rivendita ~{ris['rivendita']:.0f} € (margine ~{ris['margine']:.0f} €), avviso mandato"
+    if ris.get("motivo") == "comparabili_non_simili":
+        return "⚠️ Jev: i comparabili non assomigliano alla foto, rivendita non affidabile, avviso mandato non verificato"
     return "⚠️ Jev: comparabili non trovati, avviso mandato non verificato"
 
 
@@ -209,6 +223,9 @@ def riga_verdetto(ris):
     if ris.get("esito") == "conferma":
         tag = {"replica": " · 🚨 possibile replica", "dubbio": " · ⚠️ autenticità dubbia"}.get(_stato_originalita(ris)[0], "")   # visibile gia' nell'anteprima
         return f"✅ CONFERMATO: rivendita ~{ris['rivendita']:.0f} €, margine ~{ris['margine']:.0f} €, ROI {ris['roi']:.0f}%{tag}"
+    if mot == "comparabili_non_simili" and ris.get("rivendita") is not None:
+        return (f"⚠️ NON VERIFICATO: i {ris['n']} comparabili non assomigliano alla foto (la rivendita ~{ris['rivendita']:.0f} € dai loro prezzi "
+                "non e' affidabile), resta la stima rapida")
     return "⚠️ NON VERIFICATO: comparabili non trovati, resta la stima rapida"
 
 
@@ -244,6 +261,7 @@ def righe_messaggio(ris, brand=None):
             riga += f" (da {pc[0]:g} a {pc[1]:g} €)"
         riga += f" · margine ~{ris['margine']:.0f} € · ROI {ris['roi']:.0f}% · fiducia {_fiducia_comparabili(n)}"
         riga += " (molto simili alla foto)" if ris.get("da_foto") else ""
+        riga += " · ⚠️ NON simili alla foto: rivendita non affidabile" if ris.get("motivo") == "comparabili_non_simili" else ""
         righe.append(riga)
     else:
         righe.append("🔎 Comparabili Vinted non trovati: resta la stima rapida, non verificata")
@@ -343,7 +361,7 @@ async def verifica(listing_info, foto, tutte_le_foto=None):
             # Jev non e' sicuro dell'originalita' (o il prezzo e' troppo basso): Gemini gratuito guarda tutte le foto
             ris["gemini"] = await controlla_gemini(titolo, brand, prezzo, listing_info.get("description"), tutte_le_foto or ([foto] if foto else []),
                                                    item_id=listing_info.get("item_id"))
-        ris["esito"], ris["motivo"] = decidi(v, ris["autenticita"], ris["gemini"])
+        ris["esito"], ris["motivo"] = decidi(v, ris["autenticita"], ris["gemini"], ris["foto_comps"])
         if v:
             ris.update(n=v.get("n") or len(prezzi), rivendita=v.get("rivendita"), margine=v.get("margine"), roi=v.get("roi"),
                        esempi=list(comps_pool[:3]), link_comps=link_comps)

@@ -12,6 +12,8 @@
 5. Banda: `consumi.md`. Se volume o banda sono fuori misura, correggere subito e dirlo.
 6. Traffico basso: dirlo e aspettare, non rileggere in loop.
 
+**Strumento fisso (6/11): `tools/log_dati.py`**. I log si leggono UNA volta in un database locale e il recap esce con un comando, senza righe di log nella conversazione: (1) get-logs con filtro largo (`"TRACCIATO" OR "MODA JEV" OR "GEMINI_USO" OR "Gemini TIMEOUT"`), `limit` 500, finestre di 4-6 h: oltre ~80.000 caratteri Railway salva il file e nella conversazione compare solo il percorso; (2) `python3 tools/log_dati.py carica FILE...` (doppioni ignorati); (3) `python3 tools/log_dati.py riepilogo [--dal 2026-11-05T06:00]`: annunci, ciechi, veloci per semaforo e per esito Jev (confronto confermati/scartati), esiti Jev, Gemini per modello (n, p50, p90, ritentati, timeout); (4) domande nuove con `sql "SELECT ..."` sulle tabelle `tracciato`, `gemini_uso`, `gemini_timeout`, `jev`. Se una finestra torna inline (troppo stretta) allargare il filtro o la finestra invece di leggerla.
+
 **Formato**: una frase di sintesi; finestra e filtro dichiarati; tabella o 3-6 righe di numeri; esempi concreti; problemi e cosa e' gia' stato fatto; prossimi passi (max 3). Campione piccolo: dirlo.
 
 **Esempi reali (7/10)**
