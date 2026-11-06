@@ -8,6 +8,7 @@ Schema da docs.typesafe.ai/introduction/quickstart (domande di tipo choice con c
 import base64
 import json
 import os
+import urllib.error
 import urllib.request
 
 from bot.logger import log
@@ -513,7 +514,18 @@ def giudica_autenticita(titolo, brand, foto):
              "questions": {"autenticita": {"type": "choice", **DOMANDA_AUTENTICITA},
                            **{k: {"type": "choice", **d} for k, d in DOMANDE_LEGIT.items()}}}
     try:
-        risposta = _chiama_jev(corpo)
+        try:
+            risposta = _chiama_jev(corpo)
+        except urllib.error.HTTPError as e:
+            # 6/11: 3 richieste su ~12 rifiutate con HTTP 400 dopo l'aggiunta delle 4 domande del legit check (#305): si logga il corpo
+            # dell'errore (diagnosi) e si riprova con la sola domanda di autenticita', cosi' il controllo non va perso
+            try:
+                dettaglio_errore = e.read().decode(errors="replace")[:200]
+            except Exception:  # noqa: BLE001
+                dettaglio_errore = ""
+            log.warning("JEV AUTENTICITA | HTTP %s con le domande del legit check (%s): riprovo con la sola autenticita'", e.code, dettaglio_errore)
+            corpo["questions"] = {"autenticita": corpo["questions"]["autenticita"]}
+            risposta = _chiama_jev(corpo)
         r = risposta["answers"]["autenticita"]
         scelta, conf = r.get("choice"), r.get("confidence")
         dettagli = {k: ((risposta["answers"].get(k) or {}).get("choice"), (risposta["answers"].get(k) or {}).get("confidence")) for k in DOMANDE_LEGIT}
