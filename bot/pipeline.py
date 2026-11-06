@@ -10,7 +10,7 @@ from bot.scheda import aggiorna_scheda_jev, SOLO_SEMAFORO, avviso_solo_semaforo,
 from bot.verdetto import CERVELLO_CAMPIONI_EXTRA, _a_float, _estrai_item_id_da_url, _estrai_prezzi_da_pool_ricerca, _riepilogo_comp_per_fonte, calcola_verdetto, classifica_provenienza_comp, consolida_target_cervello, render_messaggio_verdetto, valida_payload_cervello
 from bot.config import GEMINI_SOGLIA_PREZZO_ALTO, TELEGRAM_ALERT_CHAT_ID, DEBUG_CONFRONTO_COMP_TELEGRAM, OCCHIO_OUTPUT_JSON, SOGLIA_MARGINE_ASSOLUTO_NOTIFICA, TELEGRAM_OWNER_CHAT_ID
 from bot.feedback import proponi_controllo, rischio_falso_da_scarto, rischio_falso_da_verdetto, contesto_annuncio
-from bot.moda_jev import MODA_JEV_SUBITO, serve_ombra, tratteni_per_verifica, verifica as verifica_moda_jev, righe_messaggio as righe_moda_jev, riga_verdetto as riga_verdetto_jev, riga_originalita as riga_originalita_jev, riga_esito_scheda
+from bot.moda_jev import MODA_JEV_DISPERSIONE_MAX, MODA_JEV_SUBITO, serve_ombra, tratteni_per_verifica, verifica as verifica_moda_jev, righe_messaggio as righe_moda_jev, riga_verdetto as riga_verdetto_jev, riga_originalita as riga_originalita_jev, riga_esito_scheda
 from bot.fair_value import REGOLA_DA_VERIFICARE, FAIR_VALUE_FILTRA, check_skip_rosso, catalogo_impara, check_skip_fair_value, fv_registra_gemini, fv_registra_jev, fv_registra_rapida, stima_fair_value, valuta_preavviso, preavviso_con_suono, PREAVVISO_LAMPO
 from bot.prompts import GEMINI_CERVELLO_SYSTEM_PROMPT, GEMINI_OCCHI_SYSTEM_PROMPT, GEMINI_OCCHI_SYSTEM_PROMPT_JSON
 from bot.schemas import OCCHIO_RESPONSE_SCHEMA_GEMINI
@@ -421,9 +421,26 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             _log_esito(listing_info, "SKIP_SOLO_SEMAFORO", sem=fv_sem.get("semaforo"))
             if serve_ombra(fv_sem):
                 # Jev in ombra (6/11): il semaforo scarta, ma se la stima e' poco sicura i comparabili dicono se sottostima (es. Cult Gaia)
-                async def _ombra(li=dict(listing_info), u=url):
+                async def _ombra(li=dict(listing_info), u=url, foto=list(photo_bytes_list or [])):
                     ris = await verifica_moda_jev(li, None, None, solo_comparabili=True)
                     fv_registra_jev(li, u, ris)
+                    if not (ris.get("ok_comps") and (ris.get("dispersione") or 0) <= MODA_JEV_DISPERSIONE_MAX):
+                        return
+                    # 6/11 (utente): se i comparabili dicono che il semaforo sbagliava il rosso diventa un avviso con la verifica completa
+                    # (foto comparabili, legit check Jev e Gemini): solo se Jev conferma parte il messaggio.
+                    ris = await verifica_moda_jev(li, foto[0] if foto else None, foto)
+                    fv_registra_jev(li, u, ris)
+                    if ris["esito"] != "conferma":
+                        log.info("RECUPERO JEV | item=%s | esito=%s | motivo=%s | sem_originale=%s", _estrai_item_id_da_url(u), ris["esito"], ris["motivo"], fv_sem.get("semaforo"))
+                        return
+                    marca = (li.get("fair_value") or {}).get("brand") or li.get("brand")
+                    li.update(righe_jev=righe_moda_jev(ris, marca), riga_verdetto_jev=riga_verdetto_jev(ris),
+                              riga_originalita_jev=riga_originalita_jev(ris), rivendita_jev=ris.get("rivendita"))
+                    testo = (f"♻️ Recuperato: il semaforo lo dava {fv_sem.get('semaforo')} (fair value ~{fv_sem.get('fv')} €), "
+                             f"i comparabili dicono ~{ris.get('rivendita'):.0f} €\n" + testo_preavviso(dict(li), u, riga_finale=""))
+                    await telegram_send_message(TELEGRAM_ALERT_CHAT_ID or TELEGRAM_OWNER_CHAT_ID, testo)
+                    log.info("RECUPERO JEV | item=%s | esito=conferma | brand=%s | prezzo=%s | rivendita=%s | sem_originale=%s | fv_stima=%s",
+                             _estrai_item_id_da_url(u), marca, li.get("price"), ris.get("rivendita"), fv_sem.get("semaforo"), fv_sem.get("fv"))
                 t = asyncio.create_task(_ombra())
                 _TASK_OMBRA.add(t)
                 t.add_done_callback(_TASK_OMBRA.discard)
