@@ -254,3 +254,13 @@ def test_comparabili_tutti_diversi_dalla_foto_non_confermano():
            "prezzi_comps": (3.0, 600.0), "foto_comps": diversi}
     assert "non assomigliano alla foto" in mj.riga_verdetto(ris)
     assert any("NON simili alla foto" in r for r in mj.righe_messaggio(ris))
+
+
+def test_prezzi_troppo_dispersi_non_confermano():
+    """6/11 (utente): limite alla dispersione: p75/p25 sopra soglia = nessun prezzo di mercato."""
+    assert mj.decidi({"ok": True}, ("originale_plausibile", 0.9), None, None, 3.4) == ("non_verificato", "prezzi_dispersi")
+    assert mj.decidi({"ok": True}, ("originale_plausibile", 0.9), None, None, 1.5) == ("conferma", "ok")
+    assert mj.decidi({"ok": True}, ("originale_plausibile", 0.9), None, None, None) == ("conferma", "ok")
+    ris = {"esito": "non_verificato", "motivo": "prezzi_dispersi", "n": 4, "rivendita": 80.0, "margine": 64.0, "roi": 752.0, "dispersione": 3.4}
+    assert "3.4 volte" in mj.riga_verdetto(ris)
+    assert any("prezzi molto dispersi" in r for r in mj.righe_messaggio(ris))
