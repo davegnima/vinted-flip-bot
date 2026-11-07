@@ -24,7 +24,7 @@ from bot.fair_value import FAIR_VALUE_APPRESO, FAIR_VALUE_BRAND_NUOVI, FAIR_VALU
 from bot.jev import CONF_AUTENTICITA_MIN, MAX_FOTO_AUTENTICITA, DOMANDA_FOTO_COMP_MODA, JEV_FOTO_COMPS, MAX_FOTO_COMPS, confronta_foto_comparabili, giudica_autenticita
 from bot.logger import log
 from bot.velocita import riga_velocita
-from bot.moda_gemini import controlla as controlla_gemini, e_replica, riga_condizioni, riga_messaggio as riga_gemini, riga_stima_gemini, serve_controllo, sconto_difetti
+from bot.moda_gemini import controlla as controlla_gemini, e_replica, riga_condizioni, riga_stima_gemini, serve_controllo, sconto_difetti
 from bot.testo import _normalizza_titolo_per_link
 from bot.valore_mercato import comparabili_simili, parse_comp, query_comp, solo_usato, stima_mercato, valuta
 # ---- fine import ----
@@ -239,6 +239,28 @@ def correggi_per_difetti(v, prezzo, gemini):
     return nuovo, pct
 
 
+def rivendita_mista(fv, riv_comps, n_comps, gemini):
+    """(rivendita, parti): media pesata di tre stime indipendenti (7/11, utente: 'prezzo di rivendita bilanciato tra semaforo, comparabili e
+    Gemini, con i loro valori tra parentesi'). Pesi (regola pratica, non misurata): semaforo 0,3 con confidenza alta / 0,2 media / 0,1 bassa;
+    comparabili 0,5 con 8+ / 0,4 con 4-7 / 0,25 con meno; Gemini 0,4 x la sua confidenza, solo se almeno 0,4. `parti` = {'semaforo','comparabili',
+    'gemini'} con i soli valori presenti. (None, {}) se non c'e' nessuna stima. Pura."""
+    parti, pesi = {}, {}
+    if fv and fv.get("fv"):
+        parti["semaforo"] = float(fv["fv"])
+        pesi["semaforo"] = {"alta": 0.3, "media": 0.2}.get(fv.get("conf"), 0.1)
+    if riv_comps:
+        parti["comparabili"] = float(riv_comps)
+        pesi["comparabili"] = 0.5 if (n_comps or 0) >= 8 else 0.4 if (n_comps or 0) >= 4 else 0.25
+    rg, cg = (gemini or {}).get("rivendita_gemini_eur"), (gemini or {}).get("rivendita_confidenza")
+    if rg and cg is not None and cg >= 0.4:
+        parti["gemini"] = float(rg)
+        pesi["gemini"] = 0.4 * cg
+    if not parti:
+        return None, {}
+    tot = sum(pesi.values())
+    return round(sum(parti[k] * pesi[k] for k in parti) / tot, 2), {k: round(v, 2) for k, v in parti.items()}
+
+
 CONF_GEMINI_PREVALE = 0.85   # Gemini "coerente" con almeno questa confidenza...
 CONF_JEV_REPLICA_DEBOLE = 0.75   # ...corregge una "replica probabile" di Jev se questa e' sotto questa confidenza
 
@@ -351,8 +373,8 @@ def riga_originalita(ris):
     if ris.get("esito") == "scarta" or ris.get("legit_saltato"):
         return None
     stato, parti = _stato_originalita(ris)
-    testa = {"replica": "🚨 POSSIBILE REPLICA", "dubbio": "⚠️ AUTENTICITÀ DA CONTROLLARE", "non_chiaro": "❓ Autenticità non chiara",
-             "ok": "✅ Sembra originale", "nessuno": "❔ Autenticità non verificata"}[stato]
+    testa = "🔐 Originalità: " + {"replica": "🚨 FAKE probabile", "dubbio": "⚠️ DA CONTROLLARE", "non_chiaro": "⚠️ DA CONTROLLARE (non chiara)",
+                                  "ok": "✅ LEGIT (sembra originale)", "nessuno": "❔ NON VERIFICATA"}[stato]
     azione = riga_azione(ris, stato)
     return testa + (" · " + " · ".join(parti) if parti else "") + (("\n" + azione) if azione else "")
 
@@ -403,46 +425,43 @@ def _riga_dettagli_legit(dettagli):
 
 
 def righe_messaggio(ris, brand=None):
-    """Righe (testo semplice) dei passi di verifica, compatte (7/11, utente: poca verbosita'; la didascalia Telegram taglia a 1024 caratteri e
-    i link dei comparabili in fondo sparivano): 🔎 comparabili con numeri e fiducia, subito sotto i LINK dei comparabili (la cosa da controllare
-    per prima), 🖼 foto dei comparabili, 👁 Gemini (autenticita'), 🔍 condizioni, 💶 stima Gemini, 📉 correzione per i difetti, ⚡ velocita'.
-    Il legit check di Jev non ha una riga a parte: la sintesi con Jev e Gemini e' gia' sotto il verdetto (riga_originalita). Pura."""
+    """Righe (testo semplice) dei passi di verifica, a blocchi (7/11, utente: 'strutturato male'; la didascalia Telegram taglia a 1024 caratteri):
+    🔎 Comparabili con numeri e fiducia, subito sotto i LINK; 🔍 condizioni e 📉 difetti; ⚡ rotazione del brand. L'originalita' (con Jev e Gemini)
+    e' gia' sotto il verdetto (riga_originalita) e la rivendita mista con i tre valori e' nell'intestazione, quindi niente righe sparse per
+    Jev, Gemini e semaforo. Pura."""
     righe = []
-    if ris.get("rivendita") is not None:
-        n = ris.get("n") or 0
-        riga = f"🔎 {n} comparabili: rivendita ~{ris['rivendita']:.0f} €"
+    n = ris.get("n") or 0
+    comps = ris.get("rivendita_comps") if ris.get("rivendita_comps") is not None else ris.get("rivendita")
+    if comps is not None:
+        riga = f"🔎 Comparabili: {n}"
         pc = ris.get("prezzi_comps")
         if pc and pc[0] != pc[1]:
-            riga += f" (da {pc[0]:g} a {pc[1]:g} €)"
-        riga += f" · margine ~{ris['margine']:.0f} € · ROI {ris['roi']:.0f}% · fiducia {_fiducia_comparabili(n)}"
+            riga += f" · da {pc[0]:g} a {pc[1]:g} €"
+        riga += f" · rivendita ~{comps:.0f} € · fiducia {_fiducia_comparabili(n)}"
         riga += " (molto simili alla foto)" if ris.get("da_foto") else ""
-        riga += " · ⚠️ NON simili alla foto: rivendita non affidabile" if ris.get("motivo") == "comparabili_non_simili" else ""
+        riga += " · ⚠️ NON simili alla foto: non affidabili" if ris.get("motivo") == "comparabili_non_simili" else ""
         riga += " · ⚠️ prezzi molto dispersi" if ris.get("motivo") == "prezzi_dispersi" else ""
         righe.append(riga)
     else:
-        righe.append("🔎 Comparabili non trovati: resta la stima rapida, non verificata")
+        righe.append("🔎 Comparabili: non trovati, la rivendita è una stima non verificata")
     link = ris.get("link_comps") or []
     if link:   # comparabili identificati, con il link all'annuncio (richiesta dell'utente, 02/11): subito sotto i numeri
         righe += [f"• {p:g} € {u}" for _t, p, u in link[:3]]
     else:
         righe += [f"• {p:g} € {t[:40]}" for t, p in (ris.get("esempi") or [])[:3]]
-    fc = ris.get("foto_comps")
-    if fc:
-        nomi = {"stesso_modello": "molto simile", "simile": "simile", "diverso": "diverso", "non_chiaro": "non chiaro"}
-        righe.append("🖼 Foto vs comparabili: " + ", ".join(nomi.get(sc, str(sc)) for sc, _cf in fc))
     if ris.get("legit_saltato"):
         righe.append("⏭ Legit check non fatto: già scartato sui prezzi dei comparabili")
     else:
-        det = _riga_dettagli_legit(getattr(ris.get("autenticita"), "dettagli", None))
-        if det:   # le domande del legit check di Jev (richiesta del 5/11), su una riga sola: il verdetto e' gia' sotto il titolo
-            righe.append("🧠 Jev: " + det)
-        for extra in (riga_gemini(ris.get("gemini")), riga_condizioni(ris.get("gemini")), riga_stima_gemini(ris.get("gemini"), ris.get("rivendita"))):
-            if extra:
-                righe.append(extra)
+        cond = riga_condizioni(ris.get("gemini"))
+        if cond:
+            righe.append(cond)
         if ris.get("sconto_difetti") and ris.get("rivendita_prima_difetti"):
-            righe.append(f"📉 Difetti −{ris['sconto_difetti']:.0f}% (stima Gemini): rivendita da ~{ris['rivendita_prima_difetti']:.0f} € a ~{ris['rivendita']:.0f} €")
+            righe.append(f"📉 Difetti −{ris['sconto_difetti']:.0f}% (stima Gemini): comparabili da ~{ris['rivendita_prima_difetti']:.0f} € a ~{(ris.get('rivendita_comps') or ris['rivendita']):.0f} €")
+        avviso = (riga_stima_gemini(ris.get("gemini"), comps) or "").partition("\n")[2]
+        if avviso:
+            righe.append(avviso)
     if brand is not None:
-        righe.append(riga_velocita(brand))
+        righe.append(riga_velocita(brand).replace("⚡ Velocità brand:", "⚡ Rotazione brand:").replace("⚡ Velocità:", "⚡ Rotazione brand:"))
     return righe
 
 
@@ -532,7 +551,7 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
         if not ris.get("legit_saltato") and serve_controllo(ris["autenticita"], prezzo, (v or {}).get("rivendita")):
             # Jev non e' sicuro dell'originalita' (o il prezzo e' troppo basso): Gemini gratuito guarda tutte le foto
             ris["gemini"] = await controlla_gemini(titolo, brand, prezzo, listing_info.get("description"), tutte_le_foto or ([foto] if foto else []),
-                                                   item_id=listing_info.get("item_id"))
+                                                   item_id=listing_info.get("item_id"), comps=comps_pool)
         registra_legit(listing_info, brand, ris["gemini"], linea)
         if ris["gemini"]:
             nota, linea_foto = linea_da_etichetta(ris["gemini"].get("linea_etichetta"), brand)
@@ -550,6 +569,15 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
             log.info("MODA JEV DIFETTI | item=%s | brand=%s | gravita=%s | sconto=%.0f%% | rivendita %.0f -> %.0f | margine=%s | difetti=%s",
                      listing_info.get("item_id") or "-", brand, ris["gemini"].get("gravita_difetti"), sconto, v["rivendita_prima_difetti"], v["rivendita"],
                      v.get("margine"), ris["gemini"].get("difetti"))
+        # rivendita mista (7/11): semaforo, comparabili (gia' scontati dei difetti) e Gemini; margine, ROI ed esito si calcolano su questa
+        riv_comps = v.get("rivendita") if v else None
+        mix, parti = rivendita_mista(fv, riv_comps, (v or {}).get("n") or len(prezzi), ris["gemini"])
+        ris["rivendita_comps"], ris["parti_rivendita"] = riv_comps, parti
+        if v and mix and len(parti) > 1:
+            stima_mix = {k: v.get(k) for k in ("affidabilita", "n", "richiesto_mediano", "vendita_rapida", "calibrazione")}
+            stima_mix["rivendita"] = mix
+            v = valuta(prezzo, stima_mix, spedizione_eur=SPEDIZIONE_STIMATA_EUR, margine_min=MODA_JEV_MARGINE_MIN)
+        ris["rivendita_testata"] = (v or {}).get("rivendita") if v else mix   # senza comparabili: solo per l'intestazione, l'esito resta non verificato
         ris["esito"], ris["motivo"] = decidi(v, ris["autenticita"], ris["gemini"], ris["foto_comps"],
                                          None if ris["da_foto"] or not stima or not stima.get("p25") else stima["p75"] / stima["p25"])
         if v:

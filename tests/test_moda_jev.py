@@ -44,7 +44,7 @@ def test_tratteni_solo_per_brand_nuovo_con_regola_brand_nuovo(monkeypatch):
 
 def test_righe_messaggio_con_e_senza_comparabili():
     r = mj.righe_messaggio({"rivendita": 140, "n": 7, "margine": 90, "roi": 400, "esempi": [("Abito", 120)], "autenticita": ("originale_plausibile", 0.8)})
-    assert any("7 comparabili" in x for x in r)
+    assert any("Comparabili: 7" in x for x in r)
     r2 = mj.righe_messaggio({"rivendita": None, "autenticita": None})
     assert any("non trovati" in x for x in r2) and any("non verificata" in x for x in r2)
 
@@ -88,7 +88,7 @@ def test_comparabili_con_link_e_diversi():
     assert molto_simili(coppie, None) == [] and molto_simili([], [("stesso_modello", 0.9)]) == []
     righe = righe_messaggio({"rivendita": 60, "n": 4, "margine": 50, "roi": 150, "esempi": [], "autenticita": None,
                              "foto_comps": [("stesso_modello", 0.8), ("diverso", 0.7)]})
-    assert any("Foto vs comparabili" in r and "molto simile" in r for r in righe)
+    assert not any("Foto vs" in r for r in righe)   # il confronto foto sta nel verdetto, non in una riga a parte (7/11)
 
 
 def test_gemini_moda_serve_controllo_e_decisione():
@@ -116,7 +116,6 @@ def test_gemini_moda_serve_controllo_e_decisione():
     assert decidi(ok, None, None)[0] == "conferma"
     ris = {"esito": "scarta", "motivo": "gemini:replica", "gemini": d}
     assert "Gemini" in riga_esito_scheda(ris)
-    assert any("Gemini" in r for r in righe_messaggio({"rivendita": 60, "n": 4, "margine": 50, "roi": 150, "esempi": [], "autenticita": None, "gemini": d}))
 
 
 def test_righe_messaggio_con_link_ai_comparabili():
@@ -176,7 +175,7 @@ def test_messaggio_a_passi_per_lo_scarto_sui_comparabili():
     righe = mj.righe_messaggio(ris, "zimmermann")
     testo = "\n".join(righe)
     assert "da 45 a 60 €" in testo and "fiducia bassa" in testo and "Legit check non fatto" in testo
-    assert "https://www.vinted.it/items/1-a" in testo and "Velocità" in testo
+    assert "https://www.vinted.it/items/1-a" in testo and "Rotazione brand" in testo
 
 
 def test_messaggio_conferma_mostra_le_domande_del_legit_check_di_jev():
@@ -186,7 +185,7 @@ def test_messaggio_conferma_mostra_le_domande_del_legit_check_di_jev():
     ris = {"esito": "conferma", "motivo": "ok", "n": 9, "rivendita": 140, "margine": 90, "roi": 200, "esempi": [], "autenticita": a, "gemini": None,
            "link_comps": [], "prezzi_comps": (120.0, 160.0)}
     testo = "\n".join(mj.righe_messaggio(ris))
-    assert "fiducia alta" in testo and "etichetta: coerente (90%)" in testo and "made in: INCOERENTE (70%)" in testo and "lavorazione" not in testo
+    assert "fiducia alta" in testo and "etichetta: coerente" not in testo   # il legit check e' nella riga Originalita', non sparso (7/11)
     assert mj.riga_verdetto(ris).startswith("✅ CONFERMATO")
 
 
@@ -229,17 +228,17 @@ def test_riga_originalita_mostra_subito_replica_dubbio_e_ok():
     base = {"esito": "conferma", "motivo": "ok", "n": 5, "rivendita": 135.0, "margine": 103.0, "roi": 541.0}
     r = dict(base, autenticita=("replica_probabile", 0.36), gemini={"autenticita": "dubbia", "confidenza": 0.6})
     riga = riga_originalita(r)
-    assert riga.startswith("🚨 POSSIBILE REPLICA") and "36%" in riga and "Gemini foto: dubbio (60%)" in riga
+    assert riga.startswith("🔐 Originalità: 🚨 FAKE") and "36%" in riga and "Gemini foto: dubbio (60%)" in riga
     assert "possibile replica" in riga_verdetto(r) and riga_verdetto(r).startswith("✅ CONFERMATO")
-    assert riga_originalita(dict(base, autenticita=("originale_plausibile", 0.76))).startswith("✅ Sembra originale")
+    assert riga_originalita(dict(base, autenticita=("originale_plausibile", 0.76))).startswith("🔐 Originalità: ✅ LEGIT")
     assert "possibile" not in riga_verdetto(dict(base, autenticita=("originale_plausibile", 0.76)))
-    assert riga_originalita(dict(base, autenticita=("non_chiaro", 0.4))).startswith("❓")
-    assert riga_originalita(dict(base, autenticita=None)).startswith("❔")
+    assert riga_originalita(dict(base, autenticita=("non_chiaro", 0.4))).startswith("🔐 Originalità: ⚠️ DA CONTROLLARE (non chiara)")
+    assert riga_originalita(dict(base, autenticita=None)).startswith("🔐 Originalità: ❔")
     assert riga_originalita(dict(base, esito="scarta", autenticita=("replica_probabile", 0.9))) is None
     assert riga_originalita(dict(base, legit_saltato=True)) is None
     a = Autenticita(("originale_plausibile", 0.7))
     a.dettagli = {"etichetta": ("incoerente", 0.8)}
-    assert riga_originalita(dict(base, autenticita=a)).startswith("⚠️ AUTENTICITÀ DA CONTROLLARE")
+    assert riga_originalita(dict(base, autenticita=a)).startswith("🔐 Originalità: ⚠️ DA CONTROLLARE")
 
 
 def test_comparabili_tutti_diversi_dalla_foto_non_confermano():
@@ -349,7 +348,7 @@ def test_gemini_condizioni_difetti_correggono_la_rivendita():
     righe = righe_messaggio({"rivendita": nuovo["rivendita"], "n": 5, "margine": nuovo["margine"], "roi": nuovo["roi"], "esempi": [], "autenticita": None,
                              "gemini": d, "sconto_difetti": pct, "rivendita_prima_difetti": v["rivendita"]})
     assert any("difetti moderata" in r and "alone" in r for r in righe)
-    assert any("Difetti −35%" in r for r in righe) and any("Gemini stima ~70" in r for r in righe)
+    assert any("Difetti −35%" in r for r in righe)
     assert "difetti −35%" in riga_verdetto({"esito": "conferma", "motivo": "ok", "n": 5, "rivendita": 80, "margine": 40, "roi": 130, "sconto_difetti": 35.0})
     # stima di Gemini molto sotto i comparabili con buona confidenza: avviso (solo informativo)
     assert "molto meno" in g.riga_stima_gemini(dict(d, rivendita_gemini_eur=30), 100)
@@ -369,7 +368,7 @@ def test_gemini_prevale_su_jev_replica_debole_e_recuperato_con_foto():
     assert decidi({"ok": True}, ("replica_probabile", 0.65), g)[0] == "conferma"   # sopra la soglia di scarto di Jev, ma Gemini prevale
     assert decidi({"ok": True}, ("replica_probabile", 0.8), g)[0] == "scarta"
     ris = {"esito": "conferma", "motivo": "ok", "n": 10, "rivendita": 100.0, "margine": 71.0, "roi": 375.0, "autenticita": ("replica_probabile", 0.51), "gemini": g}
-    assert riga_originalita(ris).startswith("✅ Sembra originale") and "prevale Gemini" in riga_originalita(ris)
+    assert riga_originalita(ris).startswith("🔐 Originalità: ✅ LEGIT") and "prevale Gemini" in riga_originalita(ris)
     assert "possibile replica" not in riga_verdetto(ris)
     t = testo_preavviso({"fair_value": {"semaforo": "🔴"}, "price": 50, "brand": "Ann", "title": "Pantalone", "righe_jev": ["x"], "riga_verdetto_jev": "v",
                          "rivendita_jev": 170, "riga_recupero": "♻️ Recuperato: prova"}, "https://www.vinted.it/items/1", riga_finale="")
@@ -401,7 +400,25 @@ def test_riga_originalita_dice_cosa_fare_e_cosa_chiedere():
     dubbio = dict(base, autenticita=("originale_plausibile", 0.6),
                   gemini={"autenticita": "dubbia", "confidenza": 0.6, "da_chiedere": "foto dell'etichetta di lavaggio con il made in"})
     riga = riga_originalita(dubbio)
-    assert riga.startswith("⚠️ AUTENTICITÀ DA CONTROLLARE") and "\n👉 Prezzo buono ma originalità non verificata: prima chiedi foto dell'etichetta" in riga
+    assert riga.startswith("🔐 Originalità: ⚠️ DA CONTROLLARE") and "\n👉 Prezzo buono ma originalità non verificata: prima chiedi foto dell'etichetta" in riga
     assert "chiedi al venditore foto di etichette" in riga_originalita(dict(base, autenticita=None))   # ripiego senza richiesta di Gemini
     assert "Non comprare" in riga_originalita(dict(base, autenticita=("originale_plausibile", 0.9), gemini={"autenticita": "replica", "confidenza": 0.5}))
     assert "\n" not in riga_originalita(dict(base, autenticita=("originale_plausibile", 0.8), gemini={"autenticita": "probabile", "confidenza": 0.9}))
+
+
+def test_rivendita_mista_pesa_semaforo_comparabili_e_gemini_e_li_mostra_in_testata():
+    """7/11 (utente): prezzo di rivendita bilanciato tra semaforo, comparabili e Gemini, con i tre valori tra parentesi nell'intestazione."""
+    from bot.moda_jev import rivendita_mista
+    from bot.scheda import _parti_rivendita, testo_preavviso
+    # tre stime: pesi 0,2 (semaforo media) + 0,4 (comparabili 5) + 0,28 (Gemini 0,7 x 0,4)
+    mix, parti = rivendita_mista({"fv": 100, "conf": "media"}, 200, 5, {"rivendita_gemini_eur": 150, "rivendita_confidenza": 0.7})
+    assert parti == {"semaforo": 100.0, "comparabili": 200.0, "gemini": 150.0}
+    assert abs(mix - (100 * 0.2 + 200 * 0.4 + 150 * 0.28) / 0.88) < 0.01
+    # Gemini poco sicuro o assente: non entra; nessuna stima: (None, {})
+    assert "gemini" not in rivendita_mista({"fv": 100, "conf": "alta"}, 200, 9, {"rivendita_gemini_eur": 150, "rivendita_confidenza": 0.3})[1]
+    assert rivendita_mista(None, None, 0, None) == (None, {})
+    assert rivendita_mista({"fv": 80, "conf": "bassa"}, None, 0, None) == (80.0, {"semaforo": 80.0})
+    assert _parti_rivendita(parti) == " (semaforo 100 · comparabili 200 · Gemini 150)" and _parti_rivendita({"semaforo": 80.0}) == ""
+    t = testo_preavviso({"fair_value": {"semaforo": "🟢"}, "price": 20, "brand": "Ann", "title": "Pantalone", "righe_jev": ["🔎 Comparabili: 5"],
+                         "riga_verdetto_jev": "v", "rivendita_jev": 160, "parti_rivendita": parti}, "https://www.vinted.it/items/1")
+    assert "rivendita ~*160 €* (semaforo 100 · comparabili 200 · Gemini 150)" in t and "🚦" not in t and "ℹ️" not in t

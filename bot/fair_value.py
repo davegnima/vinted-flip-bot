@@ -803,7 +803,7 @@ def fv_registra_jev(listing_info, url, ris):
     (Weekend per Max Mara) la chiave e' la linea. Mai eccezioni."""
     try:
         item_id = _estrai_item_id_da_url(url) if url else None
-        riv = (ris or {}).get("rivendita")
+        riv = (ris or {}).get("rivendita_comps") or (ris or {}).get("rivendita")   # solo i comparabili, non la rivendita mista (7/11)
         if not item_id or not riv:
             return
         disp = (ris or {}).get("dispersione")

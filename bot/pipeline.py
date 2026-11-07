@@ -390,7 +390,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
                 if listing_info.get("jev_subito"):   # il messaggio era gia' partito: lo stesso messaggio dice che e' stato scartato, con i passi (5/11)
                     _brand_jev = (listing_info.get("fair_value") or {}).get("brand") or listing_info.get("brand")
                     listing_info.update(righe_jev=righe_moda_jev(ris_jev, _brand_jev), riga_verdetto_jev=riga_verdetto_jev(ris_jev),
-                                        rivendita_jev=None)
+                                        rivendita_jev=None, parti_rivendita=None)
                     if not await aggiorna_preavviso(stato, url, testo_verdetto=testo_preavviso(dict(listing_info), url)):
                         await aggiorna_preavviso(stato, url, riga_finale=riga_scarto_preavviso("verifica Jev: " + ris_jev["motivo"], msg_id_galleria))
                 return
@@ -398,7 +398,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             listing_info["righe_jev"] = righe_moda_jev(ris_jev, _brand_jev)
             listing_info["riga_verdetto_jev"] = riga_verdetto_jev(ris_jev)
             listing_info["riga_originalita_jev"] = riga_originalita_jev(ris_jev)
-            listing_info["rivendita_jev"] = ris_jev.get("rivendita")   # per l'intestazione "prezzo ➜ rivendita" (5/11)
+            listing_info["rivendita_jev"], listing_info["parti_rivendita"] = ris_jev.get("rivendita_testata") or ris_jev.get("rivendita"), ris_jev.get("parti_rivendita")   # per l'intestazione "prezzo ➜ rivendita" (5/11)
             _log_esito(listing_info, "SOLO_SEMAFORO", sem=fv_sem.get("semaforo"), margine=fv_sem.get("margine"))
             if listing_info.get("jev_subito") and await aggiorna_preavviso(stato, url, testo_verdetto=testo_preavviso(dict(listing_info), url)):
                 log.info("AVVISO SOLO SEMAFORO | item=%s | prezzo=%s | sem=%s | jev=%s | aggiornato", _estrai_item_id_da_url(url),
@@ -435,7 +435,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
                         return
                     marca = (li.get("fair_value") or {}).get("brand") or li.get("brand")
                     li.update(righe_jev=righe_moda_jev(ris, marca), riga_verdetto_jev=riga_verdetto_jev(ris),
-                              riga_originalita_jev=riga_originalita_jev(ris), rivendita_jev=ris.get("rivendita"))
+                              riga_originalita_jev=riga_originalita_jev(ris), rivendita_jev=ris.get("rivendita_testata") or ris.get("rivendita"), parti_rivendita=ris.get("parti_rivendita"))
                     li["riga_recupero"] = (f"♻️ Recuperato: il semaforo lo dava {fv_sem.get('semaforo')} (fair value ~{fv_sem.get('fv')} €), "
                                            f"i comparabili dicono ~{ris.get('rivendita'):.0f} €")
                     # 7/11 (utente): il messaggio recuperato deve avere le foto come gli altri avvisi (album o foto con bottone), non solo testo

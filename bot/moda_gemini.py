@@ -12,6 +12,7 @@ import time
 
 from bot.gemini_api import chiama_gemini
 from bot.logger import log
+from bot.prompts import GEMINI_CERVELLO_SYSTEM_PROMPT
 
 MODA_GEMINI = os.environ.get("MODA_GEMINI", "1").strip() not in ("0", "false", "no", "")
 # 5/11 (utente): il legit check approfondito su tutte le foto vale per OGNI avviso, non solo quando Jev dubita. MODA_GEMINI_SEMPRE=0 torna a "solo se serve".
@@ -21,6 +22,18 @@ try:
     MODA_GEMINI_FOTO = max(1, int(os.environ.get("MODA_GEMINI_FOTO", "8") or 8))
 except ValueError:
     MODA_GEMINI_MAX_ORA, MODA_GEMINI_FOTO = 60, 8
+# 7/11 (utente: 'recupera il prompt del Cervello'): la stima di rivendita di Gemini segue le regole di prezzo del Cervello (linee ed ere da non
+# mischiare, calibrazioni per brand, ANCORAGGIO PREZZI con sconto sugli ASK e filtro outlier, liquidita' per segmento), prese dallo stesso testo
+# di bot/prompts.py: un'unica fonte. MODA_GEMINI_REGOLE_PREZZO=0 le toglie (prompt piu' corto).
+MODA_GEMINI_REGOLE_PREZZO = os.environ.get("MODA_GEMINI_REGOLE_PREZZO", "1").strip() not in ("0", "false", "no", "")
+
+
+def _regole_prezzo_cervello():
+    t = GEMINI_CERVELLO_SYSTEM_PROMPT
+    a, b = t.find("# LINEE E ERE"), t.find("# COSA DEVI PRODURRE")
+    return t[a:b].strip() if 0 <= a < b else ""
+
+
 CONF_REPLICA_MIN = 0.7   # sotto questa confidenza una "replica" resta un dubbio nel messaggio, non uno scarto
 RAPPORTO_PREZZO_SOSPETTO = 0.25   # prezzo sotto il 25% della rivendita dei comparabili: troppo bello per essere vero
 
@@ -69,6 +82,9 @@ CONDIZIONI E VALORE (7/11, utente: non solo autenticita')
 - rivendita_confidenza: 0-1, quanto sei sicuro di quella stima (sotto 0,4 se il capo e' poco noto o le foto non bastano).
 - da_chiedere: se l'autenticita' non e' "probabile" o mancano dettagli chiave, cosa chiedere al venditore per sciogliere il dubbio, in modo concreto (es. "foto dell'etichetta di lavaggio con il made in", "foto delle cuciture interne", "foto del numero di serie"), max 110 caratteri. Vuoto se non serve.
 - rivendita_base: max 100 caratteri, su cosa si basa (es. 'maglione base mainline, cashmere, prezzi usati tipici 80-120').
+REGOLE PER LA STIMA DI RIVENDITA (`rivendita_gemini_eur`): se ricevi i comparabili Vinted sono prezzi ASK (annunci attivi, non vendite), spesso con linee o capi diversi
+mescolati: usa le regole qui sotto del valutatore (linee ed ere, ancoraggio prezzi, filtro outlier, liquidita'), scarta i comparabili di un'altra linea o categoria e
+non superare mai il comparabile ASK piu' alto dopo lo sconto. Senza comparabili stima dal modello e dalle condizioni che vedi, con confidenza bassa.
 Non calcolare margini, ROI o decisioni. Risposta breve: campi a poche parole, "motivo" una frase italiana (max 120 caratteri) con il fatto che ha deciso."""
 
 SCHEMA = {
@@ -100,6 +116,9 @@ SCHEMA = {
                  "capo", "materiale", "condizione", "difetti", "gravita_difetti", "sconto_difetti_pct",
                  "rivendita_gemini_eur", "rivendita_confidenza", "rivendita_base", "da_chiedere"],
 }
+
+if MODA_GEMINI_REGOLE_PREZZO:
+    SYSTEM_PROMPT = SYSTEM_PROMPT + "\n\n" + _regole_prezzo_cervello()
 
 _chiamate = []   # istanti delle chiamate dell'ultima ora: tetto MODA_GEMINI_MAX_ORA
 
@@ -236,7 +255,7 @@ def riga_messaggio(d):
     return f"👁 Gemini: {etichetta}{conf}" + (f", {d['motivo'][:90]}" if d.get("motivo") else "") + dettagli
 
 
-async def controlla(titolo, brand, prezzo, descrizione, foto, item_id=None):
+async def controlla(titolo, brand, prezzo, descrizione, foto, item_id=None, comps=None):
     """Controllo Gemini su tutte le foto (al massimo MODA_GEMINI_FOTO). Ritorna il dict di leggi_risposta o None (spento, oltre il tetto
     orario, senza foto o senza risposta). Mai eccezioni."""
     if not (MODA_GEMINI and foto):
@@ -249,7 +268,9 @@ async def controlla(titolo, brand, prezzo, descrizione, foto, item_id=None):
         t0 = time.time()
         utente = (f"Titolo: {titolo}\nMarca dichiarata: {brand or 'n/d'}\n"
                   + (f"Prezzo richiesto: {prezzo:g} EUR\n" if isinstance(prezzo, (int, float)) else "")
-                  + "Descrizione del venditore: " + ((descrizione or "").strip()[:1200] or "(vuota)"))
+                  + "Descrizione del venditore: " + ((descrizione or "").strip()[:1200] or "(vuota)")
+                  + (("\nComparabili Vinted (prezzi ASK, gia' filtrati per brand e categoria, possono contenere linee diverse):\n"
+                      + "\n".join(f"- {p:g} EUR | {str(t)[:70]}" for t, p in list(comps)[:12])) if comps else "\nComparabili Vinted: nessuno trovato."))
         testo, _costo, _n = await chiama_gemini(SYSTEM_PROMPT, utente, list(foto)[:MODA_GEMINI_FOTO], grounding=False,
                                                 response_schema=SCHEMA, ruolo="occhio")
         d = leggi_risposta(testo)
