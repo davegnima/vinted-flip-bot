@@ -75,7 +75,13 @@ ONDA7=[ # 06/11, giro del sabato anticipato: mondi nuovi scelti dal mercato, non
  ('V2 lego millennium falcon','lego millennium falcon',None,[],150),('V2 game boy color','game boy color',None,[],50),('V2 sega mega drive','sega mega drive',None,[],50),
  ('V2 garmin forerunner 255','garmin forerunner 255',None,[],80),('V2 shimano dura-ace','shimano dura-ace',None,[],80),('V2 brompton','brompton',None,[],150),
 ]
-RISCHIO=('Casa e lampade','V2 leica','Obiettivi', # 06/11 (b) potate: 0 gialli/verdi su 9 verdetti ciascuna (copia in docs/analisi/radar-ricerche-potate-2026-11-06-b.json)
+ONDA8=[ # 07/11: modelli stretti nelle famiglie che rendono (switch 6/6 venduti entro 1 h, ghd, bose, dyson con 1 verde ciascuna in 24 h). Tetti = stime mie (meta' della rivendita veloce, da tarare), senza catalog[].
+ ('V2 dyson airwrap','dyson airwrap',None,[],150),('V2 dyson supersonic','dyson supersonic',None,[],100),('V2 dyson v15','dyson v15',None,[],150),
+ ('V2 bose quietcomfort 45','bose quietcomfort 45',None,[],75),('V2 bose soundlink','bose soundlink',None,[],50),('V2 ghd platinum','ghd platinum',None,[],50),
+ ('V2 switch lite','nintendo switch lite',None,[],50),('V2 switch 2','nintendo switch 2',None,[],150),
+]
+RISCHIO=('V2 hilti','V2 game boy color','V2 sega mega drive','V2 lego millennium falcon','V2 cybex cloud z','Borse', # 07/11 potate: 0 gialli/verdi in 24 h con 1-6 verdetti (copia in docs/analisi/radar-ricerche-potate-2026-11-07.json)
+         'Casa e lampade','V2 leica','Obiettivi', # 06/11 (b) potate: 0 gialli/verdi su 9 verdetti ciascuna (copia in docs/analisi/radar-ricerche-potate-2026-11-06-b.json)
          # 06/11 potata: 3 venduti entro 1 h su 17 validi (copia in docs/analisi/radar-ricerche-potate-2026-11-06.json)
          'V2 alessi','V2 iittala','V2 rosenthal','V2 zwilling','V2 gopro','V2 dji', # 01/11 (b) potate: margine_basso 90% (prezzi 15-28 EUR) o 0 vendite veloci su 38 tracciate (URL in docs/analisi/radar-ricerche-potate-2026-11-01-b.json)
          'V2 games workshop','V2 smeg','V2 ginori', # 01/11 potate: 0 gialli/verdi su 24 h, 91-100% margine_basso (URL salvate in docs/analisi/radar-ricerche-potate-2026-11-01.json)
@@ -137,6 +143,12 @@ if '--onda6' in sys.argv:
 if '--onda7' in sys.argv:
     gia=_nomi_sul_tracker()
     for nome,txt,br,cat,pt in ONDA7:
+        if nome in gia or nome in RISCHIO: continue
+        u='https://www.vinted.it/catalog?'+f'search_text={urllib.parse.quote(txt)}&'+''.join(f'catalog[]={i}&' for i in cat)+f"price_to={pt}&currency=EUR&order=newest_first"
+        post('/add_query',{'query':u,'query_name':nome}); print('ok',nome)
+if '--onda8' in sys.argv:
+    gia=_nomi_sul_tracker()
+    for nome,txt,br,cat,pt in ONDA8:
         if nome in gia or nome in RISCHIO: continue
         u='https://www.vinted.it/catalog?'+f'search_text={urllib.parse.quote(txt)}&'+''.join(f'catalog[]={i}&' for i in cat)+f"price_to={pt}&currency=EUR&order=newest_first"
         post('/add_query',{'query':u,'query_name':nome}); print('ok',nome)
