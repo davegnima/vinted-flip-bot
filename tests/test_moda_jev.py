@@ -422,3 +422,9 @@ def test_rivendita_mista_pesa_semaforo_comparabili_e_gemini_e_li_mostra_in_testa
     t = testo_preavviso({"fair_value": {"semaforo": "🟢"}, "price": 20, "brand": "Ann", "title": "Pantalone", "righe_jev": ["🔎 Comparabili: 5"],
                          "riga_verdetto_jev": "v", "rivendita_jev": 160, "parti_rivendita": parti}, "https://www.vinted.it/items/1")
     assert "rivendita ~*160 €* (semaforo 100 · comparabili 200 · Gemini 150)" in t and "🚦" not in t and "ℹ️" not in t
+
+
+def test_evereve_in_blocklist_brand():
+    from bot.filtri import check_skip_pre_gemini
+    skip, motivo = check_skip_pre_gemini({"brand": "Evereve", "title": "Evereve dress", "price": 20})
+    assert skip and "BLOCKLIST" in motivo
