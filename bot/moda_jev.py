@@ -24,7 +24,7 @@ from bot.fair_value import FAIR_VALUE_APPRESO, FAIR_VALUE_BRAND_NUOVI, FAIR_VALU
 from bot.jev import CONF_AUTENTICITA_MIN, MAX_FOTO_AUTENTICITA, DOMANDA_FOTO_COMP_MODA, JEV_FOTO_COMPS, MAX_FOTO_COMPS, confronta_foto_comparabili, giudica_autenticita
 from bot.logger import log
 from bot.velocita import riga_velocita
-from bot.moda_gemini import controlla as controlla_gemini, e_replica, riga_messaggio as riga_gemini, serve_controllo
+from bot.moda_gemini import controlla as controlla_gemini, e_replica, riga_condizioni, riga_messaggio as riga_gemini, riga_stima_gemini, serve_controllo, sconto_difetti
 from bot.testo import _normalizza_titolo_per_link
 from bot.valore_mercato import comparabili_simili, parse_comp, query_comp, solo_usato, stima_mercato, valuta
 # ---- fine import ----
@@ -225,6 +225,20 @@ def comparabili_non_simili(foto_comps):
     return "diverso" in scelte and not any(sc in ("simile", "stesso_modello") for sc in scelte)
 
 
+def correggi_per_difetti(v, prezzo, gemini):
+    """(v_nuovo, sconto_pct): abbassa la rivendita dei comparabili (in genere in buone condizioni) dei difetti letti da Gemini nelle foto e
+    rifa' margine, ROI ed esito con le stesse soglie di valuta(). Lo sconto e' una stima di Gemini, con tetto per gravita' (moda_gemini).
+    Senza difetti, senza rivendita o senza Gemini ritorna (v, 0). Non cambia v. Pura."""
+    pct = sconto_difetti(gemini)
+    if not v or not pct or v.get("rivendita") is None:
+        return v, 0.0
+    stima = {"rivendita": v["rivendita"] * (1 - pct / 100), "affidabilita": v.get("affidabilita"), "n": v.get("n"),
+             "richiesto_mediano": v.get("richiesto_mediano"), "vendita_rapida": v.get("vendita_rapida"), "calibrazione": v.get("calibrazione")}
+    nuovo = valuta(prezzo, stima, spedizione_eur=SPEDIZIONE_STIMATA_EUR, margine_min=MODA_JEV_MARGINE_MIN)
+    nuovo["rivendita_prima_difetti"] = v["rivendita"]
+    return nuovo, pct
+
+
 def decidi(valutazione, autenticita, gemini=None, foto_comps=None, dispersione=None):
     """(esito, motivo) dalle due verifiche. `valutazione` = dict di valuta() o None se i comparabili mancano; `autenticita` =
     (scelta, confidenza) o None; `gemini` = dict del controllo Gemini su tutte le foto o None. Il falso scarta sempre; senza comparabili
@@ -311,10 +325,13 @@ def riga_verdetto(ris):
                 dove = f"ROI {ris['roi']:.0f}% (serve almeno 100%)"
             else:
                 dove = f"margine ~{ris['margine']:.0f} € (serve almeno {MODA_JEV_MARGINE_MIN:g} €)"
-            return f"🚫 SCARTATO: i {ris['n']} comparabili danno rivendita ~{ris['rivendita']:.0f} €, {dove}"
+            dif = f" (dopo lo sconto per i difetti, −{ris['sconto_difetti']:.0f}%)" if ris.get("sconto_difetti") else ""
+            return f"🚫 SCARTATO: i {ris['n']} comparabili danno rivendita ~{ris['rivendita']:.0f} €{dif}, {dove}"
         return "🚫 SCARTATO: " + riga_esito_scheda(ris).replace("🚫 ", "").replace("Jev: non avvisato, ", "").replace("Gemini: non avvisato, ", "")
     if ris.get("esito") == "conferma":
         tag = {"replica": " · 🚨 possibile replica", "dubbio": " · ⚠️ autenticità dubbia"}.get(_stato_originalita(ris)[0], "")   # visibile gia' nell'anteprima
+        if ris.get("sconto_difetti"):
+            tag += f" · difetti −{ris['sconto_difetti']:.0f}%"
         return f"✅ CONFERMATO: rivendita ~{ris['rivendita']:.0f} €, margine ~{ris['margine']:.0f} €, ROI {ris['roi']:.0f}%{tag}"
     if mot == "comparabili_non_simili" and ris.get("rivendita") is not None:
         return (f"⚠️ NON VERIFICATO: i {ris['n']} comparabili non assomigliano alla foto (la rivendita ~{ris['rivendita']:.0f} € dai loro prezzi "
@@ -382,6 +399,11 @@ def righe_messaggio(ris, brand=None):
         g = riga_gemini(ris.get("gemini"))
         if g:
             righe.append(g)
+        for extra in (riga_condizioni(ris.get("gemini")), riga_stima_gemini(ris.get("gemini"), ris.get("rivendita"))):
+            if extra:
+                righe.append(extra)
+        if ris.get("sconto_difetti") and ris.get("rivendita_prima_difetti"):
+            righe.append(f"📉 Rivendita corretta per i difetti: da ~{ris['rivendita_prima_difetti']:.0f} € a ~{ris['rivendita']:.0f} € (−{ris['sconto_difetti']:.0f}%, stima di Gemini)")
     if brand is not None:
         righe.append(riga_velocita(brand))
     link = ris.get("link_comps") or []
@@ -492,6 +514,12 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
                 comps_pool, link_comps, stima, v = await cerca(linea)
                 prezzi = [p for _t, p in comps_pool]
                 ris["da_foto"], ris["foto_comps"] = False, None
+        v, sconto = correggi_per_difetti(v, prezzo, ris["gemini"])
+        if sconto:
+            ris["sconto_difetti"], ris["rivendita_prima_difetti"] = sconto, v.get("rivendita_prima_difetti")
+            log.info("MODA JEV DIFETTI | item=%s | brand=%s | gravita=%s | sconto=%.0f%% | rivendita %.0f -> %.0f | margine=%s | difetti=%s",
+                     listing_info.get("item_id") or "-", brand, ris["gemini"].get("gravita_difetti"), sconto, v["rivendita_prima_difetti"], v["rivendita"],
+                     v.get("margine"), ris["gemini"].get("difetti"))
         ris["esito"], ris["motivo"] = decidi(v, ris["autenticita"], ris["gemini"], ris["foto_comps"],
                                          None if ris["da_foto"] or not stima or not stima.get("p25") else stima["p75"] / stima["p25"])
         if v:

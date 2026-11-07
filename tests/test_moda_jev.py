@@ -321,3 +321,36 @@ def test_lancel_in_blocklist_brand():
     from bot.filtri import check_skip_pre_gemini
     skip, motivo = check_skip_pre_gemini({"brand": "Lancel", "title": "Sac Lancel noir", "price": 30})
     assert skip and "BLOCKLIST" in motivo
+
+
+def test_gemini_condizioni_difetti_correggono_la_rivendita():
+    """7/11 (utente): Gemini legge anche difetti, materiale e modello; i difetti abbassano la rivendita dei comparabili (con tetto per gravita')."""
+    from bot import moda_gemini as g
+    from bot.moda_jev import correggi_per_difetti, riga_verdetto, righe_messaggio
+    from bot.valore_mercato import stima_mercato, valuta
+    d = g.leggi_risposta('{"autenticita":"probabile","confidenza":0.8,"capo":"cardigan","materiale":"100% cashmere","condizione":"buona",'
+                         '"difetti":"alone 3 cm sul petto","gravita_difetti":"moderata","sconto_difetti_pct":80,"rivendita_gemini_eur":70,'
+                         '"rivendita_confidenza":0.7,"rivendita_base":"base"}')
+    assert g.sconto_difetti(d) == 35.0   # tetto della gravita' 'moderata', anche se Gemini chiede 80
+    assert g.sconto_difetti(g.leggi_risposta('{"autenticita":"probabile","confidenza":0.8,"gravita_difetti":"nessuno","difetti":""}')) == 0.0
+    assert g.sconto_difetti(None) == 0.0
+    assert g.sconto_difetti(g.leggi_risposta('{"autenticita":"probabile","confidenza":0.8,"gravita_difetti":"grave","difetti":"strappo"}')) == 40.0   # predefinito
+    stima = stima_mercato([100.0, 105.0, 110.0, 95.0, 100.0], min_n=3)
+    v = valuta(30.0, stima, margine_min=mj.MODA_JEV_MARGINE_MIN)
+    nuovo, pct = correggi_per_difetti(v, 30.0, d)
+    assert pct == 35.0 and nuovo["rivendita"] < v["rivendita"] and nuovo["margine"] < v["margine"]
+    assert nuovo["rivendita_prima_difetti"] == v["rivendita"]
+    assert correggi_per_difetti(v, 30.0, None) == (v, 0.0) and correggi_per_difetti(None, 30.0, d) == (None, 0.0)
+    # un affare che resta tale dopo lo sconto resta confermato; uno che non regge diventa scarto
+    forte, _ = correggi_per_difetti(valuta(10.0, stima, margine_min=40.0), 10.0, d)
+    assert forte["ok"]
+    debole, _ = correggi_per_difetti(valuta(60.0, stima, margine_min=40.0), 60.0, dict(d, gravita_difetti="grave", sconto_difetti_pct=60))
+    assert not debole["ok"]
+    righe = righe_messaggio({"rivendita": nuovo["rivendita"], "n": 5, "margine": nuovo["margine"], "roi": nuovo["roi"], "esempi": [], "autenticita": None,
+                             "gemini": d, "sconto_difetti": pct, "rivendita_prima_difetti": v["rivendita"]})
+    assert any("difetti moderata" in r and "alone" in r for r in righe)
+    assert any("Rivendita corretta per i difetti" in r for r in righe) and any("Stima Gemini del capo" in r for r in righe)
+    assert "difetti −35%" in riga_verdetto({"esito": "conferma", "motivo": "ok", "n": 5, "rivendita": 80, "margine": 40, "roi": 130, "sconto_difetti": 35.0})
+    # stima di Gemini molto sotto i comparabili con buona confidenza: avviso (solo informativo)
+    assert "molto meno" in g.riga_stima_gemini(dict(d, rivendita_gemini_eur=30), 100)
+    assert "molto meno" not in g.riga_stima_gemini(d, 100)

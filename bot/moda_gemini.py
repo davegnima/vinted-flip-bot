@@ -57,11 +57,24 @@ ESITO
 - "replica": indizi concreti e multipli (logo/font sbagliato, cuciture grossolane, hardware economico, etichetta incoerente). Non sospettare senza un indizio.
 - "altra_marca": l'etichetta e' di un marchio diverso.
 - "non_verificabile": nessuna etichetta o dettaglio leggibile nelle foto.
-Non calcolare prezzi, margini o decisioni. Risposta breve: campi a poche parole, "motivo" una frase italiana (max 120 caratteri) con il fatto che ha deciso."""
+
+CONDIZIONI E VALORE (7/11, utente: non solo autenticita')
+- capo: cos'e' (tipo, modello o variante, linea/stagione se la leggi o la riconosci), 2-8 parole. Se non lo riconosci scrivi "non_riconosciuto".
+- materiale: composizione letta sull'etichetta (es. "100% cashmere", "lana 70% seta 30%"); "non_leggibile" se non la leggi. Non dedurla dal brand: il materiale cambia molto il prezzo.
+- condizione: "come_nuovo" (cartellino o mai usato), "ottima", "buona", "usurata".
+- difetti: macchie, aloni, buchi, strappi, scuciture, pilling forte, cerniere o bottoni rotti, odori dichiarati, tessuto sformato o scolorito, SOLO se li vedi nelle foto o il venditore li dichiara. Per ognuno tipo, POSIZIONE e DIMENSIONE (es. "alone ~3 cm sul petto", "foro piccolo sulla manica"). "nessuno" se non ne vedi. Non inventarli: una foto sfocata non e' un difetto.
+- gravita_difetti: "nessuno"; "lieve" (macchia lavabile, pilling, piccola scucitura riparabile); "moderata" (macchia dubbia o visibile, piccolo foro, usura evidente); "grave" (strappi, fori multipli o estesi, macchie estese permanenti, tessuto compromesso).
+- sconto_difetti_pct: di quanto i difetti abbassano il prezzo di rivendita rispetto allo STESSO capo in buone condizioni, 0-60 (0 se nessuno). Non scontare due volte quello che e' gia' nella condizione.
+- rivendita_gemini_eur: il prezzo realistico a cui QUESTO capo, nelle condizioni che vedi, si rivende usato in Italia in tempi brevi (non il prezzo di listino ne' quello chiesto da altri). Usa modello, materiale e stato. Se non conosci abbastanza il capo scrivi 0.
+- rivendita_confidenza: 0-1, quanto sei sicuro di quella stima (sotto 0,4 se il capo e' poco noto o le foto non bastano).
+- rivendita_base: max 100 caratteri, su cosa si basa (es. 'maglione base mainline, cashmere, prezzi usati tipici 80-120').
+Non calcolare margini, ROI o decisioni. Risposta breve: campi a poche parole, "motivo" una frase italiana (max 120 caratteri) con il fatto che ha deciso."""
 
 SCHEMA = {
     "type": "OBJECT",
-    "propertyOrdering": ["autenticita", "confidenza", "linea_etichetta", "etichetta_letta", "made_in", "prova_acquisto", "indizi", "motivo"],
+    "propertyOrdering": ["autenticita", "confidenza", "linea_etichetta", "etichetta_letta", "made_in", "prova_acquisto", "indizi", "motivo",
+                         "capo", "materiale", "condizione", "difetti", "gravita_difetti", "sconto_difetti_pct",
+                         "rivendita_gemini_eur", "rivendita_confidenza", "rivendita_base"],
     "properties": {
         "autenticita": {"type": "STRING", "enum": ["probabile", "dubbia", "replica", "altra_marca", "non_verificabile"]},
         "confidenza": {"type": "NUMBER"},
@@ -71,8 +84,19 @@ SCHEMA = {
         "prova_acquisto": {"type": "STRING", "enum": ["nessuna", "cartellino", "scontrino", "fattura", "certificato", "scatola_dustbag"]},
         "indizi": {"type": "STRING"},
         "motivo": {"type": "STRING"},
+        "capo": {"type": "STRING"},
+        "materiale": {"type": "STRING"},
+        "condizione": {"type": "STRING", "enum": ["come_nuovo", "ottima", "buona", "usurata"]},
+        "difetti": {"type": "STRING"},
+        "gravita_difetti": {"type": "STRING", "enum": ["nessuno", "lieve", "moderata", "grave"]},
+        "sconto_difetti_pct": {"type": "NUMBER"},
+        "rivendita_gemini_eur": {"type": "NUMBER"},
+        "rivendita_confidenza": {"type": "NUMBER"},
+        "rivendita_base": {"type": "STRING"},
     },
-    "required": ["autenticita", "confidenza", "etichetta_letta", "made_in", "prova_acquisto", "indizi", "motivo"],
+    "required": ["autenticita", "confidenza", "etichetta_letta", "made_in", "prova_acquisto", "indizi", "motivo",
+                 "capo", "materiale", "condizione", "difetti", "gravita_difetti", "sconto_difetti_pct",
+                 "rivendita_gemini_eur", "rivendita_confidenza", "rivendita_base"],
 }
 
 _chiamate = []   # istanti delle chiamate dell'ultima ora: tetto MODA_GEMINI_MAX_ORA
@@ -116,7 +140,77 @@ def leggi_risposta(testo):
     d["prova_acquisto"] = d.get("prova_acquisto") if d.get("prova_acquisto") in ("cartellino", "scontrino", "fattura", "certificato", "scatola_dustbag") else "nessuna"
     d["indizi"] = str(d.get("indizi") or "")[:160]
     d["motivo"] = str(d.get("motivo") or "")[:140]
+    # condizioni e valore (7/11): campi opzionali, una risposta senza (modelli piu' deboli della cascata) resta valida
+    d["capo"] = str(d.get("capo") or "")[:80]
+    d["materiale"] = str(d.get("materiale") or "")[:60]
+    d["condizione"] = d.get("condizione") if d.get("condizione") in ("come_nuovo", "ottima", "buona", "usurata") else None
+    d["difetti"] = str(d.get("difetti") or "")[:200]
+    d["gravita_difetti"] = d.get("gravita_difetti") if d.get("gravita_difetti") in GRAVITA_SCONTO_MAX else None
+    try:
+        d["sconto_difetti_pct"] = max(0.0, min(60.0, float(d.get("sconto_difetti_pct"))))
+    except (TypeError, ValueError):
+        d["sconto_difetti_pct"] = None
+    try:
+        r = float(d.get("rivendita_gemini_eur"))
+        d["rivendita_gemini_eur"] = round(r, 2) if r > 0 else None   # 0 = "non conosco il capo": nessuna stima
+    except (TypeError, ValueError):
+        d["rivendita_gemini_eur"] = None
+    try:
+        d["rivendita_confidenza"] = max(0.0, min(1.0, float(d.get("rivendita_confidenza"))))
+    except (TypeError, ValueError):
+        d["rivendita_confidenza"] = None
+    d["rivendita_base"] = str(d.get("rivendita_base") or "")[:110]
     return d
+
+
+# Quanto i difetti possono abbassare la rivendita dei comparabili (che sono in genere in buone condizioni): il tetto per gravita' evita che una
+# stima fantasiosa di Gemini azzeri un affare. Il numero e' una stima di Gemini limitata dal codice, non un dato misurato.
+GRAVITA_SCONTO_MAX = {"nessuno": 0.0, "lieve": 15.0, "moderata": 35.0, "grave": 60.0}
+SCONTO_PREDEFINITO = {"lieve": 8.0, "moderata": 20.0, "grave": 40.0}   # se Gemini segnala il difetto ma non dice di quanto
+
+
+def sconto_difetti(d):
+    """Percentuale (0-60) di cui abbassare la rivendita dei comparabili per i difetti letti da Gemini, 0 se nessuno o non affidabile. Pura."""
+    if not d or d.get("gravita_difetti") in (None, "nessuno") or not d.get("difetti"):
+        return 0.0
+    tetto = GRAVITA_SCONTO_MAX[d["gravita_difetti"]]
+    pct = d.get("sconto_difetti_pct")
+    if not pct:
+        pct = SCONTO_PREDEFINITO[d["gravita_difetti"]]
+    return min(float(pct), tetto)
+
+
+def riga_condizioni(d):
+    """Riga (testo semplice) con capo, materiale, condizione e difetti letti da Gemini, o None. Pura."""
+    if not d or not (d.get("capo") or d.get("materiale") or d.get("difetti") or d.get("condizione")):
+        return None
+    parti = []
+    if d.get("capo") and d["capo"] != "non_riconosciuto":
+        parti.append(d["capo"])
+    if d.get("materiale") and d["materiale"] != "non_leggibile":
+        parti.append(d["materiale"])
+    cond = {"come_nuovo": "come nuovo", "ottima": "condizione ottima", "buona": "condizione buona", "usurata": "usurato"}.get(d.get("condizione"))
+    if cond:
+        parti.append(cond)
+    riga = "🔍 Gemini (condizioni): " + (", ".join(parti) if parti else "n/d")
+    if d.get("gravita_difetti") and d["gravita_difetti"] != "nessuno" and d.get("difetti"):
+        riga += f" · ⚠️ difetti {d['gravita_difetti']}: {d['difetti']}"
+    elif d.get("gravita_difetti") == "nessuno":
+        riga += " · nessun difetto visibile"
+    return riga
+
+
+def riga_stima_gemini(d, rivendita_codice=None):
+    """Riga con la stima di rivendita di Gemini (solo informativa: non cambia margine ne' decisione) e, se molto piu' bassa dei comparabili con
+    confidenza sufficiente, un avviso. None se Gemini non ha stimato. Pura."""
+    if not d or not d.get("rivendita_gemini_eur"):
+        return None
+    rc = d.get("rivendita_confidenza")
+    riga = f"💶 Stima Gemini del capo: circa {d['rivendita_gemini_eur']:g} € (stima" + (f", confidenza {rc:.0%}" if rc is not None else "") + ")" \
+           + (f": {d['rivendita_base']}" if d.get("rivendita_base") else "")
+    if rivendita_codice and (rc or 0) >= 0.6 and d["rivendita_gemini_eur"] < 0.6 * rivendita_codice:
+        riga += f"\n⚠️ Gemini stima molto meno dei comparabili (~{rivendita_codice:.0f} €): controllare modello e materiale"
+    return riga
 
 
 def e_replica(d):
@@ -157,11 +251,13 @@ async def controlla(titolo, brand, prezzo, descrizione, foto, item_id=None):
         testo, _costo, _n = await chiama_gemini(SYSTEM_PROMPT, utente, list(foto)[:MODA_GEMINI_FOTO], grounding=False,
                                                 response_schema=SCHEMA, ruolo="occhio")
         d = leggi_risposta(testo)
-        log.info("MODA GEMINI | item=%s | brand=%s | autenticita=%s | conf=%s | foto=%s | %.1fs | etichetta=%s | made_in=%s | prova=%s | indizi=%s | motivo=%s | titolo=%s",
+        log.info("MODA GEMINI | item=%s | brand=%s | autenticita=%s | conf=%s | foto=%s | %.1fs | etichetta=%s | made_in=%s | prova=%s | indizi=%s | motivo=%s | capo=%s | materiale=%s | cond=%s | difetti=%s | grav=%s | sconto=%s | riv_gem=%s | conf_riv=%s | titolo=%s",
                  item_id or "-", brand, (d or {}).get("autenticita", "nessuna_risposta"), (d or {}).get("confidenza", "-"),
                  min(len(foto), MODA_GEMINI_FOTO), time.time() - t0, (d or {}).get("etichetta_letta", "-"), (d or {}).get("made_in", "-"), (d or {}).get("prova_acquisto", "-"),
                  (d or {}).get("indizi", "-"), (d or {}).get("motivo", (testo or "")[:80]),
-                 (titolo or "")[:60])
+                 (d or {}).get("capo", "-"), (d or {}).get("materiale", "-"), (d or {}).get("condizione", "-"), (d or {}).get("difetti", "-"),
+                 (d or {}).get("gravita_difetti", "-"), (d or {}).get("sconto_difetti_pct", "-"), (d or {}).get("rivendita_gemini_eur", "-"),
+                 (d or {}).get("rivendita_confidenza", "-"), (titolo or "")[:60])
         return d
     except Exception as e:  # noqa: BLE001 - il controllo non deve mai fermare l'avviso
         log.warning("MODA GEMINI | item=%s | errore: %s", item_id or "-", e)
