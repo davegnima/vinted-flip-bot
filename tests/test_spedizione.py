@@ -9,6 +9,7 @@ def test_semi_dell_utente():
     assert costo_spedizione("Francia", "piccolo") == (5.0, ESTIMATED)
     assert costo_spedizione("francia", "ingombrante") == (20.0, ESTIMATED)
     assert costo_spedizione("Italia", "piccolo") == (SPEDIZIONE_STIMATA_EUR, ESTIMATED)
+    assert costo_spedizione("Italia", "medio") == (SPEDIZIONE_STIMATA_EUR, ESTIMATED)
 
 
 def test_cella_vuota_o_paese_ignoto_e_unknown():
