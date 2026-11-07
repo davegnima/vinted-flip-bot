@@ -213,7 +213,7 @@ def _riga_semaforo_passo(fv):
     conf = {"alta": "alta", "media": "media", "bassa": "bassa", "stima": "stima di mercato"}.get(fv.get("conf"), fv.get("conf") or "n.d.")
     margine = f", margine ~{fv['margine']:.0f} €" if fv.get("margine") is not None else ""
     intervallo = f" ({fv['minimo']}-{fv['massimo']})" if fv.get("minimo") is not None and fv.get("massimo") is not None else ""
-    return _escapa_markdown_legacy(f"🚦 Stima rapida {fv.get('semaforo') or ''} ~{fv['fv']} €{intervallo}{margine} · confidenza {conf} (tabella brand+categoria, non annunci)")
+    return _escapa_markdown_legacy(f"🚦 Stima rapida {fv.get('semaforo') or ''} ~{fv['fv']} €{intervallo}{margine} · confidenza {conf} (tabella, non annunci)")
 
 
 def _riga_titolo(listing_info, url=None):
@@ -261,13 +261,28 @@ def testo_preavviso(listing_info, url=None, riga_finale=RIGA_PREAVVISO_IN_ATTESA
         righe += [esc(r) for r in righe_jev]
         if riga_finale == RIGA_PREAVVISO_IN_ATTESA:
             riga_finale = "" if any(r.startswith("⏭") for r in righe_jev) else RIGA_JEV_VERIFICATO
-    if url:
+    if url and not righe_jev:   # con la verifica il titolo e' gia' il link all'annuncio
         righe.append(f"[vedi su Vinted]({url})")
     if riga_query(listing_info):
         righe.append(riga_query(listing_info))
     if riga_tempi:
         righe.append(esc(riga_tempi))
-    righe += ["", riga_finale]
+    righe += ["", riga_finale] if riga_finale else []
+    return _entra_nella_didascalia(righe) if righe_jev else "\n".join(righe)
+
+
+# Righe da togliere per prime, in quest'ordine, se il messaggio supera la didascalia di Telegram (1024 caratteri): mai i link dei comparabili,
+# il verdetto, l'originalita' e i difetti (7/11, utente: il link dei comparabili mancava perche' la didascalia era tagliata).
+_RIGHE_DA_TOGLIERE = ("ℹ️", "🖼", "⚡", "🔎 Query", "💶", "👁", "🧠", "⏭", "🚦", "👤")
+
+
+def _entra_nella_didascalia(righe, limite=1000):
+    """Testo del messaggio con al massimo `limite` caratteri: toglie le righe meno utili (vedi _RIGHE_DA_TOGLIERE) finche' ci sta. Pura."""
+    righe = list(righe)
+    for prefisso in _RIGHE_DA_TOGLIERE:
+        if len("\n".join(righe)) <= limite:
+            break
+        righe = [r for r in righe if not r.startswith(prefisso)]
     return "\n".join(righe)
 
 

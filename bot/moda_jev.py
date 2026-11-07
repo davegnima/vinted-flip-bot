@@ -379,13 +379,14 @@ def _riga_dettagli_legit(dettagli):
 
 
 def righe_messaggio(ris, brand=None):
-    """Righe (testo semplice) dei passi di verifica, nello stesso ordine e con le stesse icone del radar (5/11, richiesta dell'utente):
-    🔎 comparabili con numeri e fiducia, 🖼 foto dei comparabili, 🧠 legit check di Jev con le stesse domande di Gemini, 👁 Gemini, ⚡ velocita',
-    🔗 link ai comparabili. Se il legit check non e' stato fatto (gia' scartato sui prezzi) lo dice. Pura."""
+    """Righe (testo semplice) dei passi di verifica, compatte (7/11, utente: poca verbosita'; la didascalia Telegram taglia a 1024 caratteri e
+    i link dei comparabili in fondo sparivano): 🔎 comparabili con numeri e fiducia, subito sotto i LINK dei comparabili (la cosa da controllare
+    per prima), 🖼 foto dei comparabili, 👁 Gemini (autenticita'), 🔍 condizioni, 💶 stima Gemini, 📉 correzione per i difetti, ⚡ velocita'.
+    Il legit check di Jev non ha una riga a parte: la sintesi con Jev e Gemini e' gia' sotto il verdetto (riga_originalita). Pura."""
     righe = []
     if ris.get("rivendita") is not None:
         n = ris.get("n") or 0
-        riga = f"🔎 Comparabili Vinted: {n}, rivendita ~{ris['rivendita']:.0f} €"
+        riga = f"🔎 {n} comparabili: rivendita ~{ris['rivendita']:.0f} €"
         pc = ris.get("prezzi_comps")
         if pc and pc[0] != pc[1]:
             riga += f" (da {pc[0]:g} a {pc[1]:g} €)"
@@ -395,41 +396,29 @@ def righe_messaggio(ris, brand=None):
         riga += " · ⚠️ prezzi molto dispersi" if ris.get("motivo") == "prezzi_dispersi" else ""
         righe.append(riga)
     else:
-        righe.append("🔎 Comparabili Vinted non trovati: resta la stima rapida, non verificata")
+        righe.append("🔎 Comparabili non trovati: resta la stima rapida, non verificata")
+    link = ris.get("link_comps") or []
+    if link:   # comparabili identificati, con il link all'annuncio (richiesta dell'utente, 02/11): subito sotto i numeri
+        righe += [f"• {p:g} € {u}" for _t, p, u in link[:3]]
+    else:
+        righe += [f"• {p:g} € {t[:40]}" for t, p in (ris.get("esempi") or [])[:3]]
     fc = ris.get("foto_comps")
     if fc:
         nomi = {"stesso_modello": "molto simile", "simile": "simile", "diverso": "diverso", "non_chiaro": "non chiaro"}
-        righe.append("🖼 Foto comparabili vs annuncio: " + ", ".join(nomi.get(sc, str(sc)) for sc, _cf in fc))
-    a = ris.get("autenticita")
+        righe.append("🖼 Foto vs comparabili: " + ", ".join(nomi.get(sc, str(sc)) for sc, _cf in fc))
     if ris.get("legit_saltato"):
         righe.append("⏭ Legit check non fatto: già scartato sui prezzi dei comparabili")
     else:
-        if a:
-            etichette = {"originale_plausibile": "sembra originale", "non_chiaro": "non si capisce", "replica_probabile": "replica probabile",
-                         "altra_marca": "altra marca"}
-            righe.append(f"🧠 Legit check Jev (foto): {etichette.get(a[0], a[0])} ({(a[1] or 0):.0%})")
-            det = _riga_dettagli_legit(getattr(a, "dettagli", None))
-            if det:
-                righe.append("   " + det)
-        else:
-            righe.append("🧠 Legit check Jev (foto): non eseguito o senza risposta")
-        g = riga_gemini(ris.get("gemini"))
-        if g:
-            righe.append(g)
-        for extra in (riga_condizioni(ris.get("gemini")), riga_stima_gemini(ris.get("gemini"), ris.get("rivendita"))):
+        det = _riga_dettagli_legit(getattr(ris.get("autenticita"), "dettagli", None))
+        if det:   # le domande del legit check di Jev (richiesta del 5/11), su una riga sola: il verdetto e' gia' sotto il titolo
+            righe.append("🧠 Jev: " + det)
+        for extra in (riga_gemini(ris.get("gemini")), riga_condizioni(ris.get("gemini")), riga_stima_gemini(ris.get("gemini"), ris.get("rivendita"))):
             if extra:
                 righe.append(extra)
         if ris.get("sconto_difetti") and ris.get("rivendita_prima_difetti"):
-            righe.append(f"📉 Rivendita corretta per i difetti: da ~{ris['rivendita_prima_difetti']:.0f} € a ~{ris['rivendita']:.0f} € (−{ris['sconto_difetti']:.0f}%, stima di Gemini)")
+            righe.append(f"📉 Difetti −{ris['sconto_difetti']:.0f}% (stima Gemini): rivendita da ~{ris['rivendita_prima_difetti']:.0f} € a ~{ris['rivendita']:.0f} €")
     if brand is not None:
         righe.append(riga_velocita(brand))
-    link = ris.get("link_comps") or []
-    if link:   # comparabili identificati, con il link all'annuncio (richiesta dell'utente, 02/11)
-        righe += ["", "🔗 Comparabili da controllare:"] + [f"• {p:g} € {u}" for _t, p, u in link[:3]]
-    else:
-        esempi = (ris.get("esempi") or [])[:3]
-        if esempi:
-            righe += ["", "🔗 Comparabili:"] + [f"• {p:g} € {t[:50]}" for t, p in esempi]
     return righe
 
 
