@@ -158,6 +158,33 @@ def _catalogo_da_html(html):
     return trovati[-1] if trovati else None
 
 
+_RE_BRAND_DTO = re.compile(r'"brand_dto"\s*:\s*\{([^{}]*)\}')
+_brand_loggati = set()
+
+
+def _brand_da_html(html):
+    """(id, nome) del marchio dall'oggetto brand_dto della pagina annuncio, o None. Pura. Il formato esatto non e' stato
+    verificato (regola 7: Claude non apre vinted.it): regex tolleranti, anche con virgolette escapate; se manca, niente."""
+    t = (html or "").replace('\\"', '"')
+    m = _RE_BRAND_DTO.search(t)
+    if not m:
+        return None
+    corpo = m.group(1)
+    i = re.search(r'"id"\s*:\s*"?(\d+)', corpo)
+    n = re.search(r'"(?:title|name)"\s*:\s*"([^"]+)"', corpo)
+    return (i.group(1), n.group(1)) if i and n else None
+
+
+def _logga_brand(html, url):
+    """Una riga `BRAND ID` per ogni marchio visto (una volta per processo): serve a ricavare gli id da mettere nelle ricerche."""
+    b = _brand_da_html(html)
+    if b and b[0] not in _brand_loggati:
+        if len(_brand_loggati) > 2000:
+            _brand_loggati.clear()
+        _brand_loggati.add(b[0])
+        log.info("BRAND ID | id=%s | nome=%s | url=%s", b[0], b[1], url)
+
+
 async def _catalogo_annuncio(url):
     """Id della categoria Vinted dell'annuncio, o None se la pagina non si legge. Una sola richiesta a Vinted (25/10):
     scrape_vinted_listing ritentava fino a 3 volte e rifaceva la pagina leggera, e con i 403 di adesso era solo rumore
@@ -169,6 +196,7 @@ async def _catalogo_annuncio(url):
         _info_pagina[url] = {"paese": paese_da_html(resp.text), "campi": campi_spedizione_da_html(resp.text)}
         if len(_info_pagina) > 500:
             _info_pagina.clear()
+        _logga_brand(resp.text, url)
         desc = _descrizione_da_html(resp.text)
         if desc:
             if len(_descrizioni) > 500:

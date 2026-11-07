@@ -845,3 +845,11 @@ def test_senza_simili_il_verde_diventa_giallo_e_foto_diversa_non_filtra(monkeypa
     assert radar._da_mandare({**foto, "jev_motivo": "ricambio"}) is False
     monkeypatch.setattr(radar, "RADAR_FOTO_DIVERSA_SCARTA", True)
     assert radar._da_mandare(foto) is False
+
+
+def test_brand_da_html_legge_id_e_nome_anche_con_virgolette_escapate():
+    from bot import radar_v2 as r
+    assert r._brand_da_html('..."brand_dto":{"id":277999,"title":"Pioneer","slug":"x"}...') == ("277999", "Pioneer")
+    assert r._brand_da_html('\\"brand_dto\\":{\\"id\\":157148,\\"title\\":\\"Technics\\"}') == ("157148", "Technics")
+    assert r._brand_da_html("<html>niente</html>") is None
+    assert r._brand_da_html(None) is None
