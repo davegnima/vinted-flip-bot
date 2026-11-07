@@ -13,6 +13,8 @@ import os
 
 _AQUI = os.path.dirname(os.path.abspath(__file__))
 VELOCITA_FILE = os.environ.get("VELOCITA_FILE", os.path.join(_AQUI, "dati", "velocita.json"))
+# 7/11: la tabella aggiornata dal worker (ogni giorno, dall'archivio `tracciato` del DB) vive sul volume e ha la precedenza su quella del repo.
+VELOCITA_APPRESA_FILE = os.environ.get("VELOCITA_APPRESA_FILE", "/data/velocita.json")
 VELOCITA_ATTIVA = os.environ.get("VELOCITA_ATTIVA", "1").strip() == "1"
 VELOCITA_K = float(os.environ.get("VELOCITA_K", "10"))                    # peso della media nel tasso del brand
 # Soglie PROPORZIONALI alla velocita' media della tabella (9/10): verde da 1,6 volte la media, giallo da 0,8 volte (con la media
@@ -40,7 +42,9 @@ _VUOTO = {"base": 0.25, "semaforo": {"🟢": 0.50, "🟡": 0.29, "🔴": 0.14}, 
 def carica_velocita(percorso=None):
     """Tabella dal file JSON; se manca o e' rotta, una tabella vuota (nessuna correzione)."""
     try:
-        with open(percorso or VELOCITA_FILE, encoding="utf-8") as f:
+        if percorso is None:
+            percorso = VELOCITA_APPRESA_FILE if os.path.exists(VELOCITA_APPRESA_FILE) else VELOCITA_FILE
+        with open(percorso, encoding="utf-8") as f:
             d = json.load(f)
         base = float(d.get("base") or _VUOTO["base"])
         sem = {k: float(v["veloci"]) / v["n"] if isinstance(v, dict) and v.get("n") else float(v)
@@ -52,6 +56,12 @@ def carica_velocita(percorso=None):
 
 
 _DATI = carica_velocita()
+
+
+def ricarica(percorso=None):
+    """Rilegge la tabella sul posto (chi ha gia' importato _DATI vede i valori nuovi senza riavvio)."""
+    _DATI.clear()
+    _DATI.update(carica_velocita(percorso))
 
 
 def lift_brand(brand, dati=None):

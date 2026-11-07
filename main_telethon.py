@@ -1330,6 +1330,46 @@ async def on_comando_esporta_radar(event):
         log.warning("ESPORTA RADAR fallito:\n%s", traceback.format_exc())
 
 
+@client.on(events.NewMessage(outgoing=True, pattern=r'(?i)^/velocita\s*$'))
+async def on_comando_velocita(event):
+    """/velocita: aggiorna ora la tabella di velocita' di vendita dall'archivio `tracciato` del DB (volume /data) e mostra il riepilogo."""
+    try:
+        await event.respond(_aggiorna_velocita_db(), parse_mode=None)
+    except Exception:
+        log.warning("VELOCITA fallita:\n%s", traceback.format_exc())
+
+
+def _aggiorna_velocita_db():
+    from bot import velocita, velocita_aggiorna
+    n, t = velocita_aggiorna.aggiorna_da_db(velocita.VELOCITA_APPRESA_FILE)
+    sem = " ".join(f"{k} {v['veloci'] / v['n']:.0%} (n={v['n']:.0f})" for k, v in sorted(t["semaforo"].items()) if v["n"])
+    top = ", ".join(f"{k} {v['veloci'] / v['n']:.0%} (n={v['n']:.0f})" for k, v in sorted(t["brand"].items(), key=lambda x: -x[1]["n"])[:8])
+    riga = f"VELOCITA AGGIORNATA | aggiunti={n} | base={t['base']:.1%} | {sem} | fino_ts={t.get('fino_ts')}"
+    log.info(riga)
+    return f"Velocita' aggiornata: {n} annunci nuovi, base veloci {t['base']:.1%}.\n{sem}\nBrand: {top}"
+
+
+async def ciclo_velocita():
+    """Ogni ora controlla se la tabella ha piu' di 23 h e in tal caso la aggiorna (decadimento 0,97 al giorno)."""
+    await asyncio.sleep(600)
+    while True:
+        try:
+            from bot import velocita, velocita_aggiorna
+            try:
+                with open(velocita.VELOCITA_APPRESA_FILE, encoding="utf-8") as f:
+                    ultimo = json.load(f).get("aggiornato", "")
+            except Exception:
+                ultimo = ""
+            vecchio = True
+            if ultimo:
+                vecchio = time.time() - datetime.fromisoformat(ultimo.replace("Z", "+00:00")).timestamp() > 23 * 3600
+            if vecchio:
+                _aggiorna_velocita_db()
+        except Exception:
+            log.warning("VELOCITA ciclo fallito:\n%s", traceback.format_exc())
+        await asyncio.sleep(3600)
+
+
 @client.on(events.NewMessage(outgoing=True, pattern=r'(?i)^/(?:comprato|rivenduto)\s+\S+\s+\d'))
 async def on_comando_operazione(event):
     """/comprato <item|url> <prezzo> [costi] e /rivenduto <item|url> <prezzo> [giorni]: registra acquisto e vendita reali
@@ -1681,6 +1721,7 @@ async def main():
         asyncio.get_event_loop().create_task(watchdog_messaggi())
         asyncio.get_event_loop().create_task(ciclo_callback())
         asyncio.get_event_loop().create_task(ciclo_report_radar())
+        asyncio.get_event_loop().create_task(ciclo_velocita())
         _battito["t"] = time.time()
         asyncio.get_event_loop().create_task(_battito_loop())
         _thread_blocco()

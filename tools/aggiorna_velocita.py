@@ -23,18 +23,7 @@ os.environ.setdefault("DB_FILE", "/tmp/aggiorna_velocita.sqlite3")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from bot.fair_value import _brand_fair_value  # noqa: E402
 
-VELOCI = ("AFFARE", "MEDIO AFFARE", "PRENOTATO")   # prenotato nella prima ora = domanda alta
-# Scarti dell'Occhio/Cervello per falso (campo `motivo` di TRACCIATO) o `legit=probabilmente_falso`: un falso venduto
-# subito non e' un affare vero (17/10: Prada a 10 EUR falso, venduto in fretta). Pesa meno nel credito di velocita'.
-MOTIVI_FALSO = ("[FALSO CONCLAMATO", "[ANNUNCIO FRAUDOLENTO", "[BRAND NON CORRISPONDENTE", "[TESSUTO NON E' IL BRAND", "[NON ORIGINALE",
-                "jev:gemini:replica", "jev:foto:")   # 6/11: scarti Jev/Gemini per replica (17 veloci su 66 scarti: in gran parte falsi venduti in fretta)
-PESO_FALSO = 0.25   # stima dichiarata, non misurata: regolabile con --peso-falso
-
-
-def e_falso(d):
-    """True se Occhio o Cervello hanno segnato l'annuncio come falso (riga TRACCIATO gia' in campi)."""
-    return d.get("legit") == "probabilmente_falso" or d.get("motivo", "").startswith(MOTIVI_FALSO)
-_RANGO = {"NON AFFARE": 0, "PRENOTATO": 1, "NORMALE": 2, "MEDIO AFFARE": 3, "AFFARE": 3}
+from bot.velocita_aggiorna import VELOCI, MOTIVI_FALSO, PESO_FALSO, e_falso, _RANGO, aggiorna  # noqa: E402,F401
 
 
 def _kv(riga):
@@ -88,30 +77,6 @@ def costruisci_annunci(righe):
             out[item] = {"brand": marca, "sem": p["sem"], "ts": p["ts"], "classe": esiti[item],
                          "falso": p.get("falso", False), "esito": p.get("esito", "")}
     return out
-
-
-def aggiorna(tabella, annunci, decadimento, ultimo_ts, peso_falso=PESO_FALSO):
-    fino = tabella.get("fino_ts") or ""
-    nuovi = {i: a for i, a in annunci.items() if a["ts"] > fino and a["ts"] <= ultimo_ts}
-    for sezione in ("brand", "semaforo"):
-        for k, v in tabella.get(sezione, {}).items():
-            v["n"] = round(v["n"] * decadimento, 2)
-            v["veloci"] = round(v["veloci"] * decadimento, 2)
-    tabella.setdefault("brand", {})
-    tabella.setdefault("semaforo", {})
-    for a in nuovi.values():
-        v = a["classe"] in VELOCI
-        credito = (peso_falso if a.get("falso") else 1) if v else 0   # veloce ma falso per Occhio/Cervello: credito ridotto
-        for sezione, chiave in (("brand", a["brand"]), ("semaforo", a["sem"])):
-            c = tabella[sezione].setdefault(chiave, {"n": 0, "veloci": 0})
-            c["n"] = round(c["n"] + 1, 2)
-            c["veloci"] = round(c["veloci"] + credito, 2)
-    n = sum(c["n"] for c in tabella["semaforo"].values())
-    f = sum(c["veloci"] for c in tabella["semaforo"].values())
-    tabella["base"] = round(f / n, 4) if n else 0.25
-    if nuovi:
-        tabella["fino_ts"] = max(a["ts"] for a in nuovi.values())
-    return len(nuovi)
 
 
 def main():
