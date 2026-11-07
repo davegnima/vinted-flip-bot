@@ -192,7 +192,7 @@ def riga_condizioni(d):
     cond = {"come_nuovo": "come nuovo", "ottima": "condizione ottima", "buona": "condizione buona", "usurata": "usurato"}.get(d.get("condizione"))
     if cond:
         parti.append(cond)
-    riga = "🔍 Gemini (condizioni): " + (", ".join(parti) if parti else "n/d")
+    riga = "🔍 " + (", ".join(parti) if parti else "n/d")
     if d.get("gravita_difetti") and d["gravita_difetti"] != "nessuno" and d.get("difetti"):
         riga += f" · ⚠️ difetti {d['gravita_difetti']}: {d['difetti']}"
     elif d.get("gravita_difetti") == "nessuno":
@@ -206,10 +206,9 @@ def riga_stima_gemini(d, rivendita_codice=None):
     if not d or not d.get("rivendita_gemini_eur"):
         return None
     rc = d.get("rivendita_confidenza")
-    riga = f"💶 Stima Gemini del capo: circa {d['rivendita_gemini_eur']:g} € (stima" + (f", confidenza {rc:.0%}" if rc is not None else "") + ")" \
-           + (f": {d['rivendita_base']}" if d.get("rivendita_base") else "")
+    riga = f"💶 Gemini stima ~{d['rivendita_gemini_eur']:g} €" + (f" (confidenza {rc:.0%})" if rc is not None else "")
     if rivendita_codice and (rc or 0) >= 0.6 and d["rivendita_gemini_eur"] < 0.6 * rivendita_codice:
-        riga += f"\n⚠️ Gemini stima molto meno dei comparabili (~{rivendita_codice:.0f} €): controllare modello e materiale"
+        riga += f"\n⚠️ molto meno dei comparabili (~{rivendita_codice:.0f} €): controllare modello e materiale"
     return riga
 
 
@@ -222,8 +221,8 @@ def riga_messaggio(d):
     """Riga (testo semplice) per il messaggio: esito del controllo Gemini sulle foto. Pura."""
     if not d:
         return None
-    etichetta = {"probabile": "dettagli coerenti con la marca", "dubbia": "qualche dubbio sull'autenticita'",
-                 "replica": "indizi di replica", "altra_marca": "etichetta di un altro marchio", "non_verificabile": "dalle foto non si verifica"}[d["autenticita"]]
+    etichetta = {"probabile": "coerente con la marca", "dubbia": "qualche dubbio", "replica": "indizi di replica",
+                 "altra_marca": "etichetta di un altro marchio", "non_verificabile": "non verificabile dalle foto"}[d["autenticita"]]
     conf = f" ({d['confidenza']:.0%})" if d.get("confidenza") is not None else ""
     extra = []
     if d.get("made_in"):
@@ -231,7 +230,7 @@ def riga_messaggio(d):
     if d.get("prova_acquisto") and d["prova_acquisto"] != "nessuna":
         extra.append(f"visibile: {d['prova_acquisto'].replace('_', '/')}")
     dettagli = f" [{'; '.join(extra)}]" if extra else ""
-    return f"👁 Gemini (tutte le foto): {etichetta}{conf}" + (f", {d['motivo']}" if d.get("motivo") else "") + dettagli
+    return f"👁 Gemini: {etichetta}{conf}" + (f", {d['motivo'][:90]}" if d.get("motivo") else "") + dettagli
 
 
 async def controlla(titolo, brand, prezzo, descrizione, foto, item_id=None):

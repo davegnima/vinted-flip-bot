@@ -44,7 +44,7 @@ def test_tratteni_solo_per_brand_nuovo_con_regola_brand_nuovo(monkeypatch):
 
 def test_righe_messaggio_con_e_senza_comparabili():
     r = mj.righe_messaggio({"rivendita": 140, "n": 7, "margine": 90, "roi": 400, "esempi": [("Abito", 120)], "autenticita": ("originale_plausibile", 0.8)})
-    assert any("Comparabili Vinted: 7" in x for x in r) and any("sembra originale" in x for x in r)
+    assert any("7 comparabili" in x for x in r)
     r2 = mj.righe_messaggio({"rivendita": None, "autenticita": None})
     assert any("non trovati" in x for x in r2) and any("non verificata" in x for x in r2)
 
@@ -88,7 +88,7 @@ def test_comparabili_con_link_e_diversi():
     assert molto_simili(coppie, None) == [] and molto_simili([], [("stesso_modello", 0.9)]) == []
     righe = righe_messaggio({"rivendita": 60, "n": 4, "margine": 50, "roi": 150, "esempi": [], "autenticita": None,
                              "foto_comps": [("stesso_modello", 0.8), ("diverso", 0.7)]})
-    assert any("Foto comparabili" in r and "molto simile" in r for r in righe)
+    assert any("Foto vs comparabili" in r and "molto simile" in r for r in righe)
 
 
 def test_gemini_moda_serve_controllo_e_decisione():
@@ -349,7 +349,7 @@ def test_gemini_condizioni_difetti_correggono_la_rivendita():
     righe = righe_messaggio({"rivendita": nuovo["rivendita"], "n": 5, "margine": nuovo["margine"], "roi": nuovo["roi"], "esempi": [], "autenticita": None,
                              "gemini": d, "sconto_difetti": pct, "rivendita_prima_difetti": v["rivendita"]})
     assert any("difetti moderata" in r and "alone" in r for r in righe)
-    assert any("Rivendita corretta per i difetti" in r for r in righe) and any("Stima Gemini del capo" in r for r in righe)
+    assert any("Difetti −35%" in r for r in righe) and any("Gemini stima ~70" in r for r in righe)
     assert "difetti −35%" in riga_verdetto({"esito": "conferma", "motivo": "ok", "n": 5, "rivendita": 80, "margine": 40, "roi": 130, "sconto_difetti": 35.0})
     # stima di Gemini molto sotto i comparabili con buona confidenza: avviso (solo informativo)
     assert "molto meno" in g.riga_stima_gemini(dict(d, rivendita_gemini_eur=30), 100)
@@ -374,3 +374,21 @@ def test_gemini_prevale_su_jev_replica_debole_e_recuperato_con_foto():
     t = testo_preavviso({"fair_value": {"semaforo": "🔴"}, "price": 50, "brand": "Ann", "title": "Pantalone", "righe_jev": ["x"], "riga_verdetto_jev": "v",
                          "rivendita_jev": 170, "riga_recupero": "♻️ Recuperato: prova"}, "https://www.vinted.it/items/1", riga_finale="")
     assert t.startswith("♻️ Recuperato")
+
+
+def test_messaggio_compatto_con_link_comparabili_nei_1024_caratteri():
+    """7/11 (utente): la didascalia Telegram taglia a 1024 caratteri e il link dei comparabili spariva: ora sta subito sotto i numeri e le righe
+    meno utili cadono per prime."""
+    from bot.moda_jev import righe_messaggio
+    from bot.scheda import testo_preavviso
+    link = [("Pantaloni Missoni", p, f"https://www.vinted.it/items/{i}-missoni") for i, p in enumerate((80.0, 90.0, 95.0), 1)]
+    ris = {"rivendita": 90.0, "n": 8, "margine": 40.0, "roi": 150.0, "esempi": [], "autenticita": None, "link_comps": link,
+           "foto_comps": [("simile", 0.8)] * 3, "gemini": {"autenticita": "probabile", "confidenza": 0.9, "motivo": "x" * 120, "capo": "pantaloni", "materiale": "lana",
+                                                          "condizione": "buona", "gravita_difetti": "nessuno", "difetti": "", "rivendita_gemini_eur": 60.0, "rivendita_confidenza": 0.7}}
+    righe = righe_messaggio(ris, brand="missoni")
+    assert righe[0].startswith("🔎") and righe[1].startswith("• 80 € https://www.vinted.it/items/1")
+    info = {"fair_value": {"semaforo": "🟡", "fv": 40, "minimo": 30, "massimo": 70, "margine": 25, "conf": "alta"}, "price": 15, "brand": "Missoni", "title": "Pantaloni Missoni lunghi",
+            "righe_jev": righe + ["y" * 150], "riga_verdetto_jev": "✅ CONFERMATO: rivendita ~90 €", "rivendita_jev": 90,
+            "query_name": "Avanguardia Rick Yohji Dries AnnD Raf Loewe Lemaire Khaite 50", "query_url": "https://x.it/q"}
+    t = testo_preavviso(info, "https://www.vinted.it/items/9")
+    assert len(t) <= 1024 and t.count("https://www.vinted.it/items/") >= 4   # titolo + 3 comparabili
