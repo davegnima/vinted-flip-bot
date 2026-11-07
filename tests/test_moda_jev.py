@@ -392,3 +392,16 @@ def test_messaggio_compatto_con_link_comparabili_nei_1024_caratteri():
             "query_name": "Avanguardia Rick Yohji Dries AnnD Raf Loewe Lemaire Khaite 50", "query_url": "https://x.it/q"}
     t = testo_preavviso(info, "https://www.vinted.it/items/9")
     assert len(t) <= 1024 and t.count("https://www.vinted.it/items/") >= 4   # titolo + 3 comparabili
+
+
+def test_riga_originalita_dice_cosa_fare_e_cosa_chiedere():
+    """7/11 (utente, caso Lemaire): con autenticita' dubbia il messaggio dice cosa chiedere al venditore; con 'ok' nessuna riga in piu'."""
+    from bot.moda_jev import riga_originalita
+    base = {"esito": "conferma", "motivo": "ok", "n": 13, "rivendita": 330.0, "margine": 274.0, "roi": 1183.0}
+    dubbio = dict(base, autenticita=("originale_plausibile", 0.6),
+                  gemini={"autenticita": "dubbia", "confidenza": 0.6, "da_chiedere": "foto dell'etichetta di lavaggio con il made in"})
+    riga = riga_originalita(dubbio)
+    assert riga.startswith("⚠️ AUTENTICITÀ DA CONTROLLARE") and "\n👉 Prezzo buono ma originalità non verificata: prima chiedi foto dell'etichetta" in riga
+    assert "chiedi al venditore foto di etichette" in riga_originalita(dict(base, autenticita=None))   # ripiego senza richiesta di Gemini
+    assert "Non comprare" in riga_originalita(dict(base, autenticita=("originale_plausibile", 0.9), gemini={"autenticita": "replica", "confidenza": 0.5}))
+    assert "\n" not in riga_originalita(dict(base, autenticita=("originale_plausibile", 0.8), gemini={"autenticita": "probabile", "confidenza": 0.9}))

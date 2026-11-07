@@ -67,6 +67,7 @@ CONDIZIONI E VALORE (7/11, utente: non solo autenticita')
 - sconto_difetti_pct: di quanto i difetti abbassano il prezzo di rivendita rispetto allo STESSO capo in buone condizioni, 0-60 (0 se nessuno). Non scontare due volte quello che e' gia' nella condizione.
 - rivendita_gemini_eur: il prezzo realistico a cui QUESTO capo, nelle condizioni che vedi, si rivende usato in Italia in tempi brevi (non il prezzo di listino ne' quello chiesto da altri). Usa modello, materiale e stato. Se non conosci abbastanza il capo scrivi 0.
 - rivendita_confidenza: 0-1, quanto sei sicuro di quella stima (sotto 0,4 se il capo e' poco noto o le foto non bastano).
+- da_chiedere: se l'autenticita' non e' "probabile" o mancano dettagli chiave, cosa chiedere al venditore per sciogliere il dubbio, in modo concreto (es. "foto dell'etichetta di lavaggio con il made in", "foto delle cuciture interne", "foto del numero di serie"), max 110 caratteri. Vuoto se non serve.
 - rivendita_base: max 100 caratteri, su cosa si basa (es. 'maglione base mainline, cashmere, prezzi usati tipici 80-120').
 Non calcolare margini, ROI o decisioni. Risposta breve: campi a poche parole, "motivo" una frase italiana (max 120 caratteri) con il fatto che ha deciso."""
 
@@ -74,7 +75,7 @@ SCHEMA = {
     "type": "OBJECT",
     "propertyOrdering": ["autenticita", "confidenza", "linea_etichetta", "etichetta_letta", "made_in", "prova_acquisto", "indizi", "motivo",
                          "capo", "materiale", "condizione", "difetti", "gravita_difetti", "sconto_difetti_pct",
-                         "rivendita_gemini_eur", "rivendita_confidenza", "rivendita_base"],
+                         "rivendita_gemini_eur", "rivendita_confidenza", "rivendita_base", "da_chiedere"],
     "properties": {
         "autenticita": {"type": "STRING", "enum": ["probabile", "dubbia", "replica", "altra_marca", "non_verificabile"]},
         "confidenza": {"type": "NUMBER"},
@@ -93,10 +94,11 @@ SCHEMA = {
         "rivendita_gemini_eur": {"type": "NUMBER"},
         "rivendita_confidenza": {"type": "NUMBER"},
         "rivendita_base": {"type": "STRING"},
+        "da_chiedere": {"type": "STRING"},
     },
     "required": ["autenticita", "confidenza", "etichetta_letta", "made_in", "prova_acquisto", "indizi", "motivo",
                  "capo", "materiale", "condizione", "difetti", "gravita_difetti", "sconto_difetti_pct",
-                 "rivendita_gemini_eur", "rivendita_confidenza", "rivendita_base"],
+                 "rivendita_gemini_eur", "rivendita_confidenza", "rivendita_base", "da_chiedere"],
 }
 
 _chiamate = []   # istanti delle chiamate dell'ultima ora: tetto MODA_GEMINI_MAX_ORA
@@ -160,6 +162,7 @@ def leggi_risposta(testo):
     except (TypeError, ValueError):
         d["rivendita_confidenza"] = None
     d["rivendita_base"] = str(d.get("rivendita_base") or "")[:110]
+    d["da_chiedere"] = str(d.get("da_chiedere") or "")[:120]
     return d
 
 
