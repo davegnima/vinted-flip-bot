@@ -315,3 +315,9 @@ def test_messaggio_recuperato_si_compone_senza_riga_finale():
           "righe_jev": ["🔎 12 comparabili 90-200 €"], "riga_verdetto_jev": "✅ CONFERMATO: rivendita ~140 €", "rivendita_jev": 140.0}
     t = testo_preavviso(li, "https://www.vinted.it/items/1-x", riga_finale="")
     assert "CONFERMATO" in t and "vinted.it/items/1" in t
+
+
+def test_lancel_in_blocklist_brand():
+    from bot.filtri import check_skip_pre_gemini
+    skip, motivo = check_skip_pre_gemini({"brand": "Lancel", "title": "Sac Lancel noir", "price": 30})
+    assert skip and "BLOCKLIST" in motivo

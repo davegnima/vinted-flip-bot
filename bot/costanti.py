@@ -12,7 +12,7 @@ VENDITORI_BLOCKLIST = {"valeryepippo", "firmadonna98", "cicciodonna779", "hadour
 # capo), un brand in questa lista non viene MAI comprato, quindi non ha
 # senso nemmeno stimarne il prezzo di rivendita -- si scarta prima ancora
 # di chiamare l'occhio, come un venditore in blocklist.
-BRAND_BLOCKLIST = {"intrend"}
+BRAND_BLOCKLIST = {"intrend", "lancel"}   # 7/11: Lancel tolto su richiesta dell'utente (63 annunci in 12 h, 3 veloci, 0 avvisi)
 
 VINTED_BRAND_IDS = {
     # 2/11 id letti da un agente dalla pagina del brand negli annunci (1 annuncio, tranne Tuckernuck: 2); NON verificati a mano
