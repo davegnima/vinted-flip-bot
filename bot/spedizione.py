@@ -18,7 +18,8 @@ VERIFIED, ESTIMATED, UNKNOWN = "VERIFIED", "ESTIMATED", "UNKNOWN"
 # Ogni altro paese noto usa la riga della Francia. Le celle non elencate (es. 'medio') sono UNKNOWN finche' non ci sono costi letti dalla pagina. Si puo' sovrascrivere con la variabile
 # SPEDIZIONE_TARIFFE (JSON {"francia": {"medio": 9}}), senza toccare il codice.
 _TARIFFE_BASE = {
-    "italia": {"piccolo": SPEDIZIONE_STIMATA_EUR, "ingombrante": 20.0},
+    # 'medio' Italia (7/11): stessa tariffa di base gia' usata nel calcolo; prima la cella vuota dava UNKNOWN e il semaforo non andava mai oltre il giallo.
+    "italia": {"piccolo": SPEDIZIONE_STIMATA_EUR, "medio": SPEDIZIONE_STIMATA_EUR, "ingombrante": 20.0},
     "francia": {"piccolo": 5.0, "ingombrante": 20.0},
 }
 
