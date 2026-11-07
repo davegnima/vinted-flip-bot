@@ -403,7 +403,10 @@ def test_verifica_comparabili_filtra_e_toglie_il_suffisso(monkeypatch):
     base = {"semaforo": "giallo", "jev": "affare_vero", "jev_conf": 0.9, "rivendita": 200, "margine": 150, "roi": 300, "n": 14,
             "jev_motivo_frase": "oggetto vero, ma i simili non sono lo stesso modello"}
     rosso = {**base, "verificata": {"semaforo": "rosso", "n_stesso": 0, "n_giudicati": 14, "rivendita": None}}
-    assert radar._da_mandare(rosso) is False
+    assert radar._da_mandare(rosso) is True          # 7/11: senza simili non si scarta piu'
+    monkeypatch.setattr(radar, "RADAR_VERIFICA_SCARTA", True)
+    assert radar._da_mandare(rosso) is False         # con l'interruttore si torna allo scarto
+    monkeypatch.setattr(radar, "RADAR_VERIFICA_SCARTA", False)
     giallo = {**base, "verificata": {"semaforo": "giallo", "n_stesso": 4, "n_giudicati": 4, "rivendita": 187.5, "margine": 107, "roi": 250}}
     assert radar._da_mandare(giallo) is True
     testo = "\n".join(radar._righe_v2(giallo))
@@ -827,3 +830,18 @@ def test_compatta_didascalia_fa_stare_l_avviso_in_una_didascalia_senza_toccare_i
     assert "https://www.vinted.it/items/1-a" in out and "https://www.vinted.it/items/2-b" in out and out.endswith("items/9-z")
     assert "💶 Margine *124 €*" in out
     assert radar.spezza_didascalia(out)[1] == ""     # nessun secondo messaggio
+
+
+def test_senza_simili_il_verde_diventa_giallo_e_foto_diversa_non_filtra(monkeypatch):
+    from bot import radar
+    monkeypatch.setattr(radar, "RADAR_VERIFICA", True)
+    verde = {"semaforo": "verde", "jev": "affare_vero", "jev_conf": 0.9, "verificata": {"semaforo": "rosso", "n_stesso": 0, "n_giudicati": 7}}
+    d = radar._declassa_senza_simili(verde)
+    assert d["semaforo"] == "giallo" and radar._da_mandare(d) is True and radar._con_suono(d) is False
+    verificato = {**verde, "verificata": {"semaforo": "verde", "n_stesso": 8, "n_giudicati": 8}}
+    assert radar._declassa_senza_simili(verificato)["semaforo"] == "verde"
+    foto = {"semaforo": "giallo", "jev": "falso_o_ricambio", "jev_conf": 0.9, "jev_motivo": "foto_diversa"}
+    assert radar._da_mandare(foto) is True
+    assert radar._da_mandare({**foto, "jev_motivo": "ricambio"}) is False
+    monkeypatch.setattr(radar, "RADAR_FOTO_DIVERSA_SCARTA", True)
+    assert radar._da_mandare(foto) is False

@@ -7,14 +7,17 @@ from bot.spedizione import (ESTIMATED, UNKNOWN, VERIFIED, campi_spedizione_da_ht
 
 def test_semi_dell_utente():
     assert costo_spedizione("Francia", "piccolo") == (5.0, ESTIMATED)
-    assert costo_spedizione("francia", "ingombrante") == (20.0, ESTIMATED)
+    assert costo_spedizione("francia", "ingombrante") == (15.0, ESTIMATED)
     assert costo_spedizione("Italia", "piccolo") == (SPEDIZIONE_STIMATA_EUR, ESTIMATED)
-    assert costo_spedizione("Italia", "medio") == (SPEDIZIONE_STIMATA_EUR, ESTIMATED)
+    # 7/11 (utente): medio = 2 x piccolo, grande = 3 x piccolo
+    assert costo_spedizione("Italia", "medio") == (2 * SPEDIZIONE_STIMATA_EUR, ESTIMATED)
+    assert costo_spedizione("Italia", "ingombrante") == (3 * SPEDIZIONE_STIMATA_EUR, ESTIMATED)
+    assert costo_spedizione("Francia", "medio") == (10.0, ESTIMATED)
 
 
 def test_cella_vuota_o_paese_ignoto_e_unknown():
-    assert costo_spedizione("Germania", "medio") == (SPEDIZIONE_STIMATA_EUR, UNKNOWN)
-    assert costo_spedizione("Francia", "medio") == (SPEDIZIONE_STIMATA_EUR, UNKNOWN)
+    assert costo_spedizione("Germania", "enorme") == (SPEDIZIONE_STIMATA_EUR, UNKNOWN)
+    assert costo_spedizione("Francia", "enorme") == (SPEDIZIONE_STIMATA_EUR, UNKNOWN)
     assert costo_spedizione(None, "piccolo") == (SPEDIZIONE_STIMATA_EUR, UNKNOWN)
 
 
@@ -61,6 +64,6 @@ def test_riga_costo_totale():
 def test_altri_paesi_usano_la_francia():
     from bot.spedizione import costo_spedizione, ESTIMATED, UNKNOWN
     assert costo_spedizione("germania", "piccolo") == (5.0, ESTIMATED)
-    assert costo_spedizione("spagna", "ingombrante") == (20.0, ESTIMATED)
-    assert costo_spedizione("germania", "medio")[1] == UNKNOWN
+    assert costo_spedizione("spagna", "ingombrante") == (15.0, ESTIMATED)
+    assert costo_spedizione("germania", "medio") == (10.0, ESTIMATED)
     assert costo_spedizione(None, "piccolo")[1] == UNKNOWN

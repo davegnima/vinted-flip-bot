@@ -554,6 +554,18 @@ def da_cancellare(v2, esito=None):
 # e la rivendita sui soli "stesso modello" non da' verde o giallo, l'avviso non parte. Senza verifica (pochi comparabili, Jev spento) resta il vecchio comportamento.
 RADAR_VERIFICA = os.environ.get("RADAR_VERIFICA", "1").strip() not in ("0", "false", "no", "")
 SUFFISSO_SIMILI = ", ma i simili non sono lo stesso modello"
+# 7/11 (richiesta dell'utente: "perdermi meno affari veri possibili"): senza comparabili dello stesso modello il verde diventa un giallo muto che si vede
+# comunque, e il giudizio di Jev "foto diversa dal titolo" non filtra piu'. Con RADAR_VERIFICA_SCARTA=1 si torna allo scarto.
+RADAR_VERIFICA_SCARTA = os.environ.get("RADAR_VERIFICA_SCARTA", "0").strip() in ("1", "true", "si")
+RADAR_FOTO_DIVERSA_SCARTA = os.environ.get("RADAR_FOTO_DIVERSA_SCARTA", "0").strip() in ("1", "true", "si")
+
+
+def _declassa_senza_simili(v2):
+    """Copia del verdetto con il verde ridotto a giallo se i comparabili verificati non reggono il verde (pura)."""
+    ver = (v2 or {}).get("verificata")
+    if v2 and RADAR_VERIFICA and ver and v2.get("semaforo") == "verde" and ver.get("semaforo") != "verde":
+        return {**v2, "semaforo": "giallo", "declassato": "senza comparabili dello stesso modello"}
+    return v2
 
 
 def _frase_senza_simili(v2):
@@ -571,12 +583,13 @@ def perche_non_inviato(v2):
     marca = (v2.get("brand") or "").strip().lower()
     if marca and RADAR_BRAND_SILENZIO and marca.startswith(RADAR_BRAND_SILENZIO):
         return f"brand {v2.get('brand')} senza vendite veloci nei dati: avviso silenziato"
-    if RADAR_JEV_RICHIESTO and not (v2.get("jev") == "affare_vero" and (v2.get("jev_conf") or 0) >= RADAR_JEV_CONF_MIN):
+    foto_diversa = v2.get("jev") == "falso_o_ricambio" and v2.get("jev_motivo") == "foto_diversa" and not RADAR_FOTO_DIVERSA_SCARTA
+    if RADAR_JEV_RICHIESTO and not foto_diversa and not (v2.get("jev") == "affare_vero" and (v2.get("jev_conf") or 0) >= RADAR_JEV_CONF_MIN):
         if v2.get("jev") == "affare_vero":
             return f"Jev dice affare ma con confidenza {v2.get('jev_conf')} sotto la soglia {RADAR_JEV_CONF_MIN}"
         return f"Jev non lo da' come affare ({v2.get('jev_motivo_frase') or v2.get('jev') or 'nessun giudizio'})"
     ver = v2.get("verificata")
-    if RADAR_VERIFICA and ver and ver.get("semaforo") not in RADAR_SEMAFORI:
+    if RADAR_VERIFICA and RADAR_VERIFICA_SCARTA and ver and ver.get("semaforo") not in RADAR_SEMAFORI:
         return f"comparabili verificati: solo {ver.get('n_stesso')} stesso modello e {ver.get('n_simili') or 0} simili su {ver.get('n_giudicati')}"
     return None
 
@@ -680,6 +693,7 @@ async def invia_verdetto_v2(parsed, url, v2, foto=None, rivaluta=None, esito=Non
     Ritorna True solo se l'avviso e' stato consegnato. Se `esito` e' un dict lo riempie con `inviato`, `motivo` (perche' no,
     in italiano) e `v2` (il verdetto finale, rivalutato se Gemini ha cambiato modello): il gruppo non deve piu' dire "Inviato" a vuoto (1/11)."""
     esito = esito if esito is not None else {}
+    v2 = _declassa_senza_simili(v2)
     esito.update({"inviato": False, "motivo": None, "v2": v2, "scartato": False})
     if not _da_mandare(v2):
         esito["motivo"] = perche_non_inviato(v2)
