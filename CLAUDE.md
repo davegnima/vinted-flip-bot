@@ -26,6 +26,8 @@ Userbot Telethon che riceve gli annunci dal tracker (`davegnima/Vinted-Notificat
 19. Misurare sempre i tre obiettivi: semaforo vicino al Cervello e alla velocita' di vendita, falsi individuati, affari notificati in fretta.
 20. Brand: Celine escluso, Missoni resta. Il banword `weekend` nel tracker esclude Weekend Max Mara di proposito.
 
+21. Pokemon (carte, booster, ecc.) non si monitora mai: nessuna ricerca dedicata (7/11, utente).
+
 Procedure fisse per i lavori ricorrenti (analisi log, ciclo modifica e merge, controllo deploy, variabili Railway, ricerche tracker, consumi, aggiornamento di `STATO.md`): `docs/procedure/`; recap mattutino: `docs/recap.md`.
 
 ## Pipeline

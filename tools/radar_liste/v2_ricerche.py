@@ -86,7 +86,14 @@ ONDA9=[ # 07/11 sera: categorie NUOVE (non gia' coperte da altre ricerche). Tett
  ('V2 rancilio silvia','rancilio silvia',None,[],100),('V2 sage barista','sage barista',None,[],80),('V2 bambu lab','bambu lab',None,[],100),
  ('V2 pokemon booster box','pokemon booster box sigillato',None,[],80),
 ]
-RISCHIO=('V2 dyson airwrap','V2 dyson supersonic','V2 dyson v15','V2 bose quietcomfort 45','V2 bose soundlink','V2 ghd platinum','V2 switch lite','V2 switch 2','V2 kartell','V2 garmin edge','V2 brompton','V2 switch oled', # 07/11 sera: le prime 8 erano modelli gia' coperti da V2 dyson/bose/ghd/switch (duplicati, tolte su richiesta utente); le altre 4: 0 gialli/verdi in 24 h
+ONDA10=[ # 07/11 sera (2): altre 10 categorie nuove. Brand concatenabili con '+' (stessa categoria e stesso tetto). Tetti = stime mie (meta' della rivendita veloce), da tarare.
+ ('V2 sony wh-1000xm4','sony wh-1000xm4',None,[3678],60),('V2 nintendo 64','nintendo 64',None,[],50),('V2 gamecube','nintendo gamecube',None,[],50),
+ ('V2 shure sm7b','shure sm7b',None,[],120),('V2 ibanez chitarra','ibanez chitarra elettrica',None,[],80),('V2 thinkpad x1','lenovo thinkpad x1 carbon',None,[],70),
+ ('V2 g-shock b5000','g-shock gmw-b5000',None,[],100),('V2 campagnolo record','campagnolo record',None,[],80),('V2 seiko uomo','','seiko',[97],60),
+ ('V2 hifi vintage','','pioneer+marantz+technics+bang olufsen',[3694,3699,3701],100),
+]
+RISCHIO=('V2 pokemon booster box', # 07/11: Pokemon mai monitorato (regola utente)
+         'V2 dyson airwrap','V2 dyson supersonic','V2 dyson v15','V2 bose quietcomfort 45','V2 bose soundlink','V2 ghd platinum','V2 switch lite','V2 switch 2','V2 kartell','V2 garmin edge','V2 brompton','V2 switch oled', # 07/11 sera: le prime 8 erano modelli gia' coperti da V2 dyson/bose/ghd/switch (duplicati, tolte su richiesta utente); le altre 4: 0 gialli/verdi in 24 h
          'V2 hilti','V2 game boy color','V2 sega mega drive','V2 lego millennium falcon','V2 cybex cloud z','Borse', # 07/11 potate: 0 gialli/verdi in 24 h con 1-6 verdetti (copia in docs/analisi/radar-ricerche-potate-2026-11-07.json)
          'Casa e lampade','V2 leica','Obiettivi', # 06/11 (b) potate: 0 gialli/verdi su 9 verdetti ciascuna (copia in docs/analisi/radar-ricerche-potate-2026-11-06-b.json)
          # 06/11 potata: 3 venduti entro 1 h su 17 validi (copia in docs/analisi/radar-ricerche-potate-2026-11-06.json)
@@ -152,6 +159,12 @@ if '--onda7' in sys.argv:
     for nome,txt,br,cat,pt in ONDA7:
         if nome in gia or nome in RISCHIO: continue
         u='https://www.vinted.it/catalog?'+f'search_text={urllib.parse.quote(txt)}&'+''.join(f'catalog[]={i}&' for i in cat)+f"price_to={pt}&currency=EUR&order=newest_first"
+        post('/add_query',{'query':u,'query_name':nome}); print('ok',nome)
+if '--onda10' in sys.argv:
+    gia=_nomi_sul_tracker()
+    for nome,txt,br,cat,pt in ONDA10:
+        if nome in gia or nome in RISCHIO: continue
+        u='https://www.vinted.it/catalog?'+(f'search_text={urllib.parse.quote(txt)}&' if txt else '')+(''.join(f'brand_ids[]={B_[b]}&' for b in br.split('+')) if br else '')+''.join(f'catalog[]={i}&' for i in cat)+f"price_to={pt}&currency=EUR&order=newest_first"
         post('/add_query',{'query':u,'query_name':nome}); print('ok',nome)
 if '--onda9' in sys.argv:
     gia=_nomi_sul_tracker()
