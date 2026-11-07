@@ -239,13 +239,26 @@ def correggi_per_difetti(v, prezzo, gemini):
     return nuovo, pct
 
 
+CONF_GEMINI_PREVALE = 0.85   # Gemini "coerente" con almeno questa confidenza...
+CONF_JEV_REPLICA_DEBOLE = 0.75   # ...corregge una "replica probabile" di Jev se questa e' sotto questa confidenza
+
+
+def gemini_prevale(autenticita, gemini):
+    """True se Gemini (tutte le foto, etichette lette) dice "coerente" con confidenza alta e Jev (una sola lettura per foto) dice "replica probabile"
+    con confidenza non alta: prevale Gemini (7/11, utente: caso Jean Paul Gaultier, Jev 51% replica contro Gemini 95% coerente). Una replica di Jev
+    sicura, o "altra marca", non si corregge. Pura."""
+    return bool(autenticita and autenticita[0] == "replica_probabile" and (autenticita[1] or 0) < CONF_JEV_REPLICA_DEBOLE
+                and gemini and gemini.get("autenticita") == "probabile" and (gemini.get("confidenza") or 0) >= CONF_GEMINI_PREVALE)
+
+
 def decidi(valutazione, autenticita, gemini=None, foto_comps=None, dispersione=None):
     """(esito, motivo) dalle due verifiche. `valutazione` = dict di valuta() o None se i comparabili mancano; `autenticita` =
     (scelta, confidenza) o None; `gemini` = dict del controllo Gemini su tutte le foto o None. Il falso scarta sempre; senza comparabili
     l'avviso parte non verificato. Pura."""
     if e_replica(gemini):
         return "scarta", "gemini:replica"
-    if autenticita and autenticita[0] in ("replica_probabile", "altra_marca") and (autenticita[1] or 0) >= CONF_AUTENTICITA_MIN:
+    if autenticita and autenticita[0] in ("replica_probabile", "altra_marca") and (autenticita[1] or 0) >= CONF_AUTENTICITA_MIN \
+            and not gemini_prevale(autenticita, gemini):
         return "scarta", "foto:" + autenticita[0]
     if valutazione is None:
         return "non_verificato", "comparabili_non_trovati"
@@ -290,6 +303,10 @@ def _stato_originalita(ris):
     def peggio(nuovo_stato):
         ordine = ["nessuno", "ok", "non_chiaro", "dubbio", "replica"]
         return nuovo_stato if ordine.index(nuovo_stato) > ordine.index(stato) else stato
+    if a and a[0] and gemini_prevale(a, g):
+        parti.append(f"Jev foto: replica probabile ({(a[1] or 0):.0%}), ma Gemini sulle etichette dice coerente: prevale Gemini")
+        stato = "ok"
+        a = None
     if a and a[0]:
         etichette = {"originale_plausibile": "sembra originale", "non_chiaro": "non si capisce", "replica_probabile": "replica probabile", "altra_marca": "altra marca"}
         parti.append(f"Jev foto: {etichette.get(a[0], a[0])}" + (f" ({a[1]:.0%})" if a[1] is not None else ""))
