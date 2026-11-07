@@ -168,3 +168,21 @@ def test_correzione_non_scambia_verde_e_giallo():
     for brand in ("a", "b"):
         for sem in ("🟢", "🟡"):
             assert v.semaforo_corretto(sem, brand, dati, prezzo=40)[0] in (sem, "🔴")
+
+
+def test_aggiorna_da_db_conta_una_volta_e_ricarica(tmp_path, monkeypatch):
+    import time as _t
+    from bot import velocita, velocita_aggiorna
+    out = tmp_path / "velocita.json"
+    monkeypatch.setattr(velocita, "VELOCITA_FILE", str(tmp_path / "assente.json"))
+    ora = _t.time()
+    storia = [(15, "attivo"), (300, "venduto")]
+    db.scrivi_evento("tracciato", "9001", "Prada", {"sem_base": "🟢", "brand_n": "prada", "esito": "SOLO_SEMAFORO", "storia": storia}, ts=ora - 7200)
+    db.scrivi_evento("tracciato", "9002", "Prada", {"sem_base": "🔴", "brand_n": "prada", "storia": [(900, "attivo"), (3600, "attivo")]}, ts=ora - 7000)
+    db.scrivi_evento("tracciato", "9003", "Prada", {"sem_base": "🟢", "brand_n": "prada", "storia": storia}, ts=ora - 600)   # troppo recente
+    n, tab = velocita_aggiorna.aggiorna_da_db(str(out), decadimento=1.0, adesso=ora)
+    assert n == 2 and tab["brand"]["prada"]["n"] == 2 and tab["brand"]["prada"]["veloci"] == 1
+    n2, _ = velocita_aggiorna.aggiorna_da_db(str(out), decadimento=1.0, adesso=ora)
+    assert n2 == 0                                                      # niente doppio conteggio
+    velocita.ricarica(str(out))
+    assert velocita._DATI["brand"]["prada"] == (2.0, 1.0)
