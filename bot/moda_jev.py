@@ -322,6 +322,29 @@ def _stato_originalita(ris):
     return stato, parti
 
 
+def _da_chiedere(ris):
+    """Cosa chiedere al venditore per sciogliere i dubbi: la richiesta di Gemini (ha visto le foto) oppure, se non c'e', quella ricavata dalle
+    risposte di Jev (etichetta di lavaggio con il made in se non si vede). Stringa vuota se non serve. Pura."""
+    g = ris.get("gemini") or {}
+    if g.get("da_chiedere"):
+        return g["da_chiedere"]
+    det = getattr(ris.get("autenticita"), "dettagli", None) or {}
+    if (det.get("made_in") or (None,))[0] == "non_visibile":
+        return "foto dell'etichetta di lavaggio con il made in"
+    return ""
+
+
+def riga_azione(ris, stato):
+    """'👉 ...' cosa fare quando l'originalita' non e' sicura (7/11, utente: 'non capisco se devo comprare, se fake, cosa devo chiedere'). Per
+    'ok' nessuna riga: il verdetto dice gia' che si puo' comprare. Pura."""
+    if stato == "replica":
+        return "👉 Non comprare: indizi di replica nelle foto"
+    if stato in ("dubbio", "non_chiaro", "nessuno"):
+        chiedi = _da_chiedere(ris)
+        return "👉 Prezzo buono ma originalità non verificata: " + (f"prima chiedi {chiedi}" if chiedi else "chiedi al venditore foto di etichette interne e cuciture")
+    return None
+
+
 def riga_originalita(ris):
     """Riga in evidenza subito sotto il verdetto: l'annuncio sembra originale o no, con chi lo dice (6/11, utente: 'piu' visibilita' immediata di se
     e' originale o no', senza declassare l'avviso). None se scartato (il verdetto spiega gia' il perche') o se il legit check e' stato saltato. Pura."""
@@ -330,7 +353,8 @@ def riga_originalita(ris):
     stato, parti = _stato_originalita(ris)
     testa = {"replica": "🚨 POSSIBILE REPLICA", "dubbio": "⚠️ AUTENTICITÀ DA CONTROLLARE", "non_chiaro": "❓ Autenticità non chiara",
              "ok": "✅ Sembra originale", "nessuno": "❔ Autenticità non verificata"}[stato]
-    return testa + (" · " + " · ".join(parti) if parti else "")
+    azione = riga_azione(ris, stato)
+    return testa + (" · " + " · ".join(parti) if parti else "") + (("\n" + azione) if azione else "")
 
 
 def riga_verdetto(ris):
