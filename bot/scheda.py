@@ -241,7 +241,8 @@ def testo_preavviso(listing_info, url=None, riga_finale=RIGA_PREAVVISO_IN_ATTESA
         sem = fv.get("semaforo") or "🟢"
         testa = (f"*{prezzo:g} €*" if prezzo is not None else "") + (f" ➜ rivendita ~*{riv:g} €*" if riv else "") + (f" · 🏷️ {esc(brand)}" if brand and brand != "?" else "")
         originalita = listing_info.get("riga_originalita_jev")   # subito sotto il verdetto: originale o no (6/11)
-        righe = ([esc(verdetto)] if verdetto else []) + ([esc(originalita)] if originalita else []) + [sem + " " + testa, _riga_titolo(listing_info, url)]
+        righe = ([esc(listing_info["riga_recupero"])] if listing_info.get("riga_recupero") else []) + ([esc(verdetto)] if verdetto else []) \
+            + ([esc(originalita)] if originalita else []) + [sem + " " + testa, _riga_titolo(listing_info, url)]
     else:
         righe = [marca + "*" + testa + "*", _riga_titolo(listing_info, url)]
     if compatto:
@@ -378,7 +379,8 @@ async def invia_preavviso(listing_info, url, photo_bytes_list=None, riga_tempi=N
     Ritorna {"msg_id", "tipo": album|foto|testo, "base"} oppure None. Non solleva mai."""
     if not TELEGRAM_ALERT_CHAT_ID or not url:
         return None
-    testo = testo_preavviso(listing_info, url, riga_tempi=riga_tempi)
+    # 7/11: il messaggio "Recuperato" e' definitivo (nessun verdetto da aggiungere dopo): niente riga "in attesa"
+    testo = testo_preavviso(listing_info, url, riga_tempi=riga_tempi, **({"riga_finale": ""} if listing_info.get("riga_recupero") else {}))
     foto = list(photo_bytes_list or [])
     t_inizio = time.time()
     silenzioso = not listing_info.get("preavviso_suono", True)   # suono solo per i migliori (PREAVVISO_SUONO_RAPPORTO_MIN)

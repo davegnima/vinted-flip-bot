@@ -436,9 +436,11 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
                     marca = (li.get("fair_value") or {}).get("brand") or li.get("brand")
                     li.update(righe_jev=righe_moda_jev(ris, marca), riga_verdetto_jev=riga_verdetto_jev(ris),
                               riga_originalita_jev=riga_originalita_jev(ris), rivendita_jev=ris.get("rivendita"))
-                    testo = (f"♻️ Recuperato: il semaforo lo dava {fv_sem.get('semaforo')} (fair value ~{fv_sem.get('fv')} €), "
-                             f"i comparabili dicono ~{ris.get('rivendita'):.0f} €\n" + testo_preavviso(dict(li), u, riga_finale=""))
-                    await telegram_send_message(TELEGRAM_ALERT_CHAT_ID or TELEGRAM_OWNER_CHAT_ID, testo)
+                    li["riga_recupero"] = (f"♻️ Recuperato: il semaforo lo dava {fv_sem.get('semaforo')} (fair value ~{fv_sem.get('fv')} €), "
+                                           f"i comparabili dicono ~{ris.get('rivendita'):.0f} €")
+                    # 7/11 (utente): il messaggio recuperato deve avere le foto come gli altri avvisi (album o foto con bottone), non solo testo
+                    if not TELEGRAM_ALERT_CHAT_ID or await invia_preavviso(dict(li), u, foto) is None:
+                        await telegram_send_message(TELEGRAM_ALERT_CHAT_ID or TELEGRAM_OWNER_CHAT_ID, testo_preavviso(dict(li), u, riga_finale=""))
                     log.info("RECUPERO JEV | item=%s | esito=conferma | brand=%s | prezzo=%s | rivendita=%s | sem_originale=%s | fv_stima=%s",
                              _estrai_item_id_da_url(u), marca, li.get("price"), ris.get("rivendita"), fv_sem.get("semaforo"), fv_sem.get("fv"))
                 t = asyncio.create_task(_ombra())

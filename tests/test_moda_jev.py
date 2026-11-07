@@ -354,3 +354,23 @@ def test_gemini_condizioni_difetti_correggono_la_rivendita():
     # stima di Gemini molto sotto i comparabili con buona confidenza: avviso (solo informativo)
     assert "molto meno" in g.riga_stima_gemini(dict(d, rivendita_gemini_eur=30), 100)
     assert "molto meno" not in g.riga_stima_gemini(d, 100)
+
+
+def test_gemini_prevale_su_jev_replica_debole_e_recuperato_con_foto():
+    """7/11 (utente): Jev 51% replica contro Gemini 95% coerente: prevale Gemini, niente 'possibile replica'."""
+    from bot.moda_jev import decidi, gemini_prevale, riga_originalita, riga_verdetto
+    from bot.scheda import testo_preavviso
+    g = {"autenticita": "probabile", "confidenza": 0.95}
+    assert gemini_prevale(("replica_probabile", 0.51), g)
+    assert not gemini_prevale(("replica_probabile", 0.8), g)
+    assert not gemini_prevale(("replica_probabile", 0.51), {"autenticita": "probabile", "confidenza": 0.7})
+    assert not gemini_prevale(("replica_probabile", 0.51), {"autenticita": "dubbia", "confidenza": 0.95})
+    assert not gemini_prevale(("altra_marca", 0.5), g)
+    assert decidi({"ok": True}, ("replica_probabile", 0.65), g)[0] == "conferma"   # sopra la soglia di scarto di Jev, ma Gemini prevale
+    assert decidi({"ok": True}, ("replica_probabile", 0.8), g)[0] == "scarta"
+    ris = {"esito": "conferma", "motivo": "ok", "n": 10, "rivendita": 100.0, "margine": 71.0, "roi": 375.0, "autenticita": ("replica_probabile", 0.51), "gemini": g}
+    assert riga_originalita(ris).startswith("✅ Sembra originale") and "prevale Gemini" in riga_originalita(ris)
+    assert "possibile replica" not in riga_verdetto(ris)
+    t = testo_preavviso({"fair_value": {"semaforo": "🔴"}, "price": 50, "brand": "Ann", "title": "Pantalone", "righe_jev": ["x"], "riga_verdetto_jev": "v",
+                         "rivendita_jev": 170, "riga_recupero": "♻️ Recuperato: prova"}, "https://www.vinted.it/items/1", riga_finale="")
+    assert t.startswith("♻️ Recuperato")
