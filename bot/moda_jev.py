@@ -421,40 +421,40 @@ def parti_rivendita_testo(parti):
     """' (semaforo 82 · comparabili 270 · Gemini 250)': i valori da cui nasce la rivendita mista, solo quelli presenti. Vuota con un solo valore. Pura."""
     if not parti or len(parti) < 2:
         return ""
-    nomi = {"semaforo": "semaforo", "comparabili": "comparabili", "rilevanza": "per rilevanza", "gemini": "Gemini"}
+    nomi = {"semaforo": "semaforo", "comparabili": "recenti", "rilevanza": "rilevanti", "gemini": "Gemini"}
     return " (" + " · ".join(f"{nomi[k]} {parti[k]:.0f}" for k in nomi if k in parti) + ")"
 
 
 def riga_verdetto(ris):
-    """Prima riga del messaggio: la decisione di Jev in chiaro, con il numero che l'ha decisa (5/11, utente: 'capire cosa l'ha fermato'). Pura."""
+    """Prima riga del messaggio: esito e numero che l'ha deciso, senza parole di contorno (8/11, utente: 'zero parole senza valore aggiunto').
+    Formati: '✅ CONFERMATO · rivendita ~X € (parti) · margine ~X € · ROI X%', '🚫 SCARTATO · rivendita ~X € (parti) · margine X € < 40 €',
+    '🚫 SCARTATO · replica (Gemini 80%)', '⚠️ NON VERIFICATO · nessun comparabile'. Pura."""
     mot = str(ris.get("motivo", ""))
     if ris.get("esito") == "scarta":
         if mot.startswith("comparabili:") and ris.get("rivendita") is not None:
             if mot.endswith("roi_basso"):
-                dove = f"ROI {ris['roi']:.0f}% (serve almeno 100%)"
+                dove = f"ROI {ris['roi']:.0f}% < 100%"
             else:
-                dove = f"margine ~{ris['margine']:.0f} € (serve almeno {MODA_JEV_MARGINE_MIN:g} €)"
-            dif = f" (dopo lo sconto per i difetti, −{ris['sconto_difetti']:.0f}%)" if ris.get("sconto_difetti") else ""
+                dove = f"margine ~{ris['margine']:.0f} € < {MODA_JEV_MARGINE_MIN:g} €"
+            dif = f" · difetti −{ris['sconto_difetti']:.0f}%" if ris.get("sconto_difetti") else ""
             # 8/11: la rivendita e' quella mista (semaforo, comparabili per data e per rilevanza, Gemini): si mostrano i valori da cui nasce
-            return f"🚫 SCARTATO: rivendita ~{ris['rivendita']:.0f} €{parti_rivendita_testo(ris.get('parti_rivendita'))}{dif}, {dove}"
-        return "🚫 SCARTATO: " + riga_esito_scheda(ris).replace("🚫 ", "").replace("Jev: non avvisato, ", "").replace("Gemini: non avvisato, ", "")
+            return f"🚫 SCARTATO · rivendita ~{ris['rivendita']:.0f} €{parti_rivendita_testo(ris.get('parti_rivendita'))}{dif} · {dove}"
+        a = ris.get("autenticita")
+        if mot == "gemini:replica":
+            return f"🚫 SCARTATO · replica (Gemini {((ris.get('gemini') or {}).get('confidenza') or 0):.0%})"
+        if mot.startswith("foto:") and a:
+            return f"🚫 SCARTATO · foto: {a[0].replace('_', ' ')} ({(a[1] or 0):.0%})"
+        return "🚫 SCARTATO · " + (mot or "motivo n/d")
     if ris.get("esito") == "conferma":
-        # 8/11 (utente: stile 'linguaggio degli aerei'): esito, rivendita mista con i tre valori, margine e ROI su una riga; l'originalita' ha la sua riga
+        # 8/11 (utente: stile 'linguaggio degli aerei'): esito, rivendita mista con i valori, margine e ROI su una riga; l'originalita' ha la sua riga
         tag = f" · difetti −{ris['sconto_difetti']:.0f}%" if ris.get("sconto_difetti") else ""
         return (f"✅ CONFERMATO · rivendita ~{ris['rivendita']:.0f} €{parti_rivendita_testo(ris.get('parti_rivendita'))} · "
                 f"margine ~{ris['margine']:.0f} € · ROI {ris['roi']:.0f}%{tag}")
     if mot == "comparabili_non_simili" and ris.get("rivendita") is not None:
-        return (f"⚠️ NON VERIFICATO: i {ris['n']} comparabili non assomigliano alla foto (la rivendita ~{ris['rivendita']:.0f} € dai loro prezzi "
-                "non e' affidabile), resta la stima rapida")
+        return f"⚠️ NON VERIFICATO · {ris['n']} comparabili non simili alla foto"
     if mot == "prezzi_dispersi" and ris.get("rivendita") is not None:
-        return (f"⚠️ NON VERIFICATO: i {ris['n']} comparabili hanno prezzi troppo diversi tra loro (il quarto piu' alto vale {ris['dispersione']:.1f} volte "
-                f"il piu' basso): la rivendita ~{ris['rivendita']:.0f} € non e' affidabile, resta la stima rapida")
-    return "⚠️ NON VERIFICATO: comparabili non trovati, resta la stima rapida"
-
-
-def _fiducia_comparabili(n):
-    """Fiducia nella stima dai comparabili, solo dal loro numero (regola pratica, non una misura): 8+ alta, 4-7 media, meno bassa. Pura."""
-    return "alta" if n >= 8 else "media" if n >= 4 else "bassa"
+        return f"⚠️ NON VERIFICATO · prezzi dispersi (quartile alto {ris['dispersione']:.1f}× il basso)"
+    return "⚠️ NON VERIFICATO · nessun comparabile"
 
 
 def _riga_dettagli_legit(dettagli):
@@ -479,31 +479,44 @@ def righe_messaggio(ris, brand=None):
     righe = []
     n = ris.get("n") or 0
     comps = ris.get("rivendita_comps") if ris.get("rivendita_comps") is not None else ris.get("rivendita")
+    if comps is None and not ris.get("rivendita_ril"):
+        righe.append("🔎 Comparabili: nessuno")
     if comps is not None:
-        riga = f"🔎 Comparabili: {n}"
+        riga = f"📅 Più recenti: {n}"
         pc = ris.get("prezzi_comps")
-        if pc and pc[0] != pc[1]:
-            riga += f" · da {pc[0]:g} a {pc[1]:g} €"
-        riga += f" · rivendita ~{comps:.0f} € · fiducia {_fiducia_comparabili(n)}"
-        riga += " (molto simili alla foto)" if ris.get("da_foto") else ""
-        riga += " · ⚠️ NON simili alla foto: non affidabili" if ris.get("motivo") == "comparabili_non_simili" else ""
-        riga += " · ⚠️ prezzi molto dispersi" if ris.get("motivo") == "prezzi_dispersi" else ""
+        if pc:
+            riga += f" · {pc[0]:g}–{pc[1]:g} €" if pc[0] != pc[1] else f" · {pc[0]:g} €"
+        riga += f" · ~{comps:.0f} €"
+        riga += " · molto simili alla foto" if ris.get("da_foto") else ""
+        riga += " · ⚠️ non simili alla foto" if ris.get("motivo") == "comparabili_non_simili" else ""
+        riga += " · ⚠️ prezzi dispersi" if ris.get("motivo") == "prezzi_dispersi" else ""
         righe.append(riga)
-    else:
-        righe.append("🔎 Comparabili: non trovati, la rivendita è una stima non verificata")
-    link = ris.get("link_comps") or []
-    if link:   # comparabili identificati, con il link all'annuncio (richiesta dell'utente, 02/11): subito sotto i numeri
-        righe += [f"• {p:g} € {u}" for _t, p, u in link[:3]]
-    else:
-        righe += [f"• {p:g} € {t[:40]}" for t, p in (ris.get("esempi") or [])[:3]]
+        link = ris.get("link_comps") or []
+        if link:   # comparabili identificati, con il link all'annuncio (richiesta dell'utente, 02/11): subito sotto i numeri
+            righe += [f"• {p:g} € {u}" for _t, p, u in link[:3]]
+        else:
+            righe += [f"• {p:g} € {t[:40]}" for t, p in (ris.get("esempi") or [])[:3]]
+    if ris.get("rivendita_ril"):
+        # 8/11 (utente: 'aggiungili'): anche i comparabili ordinati per rilevanza, con fascia, rivendita e link
+        riga = f"🎯 Più rilevanti: {ris.get('n_ril') or 0}"
+        pr = ris.get("prezzi_comps_ril")
+        if pr:
+            riga += f" · {pr[0]:g}–{pr[1]:g} €" if pr[0] != pr[1] else f" · {pr[0]:g} €"
+        righe.append(riga + f" · ~{ris['rivendita_ril']:.0f} €")
+        visti = {u for _t, _p, u in (ris.get("link_comps") or [])[:3]}
+        link_ril = [c for c in (ris.get("link_comps_ril") or []) if c[2] not in visti]
+        if link_ril:
+            righe += [f"• {p:g} € {u}" for _t, p, u in link_ril[:3]]
+        elif not ris.get("link_comps_ril"):
+            righe += [f"• {p:g} € {t[:40]}" for t, p in (ris.get("esempi_ril") or [])[:3]]
     if ris.get("legit_saltato"):
-        righe.append("⏭ Legit check non fatto: già scartato sui prezzi dei comparabili")
+        righe.append("⏭ Legit check saltato: scartato sui prezzi")
     else:
         cond = riga_condizioni(ris.get("gemini"))
         if cond:
             righe.append(cond)
         if ris.get("sconto_difetti") and ris.get("rivendita_prima_difetti"):
-            righe.append(f"📉 Difetti −{ris['sconto_difetti']:.0f}% (stima Gemini): comparabili da ~{ris['rivendita_prima_difetti']:.0f} € a ~{(ris.get('rivendita_comps') or ris['rivendita']):.0f} €")
+            righe.append(f"📉 Difetti −{ris['sconto_difetti']:.0f}% · comparabili ~{ris['rivendita_prima_difetti']:.0f} → ~{(ris.get('rivendita_comps') or ris['rivendita']):.0f} €")
         avviso = (riga_stima_gemini(ris.get("gemini"), comps) or "").partition("\n")[2]
         if avviso:
             righe.append(avviso)
@@ -638,6 +651,8 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
             riv_ril = (v_ril or {}).get("rivendita") if st_ril else None
             if riv_ril:
                 ris["rivendita_ril"], ris["n_ril"] = riv_ril, (v_ril or {}).get("n") or st_ril.get("n")
+                ris["link_comps_ril"], ris["esempi_ril"] = _l, list(_u[:3])
+                ris["prezzi_comps_ril"] = (st_ril["minimo"], st_ril["massimo"])
                 ris["dispersione_ril"] = st_ril["p75"] / st_ril["p25"] if st_ril.get("p25") else None
             log.info("COMPS ORDINE | item=%s | brand=%s | cat=%s | prezzo=%s | base[%s]=%s | rilevanza=%s | fv_stima=%s", listing_info.get("item_id") or "-", brand,
                      fv.get("categoria"), prezzo, MODA_COMPS_ORDINE, _riga_stima(stima), _riga_stima(st_ril), fv.get("fv"))
