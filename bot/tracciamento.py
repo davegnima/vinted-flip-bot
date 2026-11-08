@@ -573,7 +573,7 @@ def _contesto_tracciato(listing_info, esito, campi):
     fv = listing_info.get("fair_value") or {}
     ctx = {
         "esito": esito, "margine": campi.get("margine"), "roi": campi.get("roi"), "target": campi.get("target"),
-        "legit": campi.get("legit"), "n_comp": campi.get("n_comp"),
+        "legit": campi.get("legit"), "azione": campi.get("azione"), "n_comp": campi.get("n_comp"),
         "sem": fv.get("semaforo"), "sem_base": fv.get("semaforo_base"), "lift": fv.get("lift_velocita"),
         "fv": fv.get("fv"), "conf": fv.get("conf"), "brand_n": fv.get("brand"),
         "categoria": fv.get("categoria") or estrai_categoria_da_titolo(listing_info.get("title") or "", listing_info.get("description")),

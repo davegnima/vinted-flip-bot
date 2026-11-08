@@ -364,12 +364,20 @@ PREAVVISO_DA_VERIFICARE = (os.environ.get("PREAVVISO_DA_VERIFICARE", "1").strip(
                            and os.environ.get("MODA_JEV", "1").strip() not in ("0", "false", "no", ""))   # senza Jev nessun candidato
 PREAVVISO_DA_VERIFICARE_MARGINE = _env_float("PREAVVISO_DA_VERIFICARE_MARGINE", 50)
 REGOLA_DA_VERIFICARE = "da_verificare"
+# 8/11 (utente: "voglio ricevere tutti i veloci, poi capisco io se il margine e' alto o basso"): ogni annuncio che la regola del preavviso
+# scarta (anche 🔴, anche a pochi euro, anche senza stima) va comunque a Jev (comparabili Vinted + foto + Gemini); l'avviso parte SOLO se la
+# verifica conferma. Restano fuori i brand esclusi. Spento con PREAVVISO_TUTTI_A_JEV=0.
+PREAVVISO_TUTTI_A_JEV = (os.environ.get("PREAVVISO_TUTTI_A_JEV", "1").strip() != "0"
+                         and os.environ.get("MODA_JEV", "1").strip() not in ("0", "false", "no", ""))
 
 
 def valuta_preavviso(stima, prezzo):
     """(scatta, regola): push sulla scheda anticipata. Pura. Se la regola base non scatta, i candidati con margine e ROI promettenti
     escono con regola 'da_verificare' (solo dopo la verifica Jev)."""
     scatta, regola = _valuta_preavviso_base(stima, prezzo)
+    if (not scatta and PREAVVISO_TUTTI_A_JEV and PREAVVISO_ATTIVO and prezzo and prezzo > 0
+            and ((stima or {}).get("brand") or "").lower() not in PREAVVISO_BRAND_ESCLUSI):
+        return True, REGOLA_DA_VERIFICARE
     if scatta or not PREAVVISO_DA_VERIFICARE or not stima or not prezzo or prezzo <= 0 or stima.get("semaforo") not in ("🟢", "🟡"):
         return scatta, regola
     marg = stima.get("margine")
