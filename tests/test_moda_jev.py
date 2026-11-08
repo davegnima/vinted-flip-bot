@@ -472,3 +472,14 @@ def test_semaforo_da_verificare_si_ferma_con_abbastanza_campioni_appresi(monkeyp
     assert mj.semaforo_da_verificare({"brand": "prada", "categoria": "borsa", "conf": "media"})      # nessun campione
     assert mj.semaforo_da_verificare({"brand": "sezane", "categoria": "camicia", "conf": "bassa"})
     assert not mj.semaforo_da_verificare({"brand": "prada", "categoria": None, "conf": "alta"})
+
+
+def test_url_comparabili_ordine_configurabile():
+    assert mj.url_comparabili("zimmermann", "abito", 10).endswith("&order=newest_first")
+    assert mj.url_comparabili("zimmermann", "abito", 10, "relevance").endswith("&order=relevance")
+    assert "order=price_low_to_high" in mj.url_comparabili("marchio inesistente", "giacca", 5, "price_low_to_high")
+
+
+def test_riga_stima():
+    assert mj._riga_stima(None) == "n=0"
+    assert mj._riga_stima({"n": 8, "p25": 40.0, "mediana": 55.0, "p75": 70.0}) == "n=8|p25=40|med=55|p75=70|disp=1.75"

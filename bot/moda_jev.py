@@ -68,7 +68,14 @@ def id_brand(brand):
     return VINTED_BRAND_IDS.get((brand or "").strip().lower())
 
 
-def url_comparabili(brand, testo=None, catalogo=None):
+# 8/11 (utente): ordine della ricerca dei comparabili. Oggi 'newest_first' (ultimi pubblicati); da provare 'relevance' (piu' simili al testo)
+# e 'price_low_to_high'. MODA_COMPS_PROVA: ordini alternativi cercati IN OMBRA (solo nelle ricerche in ombra, non cambiano nessun esito) e
+# confrontati nel log `COMPS ORDINE`, per scegliere con i dati.
+MODA_COMPS_ORDINE = os.environ.get("MODA_COMPS_ORDINE", "newest_first").strip() or "newest_first"
+MODA_COMPS_PROVA = [o.strip() for o in os.environ.get("MODA_COMPS_PROVA", "relevance,price_low_to_high").split(",") if o.strip()]
+
+
+def url_comparabili(brand, testo=None, catalogo=None, ordine=None):
     """Ricerca dei simili: brand_ids[] + categoria foglia dell'annuncio + parole del titolo (se ci sono). None senza id brand. Pura."""
     bid = id_brand(brand)
     if not bid and not brand:
@@ -76,8 +83,8 @@ def url_comparabili(brand, testo=None, catalogo=None):
     # senza id (brand storici fuori dalla tabella) il brand entra come parola di ricerca
     t = f"&search_text={quote(testo if bid else ((brand or '') + ' ' + (testo or '')).strip())}" if (testo or not bid) else ""
     c = f"&catalog[]={catalogo}" if catalogo else ""
-    b = f"brand_ids[]={bid}" if bid else "order=newest_first"
-    return f"https://www.vinted.it/catalog?{b}{c}{t}&order=newest_first"
+    b = f"brand_ids[]={bid}" if bid else "currency=EUR"
+    return f"https://www.vinted.it/catalog?{b}{c}{t}&order={ordine or MODA_COMPS_ORDINE}"
 
 
 MODA_JEV_OMBRA = os.environ.get("MODA_JEV_OMBRA", "1").strip() not in ("0", "false", "no", "")
@@ -499,6 +506,25 @@ def righe_messaggio(ris, brand=None):
     return righe
 
 
+def _riga_stima(st):
+    """'n=..|p25=..|med=..|p75=..|disp=..' dai comparabili, o 'n=0'. Pura."""
+    if not st:
+        return "n=0"
+    return f"n={st['n']}|p25={st['p25']:.0f}|med={st['mediana']:.0f}|p75={st['p75']:.0f}|disp={st['p75'] / st['p25']:.2f}" if st.get("p25") else f"n={st['n']}"
+
+
+async def _prova_ordini(listing_info, brand, prezzo, stima_base, cerca, linea):
+    """Ricerca in ombra con ordini alternativi e riga di confronto nel log. Non cambia nessun esito. Mai eccezioni."""
+    for ordine in MODA_COMPS_PROVA:
+        try:
+            _u, _l, st, _v = await cerca(linea, ordine)
+            log.info("COMPS ORDINE | item=%s | brand=%s | cat=%s | prezzo=%s | base[%s]=%s | prova[%s]=%s | fv_stima=%s",
+                     listing_info.get("item_id") or "-", brand, (listing_info.get("fair_value") or {}).get("categoria"), prezzo,
+                     MODA_COMPS_ORDINE, _riga_stima(stima_base), ordine, _riga_stima(st), (listing_info.get("fair_value") or {}).get("fv"))
+        except Exception:
+            log.info("COMPS ORDINE | prova %s non riuscita", ordine)
+
+
 async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=False):
     """Dict {esito, motivo, n, rivendita, margine, roi, link, autenticita}. Mai eccezioni: in caso di errore 'non_verificato'."""
     fv = listing_info.get("fair_value") or {}
@@ -515,7 +541,7 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
         # La linea (es. Weekend per Max Mara) si legge da titolo e descrizione; se le foto dicono altro si rifa' la ricerca (vedi sotto).
         linea = linea_dal_testo(f"{titolo} {brand or ''}", brand, listing_info.get("description"))
 
-        async def cerca(linea):
+        async def cerca(linea, ordine=None):
             testo = " ".join(query_comp(titolo, brand).split()[len((brand or "").split()):][:3])
             if linea:
                 # la linea (es. "weekend") entra nella ricerca anche se non e' nelle prime parole del titolo
@@ -524,7 +550,7 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
                     testo = f"{parola} {testo}".strip()
             usate, mappe = [], []
             for t in ([testo, None] if testo else [None]):
-                url_c = url_comparabili(brand, t, catalogo)
+                url_c = url_comparabili(brand, t, catalogo, ordine)
                 if not url_c:
                     break
                 risposta, ok, _mappa = await _cerca_vinted_testo_diretto(url_c)
@@ -555,6 +581,8 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
                     ris["dispersione"] = stima["p75"] / stima["p25"]
             log.info("MODA JEV OMBRA | item=%s | brand=%s | prezzo=%s | n=%s | rivendita=%s | dispersione=%s | fv_stima=%s | linea=%s",
                      listing_info.get("item_id") or "-", brand, prezzo, ris["n"], ris["rivendita"], ris.get("dispersione"), fv.get("fv"), ris.get("linea"))
+            if MODA_COMPS_PROVA:
+                await _prova_ordini(listing_info, brand, prezzo, stima, cerca, linea)
             return ris
         foto_jpeg = None
         if foto:
