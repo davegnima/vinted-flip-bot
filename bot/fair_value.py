@@ -730,7 +730,7 @@ def check_skip_fair_value(listing_info):
 #    verdetto), "umana" (tua stima, rispondendo con un numero alla scheda).
 #  - Ricalibrazione: per ogni "brand|categoria" la nuova stima e' la media
 #    pesata tra il valore di partenza (peso 4 se alta, 3 media, 2 bassa, 1.5
-#    stima) e la MEDIANA PESATA dei campioni (Gemini peso 1, tu peso 3),
+#    stima) e la MEDIANA PESATA dei campioni (Gemini 1, Jev 1,5, tu 3 (2x Jev)),
 #    riportati alla base "buone condizioni" dividendo per il moltiplicatore.
 #    Limitata a 0.3x-3x del valore di partenza. Gemini conta solo se ha
 #    usato almeno 2 comp reali; la tua stima conta sempre.
@@ -742,7 +742,7 @@ FAIR_VALUE_APPRESO = {}
 _FV_PESO_PARTENZA = {"alta": 4.0, "media": 3.0, "bassa": 2.0, "stima": 1.5}
 _FV_PESO_GEMINI = 1.0
 _FV_PESO_UMANO = 3.0
-_FV_PESO_JEV = 1.0           # 6/11: un campione = la rivendita (p25) dei comparabili di una verifica Jev; il mercato, non un giudizio
+_FV_PESO_JEV = 1.5           # 6/11: un campione = la rivendita (p25) dei comparabili di una verifica Jev; il mercato, non un giudizio
 _FV_JEV_N_MIN = 5            # meno di 5 comparabili: non si impara
 _FV_JEV_DISPERSIONE_MAX = 2.5
 _FV_NUOVE_RIGHE_PER_RICALCOLO = 10
