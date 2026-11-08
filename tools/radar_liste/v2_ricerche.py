@@ -71,7 +71,7 @@ ONDA7=[ # 06/11, giro del sabato anticipato: mondi nuovi scelti dal mercato, non
  ('V2 marshall stanmore','marshall stanmore',None,[],80),('V2 yamaha hs8','yamaha hs8',None,[],80),('V2 technics sl-1200','technics sl-1200',None,[],150),
  ('V2 roland juno','roland juno',None,[],150),('V2 fender squier stratocaster','fender squier stratocaster',None,[],60),
  ('V2 contax t2','contax t2',None,[],150),('V2 rolleiflex','rolleiflex',None,[],150),('V2 hasselblad 500','hasselblad 500',None,[],150),
- ('V2 canon ae-1','canon ae-1',None,[],50),('V2 nikon fm2','nikon fm2',None,[],70),('V2 olympus mju','olympus mju',None,[],60),
+ ('V2 canon ae-1','canon ae-1',None,[],50),('V2 nikon fm2','fm2','nikon',[4904],70),('V2 olympus mju','olympus mju',None,[],60),
  ('V2 lego millennium falcon','lego millennium falcon',None,[],150),('V2 game boy color','game boy color',None,[],50),('V2 sega mega drive','sega mega drive',None,[],50),
  ('V2 garmin forerunner 255','garmin forerunner 255',None,[],80),('V2 shimano dura-ace','shimano dura-ace',None,[],80),('V2 brompton','brompton',None,[],150),
 ]
