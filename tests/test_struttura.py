@@ -28,3 +28,11 @@ def test_client_http_mai_importati_per_nome():
         for n, riga in enumerate(p.read_text().split("\n"), 1):
             if re.match(r"\s*from bot\.http_clients import", riga) and re.search(vietati, riga):
                 pytest.fail(f"{p.name}:{n} importa un client per nome: {riga.strip()}")
+
+
+def test_id_brand_numerici_e_chiavi_minuscole():
+    """La tabella brand: id solo cifre e chiavi minuscole (il tracker e Jev le cercano cosi')."""
+    from bot.costanti import VINTED_BRAND_IDS
+    assert all(str(v).isdigit() for v in VINTED_BRAND_IDS.values())
+    assert all(k == k.lower() for k in VINTED_BRAND_IDS)
+    assert VINTED_BRAND_IDS["gucci"] == "567"
