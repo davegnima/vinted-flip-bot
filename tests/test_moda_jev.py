@@ -412,12 +412,12 @@ def test_rivendita_mista_pesa_semaforo_comparabili_e_gemini_e_li_mostra_in_testa
     from bot.moda_jev import rivendita_mista
     from bot.moda_jev import parti_rivendita_testo, riga_verdetto as riga_verdetto_v
     from bot.scheda import testo_preavviso
-    # pesi relativi al semaforo (8/11): w=0,2 (media); comparabili 1,2 x w; Gemini w
+    # pesi relativi al semaforo (8/11): w=0,2 (media); comparabili 1,8 x w; rilevanza 2,5 x w; Gemini w
     mix, parti = rivendita_mista({"fv": 100, "conf": "media"}, 200, 5, {"rivendita_gemini_eur": 150, "rivendita_confidenza": 0.7})
     assert parti == {"semaforo": 100.0, "comparabili": 200.0, "gemini": 150.0}
-    assert abs(mix - (100 * 0.2 + 200 * 0.24 + 150 * 0.2) / 0.64) < 0.01
-    mix2, parti2 = rivendita_mista({"fv": 100, "conf": "media"}, 200, 5, None, 160)   # con la ricerca per rilevanza: 1,3 x w
-    assert parti2["rilevanza"] == 160.0 and abs(mix2 - (100 * 0.2 + 200 * 0.24 + 160 * 0.26) / 0.70) < 0.01
+    assert abs(mix - (100 * 0.2 + 200 * 0.36 + 150 * 0.2) / 0.76) < 0.01
+    mix2, parti2 = rivendita_mista({"fv": 100, "conf": "media"}, 200, 5, None, 160)   # con la ricerca per rilevanza: 2,5 x w
+    assert parti2["rilevanza"] == 160.0 and abs(mix2 - (100 * 0.2 + 200 * 0.36 + 160 * 0.5) / 1.06) < 0.01
     assert parti_rivendita_testo(parti2) == " (semaforo 100 · comparabili 200 · per rilevanza 160)"
     # Gemini poco sicuro o assente: non entra; nessuna stima: (None, {})
     assert "gemini" not in rivendita_mista({"fv": 100, "conf": "alta"}, 200, 9, {"rivendita_gemini_eur": 150, "rivendita_confidenza": 0.3})[1]
@@ -486,3 +486,19 @@ def test_url_comparabili_ordine_configurabile():
 def test_riga_stima():
     assert mj._riga_stima(None) == "n=0"
     assert mj._riga_stima({"n": 8, "p25": 40.0, "mediana": 55.0, "p75": 70.0}) == "n=8|p25=40|med=55|p75=70|disp=1.75"
+
+
+def test_fair_value_impara_piu_dalla_rilevanza_che_dalla_data(monkeypatch, tmp_path):
+    """8/11 (utente): campioni per rilevanza pesano 2,1 contro 1,5 di quelli per data; senza altro valore la mediana pesata va verso la rilevanza."""
+    from bot import fair_value as fvm
+    monkeypatch.setattr(fvm, "FAIR_VALUE_APPRESO_FILE", str(tmp_path / "a.json"))
+    righe = []
+    for i in range(3):
+        righe += [{"tipo": "rapida", "item_id": str(i), "brand": "cult gaia", "categoria": "vestito", "molt": 1.0},
+                  {"tipo": "jev", "item_id": str(i), "vendita": 100.0, "n": 8, "dispersione": 1.6, "valido": True},
+                  {"tipo": "jev_ril", "item_id": str(i), "vendita": 200.0, "n": 8, "dispersione": 1.6, "valido": True}]
+    righe += [{"tipo": "rapida", "item_id": "x", "brand": "cult gaia", "categoria": "vestito", "molt": 1.0},
+              {"tipo": "jev_ril", "item_id": "x", "vendita": 900.0, "n": 8, "dispersione": 4.0, "valido": False}]   # non valido: ignorato
+    nuovo = fvm.fv_ricalibra(righe)
+    assert nuovo["cult gaia|vestito"]["n"] == 6
+    assert nuovo["cult gaia|vestito"]["fv"] == 200

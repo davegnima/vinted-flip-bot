@@ -266,7 +266,7 @@ def correggi_per_difetti(v, prezzo, gemini):
 def rivendita_mista(fv, riv_comps, n_comps, gemini, riv_rilevanza=None):
     """(rivendita, parti): media pesata di stime indipendenti (7/11, utente: 'prezzo di rivendita bilanciato tra semaforo, comparabili e
     Gemini, con i loro valori tra parentesi'). 8/11 (utente): pesi RELATIVI al semaforo, che vale w = 0,3 con confidenza alta / 0,2 media /
-    0,1 bassa: comparabili per rilevanza 1,3 x w, comparabili per data (newest_first) 1,2 x w, Gemini w (uguale al semaforo, solo se la sua
+    0,1 bassa: comparabili per rilevanza 2,5 x w, comparabili per data (newest_first) 1,8 x w, Gemini w (uguale al semaforo, solo se la sua
     confidenza e' almeno 0,4). Rapporti scelti dall'utente, non misurati. `parti` = {'semaforo','comparabili','rilevanza','gemini'} con i soli
     valori presenti. (None, {}) se non c'e' nessuna stima. Pura."""
     parti, pesi = {}, {}
@@ -276,10 +276,10 @@ def rivendita_mista(fv, riv_comps, n_comps, gemini, riv_rilevanza=None):
         pesi["semaforo"] = w
     if riv_comps:
         parti["comparabili"] = float(riv_comps)
-        pesi["comparabili"] = 1.2 * w
+        pesi["comparabili"] = 1.8 * w
     if riv_rilevanza:
         parti["rilevanza"] = float(riv_rilevanza)
-        pesi["rilevanza"] = 1.3 * w
+        pesi["rilevanza"] = 2.5 * w
     rg, cg = (gemini or {}).get("rivendita_gemini_eur"), (gemini or {}).get("rivendita_confidenza")
     if rg and cg is not None and cg >= 0.4:
         parti["gemini"] = float(rg)
@@ -630,11 +630,14 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
                 comps_pool, link_comps, stima, v = await cerca(linea)
                 prezzi = [p for _t, p in comps_pool]
                 ris["da_foto"], ris["foto_comps"] = False, None
-        # 8/11 (utente): stessa ricerca ordinata per rilevanza, entra nella rivendita mista con peso 1,3 x semaforo (newest_first 1,2 x)
+        # 8/11 (utente): stessa ricerca ordinata per rilevanza, entra nella rivendita mista con peso 2,5 x semaforo (newest_first 1,8 x)
         riv_ril = None
         try:
             _u, _l, st_ril, v_ril = await cerca(linea, "relevance")
             riv_ril = (v_ril or {}).get("rivendita") if st_ril else None
+            if riv_ril:
+                ris["rivendita_ril"], ris["n_ril"] = riv_ril, (v_ril or {}).get("n") or st_ril.get("n")
+                ris["dispersione_ril"] = st_ril["p75"] / st_ril["p25"] if st_ril.get("p25") else None
             log.info("COMPS ORDINE | item=%s | brand=%s | cat=%s | prezzo=%s | base[%s]=%s | rilevanza=%s | fv_stima=%s", listing_info.get("item_id") or "-", brand,
                      fv.get("categoria"), prezzo, MODA_COMPS_ORDINE, _riga_stima(stima), _riga_stima(st_ril), fv.get("fv"))
         except Exception:
