@@ -866,3 +866,17 @@ def test_famiglia_console_riconosce_il_modello_e_scarta_accessori():
     assert modello_famiglia("V2 console", "Custodia Nintendo Switch") == (None, None)
     assert modello_famiglia("V2 console", "Xbox Series X") == (None, None)
     assert modello_famiglia("V2 console", "Gioco Switch Zelda") == (None, None)
+
+
+def test_motivo_saltato_nel_gruppo_e_cancellazione():
+    from bot.radar import testo_risposta_gruppo, da_cancellare, perche_non_inviato, motivo_saltato_leggibile
+    esito = {"saltato": "fuori_famiglia"}
+    assert "nessun modello monitorato" in testo_risposta_gruppo(None, esito)
+    assert "semaforo non calcolato" not in testo_risposta_gruppo(None, esito)
+    assert da_cancellare(None, esito) is True
+    assert da_cancellare(None, {"saltato": "sopra_tetto_modello:switch:90"}) is True
+    assert "switch" in motivo_saltato_leggibile("sopra_tetto_modello:switch:90") and "90" in motivo_saltato_leggibile("sopra_tetto_modello:switch:90")
+    assert da_cancellare(None, {"saltato": "gia_visto"}) is False
+    assert "gia' valutato" in testo_risposta_gruppo(None, {"saltato": "gia_visto"})
+    assert "semaforo non calcolato" not in perche_non_inviato(None)
+    assert "semaforo non calcolato" not in perche_non_inviato({"semaforo": None, "motivo": "pochi_comparabili"})
