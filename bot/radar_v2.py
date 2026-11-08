@@ -22,7 +22,7 @@ from bot.spedizione import UNKNOWN, campi_spedizione_da_html, classe_taglia, cos
 from bot.logger import log
 from bot.radar import RADAR_SPESA_MAX, parola_vietata, radar_in_pausa
 from bot.radar_famiglie import modello_famiglia
-from bot.radar_matrice import buy_max, costo_acquisto
+from bot.radar_matrice import RADAR_MARGINE_MIN, buy_max, costo_acquisto
 from bot.testo import _normalizza_titolo_per_link
 from bot.verdetto import _a_float, _estrai_item_id_da_url
 from bot.vinted_http import _vinted_get_con_retry
@@ -34,6 +34,9 @@ RADAR_V2_OMBRA = os.environ.get("RADAR_V2_OMBRA", "0").strip() in ("1", "true", 
 # Semafori per cui la foto va a Jev (25/10): di default solo il verde. Per la prova si puo' allargare, es. "verde,giallo".
 JEV_FOTO_SEMAFORI = {x.strip() for x in os.environ.get("JEV_FOTO_SEMAFORI", "verde").split(",") if x.strip()}
 RADAR_V2_MAX_GIORNO = int(os.environ.get("RADAR_V2_MAX_GIORNO", "3000") or 3000)
+QUASI_ROI_MIN = float(os.environ.get("RADAR_QUASI_ROI_MIN", "90") or 0)  # ROI minimo (%) per il giallo "quasi ROI"; 0 = spento
+QUASI_ROI_JEV_CONF = float(os.environ.get("RADAR_QUASI_ROI_JEV_CONF", "0.85") or 0.85)
+QUASI_ROI_MIN_N = int(os.environ.get("RADAR_QUASI_ROI_MIN_N", "8") or 8)
 RADAR_V2_CACHE_ORE = float(os.environ.get("RADAR_V2_CACHE_ORE", "24") or 24)  # 8/11 (utente: "ormai dovremmo sapere a quanto si rivendono"): da 6 a 24 ore, e persistita nel DB
 RADAR_V2_PARALLELO = int(os.environ.get("RADAR_V2_PARALLELO", "2") or 2)
 # Pre-filtro per ricerca (31/10): per le ricerche con testo (un prodotto preciso) il prezzo di riferimento si calcola UNA volta
@@ -630,6 +633,14 @@ async def analizza(parsed, url, foto=None, query_url=None):
             log.info("RADAR V2 JEV | item=%s | giudizio=%s | confidenza=%s | simili=%s(%s) | motivo=%s | largo=%s | n=%s | titolo=%s", item_id, jev,
                      jev_conf, jev_simili[0] if jev_simili else "-", jev_simili[1] if jev_simili else "-", jev_motivo[0] if jev_motivo else "-", allargata or 0,
                      len(prezzi), titolo[:60])
+        # Quasi ROI (8/11, utente: caso margine 67 EUR, ROI 98,1%): un rosso solo per ROI di poco sotto soglia diventa giallo (avviso
+        # senza suono) se il margine regge, Jev dice affare con confidenza alta, i comparabili sono tanti (il giallo e' gia' il massimo anche con spedizione ignota).
+        if (QUASI_ROI_MIN and v.get("motivo") == "roi_basso" and v.get("semaforo") == "rosso" and jev == "affare_vero"
+                and (jev_conf or 0) >= QUASI_ROI_JEV_CONF and len(prezzi) >= QUASI_ROI_MIN_N and (v.get("margine") or 0) >= RADAR_MARGINE_MIN
+                and (v.get("roi") or 0) >= QUASI_ROI_MIN):
+            v = {**v, "semaforo": "giallo", "motivo": "quasi_roi"}
+            log.info("RADAR V2 QUASI ROI | item=%s | margine=%s | roi=%s | jev_conf=%s | n=%s | titolo=%s", item_id, v.get("margine"), v.get("roi"),
+                     jev_conf, len(prezzi), titolo[:60])
         # Foto dei comparabili (01/11), solo ombra: foto annuncio contro 3 miniature; nessun effetto sull'esito.
         jev_foto_comps = None
         if JEV_FOTO_COMPS and foto and link_comps and v.get("semaforo") in ("verde", "giallo"):

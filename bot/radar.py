@@ -351,6 +351,7 @@ _MOTIVI_LEGGIBILI = {
     "pochi_comparabili": "pochi comparabili",
     "margine_basso": "margine troppo basso",
     "roi_basso": "ROI troppo basso",
+    "quasi_roi": "ROI poco sotto 100%, margine e Jev reggono",
 }
 
 
@@ -401,7 +402,8 @@ def _righe_v2(v2):
     else:
         righe.append(f"Comparabili: {n} trovati · rivendita {v2.get('rivendita')} € · margine {v2.get('margine')} € "
                      f"· ROI {v2.get('roi')}%")
-        righe.append(f"Semaforo: {pallino} {v2.get('semaforo') or 'n.d.'}")
+        righe.append(f"Semaforo: {pallino} {v2.get('semaforo') or 'n.d.'}"
+                     + (f" (ROI {v2.get('roi')}% poco sotto 100%: margine e Jev reggono, avviso senza suono)" if v2.get("motivo") == "quasi_roi" else ""))
     if v2.get("richiesto_mediano") is not None and v2.get("rivendita") is not None:
         cal = "calibrata" if v2.get("calibrazione") == "calibrato" else "non calibrata sulle vendite reali"
         righe.append(f"Prezzi: richiesto mediano {v2['richiesto_mediano']} € · vendita stimata {v2['rivendita']} € ({cal}) "
