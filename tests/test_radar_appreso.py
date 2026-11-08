@@ -3,7 +3,7 @@ from bot.radar import da_cancellare
 
 
 def _pulisci():
-    ra._oss.clear(); ra._contatori.clear(); ra._segnalate.clear()
+    ra._oss.clear(); ra._gruppi.clear(); ra._contatori.clear(); ra._segnalate.clear()
 
 
 def test_servono_tre_osservazioni_solide():
@@ -63,3 +63,32 @@ def test_famiglia_senza_colori_e_condizione():
     for i, f in enumerate(["nintendo switch lite", "nintendo switch lite grigia", "nintendo switch lite blu"]):
         ra.registra(f, 20.0, 8, None, 1000 + i)
     assert ra.limite_famiglia("nintendo switch lite gialla", 1010) == 20.0     # le tre varianti contano come un mercato
+
+
+def test_gruppo_impara_da_famiglie_scritte_in_modi_diversi():
+    _pulisci()
+    # 'nintendo switch lite' scritto in modi diversi: nessuna famiglia arriva a 3, il gruppo (5 osservazioni, 3 famiglie) si
+    for fam in ("nintendo switch lite avec", "nintendo switch lite avec", "nintendo switch lite boite",
+                "nintendo switch lite boite", "nintendo switch lite chargeur"):
+        ra.registra(fam, 30, 8, False, 1000)
+    assert ra.limite_famiglia("nintendo switch lite sans", 1000) == 30
+    assert ra.da_saltare("nintendo switch lite sans", 100, 1000) == 30
+
+
+def test_gruppo_non_scatta_con_una_sola_famiglia_o_poche_osservazioni():
+    _pulisci()
+    for _ in range(6):
+        ra.registra("nintendo switch lite avec", 30, 8, False, 1000)
+    assert ra.limite_famiglia("nintendo switch lite sans", 1000) is None  # una sola famiglia
+    _pulisci()
+    for fam in ("nintendo switch lite avec", "nintendo switch lite boite", "nintendo switch lite chargeur"):
+        ra.registra(fam, 30, 8, False, 1000)
+    assert ra.limite_famiglia("nintendo switch lite sans", 1000) is None  # solo 3 osservazioni
+
+
+def test_gruppo_usa_il_limite_piu_alto():
+    _pulisci()
+    for fam, lim in (("nintendo switch lite avec", 30), ("nintendo switch lite boite", 30), ("nintendo switch lite chargeur", 30),
+                     ("nintendo switch lite sans", 30), ("nintendo switch lite coque", 90)):
+        ra.registra(fam, lim, 8, False, 1000)
+    assert ra.limite_famiglia("nintendo switch lite neuve", 1000) == 90
