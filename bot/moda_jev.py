@@ -85,14 +85,31 @@ try:
     MODA_JEV_OMBRA_MAX_ORA = int(os.environ.get("MODA_JEV_OMBRA_MAX_ORA", "20") or 20)
 except ValueError:
     MODA_JEV_OMBRA_MAX_ORA = 20
+try:
+    MODA_JEV_OMBRA_CAMPIONI_MIN = int(os.environ.get("MODA_JEV_OMBRA_CAMPIONI_MIN", "5") or 5)
+except ValueError:
+    MODA_JEV_OMBRA_CAMPIONI_MIN = 5
 LEGIT_APPRESO_FILE = os.environ.get("LEGIT_APPRESO_FILE", "/data/legit_appreso.jsonl")
 _ombra_chiamate = []   # istanti dell'ultima ora: tetto MODA_JEV_OMBRA_MAX_ORA (ogni ricerca costa banda proxy)
 
 
+def semaforo_da_verificare(fv):
+    """True se il semaforo di quel brand e categoria non e' ancora verificato dai dati: confidenza bassa o a priori, oppure meno di
+    MODA_JEV_OMBRA_CAMPIONI_MIN campioni appresi (comparabili Jev, Gemini, tuoi). 8/11 (utente): i rossi vanno cercati solo finche'
+    serve a portare il semaforo a una confidenza verificata, poi la ricerca si ferma. Pura."""
+    if not fv or not fv.get("brand"):
+        return False
+    if fv.get("conf") in ("bassa", "stima"):
+        return True
+    if not fv.get("categoria"):
+        return False
+    return (FAIR_VALUE_APPRESO.get(f"{fv['brand']}|{fv['categoria']}") or {}).get("n", 0) < MODA_JEV_OMBRA_CAMPIONI_MIN
+
+
 def serve_ombra(fv, adesso=None):
-    """True se un annuncio che il semaforo scarta vale una ricerca di comparabili 'in ombra': brand noto con stima poco sicura
-    (confidenza bassa o a priori), e sotto il tetto orario. Registra la chiamata. Pura a parte il contatore."""
-    if not MODA_JEV_OMBRA or not fv or not fv.get("brand") or fv.get("conf") not in ("bassa", "stima"):
+    """True se un annuncio che il semaforo scarta vale una ricerca di comparabili 'in ombra': semaforo ancora da verificare
+    (vedi semaforo_da_verificare) e sotto il tetto orario. Registra la chiamata. Pura a parte il contatore."""
+    if not MODA_JEV_OMBRA or not semaforo_da_verificare(fv):
         return False
     adesso = adesso if adesso is not None else time.time()
     while _ombra_chiamate and adesso - _ombra_chiamate[0] > 3600:
