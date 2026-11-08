@@ -502,3 +502,10 @@ def test_fair_value_impara_piu_dalla_rilevanza_che_dalla_data(monkeypatch, tmp_p
     nuovo = fvm.fv_ricalibra(righe)
     assert nuovo["cult gaia|vestito"]["n"] == 6
     assert nuovo["cult gaia|vestito"]["fv"] == 200
+
+
+def test_riga_scartato_mostra_i_valori_della_rivendita_mista():
+    from bot.moda_jev import riga_verdetto
+    r = riga_verdetto({"esito": "scarta", "motivo": "comparabili:margine_basso", "rivendita": 40.2, "margine": 28.0, "n": 13,
+                       "parti_rivendita": {"semaforo": 50.0, "comparabili": 49.0, "rilevanza": 30.0}})
+    assert r == "🚫 SCARTATO: rivendita ~40 € (semaforo 50 · comparabili 49 · per rilevanza 30), margine ~28 € (serve almeno 40 €)"
