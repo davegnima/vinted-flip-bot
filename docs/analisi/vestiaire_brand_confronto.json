@@ -1,0 +1,5207 @@
+[
+ {
+  "brand": "LOUIS VUITTON",
+  "stato": "assente",
+  "n": 147,
+  "mediana_eur": 394,
+  "min_eur": 95,
+  "sotto_150": 10,
+  "quota_sotto_150": 0.07,
+  "categorie": {
+   "Borse": 99,
+   "Scarpe": 20,
+   "Abbigliamento": 17
+  },
+  "abbigliamento_scarpe_n": 37
+ },
+ {
+  "brand": "GUCCI",
+  "stato": "assente",
+  "n": 112,
+  "mediana_eur": 302,
+  "min_eur": 49,
+  "sotto_150": 20,
+  "quota_sotto_150": 0.18,
+  "categorie": {
+   "Borse": 56,
+   "Abbigliamento": 27,
+   "Scarpe": 16
+  },
+  "abbigliamento_scarpe_n": 43
+ },
+ {
+  "brand": "DIOR",
+  "stato": "assente",
+  "n": 86,
+  "mediana_eur": 317,
+  "min_eur": 85,
+  "sotto_150": 11,
+  "quota_sotto_150": 0.13,
+  "categorie": {
+   "Scarpe": 25,
+   "Borse": 23,
+   "Abbigliamento": 23
+  },
+  "abbigliamento_scarpe_n": 48
+ },
+ {
+  "brand": "BALENCIAGA",
+  "stato": "assente",
+  "n": 75,
+  "mediana_eur": 210,
+  "min_eur": 75,
+  "sotto_150": 21,
+  "quota_sotto_150": 0.28,
+  "categorie": {
+   "Abbigliamento": 42,
+   "Scarpe": 15,
+   "Borse": 14
+  },
+  "abbigliamento_scarpe_n": 57
+ },
+ {
+  "brand": "HERMÈS",
+  "stato": "assente",
+  "n": 67,
+  "mediana_eur": 479,
+  "min_eur": 137,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.01,
+  "categorie": {
+   "Scarpe": 21,
+   "Borse": 15,
+   "Accessori": 13
+  },
+  "abbigliamento_scarpe_n": 32
+ },
+ {
+  "brand": "PRADA",
+  "stato": "monitorato",
+  "n": 62,
+  "mediana_eur": 368,
+  "min_eur": 75,
+  "sotto_150": 12,
+  "quota_sotto_150": 0.19,
+  "categorie": {
+   "Abbigliamento": 24,
+   "Borse": 19,
+   "Scarpe": 17
+  },
+  "abbigliamento_scarpe_n": 41
+ },
+ {
+  "brand": "BURBERRY",
+  "stato": "assente",
+  "n": 61,
+  "mediana_eur": 189,
+  "min_eur": 59,
+  "sotto_150": 20,
+  "quota_sotto_150": 0.33,
+  "categorie": {
+   "Abbigliamento": 57,
+   "Borse": 2,
+   "Accessori": 1
+  },
+  "abbigliamento_scarpe_n": 58
+ },
+ {
+  "brand": "SAINT LAURENT",
+  "stato": "assente",
+  "n": 58,
+  "mediana_eur": 401,
+  "min_eur": 90,
+  "sotto_150": 7,
+  "quota_sotto_150": 0.12,
+  "categorie": {
+   "Borse": 29,
+   "Abbigliamento": 22,
+   "Scarpe": 4
+  },
+  "abbigliamento_scarpe_n": 26
+ },
+ {
+  "brand": "MONCLER",
+  "stato": "assente",
+  "n": 34,
+  "mediana_eur": 254,
+  "min_eur": 80,
+  "sotto_150": 7,
+  "quota_sotto_150": 0.21,
+  "categorie": {
+   "Abbigliamento": 34
+  },
+  "abbigliamento_scarpe_n": 34
+ },
+ {
+  "brand": "CHANEL",
+  "stato": "assente",
+  "n": 33,
+  "mediana_eur": 735,
+  "min_eur": 68,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.03,
+  "categorie": {
+   "Abbigliamento": 10,
+   "Scarpe": 9,
+   "Borse": 8
+  },
+  "abbigliamento_scarpe_n": 19
+ },
+ {
+  "brand": "LOEWE",
+  "stato": "monitorato",
+  "n": 32,
+  "mediana_eur": 314,
+  "min_eur": 103,
+  "sotto_150": 3,
+  "quota_sotto_150": 0.09,
+  "categorie": {
+   "Abbigliamento": 14,
+   "Borse": 13,
+   "Scarpe": 3
+  },
+  "abbigliamento_scarpe_n": 17
+ },
+ {
+  "brand": "CELINE",
+  "stato": "assente",
+  "n": 31,
+  "mediana_eur": 630,
+  "min_eur": 113,
+  "sotto_150": 2,
+  "quota_sotto_150": 0.06,
+  "categorie": {
+   "Borse": 23,
+   "Abbigliamento": 4,
+   "Accessori": 3
+  },
+  "abbigliamento_scarpe_n": 4
+ },
+ {
+  "brand": "FENDI",
+  "stato": "id_noto_non_in_ricerca",
+  "n": 29,
+  "mediana_eur": 324,
+  "min_eur": 81,
+  "sotto_150": 7,
+  "quota_sotto_150": 0.24,
+  "categorie": {
+   "Borse": 13,
+   "Abbigliamento": 12,
+   "Scarpe": 2
+  },
+  "abbigliamento_scarpe_n": 14
+ },
+ {
+  "brand": "MAX MARA",
+  "stato": "monitorato",
+  "n": 28,
+  "mediana_eur": 252,
+  "min_eur": 101,
+  "sotto_150": 5,
+  "quota_sotto_150": 0.18,
+  "categorie": {
+   "Abbigliamento": 26,
+   "Borse": 1,
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 27
+ },
+ {
+  "brand": "JACQUEMUS",
+  "stato": "monitorato",
+  "n": 27,
+  "mediana_eur": 200,
+  "min_eur": 75,
+  "sotto_150": 8,
+  "quota_sotto_150": 0.3,
+  "categorie": {
+   "Abbigliamento": 19,
+   "Borse": 8
+  },
+  "abbigliamento_scarpe_n": 19
+ },
+ {
+  "brand": "BOTTEGA VENETA",
+  "stato": "monitorato",
+  "n": 26,
+  "mediana_eur": 381,
+  "min_eur": 119,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.04,
+  "categorie": {
+   "Borse": 16,
+   "Abbigliamento": 4,
+   "Scarpe": 4
+  },
+  "abbigliamento_scarpe_n": 8
+ },
+ {
+  "brand": "VALENTINO GARAVANI",
+  "stato": "assente",
+  "n": 23,
+  "mediana_eur": 228,
+  "min_eur": 65,
+  "sotto_150": 6,
+  "quota_sotto_150": 0.26,
+  "categorie": {
+   "Scarpe": 8,
+   "Borse": 7,
+   "Abbigliamento": 6
+  },
+  "abbigliamento_scarpe_n": 14
+ },
+ {
+  "brand": "GOLDEN GOOSE",
+  "stato": "assente",
+  "n": 23,
+  "mediana_eur": 205,
+  "min_eur": 123,
+  "sotto_150": 5,
+  "quota_sotto_150": 0.22,
+  "categorie": {
+   "Scarpe": 22,
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 23
+ },
+ {
+  "brand": "DOLCE & GABBANA",
+  "stato": "assente",
+  "n": 21,
+  "mediana_eur": 263,
+  "min_eur": 54,
+  "sotto_150": 6,
+  "quota_sotto_150": 0.29,
+  "categorie": {
+   "Abbigliamento": 16,
+   "Scarpe": 3,
+   "Borse": 2
+  },
+  "abbigliamento_scarpe_n": 19
+ },
+ {
+  "brand": "ZIMMERMANN",
+  "stato": "monitorato",
+  "n": 21,
+  "mediana_eur": 321,
+  "min_eur": 105,
+  "sotto_150": 2,
+  "quota_sotto_150": 0.1,
+  "categorie": {
+   "Abbigliamento": 20,
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 21
+ },
+ {
+  "brand": "NON SIGNÉ / UNSIGN…",
+  "stato": "assente",
+  "n": 21,
+  "mediana_eur": 168,
+  "min_eur": 36,
+  "sotto_150": 8,
+  "quota_sotto_150": 0.38,
+  "categorie": {
+   "Abbigliamento": 21
+  },
+  "abbigliamento_scarpe_n": 21
+ },
+ {
+  "brand": "OFF-WHITE",
+  "stato": "assente",
+  "n": 20,
+  "mediana_eur": 100,
+  "min_eur": 80,
+  "sotto_150": 15,
+  "quota_sotto_150": 0.75,
+  "categorie": {
+   "Abbigliamento": 15,
+   "Scarpe": 3,
+   "Borse": 1
+  },
+  "abbigliamento_scarpe_n": 18
+ },
+ {
+  "brand": "GIVENCHY",
+  "stato": "assente",
+  "n": 19,
+  "mediana_eur": 234,
+  "min_eur": 85,
+  "sotto_150": 5,
+  "quota_sotto_150": 0.26,
+  "categorie": {
+   "Abbigliamento": 10,
+   "Borse": 7,
+   "Scarpe": 2
+  },
+  "abbigliamento_scarpe_n": 12
+ },
+ {
+  "brand": "TOTEME",
+  "stato": "monitorato",
+  "n": 19,
+  "mediana_eur": 195,
+  "min_eur": 75,
+  "sotto_150": 6,
+  "quota_sotto_150": 0.32,
+  "categorie": {
+   "Abbigliamento": 10,
+   "Borse": 5,
+   "Scarpe": 4
+  },
+  "abbigliamento_scarpe_n": 14
+ },
+ {
+  "brand": "BRUNELLO CUCINELLI",
+  "stato": "monitorato",
+  "n": 17,
+  "mediana_eur": 291,
+  "min_eur": 104,
+  "sotto_150": 2,
+  "quota_sotto_150": 0.12,
+  "categorie": {
+   "Abbigliamento": 17
+  },
+  "abbigliamento_scarpe_n": 17
+ },
+ {
+  "brand": "CANADA GOOSE",
+  "stato": "assente",
+  "n": 16,
+  "mediana_eur": 226,
+  "min_eur": 93,
+  "sotto_150": 3,
+  "quota_sotto_150": 0.19,
+  "categorie": {
+   "Abbigliamento": 16
+  },
+  "abbigliamento_scarpe_n": 16
+ },
+ {
+  "brand": "CARTIER",
+  "stato": "assente",
+  "n": 14,
+  "mediana_eur": 1948,
+  "min_eur": 242,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Gioielli e orologi": 11,
+   "Accessori": 2,
+   "Borse": 1
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "DIOR HOMME",
+  "stato": "assente",
+  "n": 13,
+  "mediana_eur": 289,
+  "min_eur": 40,
+  "sotto_150": 4,
+  "quota_sotto_150": 0.31,
+  "categorie": {
+   "Abbigliamento": 11,
+   "Borse": 1,
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 12
+ },
+ {
+  "brand": "LORO PIANA",
+  "stato": "monitorato",
+  "n": 13,
+  "mediana_eur": 244,
+  "min_eur": 65,
+  "sotto_150": 4,
+  "quota_sotto_150": 0.31,
+  "categorie": {
+   "Abbigliamento": 10,
+   "Accessori": 2,
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 11
+ },
+ {
+  "brand": "CHLOÉ",
+  "stato": "id_noto_non_in_ricerca",
+  "n": 12,
+  "mediana_eur": 339,
+  "min_eur": 116,
+  "sotto_150": 2,
+  "quota_sotto_150": 0.17,
+  "categorie": {
+   "Borse": 9,
+   "Accessori": 2,
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "YVES SAINT LAURENT",
+  "stato": "id_noto_non_in_ricerca",
+  "n": 12,
+  "mediana_eur": 166,
+  "min_eur": 66,
+  "sotto_150": 5,
+  "quota_sotto_150": 0.42,
+  "categorie": {
+   "Abbigliamento": 8,
+   "Borse": 2,
+   "Gioielli e orologi": 1
+  },
+  "abbigliamento_scarpe_n": 8
+ },
+ {
+  "brand": "THE ROW",
+  "stato": "monitorato",
+  "n": 12,
+  "mediana_eur": 395,
+  "min_eur": 184,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 9,
+   "Scarpe": 3
+  },
+  "abbigliamento_scarpe_n": 12
+ },
+ {
+  "brand": "CASABLANCA",
+  "stato": "assente",
+  "n": 11,
+  "mediana_eur": 153,
+  "min_eur": 80,
+  "sotto_150": 5,
+  "quota_sotto_150": 0.45,
+  "categorie": {
+   "Abbigliamento": 10,
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 11
+ },
+ {
+  "brand": "ACNE STUDIOS",
+  "stato": "id_noto_non_in_ricerca",
+  "n": 11,
+  "mediana_eur": 132,
+  "min_eur": 84,
+  "sotto_150": 7,
+  "quota_sotto_150": 0.64,
+  "categorie": {
+   "Abbigliamento": 11
+  },
+  "abbigliamento_scarpe_n": 11
+ },
+ {
+  "brand": "POLO RALPH LAUREN",
+  "stato": "assente",
+  "n": 11,
+  "mediana_eur": 75,
+  "min_eur": 31,
+  "sotto_150": 9,
+  "quota_sotto_150": 0.82,
+  "categorie": {
+   "Abbigliamento": 11
+  },
+  "abbigliamento_scarpe_n": 11
+ },
+ {
+  "brand": "CHRISTIAN LOUBOUT…",
+  "stato": "assente",
+  "n": 10,
+  "mediana_eur": 263,
+  "min_eur": 172,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Scarpe": 8,
+   "Borse": 2
+  },
+  "abbigliamento_scarpe_n": 8
+ },
+ {
+  "brand": "ALEXANDER MCQUEEN",
+  "stato": "id_noto_non_in_ricerca",
+  "n": 10,
+  "mediana_eur": 184,
+  "min_eur": 105,
+  "sotto_150": 4,
+  "quota_sotto_150": 0.4,
+  "categorie": {
+   "Scarpe": 7,
+   "Abbigliamento": 3
+  },
+  "abbigliamento_scarpe_n": 10
+ },
+ {
+  "brand": "THE FRANKIE SHOP",
+  "stato": "id_noto_non_in_ricerca",
+  "n": 10,
+  "mediana_eur": 156,
+  "min_eur": 80,
+  "sotto_150": 5,
+  "quota_sotto_150": 0.5,
+  "categorie": {
+   "Abbigliamento": 10
+  },
+  "abbigliamento_scarpe_n": 10
+ },
+ {
+  "brand": "ISABEL MARANT ETO…",
+  "stato": "id_noto_non_in_ricerca",
+  "n": 10,
+  "mediana_eur": 131,
+  "min_eur": 85,
+  "sotto_150": 7,
+  "quota_sotto_150": 0.7,
+  "categorie": {
+   "Abbigliamento": 10
+  },
+  "abbigliamento_scarpe_n": 10
+ },
+ {
+  "brand": "ZADIG & VOLTAIRE",
+  "stato": "assente",
+  "n": 9,
+  "mediana_eur": 158,
+  "min_eur": 85,
+  "sotto_150": 3,
+  "quota_sotto_150": 0.33,
+  "categorie": {
+   "Abbigliamento": 8,
+   "Borse": 1
+  },
+  "abbigliamento_scarpe_n": 8
+ },
+ {
+  "brand": "NORMA KAMALI",
+  "stato": "assente",
+  "n": 9,
+  "mediana_eur": 120,
+  "min_eur": 111,
+  "sotto_150": 7,
+  "quota_sotto_150": 0.78,
+  "categorie": {
+   "Abbigliamento": 9
+  },
+  "abbigliamento_scarpe_n": 9
+ },
+ {
+  "brand": "VERSACE",
+  "stato": "assente",
+  "n": 8,
+  "mediana_eur": 205,
+  "min_eur": 90,
+  "sotto_150": 3,
+  "quota_sotto_150": 0.38,
+  "categorie": {
+   "Abbigliamento": 5,
+   "Scarpe": 1,
+   "Accessori": 1
+  },
+  "abbigliamento_scarpe_n": 6
+ },
+ {
+  "brand": "PALM ANGELS",
+  "stato": "assente",
+  "n": 8,
+  "mediana_eur": 105,
+  "min_eur": 92,
+  "sotto_150": 8,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 8
+  },
+  "abbigliamento_scarpe_n": 8
+ },
+ {
+  "brand": "VIVIENNE WESTWOOD",
+  "stato": "monitorato",
+  "n": 8,
+  "mediana_eur": 152,
+  "min_eur": 126,
+  "sotto_150": 4,
+  "quota_sotto_150": 0.5,
+  "categorie": {
+   "Abbigliamento": 5,
+   "Gioielli e orologi": 2,
+   "Accessori": 1
+  },
+  "abbigliamento_scarpe_n": 5
+ },
+ {
+  "brand": "ISABEL MARANT",
+  "stato": "id_noto_non_in_ricerca",
+  "n": 8,
+  "mediana_eur": 238,
+  "min_eur": 102,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.12,
+  "categorie": {
+   "Abbigliamento": 4,
+   "Scarpe": 3,
+   "Borse": 1
+  },
+  "abbigliamento_scarpe_n": 7
+ },
+ {
+  "brand": "BALMAIN",
+  "stato": "assente",
+  "n": 8,
+  "mediana_eur": 208,
+  "min_eur": 95,
+  "sotto_150": 3,
+  "quota_sotto_150": 0.38,
+  "categorie": {
+   "Abbigliamento": 8
+  },
+  "abbigliamento_scarpe_n": 8
+ },
+ {
+  "brand": "STONE ISLAND",
+  "stato": "id_noto_non_in_ricerca",
+  "n": 8,
+  "mediana_eur": 342,
+  "min_eur": 90,
+  "sotto_150": 3,
+  "quota_sotto_150": 0.38,
+  "categorie": {
+   "Abbigliamento": 8
+  },
+  "abbigliamento_scarpe_n": 8
+ },
+ {
+  "brand": "GIORGIO ARMANI",
+  "stato": "assente",
+  "n": 8,
+  "mediana_eur": 168,
+  "min_eur": 116,
+  "sotto_150": 3,
+  "quota_sotto_150": 0.38,
+  "categorie": {
+   "Abbigliamento": 8
+  },
+  "abbigliamento_scarpe_n": 8
+ },
+ {
+  "brand": "BARBOUR",
+  "stato": "assente",
+  "n": 8,
+  "mediana_eur": 272,
+  "min_eur": 70,
+  "sotto_150": 2,
+  "quota_sotto_150": 0.25,
+  "categorie": {
+   "Abbigliamento": 8
+  },
+  "abbigliamento_scarpe_n": 8
+ },
+ {
+  "brand": "JIL SANDER",
+  "stato": "assente",
+  "n": 7,
+  "mediana_eur": 178,
+  "min_eur": 95,
+  "sotto_150": 2,
+  "quota_sotto_150": 0.29,
+  "categorie": {
+   "Abbigliamento": 6,
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 7
+ },
+ {
+  "brand": "BVLGARI",
+  "stato": "assente",
+  "n": 7,
+  "mediana_eur": 629,
+  "min_eur": 178,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Gioielli e orologi": 4,
+   "Borse": 3
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "THOM BROWNE",
+  "stato": "id_noto_non_in_ricerca",
+  "n": 7,
+  "mediana_eur": 221,
+  "min_eur": 188,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 4,
+   "Scarpe": 2,
+   "Accessori": 1
+  },
+  "abbigliamento_scarpe_n": 6
+ },
+ {
+  "brand": "ETRO",
+  "stato": "assente",
+  "n": 7,
+  "mediana_eur": 105,
+  "min_eur": 85,
+  "sotto_150": 5,
+  "quota_sotto_150": 0.71,
+  "categorie": {
+   "Abbigliamento": 7
+  },
+  "abbigliamento_scarpe_n": 7
+ },
+ {
+  "brand": "AMIRI",
+  "stato": "assente",
+  "n": 6,
+  "mediana_eur": 142,
+  "min_eur": 95,
+  "sotto_150": 4,
+  "quota_sotto_150": 0.67,
+  "categorie": {
+   "Abbigliamento": 6
+  },
+  "abbigliamento_scarpe_n": 6
+ },
+ {
+  "brand": "TIFFANY & CO",
+  "stato": "assente",
+  "n": 6,
+  "mediana_eur": 233,
+  "min_eur": 163,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Gioielli e orologi": 6
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "BELSTAFF",
+  "stato": "assente",
+  "n": 6,
+  "mediana_eur": 139,
+  "min_eur": 74,
+  "sotto_150": 4,
+  "quota_sotto_150": 0.67,
+  "categorie": {
+   "Abbigliamento": 6
+  },
+  "abbigliamento_scarpe_n": 6
+ },
+ {
+  "brand": "AMI",
+  "stato": "assente",
+  "n": 6,
+  "mediana_eur": 110,
+  "min_eur": 75,
+  "sotto_150": 5,
+  "quota_sotto_150": 0.83,
+  "categorie": {
+   "Abbigliamento": 6
+  },
+  "abbigliamento_scarpe_n": 6
+ },
+ {
+  "brand": "BLAZÉ MILANO",
+  "stato": "assente",
+  "n": 5,
+  "mediana_eur": 462,
+  "min_eur": 411,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 5
+  },
+  "abbigliamento_scarpe_n": 5
+ },
+ {
+  "brand": "NIKE X OFF-WHITE",
+  "stato": "assente",
+  "n": 5,
+  "mediana_eur": 178,
+  "min_eur": 147,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.2,
+  "categorie": {
+   "Scarpe": 5
+  },
+  "abbigliamento_scarpe_n": 5
+ },
+ {
+  "brand": "MIU MIU",
+  "stato": "monitorato",
+  "n": 5,
+  "mediana_eur": 346,
+  "min_eur": 132,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.2,
+  "categorie": {
+   "Borse": 3,
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "JUNYA WATANABE",
+  "stato": "monitorato",
+  "n": 5,
+  "mediana_eur": 224,
+  "min_eur": 126,
+  "sotto_150": 2,
+  "quota_sotto_150": 0.4,
+  "categorie": {
+   "Abbigliamento": 5
+  },
+  "abbigliamento_scarpe_n": 5
+ },
+ {
+  "brand": "YOHJI YAMAMOTO",
+  "stato": "monitorato",
+  "n": 5,
+  "mediana_eur": 273,
+  "min_eur": 116,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.2,
+  "categorie": {
+   "Abbigliamento": 5
+  },
+  "abbigliamento_scarpe_n": 5
+ },
+ {
+  "brand": "LACOSTE",
+  "stato": "assente",
+  "n": 5,
+  "mediana_eur": 40,
+  "min_eur": 32,
+  "sotto_150": 5,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 5
+  },
+  "abbigliamento_scarpe_n": 5
+ },
+ {
+  "brand": "DSQUARED2",
+  "stato": "assente",
+  "n": 5,
+  "mediana_eur": 137,
+  "min_eur": 55,
+  "sotto_150": 4,
+  "quota_sotto_150": 0.8,
+  "categorie": {
+   "Abbigliamento": 5
+  },
+  "abbigliamento_scarpe_n": 5
+ },
+ {
+  "brand": "LA DOUBLE J",
+  "stato": "assente",
+  "n": 4,
+  "mediana_eur": 158,
+  "min_eur": 116,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.25,
+  "categorie": {
+   "Abbigliamento": 4
+  },
+  "abbigliamento_scarpe_n": 4
+ },
+ {
+  "brand": "COACH",
+  "stato": "id_noto_non_in_ricerca",
+  "n": 4,
+  "mediana_eur": 244,
+  "min_eur": 210,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Borse": 4
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "KITON",
+  "stato": "assente",
+  "n": 4,
+  "mediana_eur": 307,
+  "min_eur": 289,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 4
+  },
+  "abbigliamento_scarpe_n": 4
+ },
+ {
+  "brand": "MAISON MARTIN MA…",
+  "stato": "assente",
+  "n": 4,
+  "mediana_eur": 201,
+  "min_eur": 90,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.25,
+  "categorie": {
+   "Scarpe": 2,
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 4
+ },
+ {
+  "brand": "COPERNI",
+  "stato": "assente",
+  "n": 4,
+  "mediana_eur": 204,
+  "min_eur": 137,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.25,
+  "categorie": {
+   "Abbigliamento": 3,
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 4
+ },
+ {
+  "brand": "AMINA MUADDI",
+  "stato": "assente",
+  "n": 4,
+  "mediana_eur": 302,
+  "min_eur": 284,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Scarpe": 4
+  },
+  "abbigliamento_scarpe_n": 4
+ },
+ {
+  "brand": "ROTATE",
+  "stato": "assente",
+  "n": 4,
+  "mediana_eur": 178,
+  "min_eur": 105,
+  "sotto_150": 2,
+  "quota_sotto_150": 0.5,
+  "categorie": {
+   "Abbigliamento": 4
+  },
+  "abbigliamento_scarpe_n": 4
+ },
+ {
+  "brand": "R13",
+  "stato": "assente",
+  "n": 4,
+  "mediana_eur": 258,
+  "min_eur": 190,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 4
+  },
+  "abbigliamento_scarpe_n": 4
+ },
+ {
+  "brand": "Y/PROJECT",
+  "stato": "assente",
+  "n": 4,
+  "mediana_eur": 133,
+  "min_eur": 126,
+  "sotto_150": 4,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 4
+  },
+  "abbigliamento_scarpe_n": 4
+ },
+ {
+  "brand": "BODE",
+  "stato": "id_noto_non_in_ricerca",
+  "n": 4,
+  "mediana_eur": 106,
+  "min_eur": 91,
+  "sotto_150": 4,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 4
+  },
+  "abbigliamento_scarpe_n": 4
+ },
+ {
+  "brand": "THE KOOPLES",
+  "stato": "assente",
+  "n": 4,
+  "mediana_eur": 111,
+  "min_eur": 36,
+  "sotto_150": 2,
+  "quota_sotto_150": 0.5,
+  "categorie": {
+   "Abbigliamento": 4
+  },
+  "abbigliamento_scarpe_n": 4
+ },
+ {
+  "brand": "DIESEL",
+  "stato": "assente",
+  "n": 4,
+  "mediana_eur": 92,
+  "min_eur": 21,
+  "sotto_150": 3,
+  "quota_sotto_150": 0.75,
+  "categorie": {
+   "Abbigliamento": 4
+  },
+  "abbigliamento_scarpe_n": 4
+ },
+ {
+  "brand": "GRAN SASSO",
+  "stato": "assente",
+  "n": 4,
+  "mediana_eur": 204,
+  "min_eur": 146,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.25,
+  "categorie": {
+   "Abbigliamento": 4
+  },
+  "abbigliamento_scarpe_n": 4
+ },
+ {
+  "brand": "MOSCHINO",
+  "stato": "assente",
+  "n": 4,
+  "mediana_eur": 111,
+  "min_eur": 70,
+  "sotto_150": 3,
+  "quota_sotto_150": 0.75,
+  "categorie": {
+   "Abbigliamento": 3,
+   "Gioielli e orologi": 1
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "ZEGNA",
+  "stato": "id_noto_non_in_ricerca",
+  "n": 4,
+  "mediana_eur": 488,
+  "min_eur": 105,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.25,
+  "categorie": {
+   "Abbigliamento": 4
+  },
+  "abbigliamento_scarpe_n": 4
+ },
+ {
+  "brand": "LANVIN",
+  "stato": "assente",
+  "n": 4,
+  "mediana_eur": 85,
+  "min_eur": 70,
+  "sotto_150": 3,
+  "quota_sotto_150": 0.75,
+  "categorie": {
+   "Abbigliamento": 3,
+   "Accessori": 1
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "RALPH LAUREN",
+  "stato": "assente",
+  "n": 4,
+  "mediana_eur": 62,
+  "min_eur": 52,
+  "sotto_150": 3,
+  "quota_sotto_150": 0.75,
+  "categorie": {
+   "Abbigliamento": 4
+  },
+  "abbigliamento_scarpe_n": 4
+ },
+ {
+  "brand": "LAUREN RALPH LAU…",
+  "stato": "assente",
+  "n": 4,
+  "mediana_eur": 70,
+  "min_eur": 40,
+  "sotto_150": 4,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Scarpe": 3,
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 4
+ },
+ {
+  "brand": "SUITSUPPLY",
+  "stato": "assente",
+  "n": 4,
+  "mediana_eur": 87,
+  "min_eur": 64,
+  "sotto_150": 4,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 4
+  },
+  "abbigliamento_scarpe_n": 4
+ },
+ {
+  "brand": "POLENE",
+  "stato": "assente",
+  "n": 3,
+  "mediana_eur": 326,
+  "min_eur": 213,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Borse": 3
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "YEEZY X ADIDAS",
+  "stato": "assente",
+  "n": 3,
+  "mediana_eur": 126,
+  "min_eur": 105,
+  "sotto_150": 2,
+  "quota_sotto_150": 0.67,
+  "categorie": {
+   "Scarpe": 3
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "GOYARD",
+  "stato": "assente",
+  "n": 3,
+  "mediana_eur": 399,
+  "min_eur": 382,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Borse": 3
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "POMELLATO",
+  "stato": "assente",
+  "n": 3,
+  "mediana_eur": 1050,
+  "min_eur": 952,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Gioielli e orologi": 3
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "BRIONI",
+  "stato": "assente",
+  "n": 3,
+  "mediana_eur": 237,
+  "min_eur": 178,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 3
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "AVIREX",
+  "stato": "assente",
+  "n": 3,
+  "mediana_eur": 263,
+  "min_eur": 208,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 3
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "MARINE SERRE",
+  "stato": "assente",
+  "n": 3,
+  "mediana_eur": 152,
+  "min_eur": 121,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.33,
+  "categorie": {
+   "Scarpe": 2,
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "ALAÏA",
+  "stato": "monitorato",
+  "n": 3,
+  "mediana_eur": 325,
+  "min_eur": 210,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 2,
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "KHAITE",
+  "stato": "monitorato",
+  "n": 3,
+  "mediana_eur": 258,
+  "min_eur": 146,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.33,
+  "categorie": {
+   "Abbigliamento": 3
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "CECILIE BAHNSEN",
+  "stato": "assente",
+  "n": 3,
+  "mediana_eur": 242,
+  "min_eur": 147,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.33,
+  "categorie": {
+   "Abbigliamento": 3
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "SIMONE ROCHA",
+  "stato": "assente",
+  "n": 3,
+  "mediana_eur": 185,
+  "min_eur": 174,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 3
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "STELLA MCCARTNEY",
+  "stato": "id_noto_non_in_ricerca",
+  "n": 3,
+  "mediana_eur": 273,
+  "min_eur": 263,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Borse": 3
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "MM6",
+  "stato": "assente",
+  "n": 3,
+  "mediana_eur": 163,
+  "min_eur": 126,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.33,
+  "categorie": {
+   "Scarpe": 2,
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "ROSANTICA",
+  "stato": "assente",
+  "n": 3,
+  "mediana_eur": 174,
+  "min_eur": 146,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.33,
+  "categorie": {
+   "Gioielli e orologi": 3
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "BERLUTI",
+  "stato": "assente",
+  "n": 3,
+  "mediana_eur": 263,
+  "min_eur": 218,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 2,
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "MISSONI",
+  "stato": "monitorato",
+  "n": 3,
+  "mediana_eur": 85,
+  "min_eur": 85,
+  "sotto_150": 2,
+  "quota_sotto_150": 0.67,
+  "categorie": {
+   "Abbigliamento": 3
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "COSTARELLOS",
+  "stato": "assente",
+  "n": 3,
+  "mediana_eur": 512,
+  "min_eur": 479,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 3
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "LEMAIRE",
+  "stato": "monitorato",
+  "n": 3,
+  "mediana_eur": 206,
+  "min_eur": 123,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.33,
+  "categorie": {
+   "Abbigliamento": 2,
+   "Borse": 1
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "EMPORIO ARMANI",
+  "stato": "assente",
+  "n": 3,
+  "mediana_eur": 77,
+  "min_eur": 59,
+  "sotto_150": 2,
+  "quota_sotto_150": 0.67,
+  "categorie": {
+   "Abbigliamento": 3
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "HUGO BOSS",
+  "stato": "assente",
+  "n": 3,
+  "mediana_eur": 79,
+  "min_eur": 44,
+  "sotto_150": 2,
+  "quota_sotto_150": 0.67,
+  "categorie": {
+   "Abbigliamento": 3
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "CANALI",
+  "stato": "assente",
+  "n": 3,
+  "mediana_eur": 205,
+  "min_eur": 149,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.33,
+  "categorie": {
+   "Abbigliamento": 3
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "APC",
+  "stato": "assente",
+  "n": 3,
+  "mediana_eur": 94,
+  "min_eur": 81,
+  "sotto_150": 2,
+  "quota_sotto_150": 0.67,
+  "categorie": {
+   "Abbigliamento": 3
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "ADIDAS",
+  "stato": "assente",
+  "n": 3,
+  "mediana_eur": 60,
+  "min_eur": 49,
+  "sotto_150": 2,
+  "quota_sotto_150": 0.67,
+  "categorie": {
+   "Abbigliamento": 3
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "HAIDER ACKERMANN",
+  "stato": "monitorato",
+  "n": 3,
+  "mediana_eur": 325,
+  "min_eur": 55,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.33,
+  "categorie": {
+   "Abbigliamento": 3
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "BOSS",
+  "stato": "assente",
+  "n": 3,
+  "mediana_eur": 100,
+  "min_eur": 64,
+  "sotto_150": 2,
+  "quota_sotto_150": 0.67,
+  "categorie": {
+   "Abbigliamento": 3
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "BALLY",
+  "stato": "assente",
+  "n": 3,
+  "mediana_eur": 221,
+  "min_eur": 213,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 2,
+   "Borse": 1
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "SANDRO",
+  "stato": "assente",
+  "n": 3,
+  "mediana_eur": 100,
+  "min_eur": 53,
+  "sotto_150": 3,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 3
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "ERMENEGILDO ZEGNA",
+  "stato": "id_noto_non_in_ricerca",
+  "n": 3,
+  "mediana_eur": 263,
+  "min_eur": 210,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 3
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "HELMUT LANG",
+  "stato": "monitorato",
+  "n": 3,
+  "mediana_eur": 221,
+  "min_eur": 99,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.33,
+  "categorie": {
+   "Abbigliamento": 3
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "HERNO",
+  "stato": "assente",
+  "n": 3,
+  "mediana_eur": 263,
+  "min_eur": 200,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 3
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "JACOB COHEN",
+  "stato": "assente",
+  "n": 3,
+  "mediana_eur": 158,
+  "min_eur": 50,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.33,
+  "categorie": {
+   "Abbigliamento": 3
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "PHILIPP PLEIN",
+  "stato": "assente",
+  "n": 3,
+  "mediana_eur": 135,
+  "min_eur": 132,
+  "sotto_150": 2,
+  "quota_sotto_150": 0.67,
+  "categorie": {
+   "Abbigliamento": 3
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "MASSIMO DUTTI",
+  "stato": "assente",
+  "n": 3,
+  "mediana_eur": 130,
+  "min_eur": 55,
+  "sotto_150": 2,
+  "quota_sotto_150": 0.67,
+  "categorie": {
+   "Abbigliamento": 3
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "KENZO",
+  "stato": "assente",
+  "n": 3,
+  "mediana_eur": 50,
+  "min_eur": 37,
+  "sotto_150": 3,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 3
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "ARMANI COLLEZIONI",
+  "stato": "assente",
+  "n": 3,
+  "mediana_eur": 53,
+  "min_eur": 50,
+  "sotto_150": 2,
+  "quota_sotto_150": 0.67,
+  "categorie": {
+   "Abbigliamento": 3
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "MAJE",
+  "stato": "assente",
+  "n": 3,
+  "mediana_eur": 156,
+  "min_eur": 59,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.33,
+  "categorie": {
+   "Abbigliamento": 3
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "ANN DEMEULEMEES…",
+  "stato": "monitorato",
+  "n": 3,
+  "mediana_eur": 114,
+  "min_eur": 93,
+  "sotto_150": 2,
+  "quota_sotto_150": 0.67,
+  "categorie": {
+   "Abbigliamento": 2,
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "THE EXTREME COLL…",
+  "stato": "assente",
+  "n": 3,
+  "mediana_eur": 116,
+  "min_eur": 86,
+  "sotto_150": 2,
+  "quota_sotto_150": 0.67,
+  "categorie": {
+   "Abbigliamento": 3
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "FORTE_FORTE",
+  "stato": "assente",
+  "n": 3,
+  "mediana_eur": 105,
+  "min_eur": 95,
+  "sotto_150": 2,
+  "quota_sotto_150": 0.67,
+  "categorie": {
+   "Abbigliamento": 3
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "MALO",
+  "stato": "assente",
+  "n": 3,
+  "mediana_eur": 95,
+  "min_eur": 84,
+  "sotto_150": 2,
+  "quota_sotto_150": 0.67,
+  "categorie": {
+   "Abbigliamento": 3
+  },
+  "abbigliamento_scarpe_n": 3
+ },
+ {
+  "brand": "MULBERRY",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 306,
+  "min_eur": 218,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Borse": 2
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "GOLDBERGH",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 221,
+  "min_eur": 184,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "SOPHIE BILLE BRAHE",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 440,
+  "min_eur": 410,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Gioielli e orologi": 2
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "DINH VAN",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 546,
+  "min_eur": 147,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.5,
+  "categorie": {
+   "Gioielli e orologi": 2
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "ATTICO",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 152,
+  "min_eur": 132,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.5,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "NANUSHKA",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 176,
+  "min_eur": 168,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "FUSALP",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 173,
+  "min_eur": 115,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.5,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "DRAGON DIFFUSION",
+  "stato": "monitorato",
+  "n": 2,
+  "mediana_eur": 273,
+  "min_eur": 231,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Borse": 2
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "JIMMY CHOO",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 352,
+  "min_eur": 263,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Borse": 1,
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "LONGINES",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 287,
+  "min_eur": 233,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Gioielli e orologi": 2
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "NIKE X SACAÏ",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 112,
+  "min_eur": 105,
+  "sotto_150": 2,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Scarpe": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "PACO RABANNE",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 488,
+  "min_eur": 473,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Borse": 1,
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "MESSIKA",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 1124,
+  "min_eur": 998,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Gioielli e orologi": 2
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "PASCALE MONVOISIN",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 410,
+  "min_eur": 390,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Gioielli e orologi": 2
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "SUPREME",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 155,
+  "min_eur": 111,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.5,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "AQUAZZURA",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 221,
+  "min_eur": 209,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Scarpe": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "Y-3",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 102,
+  "min_eur": 100,
+  "sotto_150": 2,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "GABRIELA HEARST",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 1083,
+  "min_eur": 171,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Scarpe": 1,
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "CULT GAIA",
+  "stato": "monitorato",
+  "n": 2,
+  "mediana_eur": 129,
+  "min_eur": 126,
+  "sotto_150": 2,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "SALVATORE FERRAG…",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 198,
+  "min_eur": 174,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Scarpe": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "TOM FORD",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 298,
+  "min_eur": 132,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.5,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "MARTINE ROSE",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 100,
+  "min_eur": 90,
+  "sotto_150": 2,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "COURRÈGES",
+  "stato": "monitorato",
+  "n": 2,
+  "mediana_eur": 267,
+  "min_eur": 93,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.5,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "ALANUI",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 530,
+  "min_eur": 420,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "GIGI CLOZEAU",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 216,
+  "min_eur": 137,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.5,
+  "categorie": {
+   "Gioielli e orologi": 2
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "KAPITAL",
+  "stato": "monitorato",
+  "n": 2,
+  "mediana_eur": 232,
+  "min_eur": 200,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "PARIS TEXAS",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 226,
+  "min_eur": 189,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Scarpe": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "ARNYS",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 377,
+  "min_eur": 124,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.5,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "ISSEY MIYAKE",
+  "stato": "monitorato",
+  "n": 2,
+  "mediana_eur": 164,
+  "min_eur": 132,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.5,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "BOGLIOLI",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 92,
+  "min_eur": 90,
+  "sotto_150": 2,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "MONCLER GENIUS",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 252,
+  "min_eur": 252,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "MARNI",
+  "stato": "monitorato",
+  "n": 2,
+  "mediana_eur": 174,
+  "min_eur": 85,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.5,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "MARITHÉ & FRANÇOI…",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 58,
+  "min_eur": 50,
+  "sotto_150": 2,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "PUMA X AMI",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 93,
+  "min_eur": 70,
+  "sotto_150": 2,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "ROBERTO CAVALLI",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 171,
+  "min_eur": 105,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.5,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "K-WAY",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 94,
+  "min_eur": 62,
+  "sotto_150": 2,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "MOORER",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 1407,
+  "min_eur": 1050,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "BILLIONAIRE",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 551,
+  "min_eur": 314,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "ZIGGY CHEN",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 574,
+  "min_eur": 349,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "SARTORIA ITALIANA",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 109,
+  "min_eur": 63,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.5,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "DONDUP",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 42,
+  "min_eur": 35,
+  "sotto_150": 2,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "COLMAR",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 72,
+  "min_eur": 70,
+  "sotto_150": 2,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "GIANFRANCO FERRÉ",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 163,
+  "min_eur": 147,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.5,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "PAUL&SHARK",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 122,
+  "min_eur": 85,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.5,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "C.P. COMPANY",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 215,
+  "min_eur": 62,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.5,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "CP COMPANY",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 258,
+  "min_eur": 179,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "FAY",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 168,
+  "min_eur": 126,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.5,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "D&G",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 166,
+  "min_eur": 86,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.5,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "COMME DES GARCONS",
+  "stato": "id_noto_non_in_ricerca",
+  "n": 2,
+  "mediana_eur": 158,
+  "min_eur": 109,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.5,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "KARL LAGERFELD",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 112,
+  "min_eur": 93,
+  "sotto_150": 2,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1,
+   "Accessori": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "LIU.JO",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 40,
+  "min_eur": 35,
+  "sotto_150": 2,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "TWINSET",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 52,
+  "min_eur": 30,
+  "sotto_150": 2,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "MAGNOLIA PEARL",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 425,
+  "min_eur": 179,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "HOUSE OF CB",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 100,
+  "min_eur": 56,
+  "sotto_150": 2,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "TARA JARMON",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 68,
+  "min_eur": 66,
+  "sotto_150": 2,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "SÉZANE",
+  "stato": "id_noto_non_in_ricerca",
+  "n": 2,
+  "mediana_eur": 318,
+  "min_eur": 279,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "KOPENHAGEN FUR",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 314,
+  "min_eur": 246,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "MAX & CO",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 212,
+  "min_eur": 120,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.5,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "SWAROVSKI",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 137,
+  "min_eur": 79,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.5,
+  "categorie": {
+   "Gioielli e orologi": 2
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "ERES",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 216,
+  "min_eur": 158,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "SESSUN",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 66,
+  "min_eur": 64,
+  "sotto_150": 2,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "PATOU",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 147,
+  "min_eur": 115,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.5,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "& OTHER STORIES",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 72,
+  "min_eur": 60,
+  "sotto_150": 2,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "ERMANNO SCERVINO",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 100,
+  "min_eur": 66,
+  "sotto_150": 2,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "ARMANI JEANS",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 104,
+  "min_eur": 82,
+  "sotto_150": 2,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "NO FAITH STUDIO",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 152,
+  "min_eur": 61,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.5,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "ELISABETTA FRANCHI",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 166,
+  "min_eur": 70,
+  "sotto_150": 1,
+  "quota_sotto_150": 0.5,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "PLEIN SUD",
+  "stato": "assente",
+  "n": 2,
+  "mediana_eur": 384,
+  "min_eur": 189,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 2
+  },
+  "abbigliamento_scarpe_n": 2
+ },
+ {
+  "brand": "ADIDAS & RICK OWE…",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 158,
+  "min_eur": 158,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "THE CURATED",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 242,
+  "min_eur": 242,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "EMILIA WICKSTEAD",
+  "stato": "monitorato",
+  "n": 1,
+  "mediana_eur": 519,
+  "min_eur": 519,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "MARIE LICHTENBERG",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 497,
+  "min_eur": 497,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Gioielli e orologi": 1
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "PROENZA SCHOULER",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 263,
+  "min_eur": 263,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Borse": 1
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "JW ANDERSON",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 153,
+  "min_eur": 153,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "CAMILLA",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 123,
+  "min_eur": 123,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "REFORMATION",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 94,
+  "min_eur": 94,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "PRADA X ADIDAS",
+  "stato": "monitorato",
+  "n": 1,
+  "mediana_eur": 263,
+  "min_eur": 263,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "BREITLING",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 2604,
+  "min_eur": 2604,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Gioielli e orologi": 1
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "RUSLAN BAGINSKIY",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 130,
+  "min_eur": 130,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Accessori": 1
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "DJULA",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 473,
+  "min_eur": 473,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Gioielli e orologi": 1
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "NIKE X MARTINE ROSE",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 242,
+  "min_eur": 242,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "JOHN LOBB",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 226,
+  "min_eur": 226,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "MUGLER",
+  "stato": "monitorato",
+  "n": 1,
+  "mediana_eur": 182,
+  "min_eur": 182,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "MONTBLANC",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 111,
+  "min_eur": 111,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Borse": 1
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "GOOSSENS",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 120,
+  "min_eur": 120,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Gioielli e orologi": 1
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "ADIDAS X RAF SIMONS",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 158,
+  "min_eur": 158,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "DELVAUX",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 583,
+  "min_eur": 583,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Borse": 1
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "NIKE X SUPREME",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 137,
+  "min_eur": 137,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "RHUDE",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 126,
+  "min_eur": 126,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "GIANNI VERSACE",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 125,
+  "min_eur": 125,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "MACH & MACH",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 210,
+  "min_eur": 210,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "ALEVI MILANO",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 263,
+  "min_eur": 263,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "ASICS X KIKO KOSTA…",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 158,
+  "min_eur": 158,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "SANTONI",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 329,
+  "min_eur": 329,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "BORIS BIDJAN SABERI",
+  "stato": "monitorato",
+  "n": 1,
+  "mediana_eur": 461,
+  "min_eur": 461,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "CHROME HEARTS",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 389,
+  "min_eur": 389,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "RAF SIMONS",
+  "stato": "monitorato",
+  "n": 1,
+  "mediana_eur": 473,
+  "min_eur": 473,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "MCM",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 315,
+  "min_eur": 315,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Borse": 1
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "MAX MARA STUDIO",
+  "stato": "monitorato",
+  "n": 1,
+  "mediana_eur": 145,
+  "min_eur": 145,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "VAN CLEEF & ARPELS",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 2415,
+  "min_eur": 2415,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Gioielli e orologi": 1
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "MALONE SOULIERS",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 108,
+  "min_eur": 108,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "CORDOVA",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 382,
+  "min_eur": 382,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "LITTLE LIFFNER",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 222,
+  "min_eur": 222,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Borse": 1
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "MAUBOUSSIN",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 525,
+  "min_eur": 525,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Gioielli e orologi": 1
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "RICK OWENS DRKSH…",
+  "stato": "monitorato",
+  "n": 1,
+  "mediana_eur": 237,
+  "min_eur": 237,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "RICK OWENS",
+  "stato": "monitorato",
+  "n": 1,
+  "mediana_eur": 195,
+  "min_eur": 195,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "SELF-PORTRAIT",
+  "stato": "monitorato",
+  "n": 1,
+  "mediana_eur": 105,
+  "min_eur": 105,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "MARIA DE LA ORDEN",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 105,
+  "min_eur": 105,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "DENIM TEARS",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 132,
+  "min_eur": 132,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "POÈME BOHÉMIEN",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 126,
+  "min_eur": 126,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "UMIT BENAN",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 116,
+  "min_eur": 116,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "ALL SAINTS",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 75,
+  "min_eur": 75,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "DISNEY X GUCCI",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 373,
+  "min_eur": 373,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "MANUEL RITZ",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 45,
+  "min_eur": 45,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "EYTYS",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 56,
+  "min_eur": 56,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "TRAPSTAR",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 71,
+  "min_eur": 71,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "Z ZEGNA",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 525,
+  "min_eur": 525,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "ELIAS RUMELIS",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 37,
+  "min_eur": 37,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "FRATELLI ROSSETTI",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 158,
+  "min_eur": 158,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "REDSKINS",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 209,
+  "min_eur": 209,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "COLE BUXTON",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 157,
+  "min_eur": 157,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "NUDIE JEANS",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 55,
+  "min_eur": 55,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "PIERRE CARDIN",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 42,
+  "min_eur": 42,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "GEOFFREY B. SMALL",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 451,
+  "min_eur": 451,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "EL CHARRO",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 158,
+  "min_eur": 158,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "AVANT TOI",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 263,
+  "min_eur": 263,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "CARHARTT",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 60,
+  "min_eur": 60,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "PALACE",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 231,
+  "min_eur": 231,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "FORTELA",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 221,
+  "min_eur": 221,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "LULULEMON",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 34,
+  "min_eur": 34,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "MAGLIANO",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 126,
+  "min_eur": 126,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "HOMECORE",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 65,
+  "min_eur": 65,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "PAL ZILERI",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 420,
+  "min_eur": 420,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "RALPH LAUREN DENI…",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 99,
+  "min_eur": 99,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "JORDAN",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 50,
+  "min_eur": 50,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "PYRENEX",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 242,
+  "min_eur": 242,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "BIKKEMBERGS",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 105,
+  "min_eur": 105,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "MKI MIYUKI ZOKU",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 290,
+  "min_eur": 290,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "DRAKE'S",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 263,
+  "min_eur": 263,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "VALSTAR",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 294,
+  "min_eur": 294,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "STEFANO RICCI",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 305,
+  "min_eur": 305,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "BLAUER",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 111,
+  "min_eur": 111,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "PEUTEREY",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 263,
+  "min_eur": 263,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "BAZISZT",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 220,
+  "min_eur": 220,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "TAKESHY KUROSAWA",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 54,
+  "min_eur": 54,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "RALPH LAUREN DOU…",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 118,
+  "min_eur": 118,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "ICEBERG",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 75,
+  "min_eur": 75,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "VERSUS",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 243,
+  "min_eur": 243,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "CARLO PIGNATELLI",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 85,
+  "min_eur": 85,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "GUESS",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 26,
+  "min_eur": 26,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "VERSACE JEANS CO…",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 64,
+  "min_eur": 64,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "NEIL BARRETT",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 148,
+  "min_eur": 148,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "TRUE RELIGION",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 79,
+  "min_eur": 79,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "ERL",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 147,
+  "min_eur": 147,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "MOLLI",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 200,
+  "min_eur": 200,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "ALEXANDRE VAUTHIER",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 263,
+  "min_eur": 263,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "MAGDA BUTRYM",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 218,
+  "min_eur": 218,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "ULLA JOHNSON",
+  "stato": "monitorato",
+  "n": 1,
+  "mediana_eur": 200,
+  "min_eur": 200,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "CHRISTIAN DIOR",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 300,
+  "min_eur": 300,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "HUNTER",
+  "stato": "monitorato",
+  "n": 1,
+  "mediana_eur": 80,
+  "min_eur": 80,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "MSGM",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 132,
+  "min_eur": 132,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "THE IQ COLLECTION",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 205,
+  "min_eur": 205,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "LUISA CERANO",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 263,
+  "min_eur": 263,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "OSCAR DE LA RENTA",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 184,
+  "min_eur": 184,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Gioielli e orologi": 1
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "VICOLO",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 50,
+  "min_eur": 50,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "ZEUS + DIONE",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 131,
+  "min_eur": 131,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "PESERICO",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 132,
+  "min_eur": 132,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "FARM RIO",
+  "stato": "id_noto_non_in_ricerca",
+  "n": 1,
+  "mediana_eur": 168,
+  "min_eur": 168,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "THIERRY MUGLER",
+  "stato": "monitorato",
+  "n": 1,
+  "mediana_eur": 305,
+  "min_eur": 305,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "032C",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 525,
+  "min_eur": 525,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "C.T. PLAGE",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 126,
+  "min_eur": 126,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "PINKO",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 40,
+  "min_eur": 40,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "JEAN LOUIS",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 65,
+  "min_eur": 65,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "JEFFREY CAMPBELL",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 38,
+  "min_eur": 38,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "LA PERLA",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 315,
+  "min_eur": 315,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "MACKINTOSH",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 368,
+  "min_eur": 368,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "CLAUDIE PIERLOT",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 147,
+  "min_eur": 147,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "ALBINA DYLA",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 735,
+  "min_eur": 735,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "JITROIS",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 609,
+  "min_eur": 609,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "BRGN",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 97,
+  "min_eur": 97,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "ALLUDE",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 100,
+  "min_eur": 100,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "OILILY",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 209,
+  "min_eur": 209,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "CLUB MONACO",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 45,
+  "min_eur": 45,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "DAVID KOMA",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 3045,
+  "min_eur": 3045,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "WOLFORD",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 47,
+  "min_eur": 47,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "HARRIS TWEED",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 137,
+  "min_eur": 137,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "APUNTOB",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 158,
+  "min_eur": 158,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "GENNY",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 221,
+  "min_eur": 221,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "CARO EDITIONS",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 941,
+  "min_eur": 941,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "RALPH LAUREN PURP…",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 189,
+  "min_eur": 189,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "COLLECTIF LONDON",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 210,
+  "min_eur": 210,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "TOD'S",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 97,
+  "min_eur": 97,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "RENE CAOVILLA",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 294,
+  "min_eur": 294,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "VICTORIA'S SECRET",
+  "stato": "id_noto_non_in_ricerca",
+  "n": 1,
+  "mediana_eur": 83,
+  "min_eur": 83,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "MAX MARA 'S",
+  "stato": "monitorato",
+  "n": 1,
+  "mediana_eur": 132,
+  "min_eur": 132,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "RAY-BAN",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 65,
+  "min_eur": 65,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Accessori": 1
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "CHRISTOPHER ESBER",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 157,
+  "min_eur": 157,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "OTTOLINGER",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 368,
+  "min_eur": 368,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "WARDROBE NYC",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 91,
+  "min_eur": 91,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "AREA",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 167,
+  "min_eur": 167,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "ALESSANDRA RICH",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 263,
+  "min_eur": 263,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "PELLICO",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 79,
+  "min_eur": 79,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "CUSTO BARCELONA",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 32,
+  "min_eur": 32,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "SOLACE LONDON",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 378,
+  "min_eur": 378,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "PAUW",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 55,
+  "min_eur": 55,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "ALEXANDER WANG",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 75,
+  "min_eur": 75,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "CHRISTY DAWN",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 378,
+  "min_eur": 378,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "PLEATS PLEASE",
+  "stato": "monitorato",
+  "n": 1,
+  "mediana_eur": 179,
+  "min_eur": 179,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "BALZAC PARIS",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 95,
+  "min_eur": 95,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "ORCIANI",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 134,
+  "min_eur": 134,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Borse": 1
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "HONEY BIRDETTE",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 95,
+  "min_eur": 95,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "BA&SH",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 73,
+  "min_eur": 73,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "DÔEN",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 142,
+  "min_eur": 142,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "HERVE LEGER",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 60,
+  "min_eur": 60,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "AGNONA",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 200,
+  "min_eur": 200,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "HUNZA G",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 158,
+  "min_eur": 158,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "JEAN PAUL GAULTIER",
+  "stato": "monitorato",
+  "n": 1,
+  "mediana_eur": 179,
+  "min_eur": 179,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "SCHOTT",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 368,
+  "min_eur": 368,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "YVES SALOMON",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 474,
+  "min_eur": 474,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "CORNELIANI",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 357,
+  "min_eur": 357,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "GANT",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 200,
+  "min_eur": 200,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "WHITE MOUNTAINEE…",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 60,
+  "min_eur": 60,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "PAUL SMITH",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 65,
+  "min_eur": 65,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "ISAIA",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 113,
+  "min_eur": 113,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "COLOMBO",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 160,
+  "min_eur": 160,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "FRED PERRY",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 40,
+  "min_eur": 40,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "SPORTY & RICH",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 70,
+  "min_eur": 70,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "ROGER VIVIER",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 189,
+  "min_eur": 189,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "FRAME",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 525,
+  "min_eur": 525,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "TEMPERLEY LONDON",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 147,
+  "min_eur": 147,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "LK BENNETT",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 91,
+  "min_eur": 91,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "ALBERTA FERRETTI",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 205,
+  "min_eur": 205,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "MISS SIXTY",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 90,
+  "min_eur": 90,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "OAKWOOD",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 70,
+  "min_eur": 70,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "LEVI'S",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 65,
+  "min_eur": 65,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "HARRIS WHARF LON…",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 85,
+  "min_eur": 85,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "FURLA",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 158,
+  "min_eur": 158,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Borse": 1
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "ESCADA",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 368,
+  "min_eur": 368,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "GIANNI CHIARINI",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 142,
+  "min_eur": 142,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Borse": 1
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "THE NORTH FACE",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 76,
+  "min_eur": 76,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "JONAK",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 65,
+  "min_eur": 65,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "GCDS",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 105,
+  "min_eur": 105,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "STRENESSE",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 31,
+  "min_eur": 31,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "MAURO GRIFONI",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 40,
+  "min_eur": 40,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "EMA SAVAHL",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 546,
+  "min_eur": 546,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "WOOLRICH",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 90,
+  "min_eur": 90,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "PONS QUINTANA",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 142,
+  "min_eur": 142,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "FIONA PAXTON",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 35,
+  "min_eur": 35,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Gioielli e orologi": 1
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "SONIA RYKIEL",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 210,
+  "min_eur": 210,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "NEW BALANCE",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 104,
+  "min_eur": 104,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "OAKLEY",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 85,
+  "min_eur": 85,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Accessori": 1
+  },
+  "abbigliamento_scarpe_n": 0
+ },
+ {
+  "brand": "MARQUES ALMEIDA",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 95,
+  "min_eur": 95,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "MONCLER X RICK OW…",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 478,
+  "min_eur": 478,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "KILTIE",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 100,
+  "min_eur": 100,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "MAX MARA WEEKEND",
+  "stato": "monitorato",
+  "n": 1,
+  "mediana_eur": 373,
+  "min_eur": 373,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "FORME D'EXPRESSION",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 683,
+  "min_eur": 683,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "ALOHAS",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 81,
+  "min_eur": 81,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "JOSEPH",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 149,
+  "min_eur": 149,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "HESCHUNG",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 105,
+  "min_eur": 105,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Scarpe": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "VIVIENNE WESTWOO…",
+  "stato": "monitorato",
+  "n": 1,
+  "mediana_eur": 258,
+  "min_eur": 258,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "THE GARMENT",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 105,
+  "min_eur": 105,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "DODO BAR OR",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 142,
+  "min_eur": 142,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "STINE GOYA",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 57,
+  "min_eur": 57,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "SERAPHIN",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 1575,
+  "min_eur": 1575,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "RRD",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 60,
+  "min_eur": 60,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "CAROLINA HERRERA",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 75,
+  "min_eur": 75,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "KIRED",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 504,
+  "min_eur": 504,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "STUDIO NICHOLSON",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 163,
+  "min_eur": 163,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "MANIFATTURA CECC…",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 525,
+  "min_eur": 525,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "JOHN GALLIANO",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 56,
+  "min_eur": 56,
+  "sotto_150": 1,
+  "quota_sotto_150": 1.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ },
+ {
+  "brand": "MORESCHI",
+  "stato": "assente",
+  "n": 1,
+  "mediana_eur": 263,
+  "min_eur": 263,
+  "sotto_150": 0,
+  "quota_sotto_150": 0.0,
+  "categorie": {
+   "Abbigliamento": 1
+  },
+  "abbigliamento_scarpe_n": 1
+ }
+]
