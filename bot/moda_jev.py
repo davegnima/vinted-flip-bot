@@ -435,7 +435,8 @@ def riga_verdetto(ris):
             else:
                 dove = f"margine ~{ris['margine']:.0f} € (serve almeno {MODA_JEV_MARGINE_MIN:g} €)"
             dif = f" (dopo lo sconto per i difetti, −{ris['sconto_difetti']:.0f}%)" if ris.get("sconto_difetti") else ""
-            return f"🚫 SCARTATO: i {ris['n']} comparabili danno rivendita ~{ris['rivendita']:.0f} €{dif}, {dove}"
+            # 8/11: la rivendita e' quella mista (semaforo, comparabili per data e per rilevanza, Gemini): si mostrano i valori da cui nasce
+            return f"🚫 SCARTATO: rivendita ~{ris['rivendita']:.0f} €{parti_rivendita_testo(ris.get('parti_rivendita'))}{dif}, {dove}"
         return "🚫 SCARTATO: " + riga_esito_scheda(ris).replace("🚫 ", "").replace("Jev: non avvisato, ", "").replace("Gemini: non avvisato, ", "")
     if ris.get("esito") == "conferma":
         # 8/11 (utente: stile 'linguaggio degli aerei'): esito, rivendita mista con i tre valori, margine e ROI su una riga; l'originalita' ha la sua riga
