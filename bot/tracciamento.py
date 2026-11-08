@@ -59,6 +59,12 @@ ALLARME_PREF_ATTIVO = os.environ.get("ALLARME_PREF_ATTIVO", "1").strip() != "0"
 ALLARME_PREF_60 = int(float(os.environ.get("ALLARME_PREF_60", "3")))
 ALLARME_PREF_300 = int(float(os.environ.get("ALLARME_PREF_300", "6")))
 ALLARME_PREF_RAPPORTO = float(os.environ.get("ALLARME_PREF_RAPPORTO", "1.5"))
+# VENDUTI VELOCI (8/11, utente: 'i venduti veloci li voglio vedere sempre insieme, con margine almeno 40 EUR'): a fine serie, se
+# l'annuncio e' stato venduto o prenotato entro 15 min (classe AFFARE o MEDIO AFFARE) e il margine (del verdetto se c'e', altrimenti
+# fair value rapido - prezzo) e' >= VENDUTO_VELOCE_MARGINE_MIN, un messaggio muto nel gruppo dice cosa e' successo e se il bot l'aveva
+# segnalato. Dati 8/11 (838 annunci con preavviso valutato): con margine rapido >= 40 vende in fretta il 31-39%, sotto 40 il 16-17%.
+# Spento con VENDUTO_VELOCE_MARGINE_MIN=0.
+VENDUTO_VELOCE_MARGINE_MIN = float(os.environ.get("VENDUTO_VELOCE_MARGINE_MIN", "40"))
 _ALLARME_ESITI = ("NON COMPRARE", "TRATTA", "CHIEDI ALTRE FOTO", "SKIP_ROSSO")
 _tracc_pref = {}   # item_id -> [(offset, preferiti)] letti a ogni controllo: la crescita e' un segnale di domanda
 _tracc_ctx = {}   # item_id -> contesto dell'annuncio (esito, margine, semaforo, categoria...) per la riga TRACCIATO
@@ -265,6 +271,15 @@ def _tracc_scrivi_finale(item_id, brand, prezzo, storia, radar=False):
         ctx = _tracc_ctx.get(item_id, {})
         log.info(_riga_tracciato(item_id, brand, prezzo, storia, ctx, prefisso="TRACCIATO_RADAR" if radar else "TRACCIATO"))
         if not radar:
+            _stato_f, _classe_f, _venduto_f = _tracc_esito_finale(storia)
+            if venduto_veloce_da_inviare(ctx, prezzo, _classe_f):
+                ctx["_veloce_inviato"] = True
+                try:
+                    asyncio.get_running_loop().create_task(_invia_venduto_veloce(
+                        item_id, f"https://www.vinted.it/items/{item_id}", brand, prezzo, _venduto_f, _classe_f, dict(ctx)))
+                except RuntimeError:
+                    pass   # nessun loop (test o chiusura): la riga TRACCIATO resta
+        if not radar:
             db.scrivi_evento("tracciato", item_id, brand, {"prezzo": prezzo, **ctx, "storia": storia})
         else:
             # archivio permanente (volume /data): gli esiti del radar si leggono dal DB, non dai log
@@ -345,6 +360,52 @@ def testo_allarme_preferiti(item_id, url, brand, prezzo, offset_s, preferiti, ct
     righe.append(esc(" · ".join(pezzi)))
     righe.append(f"[vedi su Vinted]({url})")
     return "\n".join(righe)
+
+
+def margine_venduto_veloce(ctx, prezzo):
+    """Margine in EUR dell'annuncio: quello del verdetto se c'e', altrimenti fair value rapido - prezzo. None se non calcolabile. Pura."""
+    m = _a_float((ctx or {}).get("margine"), None)
+    if m is not None:
+        return m
+    fv, prezzo = _a_float((ctx or {}).get("fv"), None), _a_float(prezzo, None)
+    return round(fv - prezzo, 1) if fv and prezzo else None
+
+
+def venduto_veloce_da_inviare(ctx, prezzo, classe):
+    """True se la serie chiusa va segnalata come venduto veloce (vedi VENDUTO_VELOCE_MARGINE_MIN). Pura."""
+    if VENDUTO_VELOCE_MARGINE_MIN <= 0 or classe not in ("AFFARE", "MEDIO AFFARE") or not ctx or ctx.get("_veloce_inviato"):
+        return False
+    m = margine_venduto_veloce(ctx, prezzo)
+    return m is not None and m >= VENDUTO_VELOCE_MARGINE_MIN
+
+
+def testo_venduto_veloce(item_id, url, brand, prezzo, venduto_s, classe, ctx):
+    """Messaggio Markdown del venduto veloce: tempo, prezzo, margine e cosa aveva fatto il bot. Pura."""
+    from bot.testo import _escapa_markdown_legacy as esc
+    minuti = (venduto_s / 60) if isinstance(venduto_s, (int, float)) else None
+    quando = f"{minuti:.0f} min" if minuti is not None and minuti >= 1 else "meno di 1 min" if minuti is not None else "entro 15 min"
+    marg = margine_venduto_veloce(ctx, prezzo)
+    righe = [f"🏁 *Venduto in {quando}* · 💶 {_a_float(prezzo, 0):.0f} € · margine ~{marg:.0f} € · 🏷️ {esc(str(brand or 'n/d'))}"]
+    if ctx.get("_titolo"):
+        righe.append(esc(str(ctx["_titolo"])))
+    esito = str(ctx.get("esito") or "n/d")
+    segnalato = "avvisato" if ctx.get("preavviso") == "si" or esito in ("COMPRA", "OTTIMO") else "NON avvisato"
+    pezzi = [segnalato, f"il bot: {esito}"]
+    if ctx.get("sem"):
+        pezzi.append(str(ctx["sem"]))
+    if ctx.get("fv"):
+        pezzi.append(f"fair value ~{ctx['fv']} €")
+    righe.append(esc(" · ".join(pezzi)))
+    righe.append(f"[vedi su Vinted]({url})")
+    return "\n".join(righe)
+
+
+async def _invia_venduto_veloce(item_id, url, brand, prezzo, venduto_s, classe, ctx):
+    log.info("VENDUTO VELOCE | item=%s | brand='%s' | classe=%s | venduto_s=%s | margine=%s | esito=%s | preavviso=%s",
+             item_id, brand or "n/d", classe, venduto_s, margine_venduto_veloce(ctx, prezzo), ctx.get("esito"), ctx.get("preavviso"))
+    if TELEGRAM_ALERT_CHAT_ID:
+        await telegram_send_with_buttons(TELEGRAM_ALERT_CHAT_ID, testo_venduto_veloce(item_id, url, brand, prezzo, venduto_s, classe, ctx),
+                                         url, None, disable_notification=True)
 
 
 async def _invia_allarme_preferiti(item_id, url, brand, prezzo, offset_s, preferiti):
