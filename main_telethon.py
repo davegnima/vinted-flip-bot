@@ -1595,7 +1595,7 @@ async def on_new_message(event):
                     try:
                         await event.delete()
                         cancellato = True
-                        log.info("RADAR PULIZIA | cancellato msg_id=%s | item=%s | motivo=%s", msg_id, _estrai_item_id_da_url(url_radar), (v2_radar or {}).get("motivo") or esito_radar.get("motivo") or esito_radar.get("saltato") or "saltato")
+                        log.info("RADAR PULIZIA | cancellato msg_id=%s | item=%s | motivo=%s", msg_id, _estrai_item_id_da_url(url_radar), esito_radar.get("saltato") or (v2_radar or {}).get("motivo") or esito_radar.get("motivo") or "saltato")
                     except Exception as exc:
                         log.warning("RADAR PULIZIA | non cancellabile msg_id=%s (%s): serve il diritto di eliminare messaggi nel gruppo",
                                     msg_id, type(exc).__name__)

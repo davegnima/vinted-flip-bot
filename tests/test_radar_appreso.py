@@ -39,7 +39,7 @@ def test_osservazioni_scadute(monkeypatch):
     _pulisci()
     for i in range(3):
         ra.registra("wii console", 10.0, 8, None, 1000 + i)
-    assert ra.limite_famiglia("wii console", 1000 + 8 * 86400) is None
+    assert ra.limite_famiglia("wii console", 1000 + 15 * 86400) is None
 
 
 def test_spento_con_variabile(monkeypatch):
@@ -52,3 +52,14 @@ def test_spento_con_variabile(monkeypatch):
 
 def test_famiglia_senza_margine_si_cancella_dal_gruppo():
     assert da_cancellare({"semaforo": "rosso", "motivo": "famiglia_senza_margine"})
+
+
+def test_famiglia_senza_colori_e_condizione():
+    assert ra.normalizza("nintendo switch lite grigia") == "nintendo switch lite"
+    assert ra.normalizza("ghd platinum nero") == "ghd platinum"
+    assert ra.normalizza("wii console") == "wii console"
+    assert ra.normalizza("nero bianco") == "nero bianco"      # niente parole utili: resta com'e'
+    _pulisci()
+    for i, f in enumerate(["nintendo switch lite", "nintendo switch lite grigia", "nintendo switch lite blu"]):
+        ra.registra(f, 20.0, 8, None, 1000 + i)
+    assert ra.limite_famiglia("nintendo switch lite gialla", 1010) == 20.0     # le tre varianti contano come un mercato

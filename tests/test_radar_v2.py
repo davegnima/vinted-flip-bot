@@ -28,6 +28,7 @@ def test_ombra_registra_verdetto(monkeypatch):
     monkeypatch.setattr(radar_v2, "_cerca_vinted_testo_diretto", finto)
     parsed = {"title": "Set posate Christofle", "price": "7", "brand": "Christofle"}
     asyncio.run(radar_v2.analizza(parsed, "https://www.vinted.it/items/123456-set"))
+    eventi = [e for e in eventi if e[0] == "radar_v2"]      # l'evento radar_cache (comparabili salvati) e' separato
     assert len(eventi) == 1
     dati = eventi[0][3]
     assert dati["ok"] is True and dati["margine"] >= 50 and dati["n_usati"] == 10
@@ -880,3 +881,21 @@ def test_motivo_saltato_nel_gruppo_e_cancellazione():
     assert "gia' valutato" in testo_risposta_gruppo(None, {"saltato": "gia_visto"})
     assert "semaforo non calcolato" not in perche_non_inviato(None)
     assert "semaforo non calcolato" not in perche_non_inviato({"semaforo": None, "motivo": "pochi_comparabili"})
+
+
+def test_cache_comparabili_persistita_nel_db(monkeypatch):
+    eventi = []
+    monkeypatch.setattr(radar_v2.db, "scrivi_evento", lambda tipo, item_id=None, brand=None, dati=None, ts=None: eventi.append((tipo, dati, ts)))
+    monkeypatch.setattr(radar_v2.db, "leggi_eventi", lambda tipo, dal_ts=0.0, limite=100000: [{"ts": t, **d} for ty, d, t in eventi if ty == tipo and t >= dal_ts])
+    chiave = ("nintendo switch lite", 3000)
+    radar_v2._cache.clear(); radar_v2._titoli_simili.clear(); radar_v2._comps_simili.clear(); radar_v2._url_comps.clear()
+    usati = [("switch lite blu", 80.0), ("switch lite", 90.0)]
+    radar_v2._salva_cache(chiave, 5000.0, [80.0, 90.0], 15, usati, {("switch lite blu", 80.0): "https://www.vinted.it/items/1-a"})
+    assert eventi[0][0] == "radar_cache"
+    radar_v2._cache.clear()
+    assert radar_v2.carica_cache_dal_db(adesso=5100.0) == 1
+    assert radar_v2._cache[chiave] == (5000.0, [80.0, 90.0], 15)
+    assert radar_v2._comps_simili[chiave] == usati and radar_v2._titoli_simili[chiave] == ["switch lite blu", "switch lite"]
+    assert radar_v2._url_comps[chiave][("switch lite blu", 80.0)].endswith("/1-a")
+    radar_v2._cache.clear()
+    assert radar_v2.carica_cache_dal_db(adesso=5000.0 + radar_v2.RADAR_V2_CACHE_ORE * 3600 + 10) == 0     # scaduta
