@@ -503,6 +503,23 @@ def _dettaglio_comp(v2):
     return f" ({g} grezzi{extra})" if g is not None else (" (ricerca allargata)" if extra else "")
 
 
+def motivo_saltato_leggibile(motivo):
+    """Frase italiana per il motivo con cui `radar_v2.analizza` ha saltato un annuncio (8/11, richiesta utente). Pura."""
+    parti = (motivo or "").split(":")
+    chiave = parti[0]
+    if chiave == "fuori_famiglia":
+        return "il titolo non cita nessun modello monitorato della ricerca (il margine di 50 € non e' raggiungibile)"
+    if chiave == "sopra_tetto_modello":
+        modello = parti[1] if len(parti) > 1 else "?"
+        tetto = f" di {parti[2]} €" if len(parti) > 2 else ""
+        return f"prezzo sopra il tetto{tetto} del modello {modello}: con quel prezzo il margine di 50 € non e' raggiungibile"
+    if chiave == "prezzo_fuori":
+        return f"prezzo {parti[1]} € fuori dalla spesa massima del radar" if len(parti) > 1 else "prezzo fuori dalla spesa massima del radar"
+    return {"gia_visto": "annuncio gia' valutato in precedenza", "pausa_notturna": "radar in pausa notturna",
+            "ombra_spenta": "radar v2 spento", "senza_id": "link senza numero annuncio",
+            "prezzo_assente": "prezzo non letto dal messaggio"}.get(chiave, "motivo non registrato")
+
+
 def testo_risposta_gruppo(v2, esito=None):
     """Riga breve per la risposta nel gruppo: semaforo, rivendita stimata, margine, ROI, comparabili. Pura.
     Con `esito` (compilato da invia_verdetto_v2) la riga COMPRA dice cosa e' successo davvero e i numeri sono quelli finali."""
@@ -510,7 +527,7 @@ def testo_risposta_gruppo(v2, esito=None):
     if esito and esito.get("v2"):
         v2 = esito["v2"]
     if not v2:
-        return "⚪ semaforo non calcolato"
+        return "⚪ non valutato: " + motivo_saltato_leggibile((esito or {}).get("saltato"))
     n = v2.get("n") or 0
     colore = v2.get("semaforo") or "n.d."
     if v2.get("rivendita") is None:
@@ -540,12 +557,22 @@ MOTIVI_NON_OGGETTO = ("parola_vietata", "pezzo_o_accessorio", "prezzo_segnaposto
 RADAR_CANCELLA_ROSSI = os.environ.get("RADAR_CANCELLA_ROSSI", "1").strip() not in ("0", "false", "no", "")
 
 
+# 8/11 (utente): i rossi con modello riconosciuto e stima fatta (margine o ROI bassi, sopra il riferimento) restano nel gruppo.
+MOTIVI_FILTRATI_DIRETTAMENTE = ("fuori_famiglia", "sopra_tetto_modello")
+MOTIVI_MODELLO_RICONOSCIUTO = ("margine_basso", "roi_basso", "sopra_riferimento")
+
+
 def da_cancellare(v2, esito=None):
     """True se il verdetto e' un rosso da togliere dal gruppo: non e' l'oggetto intero, oppure (RADAR_CANCELLA_ROSSI) e' rosso.
     Con `esito` anche i gialli/verdi scartati nel merito (Jev, comparabili, Gemini, rivalutazione): 1/11, scelta dell'utente. Pura."""
     if esito and esito.get("scartato"):
         return True
-    if not v2 or v2.get("semaforo") != "rosso":
+    if not v2:
+        # modello fuori lista o prezzo sopra il tetto del modello: non vale la pena vederlo (8/11, utente), si toglie dal gruppo
+        return (((esito or {}).get("saltato") or "").split(":")[0]) in MOTIVI_FILTRATI_DIRETTAMENTE
+    if v2.get("semaforo") != "rosso":
+        return False
+    if (v2.get("motivo") or "").split(":")[0] in MOTIVI_MODELLO_RICONOSCIUTO:
         return False
     return RADAR_CANCELLA_ROSSI or (v2.get("motivo") or "").split(":")[0] in MOTIVI_NON_OGGETTO
 
@@ -579,7 +606,9 @@ def _frase_senza_simili(v2):
 def perche_non_inviato(v2):
     """None se l'avviso va mandato, altrimenti la frase che dice perche' no (per il gruppo e per i log). Pura."""
     if not v2 or v2.get("semaforo") not in RADAR_SEMAFORI:
-        return "semaforo rosso: margine o ROI sotto soglia" if v2 and v2.get("semaforo") == "rosso" else "semaforo non calcolato"
+        if v2 and v2.get("semaforo") == "rosso":
+            return "semaforo rosso: margine o ROI sotto soglia"
+        return "stima non disponibile: " + (_motivo_leggibile(v2.get("motivo")) if v2 else "annuncio non valutato")
     marca = (v2.get("brand") or "").strip().lower()
     if marca and RADAR_BRAND_SILENZIO and marca.startswith(RADAR_BRAND_SILENZIO):
         return f"brand {v2.get('brand')} senza vendite veloci nei dati: avviso silenziato"

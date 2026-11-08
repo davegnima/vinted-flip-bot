@@ -1588,14 +1588,14 @@ async def on_new_message(event):
                 v2_radar = await radar_v2_analizza(parsed_radar, url_radar, foto=foto_radar,
                                                    query_url=url_da_bottoni(event.message.buttons, "/catalog"))
                 traccia_verdetto_v2(parsed_radar, url_radar, v2_radar, t0=t_ricevuto_bot)
-                esito_radar = {}
+                esito_radar = {"saltato": parsed_radar.get("_saltato")} if v2_radar is None else {}
                 await invia_verdetto_v2(parsed_radar, url_radar, v2_radar, foto=foto_radar, rivaluta=radar_v2_rivaluta, esito=esito_radar)
                 cancellato = False
-                if RADAR_CANCELLA_SCARTI and da_cancellare(v2_radar, esito_radar):
+                if RADAR_CANCELLA_SCARTI and (da_cancellare(v2_radar, esito_radar)):
                     try:
                         await event.delete()
                         cancellato = True
-                        log.info("RADAR PULIZIA | cancellato msg_id=%s | item=%s | motivo=%s", msg_id, _estrai_item_id_da_url(url_radar), v2_radar.get("motivo") or esito_radar.get("motivo"))
+                        log.info("RADAR PULIZIA | cancellato msg_id=%s | item=%s | motivo=%s", msg_id, _estrai_item_id_da_url(url_radar), (v2_radar or {}).get("motivo") or esito_radar.get("motivo") or esito_radar.get("saltato") or "saltato")
                     except Exception as exc:
                         log.warning("RADAR PULIZIA | non cancellabile msg_id=%s (%s): serve il diritto di eliminare messaggi nel gruppo",
                                     msg_id, type(exc).__name__)

@@ -423,8 +423,11 @@ def _rosso(motivo, n=0):
 _saltati = {}
 
 
-def _log_saltato(motivo, url):
-    """Riga di log per gli annunci che il radar v2 non valuta (31/10): prima erano ritorni silenziosi. Una riga ogni 20 per motivo."""
+def _log_saltato(motivo, url, parsed=None):
+    """Riga di log per gli annunci che il radar v2 non valuta (31/10): prima erano ritorni silenziosi. Una riga ogni 20 per motivo.
+    Con `parsed` il motivo resta nell'annuncio (`_saltato`): il gruppo lo mostra al posto di un generico "non valutato" (8/11)."""
+    if isinstance(parsed, dict):
+        parsed["_saltato"] = motivo
     n = _saltati[motivo] = _saltati.get(motivo, 0) + 1
     if n == 1 or n % 20 == 0:
         log.info("RADAR V2 SALTATO | motivo=%s | n=%s | url=%s", motivo, n, (url or "-")[:80])
@@ -434,12 +437,12 @@ async def analizza(parsed, url, foto=None, query_url=None):
     """Valuta un annuncio del radar con i comparabili, chiede il giudizio di Jev e registra il verdetto.
     Ritorna dict {semaforo, rivendita, margine, roi, n, jev, jev_conf} o None. Mai eccezioni verso il chiamante."""
     if not RADAR_V2_OMBRA or radar_in_pausa():
-        _log_saltato("ombra_spenta" if not RADAR_V2_OMBRA else "pausa_notturna", url)
+        _log_saltato("ombra_spenta" if not RADAR_V2_OMBRA else "pausa_notturna", url, parsed)
         return
     try:
         item_id = _estrai_item_id_da_url(url)
         if not item_id or item_id in _visti:
-            _log_saltato("senza_id" if not item_id else "gia_visto", url)
+            _log_saltato("senza_id" if not item_id else "gia_visto", url, parsed)
             return
         _visti.add(item_id)
         if len(_visti) > 20000:
@@ -449,12 +452,12 @@ async def analizza(parsed, url, foto=None, query_url=None):
         brand = parsed.get("brand")
         base = {"titolo": titolo[:120], "prezzo": prezzo, "brand": brand, "ricerca": (str(parsed.get("query_name") or "")[:40] or None)}
         if prezzo is None or prezzo <= 0 or (RADAR_SPESA_MAX and prezzo > RADAR_SPESA_MAX):
-            _log_saltato("prezzo_assente" if prezzo is None else f"prezzo_fuori:{prezzo:g}", url)
+            _log_saltato("prezzo_assente" if prezzo is None else f"prezzo_fuori:{prezzo:g}", url, parsed)
             return
         modello_fam, tetto_fam = modello_famiglia(parsed.get("query_name"), titolo)
         if modello_fam is None or (tetto_fam is not None and prezzo > tetto_fam):
             # ricerca a famiglia (8/11): titolo fuori lista o prezzo sopra il tetto del modello, nessuna richiesta a Vinted
-            _log_saltato("fuori_famiglia" if modello_fam is None else f"sopra_tetto_modello:{modello_fam}", url)
+            _log_saltato("fuori_famiglia" if modello_fam is None else f"sopra_tetto_modello:{modello_fam}:{tetto_fam:g}", url, parsed)
             return
         if prezzo <= 1:
             # 31/10: "Bugaboo Fox 5 ... 1000€ VB" a 1 EUR: prezzo segnaposto, non un affare
