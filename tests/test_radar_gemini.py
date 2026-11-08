@@ -124,13 +124,14 @@ def test_testo_avviso_a_blocchi():
     g = {**OK, "rivendita_eur": 105, "rivendita_confidenza": 0.7, "rivendita_base": "usata tipica"}
     t = radar.testo_avviso_v2({"title": "Switch_oled 64GB", "price": "40"}, "https://www.vinted.it/items/777-x", v2, g)
     righe = t.split("\n")
-    assert righe[0].endswith("rivendita ~*110 €*") and "*40 €*" in righe[0]
-    assert "Switch\\_oled" in righe[1]          # il trattino basso non rompe il Markdown
+    assert righe[0].endswith("*Switch\\_oled 64GB*")      # titolo in testa, in grassetto; il trattino basso non rompe il Markdown
+    assert "*40 €*" in righe[1] and "rivendita ~*110 €*" in righe[1] and "totale" in righe[1]
     assert any(r.startswith("💶 Margine *53.8 €*") for r in righe)
-    assert any(r.startswith("📦 Totale") for r in righe) and any(r.startswith("📊") for r in righe)
     assert any(r.startswith("🧠 Jev") for r in righe) and any(r.startswith("👁 Gemini foto") for r in righe)
     assert any(r.startswith("💡 Stima Gemini") for r in righe)
-    assert righe[-1] == "https://www.vinted.it/items/777-x" and righe[-2] == ""
+    assert not any(r.startswith("📊") for r in righe)
+    assert "🔗 https://www.vinted.it/items/777-x" in righe
+    assert righe.index("🔗 https://www.vinted.it/items/777-x") < righe.index("Comparabili:")
 
 
 def test_velocita_e_ricerca_modello():

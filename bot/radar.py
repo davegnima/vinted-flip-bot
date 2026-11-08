@@ -432,42 +432,35 @@ def _md(testo):
 
 
 def testo_avviso_v2(parsed, url, v2, g=None):
-    """Messaggio Telegram dell'avviso radar (gialli e verdi), a blocchi con emoji: prezzo e rivendita in testa, poi numeri, costo, giudizi, link.
-    Sostituisce l'elenco di righe tutte uguali (richiesta dell'utente, 01/11: 'cosi' e' illeggibile'). Pura."""
+    """Messaggio Telegram dell'avviso radar (gialli e verdi). Layout (8/11, utente: "nei messaggi non ho manco il titolo"):
+    1) semaforo e TITOLO in grassetto, 2) prezzo, rivendita e costo totale, 3) margine, ROI e comparabili verificati,
+    4) giudizi di Jev e Gemini, 5) link all'annuncio subito, 6) comparabili da controllare in fondo. Tolte le righe che
+    non aiutano a decidere (richiesto mediano, qualita', doppia riga dei verificati). Pura."""
     prezzo = _a_float(parsed.get("price"), None)
-    pall = pallino_semaforo(v2)
-    testa = f"{pall} *{prezzo:g} €*" if prezzo is not None else pall
+    titolo = (parsed.get("title") or "").strip()
+    if len(titolo) > 120:
+        titolo = titolo[:117].rstrip() + "..."
+    righe = [f"{pallino_semaforo(v2)} *{_md(titolo) or 'senza titolo'}*"]
+    prezzi = [f"*{prezzo:g} €*"] if prezzo is not None else []
     if v2.get("rivendita") is not None:
-        testa += f"  ➜  rivendita ~*{v2['rivendita']:g} €*"
-    righe = [testa, _md((parsed.get("title") or "")[:100]), ""]
+        prezzi.append(f"rivendita ~*{v2['rivendita']:g} €*")
+    if v2.get("costo_totale") is not None and v2.get("spedizione_eur") is not None:
+        paese = f" da {_md(v2['paese'])}" if v2.get("paese") else ""
+        prezzi.append(f"totale *{v2['costo_totale']:.2f} €* (spedizione {v2['spedizione_eur']:.2f} €{paese})")
+    if prezzi:
+        righe.append(" ➜ ".join(prezzi[:2]) + ("  ·  " + prezzi[2] if len(prezzi) > 2 else ""))
+    ver = v2.get("verificata")
+    frase = v2.get("jev_motivo_frase")
     if v2.get("rivendita") is not None:
         riga = f"💶 Margine *{v2.get('margine')} €* · ROI *{v2.get('roi')}%* · {v2.get('n') or 0} comparabili"
         if v2.get("allargata"):
             riga += " (ricerca allargata)"
+        if ver and RADAR_VERIFICA:
+            riga += f", {ver.get('n_stesso')}/{ver.get('n_giudicati')} stesso modello"
+            frase = _frase_senza_simili(v2)
         righe.append(riga)
     else:
         righe.append(f"💶 Nessuna stima: {_md(_motivo_leggibile(v2.get('motivo')))}")
-    if v2.get("costo_totale") is not None and v2.get("spedizione_eur") is not None:
-        stato = _STATO_SPEDIZIONE.get(v2.get("spedizione_stato"), "n.d.")
-        paese = f" da {_md(v2['paese'])}" if v2.get("paese") else ""
-        righe.append(f"📦 Totale *{v2['costo_totale']:.2f} €* (spedizione {v2['spedizione_eur']:.2f} € {stato}{paese})")
-    prezzi = []
-    if v2.get("richiesto_mediano") is not None and v2.get("rivendita") is not None:
-        prezzi.append(f"richiesto mediano {v2['richiesto_mediano']} €")
-        if v2.get("vendita_rapida") is not None:
-            prezzi.append(f"vendita rapida {v2['vendita_rapida']} €")
-    q = v2.get("qualita")
-    if q and v2.get("rivendita") is not None:
-        prezzi.append(f"qualità {q.get('punteggio')}/100 ({q.get('fascia')})")
-    if prezzi:
-        righe.append("📊 " + " · ".join(prezzi))
-    ver = v2.get("verificata")
-    frase = v2.get("jev_motivo_frase")
-    if ver and RADAR_VERIFICA:
-        righe.append(f"✅ Verificati {ver.get('n_stesso')}/{ver.get('n_giudicati')} stesso modello"
-                     + (f" + {ver['n_simili']} simili" if ver.get("n_simili") else "")
-                     + f" · rivendita {ver.get('rivendita')} € · margine {ver.get('margine')} € · ROI {ver.get('roi')}%")
-        frase = _frase_senza_simili(v2)
     giudizi = []
     if v2.get("jev"):
         giudizi.append(f"🧠 Jev: {_md(descrizione_jev(v2['jev'], v2.get('jev_conf'), frase))}")
@@ -476,18 +469,18 @@ def testo_avviso_v2(parsed, url, v2, g=None):
             giudizi.append(("👁 " if n == 0 else "💡 ") + _md(r))
     if g and g.get("ricerca_modello"):
         if v2.get("rivalutata"):
-            righe.append(f"🔁 Comparabili rifatti sul modello letto da Gemini: _{_md(v2.get('ricerca_rifatta') or g['ricerca_modello'])}_"
-                         + (" (ricerca vicina, non identica)" if v2.get("ricerca_semantica_usata") else ""))
+            giudizi.append(f"🔁 Comparabili rifatti sul modello letto da Gemini: _{_md(v2.get('ricerca_rifatta') or g['ricerca_modello'])}_"
+                           + (" (ricerca vicina, non identica)" if v2.get("ricerca_semantica_usata") else ""))
         elif v2.get("modello_non_verificato"):
-            righe.append(f"⚠️ Gemini legge il modello _{_md(g['ricerca_modello'])}_, diverso dai comparabili usati: nessun comparabile trovato, stima da verificare")
+            giudizi.append(f"⚠️ Gemini legge il modello _{_md(g['ricerca_modello'])}_, diverso dai comparabili usati: nessun comparabile trovato, stima da verificare")
         else:
-            righe.append(f"🔎 Modello (Gemini): _{_md(g['ricerca_modello'])}_")
+            giudizi.append(f"🔎 Modello (Gemini): _{_md(g['ricerca_modello'])}_")
     if giudizi:
-        righe += [""] + giudizi
+        righe += giudizi
+    righe += ["", f"🔗 {url}"]
     link = (v2.get("link_comps") or [])
     if link:
-        righe += ["", "🔗 Comparabili da controllare:"] + [f"• {p:g} € {u}" for _t, p, u in link[:3]]
-    righe += ["", url]
+        righe += ["", "Comparabili:"] + [f"• {p:g} € {u}" for _t, p, u in link[:3]]
     return "\n".join(righe)
 
 
