@@ -853,3 +853,15 @@ def test_brand_da_html_legge_id_e_nome_anche_con_virgolette_escapate():
     assert r._brand_da_html('\\"brand_dto\\":{\\"id\\":157148,\\"title\\":\\"Technics\\"}') == ("157148", "Technics")
     assert r._brand_da_html("<html>niente</html>") is None
     assert r._brand_da_html(None) is None
+
+
+def test_famiglia_console_riconosce_il_modello_e_scarta_accessori():
+    from bot.radar_famiglie import modello_famiglia
+    assert modello_famiglia("V2 ps5", "Sony PS5") == ("", None)  # ricerca non a famiglia
+    assert modello_famiglia("V2 console", "Sony PlayStation 5 slim") == ("ps5", 150)
+    assert modello_famiglia("V2 console", "Nintendo Switch OLED") == ("switch", 90)
+    assert modello_famiglia("V2 console", "PS4 Pro 1TB") == ("ps4 pro", 60)
+    assert modello_famiglia("V2 console", "Nintendo 3DS XL") == ("3ds", 60)
+    assert modello_famiglia("V2 console", "Custodia Nintendo Switch") == (None, None)
+    assert modello_famiglia("V2 console", "Xbox Series X") == (None, None)
+    assert modello_famiglia("V2 console", "Gioco Switch Zelda") == (None, None)
