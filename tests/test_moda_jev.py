@@ -150,8 +150,10 @@ def test_verifica_usa_la_ricerca_testuale_senza_filtro_jev(monkeypatch):
     assert ris["esito"] == "conferma" and ris["n"] >= 3 and ris["rivendita"] and ris["rivendita"] > 100
 
 
-def test_giallo_con_margine_e_roi_promettenti_va_a_jev_senza_invio_immediato():
+def test_giallo_con_margine_e_roi_promettenti_va_a_jev_senza_invio_immediato(monkeypatch):
+    import bot.fair_value as fvm
     from bot.fair_value import valuta_preavviso, REGOLA_DA_VERIFICARE
+    monkeypatch.setattr(fvm, "PREAVVISO_TUTTI_A_JEV", False)
     # Kurt Geiger 30 EUR, 🟡, fair value 82, margine 52: la regola base dice 'no', ma ROI +173% -> da verificare con Jev
     assert valuta_preavviso({"semaforo": "🟡", "margine": 52, "conf": "media", "brand": "kurt geiger", "fv": 82}, 30) == (True, REGOLA_DA_VERIFICARE)
     # margine sotto 50, o ROI sotto 100%: resta 'no'
@@ -428,3 +430,18 @@ def test_evereve_in_blocklist_brand():
     from bot.filtri import check_skip_pre_gemini
     skip, motivo = check_skip_pre_gemini({"brand": "Evereve", "title": "Evereve dress", "price": 20})
     assert skip and "BLOCKLIST" in motivo
+
+
+def test_tutti_a_jev_anche_rosso_e_prezzo_basso(monkeypatch):
+    import bot.fair_value as fvm
+    monkeypatch.setattr(fvm, "PREAVVISO_TUTTI_A_JEV", True)
+    # 8/11 (utente): i veloci si ricevono tutti, decidono Jev, Gemini e i comparabili
+    assert fvm.valuta_preavviso({"semaforo": "🔴", "margine": -5, "conf": "media", "brand": "max mara", "fv": 40}, 50) == (True, fvm.REGOLA_DA_VERIFICARE)
+    assert fvm.valuta_preavviso({"semaforo": "🟢", "margine": 0, "conf": "media", "brand": "missoni", "fv": 10}, 5)[0] is True
+    assert fvm.valuta_preavviso(None, 20) == (True, fvm.REGOLA_DA_VERIFICARE)
+    assert fvm.valuta_preavviso({"semaforo": "🔴", "brand": "marni"}, 20) == (False, "no")   # brand escluso
+    assert fvm.valuta_preavviso({"semaforo": "🔴", "brand": "prada"}, 0) == (False, "no")
+
+
+def test_azione_codice():
+    assert mj.azione_codice({"esito": "scarta"}) == "scartato"

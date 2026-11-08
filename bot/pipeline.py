@@ -10,7 +10,7 @@ from bot.scheda import aggiorna_scheda_jev, SOLO_SEMAFORO, avviso_solo_semaforo,
 from bot.verdetto import CERVELLO_CAMPIONI_EXTRA, _a_float, _estrai_item_id_da_url, _estrai_prezzi_da_pool_ricerca, _riepilogo_comp_per_fonte, calcola_verdetto, classifica_provenienza_comp, consolida_target_cervello, render_messaggio_verdetto, valida_payload_cervello
 from bot.config import GEMINI_SOGLIA_PREZZO_ALTO, TELEGRAM_ALERT_CHAT_ID, DEBUG_CONFRONTO_COMP_TELEGRAM, OCCHIO_OUTPUT_JSON, SOGLIA_MARGINE_ASSOLUTO_NOTIFICA, TELEGRAM_OWNER_CHAT_ID
 from bot.feedback import proponi_controllo, rischio_falso_da_scarto, rischio_falso_da_verdetto, contesto_annuncio
-from bot.moda_jev import MODA_JEV_DISPERSIONE_MAX, MODA_JEV_SUBITO, serve_ombra, tratteni_per_verifica, verifica as verifica_moda_jev, righe_messaggio as righe_moda_jev, riga_verdetto as riga_verdetto_jev, riga_originalita as riga_originalita_jev, riga_esito_scheda
+from bot.moda_jev import MODA_JEV_DISPERSIONE_MAX, MODA_JEV_SUBITO, serve_ombra, tratteni_per_verifica, verifica as verifica_moda_jev, righe_messaggio as righe_moda_jev, azione_codice, riga_verdetto as riga_verdetto_jev, riga_originalita as riga_originalita_jev, riga_esito_scheda
 from bot.fair_value import REGOLA_DA_VERIFICARE, FAIR_VALUE_FILTRA, check_skip_rosso, catalogo_impara, check_skip_fair_value, fv_registra_gemini, fv_registra_jev, fv_registra_rapida, stima_fair_value, valuta_preavviso, preavviso_con_suono, PREAVVISO_LAMPO
 from bot.prompts import GEMINI_CERVELLO_SYSTEM_PROMPT, GEMINI_OCCHI_SYSTEM_PROMPT, GEMINI_OCCHI_SYSTEM_PROMPT_JSON
 from bot.schemas import OCCHIO_RESPONSE_SCHEMA_GEMINI
@@ -386,7 +386,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             await aggiorna_scheda_jev(stato, riga_esito_scheda(ris_jev))
             if ris_jev["esito"] == "scarta":
                 listing_info["_motivo_scarto"] = "verifica Jev: " + ris_jev["motivo"]
-                _log_esito(listing_info, "SKIP_SOLO_SEMAFORO", sem=fv_sem.get("semaforo"), motivo="jev:" + ris_jev["motivo"])
+                _log_esito(listing_info, "SKIP_SOLO_SEMAFORO", sem=fv_sem.get("semaforo"), motivo="jev:" + ris_jev["motivo"], azione=azione_codice(ris_jev))
                 if listing_info.get("jev_subito"):   # il messaggio era gia' partito: lo stesso messaggio dice che e' stato scartato, con i passi (5/11)
                     _brand_jev = (listing_info.get("fair_value") or {}).get("brand") or listing_info.get("brand")
                     listing_info.update(righe_jev=righe_moda_jev(ris_jev, _brand_jev), riga_verdetto_jev=riga_verdetto_jev(ris_jev),
@@ -399,7 +399,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             listing_info["riga_verdetto_jev"] = riga_verdetto_jev(ris_jev)
             listing_info["riga_originalita_jev"] = riga_originalita_jev(ris_jev)
             listing_info["rivendita_jev"], listing_info["parti_rivendita"] = ris_jev.get("rivendita_testata") or ris_jev.get("rivendita"), ris_jev.get("parti_rivendita")   # per l'intestazione "prezzo ➜ rivendita" (5/11)
-            _log_esito(listing_info, "SOLO_SEMAFORO", sem=fv_sem.get("semaforo"), margine=fv_sem.get("margine"))
+            _log_esito(listing_info, "SOLO_SEMAFORO", sem=fv_sem.get("semaforo"), margine=fv_sem.get("margine"), azione=azione_codice(ris_jev))
             if listing_info.get("jev_subito") and await aggiorna_preavviso(stato, url, testo_verdetto=testo_preavviso(dict(listing_info), url)):
                 log.info("AVVISO SOLO SEMAFORO | item=%s | prezzo=%s | sem=%s | jev=%s | aggiornato", _estrai_item_id_da_url(url),
                          listing_info.get("price"), fv_sem.get("semaforo"), ris_jev["esito"])

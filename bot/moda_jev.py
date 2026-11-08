@@ -367,6 +367,15 @@ def riga_azione(ris, stato):
     return None
 
 
+def azione_codice(ris):
+    """Azione del verdetto per la riga TRACCIATO (8/11): 'compra' (originalita' ok), 'chiedi' (dubbia: prima chiedere foto/dettagli),
+    'non_comprare' (replica) o 'scartato' (Jev scarta). Pura."""
+    if ris.get("esito") == "scarta":
+        return "scartato"
+    stato, _ = _stato_originalita(ris)
+    return {"ok": "compra", "replica": "non_comprare"}.get(stato, "chiedi")
+
+
 def riga_originalita(ris):
     """Riga in evidenza subito sotto il verdetto: l'annuncio sembra originale o no, con chi lo dice (6/11, utente: 'piu' visibilita' immediata di se
     e' originale o no', senza declassare l'avviso). None se scartato (il verdetto spiega gia' il perche') o se il legit check e' stato saltato. Pura."""

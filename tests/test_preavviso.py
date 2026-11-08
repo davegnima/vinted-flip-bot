@@ -2,6 +2,16 @@ from bot.fair_value import valuta_preavviso, _valuta_preavviso_base as _valuta_b
 from bot.scheda import _scheda_annuncio_testo, dati_deboli
 
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _senza_tutti_a_jev(monkeypatch):
+    # le regole di questo file sono quelle della regola base: 'tutti a Jev' (8/11) ha i suoi test in test_moda_jev.py
+    import bot.fair_value as fvm
+    monkeypatch.setattr(fvm, "PREAVVISO_TUTTI_A_JEV", False)
+
+
 def _stima(sem, margine):
     return {"semaforo": sem, "margine": margine, "fv": 60, "minimo": 30, "massimo": 90, "roi": 150, "conf": "media",
             "sottolinea": None}
