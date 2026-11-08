@@ -412,10 +412,13 @@ def test_rivendita_mista_pesa_semaforo_comparabili_e_gemini_e_li_mostra_in_testa
     from bot.moda_jev import rivendita_mista
     from bot.moda_jev import parti_rivendita_testo, riga_verdetto as riga_verdetto_v
     from bot.scheda import testo_preavviso
-    # tre stime: pesi 0,2 (semaforo media) + 0,4 (comparabili 5) + 0,28 (Gemini 0,7 x 0,4)
+    # pesi relativi al semaforo (8/11): w=0,2 (media); comparabili 1,2 x w; Gemini w
     mix, parti = rivendita_mista({"fv": 100, "conf": "media"}, 200, 5, {"rivendita_gemini_eur": 150, "rivendita_confidenza": 0.7})
     assert parti == {"semaforo": 100.0, "comparabili": 200.0, "gemini": 150.0}
-    assert abs(mix - (100 * 0.2 + 200 * 0.4 + 150 * 0.28) / 0.88) < 0.01
+    assert abs(mix - (100 * 0.2 + 200 * 0.24 + 150 * 0.2) / 0.64) < 0.01
+    mix2, parti2 = rivendita_mista({"fv": 100, "conf": "media"}, 200, 5, None, 160)   # con la ricerca per rilevanza: 1,3 x w
+    assert parti2["rilevanza"] == 160.0 and abs(mix2 - (100 * 0.2 + 200 * 0.24 + 160 * 0.26) / 0.70) < 0.01
+    assert parti_rivendita_testo(parti2) == " (semaforo 100 · comparabili 200 · per rilevanza 160)"
     # Gemini poco sicuro o assente: non entra; nessuna stima: (None, {})
     assert "gemini" not in rivendita_mista({"fv": 100, "conf": "alta"}, 200, 9, {"rivendita_gemini_eur": 150, "rivendita_confidenza": 0.3})[1]
     assert rivendita_mista(None, None, 0, None) == (None, {})

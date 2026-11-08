@@ -72,7 +72,7 @@ def id_brand(brand):
 # e 'price_low_to_high'. MODA_COMPS_PROVA: ordini alternativi cercati IN OMBRA (solo nelle ricerche in ombra, non cambiano nessun esito) e
 # confrontati nel log `COMPS ORDINE`, per scegliere con i dati.
 MODA_COMPS_ORDINE = os.environ.get("MODA_COMPS_ORDINE", "newest_first").strip() or "newest_first"
-MODA_COMPS_PROVA = [o.strip() for o in os.environ.get("MODA_COMPS_PROVA", "relevance,price_low_to_high").split(",") if o.strip()]
+MODA_COMPS_PROVA = [o.strip() for o in os.environ.get("MODA_COMPS_PROVA", "").split(",") if o.strip()]
 
 
 def url_comparabili(brand, testo=None, catalogo=None, ordine=None):
@@ -263,22 +263,27 @@ def correggi_per_difetti(v, prezzo, gemini):
     return nuovo, pct
 
 
-def rivendita_mista(fv, riv_comps, n_comps, gemini):
-    """(rivendita, parti): media pesata di tre stime indipendenti (7/11, utente: 'prezzo di rivendita bilanciato tra semaforo, comparabili e
-    Gemini, con i loro valori tra parentesi'). Pesi (regola pratica, non misurata): semaforo 0,3 con confidenza alta / 0,2 media / 0,1 bassa;
-    comparabili 0,5 con 8+ / 0,4 con 4-7 / 0,25 con meno; Gemini 0,4 x la sua confidenza, solo se almeno 0,4. `parti` = {'semaforo','comparabili',
-    'gemini'} con i soli valori presenti. (None, {}) se non c'e' nessuna stima. Pura."""
+def rivendita_mista(fv, riv_comps, n_comps, gemini, riv_rilevanza=None):
+    """(rivendita, parti): media pesata di stime indipendenti (7/11, utente: 'prezzo di rivendita bilanciato tra semaforo, comparabili e
+    Gemini, con i loro valori tra parentesi'). 8/11 (utente): pesi RELATIVI al semaforo, che vale w = 0,3 con confidenza alta / 0,2 media /
+    0,1 bassa: comparabili per rilevanza 1,3 x w, comparabili per data (newest_first) 1,2 x w, Gemini w (uguale al semaforo, solo se la sua
+    confidenza e' almeno 0,4). Rapporti scelti dall'utente, non misurati. `parti` = {'semaforo','comparabili','rilevanza','gemini'} con i soli
+    valori presenti. (None, {}) se non c'e' nessuna stima. Pura."""
     parti, pesi = {}, {}
+    w = {"alta": 0.3, "media": 0.2}.get((fv or {}).get("conf"), 0.1)
     if fv and fv.get("fv"):
         parti["semaforo"] = float(fv["fv"])
-        pesi["semaforo"] = {"alta": 0.3, "media": 0.2}.get(fv.get("conf"), 0.1)
+        pesi["semaforo"] = w
     if riv_comps:
         parti["comparabili"] = float(riv_comps)
-        pesi["comparabili"] = 0.5 if (n_comps or 0) >= 8 else 0.4 if (n_comps or 0) >= 4 else 0.25
+        pesi["comparabili"] = 1.2 * w
+    if riv_rilevanza:
+        parti["rilevanza"] = float(riv_rilevanza)
+        pesi["rilevanza"] = 1.3 * w
     rg, cg = (gemini or {}).get("rivendita_gemini_eur"), (gemini or {}).get("rivendita_confidenza")
     if rg and cg is not None and cg >= 0.4:
         parti["gemini"] = float(rg)
-        pesi["gemini"] = 0.4 * cg
+        pesi["gemini"] = w
     if not parti:
         return None, {}
     tot = sum(pesi.values())
@@ -416,7 +421,7 @@ def parti_rivendita_testo(parti):
     """' (semaforo 82 · comparabili 270 · Gemini 250)': i valori da cui nasce la rivendita mista, solo quelli presenti. Vuota con un solo valore. Pura."""
     if not parti or len(parti) < 2:
         return ""
-    nomi = {"semaforo": "semaforo", "comparabili": "comparabili", "gemini": "Gemini"}
+    nomi = {"semaforo": "semaforo", "comparabili": "comparabili", "rilevanza": "per rilevanza", "gemini": "Gemini"}
     return " (" + " · ".join(f"{nomi[k]} {parti[k]:.0f}" for k in nomi if k in parti) + ")"
 
 
@@ -625,15 +630,26 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
                 comps_pool, link_comps, stima, v = await cerca(linea)
                 prezzi = [p for _t, p in comps_pool]
                 ris["da_foto"], ris["foto_comps"] = False, None
+        # 8/11 (utente): stessa ricerca ordinata per rilevanza, entra nella rivendita mista con peso 1,3 x semaforo (newest_first 1,2 x)
+        riv_ril = None
+        try:
+            _u, _l, st_ril, v_ril = await cerca(linea, "relevance")
+            riv_ril = (v_ril or {}).get("rivendita") if st_ril else None
+            log.info("COMPS ORDINE | item=%s | brand=%s | cat=%s | prezzo=%s | base[%s]=%s | rilevanza=%s | fv_stima=%s", listing_info.get("item_id") or "-", brand,
+                     fv.get("categoria"), prezzo, MODA_COMPS_ORDINE, _riga_stima(stima), _riga_stima(st_ril), fv.get("fv"))
+        except Exception:
+            log.info("Moda Jev: ricerca per rilevanza non riuscita")
         v, sconto = correggi_per_difetti(v, prezzo, ris["gemini"])
         if sconto:
             ris["sconto_difetti"], ris["rivendita_prima_difetti"] = sconto, v.get("rivendita_prima_difetti")
+            if riv_ril:
+                riv_ril = riv_ril * (1 - sconto / 100)
             log.info("MODA JEV DIFETTI | item=%s | brand=%s | gravita=%s | sconto=%.0f%% | rivendita %.0f -> %.0f | margine=%s | difetti=%s",
                      listing_info.get("item_id") or "-", brand, ris["gemini"].get("gravita_difetti"), sconto, v["rivendita_prima_difetti"], v["rivendita"],
                      v.get("margine"), ris["gemini"].get("difetti"))
         # rivendita mista (7/11): semaforo, comparabili (gia' scontati dei difetti) e Gemini; margine, ROI ed esito si calcolano su questa
         riv_comps = v.get("rivendita") if v else None
-        mix, parti = rivendita_mista(fv, riv_comps, (v or {}).get("n") or len(prezzi), ris["gemini"])
+        mix, parti = rivendita_mista(fv, riv_comps, (v or {}).get("n") or len(prezzi), ris["gemini"], riv_ril)
         ris["rivendita_comps"], ris["parti_rivendita"] = riv_comps, parti
         if v and mix and len(parti) > 1:
             stima_mix = {k: v.get(k) for k in ("affidabilita", "n", "richiesto_mediano", "vendita_rapida", "calibrazione")}
