@@ -550,6 +550,12 @@ def da_cancellare(v2, esito=None):
     return RADAR_CANCELLA_ROSSI or (v2.get("motivo") or "").split(":")[0] in MOTIVI_NON_OGGETTO
 
 
+def non_valutato_da_togliere(v2):
+    """8/11: annuncio che l'analisi ha saltato (v2 None: fuori famiglia, sopra il tetto del modello, gia' visto, prezzo fuori)
+    non e' un verdetto: niente risposta "semaforo non calcolato" nel gruppo, e si toglie come i rossi (tranne in pausa notturna). Pura."""
+    return v2 is None and RADAR_CANCELLA_ROSSI and not radar_in_pausa()
+
+
 # Verifica dei comparabili (01/11, richiesta dell'utente: "i simili non sono lo stesso modello"): se Jev ha giudicato i comparabili
 # e la rivendita sui soli "stesso modello" non da' verde o giallo, l'avviso non parte. Senza verifica (pochi comparabili, Jev spento) resta il vecchio comportamento.
 RADAR_VERIFICA = os.environ.get("RADAR_VERIFICA", "1").strip() not in ("0", "false", "no", "")

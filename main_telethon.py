@@ -48,7 +48,7 @@ from bot.tracciamento import importa_tracciamento_jsonl, tracc_riprendi_serie
 from bot.feedback import parse_risposta, registra_feedback, registra_nota, ciclo_callback, _contesti, _ctx_item
 from bot.operazioni import parse_operazione, margine_reale
 from bot.radar_v2 import analizza as radar_v2_analizza, rivaluta as radar_v2_rivaluta
-from bot.radar import RADAR_CHAT_IDS, RADAR_RISPOSTA_GRUPPO, RADAR_CANCELLA_SCARTI, da_cancellare, testo_risposta_gruppo, radar_in_pausa, e_messaggio_radar, gestisci_annuncio_radar, traccia_verdetto_v2, invia_verdetto_v2, risolvi_gruppo_radar, togli_marcatore
+from bot.radar import RADAR_CHAT_IDS, RADAR_RISPOSTA_GRUPPO, RADAR_CANCELLA_SCARTI, da_cancellare, non_valutato_da_togliere, testo_risposta_gruppo, radar_in_pausa, e_messaggio_radar, gestisci_annuncio_radar, traccia_verdetto_v2, invia_verdetto_v2, risolvi_gruppo_radar, togli_marcatore
 from bot.costanti import (
     BRAND_BLOCKLIST,
     CATEGORIA_KEYWORDS,
@@ -1591,15 +1591,15 @@ async def on_new_message(event):
                 esito_radar = {}
                 await invia_verdetto_v2(parsed_radar, url_radar, v2_radar, foto=foto_radar, rivaluta=radar_v2_rivaluta, esito=esito_radar)
                 cancellato = False
-                if RADAR_CANCELLA_SCARTI and da_cancellare(v2_radar, esito_radar):
+                if RADAR_CANCELLA_SCARTI and (da_cancellare(v2_radar, esito_radar) or non_valutato_da_togliere(v2_radar)):
                     try:
                         await event.delete()
                         cancellato = True
-                        log.info("RADAR PULIZIA | cancellato msg_id=%s | item=%s | motivo=%s", msg_id, _estrai_item_id_da_url(url_radar), v2_radar.get("motivo") or esito_radar.get("motivo"))
+                        log.info("RADAR PULIZIA | cancellato msg_id=%s | item=%s | motivo=%s", msg_id, _estrai_item_id_da_url(url_radar), (v2_radar or {}).get("motivo") or esito_radar.get("motivo") or "saltato")
                     except Exception as exc:
                         log.warning("RADAR PULIZIA | non cancellabile msg_id=%s (%s): serve il diritto di eliminare messaggi nel gruppo",
                                     msg_id, type(exc).__name__)
-                if RADAR_RISPOSTA_GRUPPO and not cancellato:
+                if RADAR_RISPOSTA_GRUPPO and not cancellato and v2_radar is not None:
                     try:
                         testo_gruppo = testo_risposta_gruppo(v2_radar, esito_radar)
                         await event.reply(testo_gruppo, silent=True)
