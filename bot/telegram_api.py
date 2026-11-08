@@ -3,6 +3,7 @@ import json
 import os
 import re
 import asyncio
+import time
 
 
 from bot.config import TELEGRAM_API
@@ -66,6 +67,27 @@ def _spezza_per_telegram(text, max_len=3500):
 
 TELEGRAM_MAX_TENTATIVI = 3
 TELEGRAM_MAX_ATTESA_429_SECONDI = 60
+# 8/11: un 429 con retry_after lungo (visto 900 s) e' un blocco di tutto il bot, non un picco: riprovare ogni 60 s lo martella e perde i messaggi
+# (verdetto e avviso rimanevano "in attesa"). Ora il blocco e' globale: i messaggi di testo e le modifiche aspettano la fine del blocco, a passo
+# di TELEGRAM_PASSO_DOPO_BLOCCO_SECONDI uno dall'altro (niente raffica che lo riattiva); foto e album, inutili in ritardo, non partono.
+TELEGRAM_BLOCCO_MAX_SECONDI = 1200
+TELEGRAM_PASSO_DOPO_BLOCCO_SECONDI = 3.0
+_METODI_NON_IN_CODA = ("sendMediaGroup", "sendPhoto")
+_blocco_429 = {"fino": 0.0, "prossimo": 0.0}   # tempi time.monotonic()
+
+
+async def _attendi_fine_blocco(metodo):
+    """True quando si puo' inviare; False se c'e' un blocco 429 attivo e il metodo non va messo in coda. Con il blocco attivo ogni chiamata
+    prende uno slot dopo la fine del blocco (uno ogni TELEGRAM_PASSO_DOPO_BLOCCO_SECONDI) e dorme fino ad allora."""
+    ora = time.monotonic()
+    if ora >= _blocco_429["fino"]:
+        return True
+    if metodo in _METODI_NON_IN_CODA:
+        return False
+    slot = max(_blocco_429["fino"], _blocco_429["prossimo"])
+    _blocco_429["prossimo"] = slot + TELEGRAM_PASSO_DOPO_BLOCCO_SECONDI
+    await asyncio.sleep(max(0.0, slot - ora))
+    return True
 
 
 async def _telegram_post(metodo, max_tentativi=TELEGRAM_MAX_TENTATIVI, **kwargs):
@@ -75,12 +97,16 @@ async def _telegram_post(metodo, max_tentativi=TELEGRAM_MAX_TENTATIVI, **kwargs)
     un burst di annunci, o un timeout, faceva sparire la notifica senza
     nessuna traccia nei log. Ritorna la response (anche se non is_success:
     gli errori 400, es. Markdown non valido, li gestisce il chiamante) oppure
-    None se tutti i tentativi sono falliti per errore di rete.
+    None se tutti i tentativi sono falliti per errore di rete (o se c'e' un
+    blocco 429 attivo e il metodo e' una foto/album).
 
     Nei log NON compare mai l'URL (contiene il token del bot): solo il nome
     del metodo, lo status e il corpo della risposta di Telegram."""
     resp = None
     for tentativo in range(1, max_tentativi + 1):
+        if not await _attendi_fine_blocco(metodo):
+            log.warning("Telegram %s: non inviato, blocco 429 attivo ancora per %.0fs", metodo, _blocco_429["fino"] - time.monotonic())
+            return None
         try:
             resp = await hc._client_telegram.post(f"{TELEGRAM_API}/{metodo}", **kwargs)
         except Exception as e:
@@ -90,16 +116,26 @@ async def _telegram_post(metodo, max_tentativi=TELEGRAM_MAX_TENTATIVI, **kwargs)
             if tentativo < max_tentativi:
                 await asyncio.sleep(2 * tentativo)
             continue
-        if resp.status_code == 429 and tentativo < max_tentativi:
+        if resp.status_code == 429:
             try:
                 retry_after = float(resp.json().get("parameters", {}).get("retry_after", 5))
             except Exception:
                 retry_after = 5.0
-            attesa = min(retry_after, TELEGRAM_MAX_ATTESA_429_SECONDI) + 0.5
-            log.warning("Telegram %s: 429 flood control, attendo %.1fs (tentativo %d/%d)",
-                        metodo, attesa, tentativo, max_tentativi)
-            await asyncio.sleep(attesa)
-            continue
+            if retry_after > TELEGRAM_MAX_ATTESA_429_SECONDI:
+                # blocco lungo: si ferma tutto il bot fino alla fine; questa chiamata riprova (in coda) solo se non e' una foto/album
+                if retry_after <= TELEGRAM_BLOCCO_MAX_SECONDI:
+                    _blocco_429["fino"] = max(_blocco_429["fino"], time.monotonic() + retry_after + 1.0)
+                    log.warning("Telegram %s: blocco 429 di %.0fs, i messaggi di testo aspettano la fine (a passo di %.0fs)",
+                                metodo, retry_after, TELEGRAM_PASSO_DOPO_BLOCCO_SECONDI)
+                    if metodo not in _METODI_NON_IN_CODA and tentativo < max_tentativi:
+                        continue
+                return resp
+            if tentativo < max_tentativi:
+                attesa = retry_after + 0.5
+                log.warning("Telegram %s: 429 flood control, attendo %.1fs (tentativo %d/%d)",
+                            metodo, attesa, tentativo, max_tentativi)
+                await asyncio.sleep(attesa)
+                continue
         return resp
     return resp
 
