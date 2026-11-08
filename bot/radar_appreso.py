@@ -12,9 +12,10 @@ import time
 
 from bot import db
 from bot.logger import log
+from bot.valore_mercato import _PAROLE_GENERICHE, _PAROLE_VUOTE
 
 RADAR_APPRESO = os.environ.get("RADAR_APPRESO", "1").strip() in ("1", "true", "si")
-RADAR_APPRESO_GIORNI = float(os.environ.get("RADAR_APPRESO_GIORNI", "7") or 7)
+RADAR_APPRESO_GIORNI = float(os.environ.get("RADAR_APPRESO_GIORNI", "14") or 14)
 RADAR_APPRESO_CAMPIONE = int(os.environ.get("RADAR_APPRESO_CAMPIONE", "10") or 10)  # 1 su N passa comunque (0 = mai)
 MIN_OSS = 3
 MIN_COMPARABILI = 6
@@ -24,8 +25,22 @@ _contatori = {}  # famiglia -> annunci saltati (per il campione)
 _segnalate = set()
 
 
+_COLORI_EXTRA = {"grigia", "rosa", "giallo", "gialla", "viola", "arancione", "marrone", "beige", "oro", "argento", "silver", "gold",
+                 "pink", "grey", "gray", "red", "blue", "green", "nuova", "nuovo", "usato", "bianco", "bianca"}
+
+
+def normalizza(famiglia):
+    """Famiglia senza colori e parole di condizione (8/11, utente: i modelli che non valgono si imparano una volta sola):
+    'nintendo switch lite grigia' e 'nintendo switch lite' sono lo stesso mercato. Pura."""
+    if not famiglia:
+        return famiglia
+    parole = [w for w in famiglia.split() if w not in _PAROLE_GENERICHE and w not in _PAROLE_VUOTE and w not in _COLORI_EXTRA]
+    return " ".join(parole) if len(parole) >= 2 else famiglia
+
+
 def registra(famiglia, limite, n_usati, allargata, adesso=None):
     """Registra un'osservazione se e' solida (ricerca non allargata, abbastanza comparabili, limite noto). Pura salvo lo stato."""
+    famiglia = normalizza(famiglia)
     if not famiglia or limite is None or allargata or n_usati < MIN_COMPARABILI:
         return False
     lista = _oss.setdefault(famiglia, [])
@@ -37,6 +52,7 @@ def registra(famiglia, limite, n_usati, allargata, adesso=None):
 def limite_famiglia(famiglia, adesso=None):
     """Il limite di acquisto piu' alto visto di recente se le osservazioni bastano, altrimenti None. Pura."""
     adesso = adesso if adesso is not None else time.time()
+    famiglia = normalizza(famiglia)
     recenti = [lim for ts, lim in _oss.get(famiglia, ()) if adesso - ts < RADAR_APPRESO_GIORNI * 86400]
     return max(recenti) if len(recenti) >= MIN_OSS else None
 
@@ -45,6 +61,7 @@ def da_saltare(famiglia, prezzo, adesso=None):
     """Limite appreso se l'annuncio va scartato senza calcolo (prezzo oltre il limite con margine di sicurezza), altrimenti None."""
     if not RADAR_APPRESO or prezzo is None:
         return None
+    famiglia = normalizza(famiglia)
     limite = limite_famiglia(famiglia, adesso)
     if limite is None or prezzo <= limite * 1.25 + 2:
         return None

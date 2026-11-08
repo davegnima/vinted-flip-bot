@@ -34,7 +34,7 @@ RADAR_V2_OMBRA = os.environ.get("RADAR_V2_OMBRA", "0").strip() in ("1", "true", 
 # Semafori per cui la foto va a Jev (25/10): di default solo il verde. Per la prova si puo' allargare, es. "verde,giallo".
 JEV_FOTO_SEMAFORI = {x.strip() for x in os.environ.get("JEV_FOTO_SEMAFORI", "verde").split(",") if x.strip()}
 RADAR_V2_MAX_GIORNO = int(os.environ.get("RADAR_V2_MAX_GIORNO", "3000") or 3000)
-RADAR_V2_CACHE_ORE = float(os.environ.get("RADAR_V2_CACHE_ORE", "6") or 6)
+RADAR_V2_CACHE_ORE = float(os.environ.get("RADAR_V2_CACHE_ORE", "24") or 24)  # 8/11 (utente: "ormai dovremmo sapere a quanto si rivendono"): da 6 a 24 ore, e persistita nel DB
 RADAR_V2_PARALLELO = int(os.environ.get("RADAR_V2_PARALLELO", "2") or 2)
 # Pre-filtro per ricerca (31/10): per le ricerche con testo (un prodotto preciso) il prezzo di riferimento si calcola UNA volta
 # ogni RADAR_V2_RIF_ORE ore dalla ricerca stessa senza limite di prezzo; un annuncio sopra il prezzo massimo di acquisto
@@ -208,6 +208,37 @@ async def _catalogo_annuncio(url):
         return None
 
 
+def _salva_cache(chiave, adesso, prezzi, n_grezzi, usati, mappa):
+    """Scrive nel DB i comparabili di una ricerca (evento radar_cache): dopo un deploy non si rifanno le stesse ricerche. Mai eccezioni."""
+    try:
+        db.scrivi_evento("radar_cache", None, None, {
+            "q": chiave[0], "cat": chiave[1], "prezzi": prezzi, "n_grezzi": n_grezzi, "usati": [[t, p] for t, p in usati],
+            "url": [[k[0], k[1], u] for k, u in (mappa or {}).items()]}, ts=adesso)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def carica_cache_dal_db(adesso=None):
+    """Rimette in memoria le ricerche di comparabili ancora valide (ultime RADAR_V2_CACHE_ORE ore, la piu' recente per chiave). Ritorna quante."""
+    adesso = adesso if adesso is not None else time.time()
+    n = 0
+    try:
+        for e in db.leggi_eventi("radar_cache", adesso - RADAR_V2_CACHE_ORE * 3600, 2000):
+            chiave = (e.get("q"), e.get("cat"))
+            if not chiave[0] or chiave in _cache and _cache[chiave][0] > e["ts"]:
+                continue
+            usati = [(t, p) for t, p in e.get("usati") or []]
+            _cache[chiave] = (e["ts"], list(e.get("prezzi") or []), e.get("n_grezzi") or 0)
+            _titoli_simili[chiave] = [t for t, _ in usati]
+            _comps_simili[chiave] = usati
+            _url_comps[chiave] = {(k[0], k[1]): k[2] for k in e.get("url") or []}
+            n += 1
+    except Exception as exc:  # noqa: BLE001
+        log.warning("RADAR V2 CACHE | caricamento non riuscito (%s)", type(exc).__name__)
+    log.info("RADAR V2 CACHE | caricate %d ricerche di comparabili dal DB", n)
+    return n
+
+
 async def _prezzi_simili(testo, titolo, prezzo, brand=None, catalogo=None):
     """(prezzi richiesti di annunci simili usati, n grezzi, dalla_cache) o (None, 0, False) se non disponibile."""
     adesso = time.time()
@@ -232,6 +263,7 @@ async def _prezzi_simili(testo, titolo, prezzo, brand=None, catalogo=None):
     _url_comps[chiave] = mappa or {}
     _titoli_simili[chiave] = [t for t, _ in usati]
     _comps_simili[chiave] = list(usati)
+    _salva_cache(chiave, adesso, prezzi, len(comps), usati, mappa)
     return prezzi, len(comps), False
 
 
@@ -480,6 +512,7 @@ async def analizza(parsed, url, foto=None, query_url=None):
         if not _appreso_caricato["si"]:
             _appreso_caricato["si"] = True
             radar_appreso.carica_dal_db()
+            carica_cache_dal_db()
         fam = testo
         limite_appreso = radar_appreso.da_saltare(fam, prezzo)
         if limite_appreso is not None:
