@@ -44,9 +44,9 @@ def test_tratteni_solo_per_brand_nuovo_con_regola_brand_nuovo(monkeypatch):
 
 def test_righe_messaggio_con_e_senza_comparabili():
     r = mj.righe_messaggio({"rivendita": 140, "n": 7, "margine": 90, "roi": 400, "esempi": [("Abito", 120)], "autenticita": ("originale_plausibile", 0.8)})
-    assert any("Comparabili: 7" in x for x in r)
+    assert any("Più recenti: 7" in x for x in r)
     r2 = mj.righe_messaggio({"rivendita": None, "autenticita": None})
-    assert any("non trovati" in x for x in r2) and any("non verificata" in x for x in r2)
+    assert any("Comparabili: nessuno" in x for x in r2)
 
 
 def test_riga_esito_scheda_per_scarto_conferma_e_non_verificato():
@@ -173,10 +173,10 @@ def test_messaggio_a_passi_per_lo_scarto_sui_comparabili():
            "autenticita": None, "gemini": None, "legit_saltato": True, "prezzi_comps": (45.0, 60.0),
            "link_comps": [("t", 60.0, "https://www.vinted.it/items/1-a")]}
     verdetto = mj.riga_verdetto(ris)
-    assert verdetto.startswith("🚫 SCARTATO") and "~52 €" in verdetto and "~18 €" in verdetto and "almeno 40" in verdetto
+    assert verdetto.startswith("🚫 SCARTATO") and "~52 €" in verdetto and "~18 €" in verdetto and "< 40" in verdetto
     righe = mj.righe_messaggio(ris, "zimmermann")
     testo = "\n".join(righe)
-    assert "da 45 a 60 €" in testo and "fiducia bassa" in testo and "Legit check non fatto" in testo
+    assert "45–60 €" in testo and "Legit check saltato" in testo
     assert "https://www.vinted.it/items/1-a" in testo and "Rotazione brand" in testo
 
 
@@ -187,7 +187,7 @@ def test_messaggio_conferma_mostra_le_domande_del_legit_check_di_jev():
     ris = {"esito": "conferma", "motivo": "ok", "n": 9, "rivendita": 140, "margine": 90, "roi": 200, "esempi": [], "autenticita": a, "gemini": None,
            "link_comps": [], "prezzi_comps": (120.0, 160.0)}
     testo = "\n".join(mj.righe_messaggio(ris))
-    assert "fiducia alta" in testo and "etichetta: coerente" not in testo   # il legit check e' nella riga Originalita', non sparso (7/11)
+    assert "Più recenti: 9" in testo and "etichetta: coerente" not in testo   # il legit check e' nella riga Originalita', non sparso (7/11)
     assert mj.riga_verdetto(ris).startswith("✅ CONFERMATO")
 
 
@@ -252,8 +252,8 @@ def test_comparabili_tutti_diversi_dalla_foto_non_confermano():
     assert mj.decidi({"ok": True}, ("originale_plausibile", 0.9)) == ("conferma", "ok")
     ris = {"esito": "non_verificato", "motivo": "comparabili_non_simili", "n": 4, "rivendita": 80.0, "margine": 64.0, "roi": 752.0,
            "prezzi_comps": (3.0, 600.0), "foto_comps": diversi}
-    assert "non assomigliano alla foto" in mj.riga_verdetto(ris)
-    assert any("NON simili alla foto" in r for r in mj.righe_messaggio(ris))
+    assert "non simili alla foto" in mj.riga_verdetto(ris)
+    assert any("non simili alla foto" in r for r in mj.righe_messaggio(ris))
 
 
 def test_prezzi_troppo_dispersi_non_confermano():
@@ -262,8 +262,8 @@ def test_prezzi_troppo_dispersi_non_confermano():
     assert mj.decidi({"ok": True}, ("originale_plausibile", 0.9), None, None, 1.5) == ("conferma", "ok")
     assert mj.decidi({"ok": True}, ("originale_plausibile", 0.9), None, None, None) == ("conferma", "ok")
     ris = {"esito": "non_verificato", "motivo": "prezzi_dispersi", "n": 4, "rivendita": 80.0, "margine": 64.0, "roi": 752.0, "dispersione": 3.4}
-    assert "3.4 volte" in mj.riga_verdetto(ris)
-    assert any("prezzi molto dispersi" in r for r in mj.righe_messaggio(ris))
+    assert "3.4×" in mj.riga_verdetto(ris)
+    assert any("prezzi dispersi" in r for r in mj.righe_messaggio(ris))
 
 
 def test_filtra_per_linea_weekend_non_e_max_mara():
@@ -386,7 +386,7 @@ def test_messaggio_compatto_con_link_comparabili_nei_1024_caratteri():
            "foto_comps": [("simile", 0.8)] * 3, "gemini": {"autenticita": "probabile", "confidenza": 0.9, "motivo": "x" * 120, "capo": "pantaloni", "materiale": "lana",
                                                           "condizione": "buona", "gravita_difetti": "nessuno", "difetti": "", "rivendita_gemini_eur": 60.0, "rivendita_confidenza": 0.7}}
     righe = righe_messaggio(ris, brand="missoni")
-    assert righe[0].startswith("🔎") and righe[1].startswith("• 80 € https://www.vinted.it/items/1")
+    assert righe[0].startswith("📅") and righe[1].startswith("• 80 € https://www.vinted.it/items/1")
     info = {"fair_value": {"semaforo": "🟡", "fv": 40, "minimo": 30, "massimo": 70, "margine": 25, "conf": "alta"}, "price": 15, "brand": "Missoni", "title": "Pantaloni Missoni lunghi",
             "righe_jev": righe + ["y" * 150], "riga_verdetto_jev": "✅ CONFERMATO: rivendita ~90 €", "rivendita_jev": 90,
             "query_name": "Avanguardia Rick Yohji Dries AnnD Raf Loewe Lemaire Khaite 50", "query_url": "https://x.it/q"}
@@ -418,14 +418,14 @@ def test_rivendita_mista_pesa_semaforo_comparabili_e_gemini_e_li_mostra_in_testa
     assert abs(mix - (100 * 0.2 + 200 * 0.36 + 150 * 0.2) / 0.76) < 0.01
     mix2, parti2 = rivendita_mista({"fv": 100, "conf": "media"}, 200, 5, None, 160)   # con la ricerca per rilevanza: 2,5 x w
     assert parti2["rilevanza"] == 160.0 and abs(mix2 - (100 * 0.2 + 200 * 0.36 + 160 * 0.5) / 1.06) < 0.01
-    assert parti_rivendita_testo(parti2) == " (semaforo 100 · comparabili 200 · per rilevanza 160)"
+    assert parti_rivendita_testo(parti2) == " (semaforo 100 · recenti 200 · rilevanti 160)"
     # Gemini poco sicuro o assente: non entra; nessuna stima: (None, {})
     assert "gemini" not in rivendita_mista({"fv": 100, "conf": "alta"}, 200, 9, {"rivendita_gemini_eur": 150, "rivendita_confidenza": 0.3})[1]
     assert rivendita_mista(None, None, 0, None) == (None, {})
     assert rivendita_mista({"fv": 80, "conf": "bassa"}, None, 0, None) == (80.0, {"semaforo": 80.0})
-    assert parti_rivendita_testo(parti) == " (semaforo 100 · comparabili 200 · Gemini 150)" and parti_rivendita_testo({"semaforo": 80.0}) == ""
+    assert parti_rivendita_testo(parti) == " (semaforo 100 · recenti 200 · Gemini 150)" and parti_rivendita_testo({"semaforo": 80.0}) == ""
     ris = {"esito": "conferma", "rivendita": 160.0, "margine": 110.0, "roi": 550.0, "parti_rivendita": parti}
-    assert riga_verdetto_v(ris) == "✅ CONFERMATO · rivendita ~160 € (semaforo 100 · comparabili 200 · Gemini 150) · margine ~110 € · ROI 550%"
+    assert riga_verdetto_v(ris) == "✅ CONFERMATO · rivendita ~160 € (semaforo 100 · recenti 200 · Gemini 150) · margine ~110 € · ROI 550%"
 
 
 def test_messaggio_stile_aerei_identificazione_esito_azione_poi_dettagli():
@@ -508,4 +508,19 @@ def test_riga_scartato_mostra_i_valori_della_rivendita_mista():
     from bot.moda_jev import riga_verdetto
     r = riga_verdetto({"esito": "scarta", "motivo": "comparabili:margine_basso", "rivendita": 40.2, "margine": 28.0, "n": 13,
                        "parti_rivendita": {"semaforo": 50.0, "comparabili": 49.0, "rilevanza": 30.0}})
-    assert r == "🚫 SCARTATO: rivendita ~40 € (semaforo 50 · comparabili 49 · per rilevanza 30), margine ~28 € (serve almeno 40 €)"
+    assert r == "🚫 SCARTATO · rivendita ~40 € (semaforo 50 · recenti 49 · rilevanti 30) · margine ~28 € < 40 €"
+
+
+def test_righe_messaggio_mostra_anche_i_comparabili_per_rilevanza_con_link():
+    from bot.moda_jev import righe_messaggio
+    ris = {"n": 8, "rivendita": 60.0, "rivendita_comps": 65.0, "prezzi_comps": (30.0, 160.0), "link_comps": [("a", 65.0, "https://v/1")],
+           "rivendita_ril": 30.0, "n_ril": 9, "prezzi_comps_ril": (20.0, 90.0), "link_comps_ril": [("b", 28.0, "https://v/2"), ("a", 65.0, "https://v/1")]}
+    r = righe_messaggio(ris)
+    assert r[0] == "📅 Più recenti: 8 · 30–160 € · ~65 €" and r[1] == "• 65 € https://v/1"
+    assert r[2] == "🎯 Più rilevanti: 9 · 20–90 € · ~30 €" and r[3] == "• 28 € https://v/2" and len(r) == 4   # il link gia' mostrato non si ripete
+
+
+def test_riga_verdetto_non_verificato_senza_comparabili_e_senza_parole_inutili():
+    from bot.moda_jev import riga_verdetto
+    r = riga_verdetto({"esito": "non_verificato", "motivo": "nessun", "n": 0})
+    assert r == "⚠️ NON VERIFICATO · nessun comparabile" and "stima" not in r
