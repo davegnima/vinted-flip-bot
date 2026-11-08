@@ -231,9 +231,8 @@ def test_riga_originalita_mostra_subito_replica_dubbio_e_ok():
     r = dict(base, autenticita=("replica_probabile", 0.36), gemini={"autenticita": "dubbia", "confidenza": 0.6})
     riga = riga_originalita(r)
     assert riga.startswith("🔐 Originalità: 🚨 FAKE") and "36%" in riga and "Gemini foto: dubbio (60%)" in riga
-    assert "possibile replica" in riga_verdetto(r) and riga_verdetto(r).startswith("✅ CONFERMATO")
+    assert riga_verdetto(r).startswith("✅ CONFERMATO") and "replica" not in riga_verdetto(r)   # l'originalita' ha la sua riga 🔐
     assert riga_originalita(dict(base, autenticita=("originale_plausibile", 0.76))).startswith("🔐 Originalità: ✅ LEGIT")
-    assert "possibile" not in riga_verdetto(dict(base, autenticita=("originale_plausibile", 0.76)))
     assert riga_originalita(dict(base, autenticita=("non_chiaro", 0.4))).startswith("🔐 Originalità: ⚠️ DA CONTROLLARE (non chiara)")
     assert riga_originalita(dict(base, autenticita=None)).startswith("🔐 Originalità: ❔")
     assert riga_originalita(dict(base, esito="scarta", autenticita=("replica_probabile", 0.9))) is None
@@ -374,7 +373,7 @@ def test_gemini_prevale_su_jev_replica_debole_e_recuperato_con_foto():
     assert "possibile replica" not in riga_verdetto(ris)
     t = testo_preavviso({"fair_value": {"semaforo": "🔴"}, "price": 50, "brand": "Ann", "title": "Pantalone", "righe_jev": ["x"], "riga_verdetto_jev": "v",
                          "rivendita_jev": 170, "riga_recupero": "♻️ Recuperato: prova"}, "https://www.vinted.it/items/1", riga_finale="")
-    assert t.startswith("♻️ Recuperato")
+    assert t.startswith("🔴 *Ann*") and t.split("\n")[1].startswith("♻️ Recuperato")
 
 
 def test_messaggio_compatto_con_link_comparabili_nei_1024_caratteri():
@@ -411,7 +410,8 @@ def test_riga_originalita_dice_cosa_fare_e_cosa_chiedere():
 def test_rivendita_mista_pesa_semaforo_comparabili_e_gemini_e_li_mostra_in_testata():
     """7/11 (utente): prezzo di rivendita bilanciato tra semaforo, comparabili e Gemini, con i tre valori tra parentesi nell'intestazione."""
     from bot.moda_jev import rivendita_mista
-    from bot.scheda import _parti_rivendita, testo_preavviso
+    from bot.moda_jev import parti_rivendita_testo, riga_verdetto as riga_verdetto_v
+    from bot.scheda import testo_preavviso
     # tre stime: pesi 0,2 (semaforo media) + 0,4 (comparabili 5) + 0,28 (Gemini 0,7 x 0,4)
     mix, parti = rivendita_mista({"fv": 100, "conf": "media"}, 200, 5, {"rivendita_gemini_eur": 150, "rivendita_confidenza": 0.7})
     assert parti == {"semaforo": 100.0, "comparabili": 200.0, "gemini": 150.0}
@@ -420,10 +420,23 @@ def test_rivendita_mista_pesa_semaforo_comparabili_e_gemini_e_li_mostra_in_testa
     assert "gemini" not in rivendita_mista({"fv": 100, "conf": "alta"}, 200, 9, {"rivendita_gemini_eur": 150, "rivendita_confidenza": 0.3})[1]
     assert rivendita_mista(None, None, 0, None) == (None, {})
     assert rivendita_mista({"fv": 80, "conf": "bassa"}, None, 0, None) == (80.0, {"semaforo": 80.0})
-    assert _parti_rivendita(parti) == " (semaforo 100 · comparabili 200 · Gemini 150)" and _parti_rivendita({"semaforo": 80.0}) == ""
-    t = testo_preavviso({"fair_value": {"semaforo": "🟢"}, "price": 20, "brand": "Ann", "title": "Pantalone", "righe_jev": ["🔎 Comparabili: 5"],
-                         "riga_verdetto_jev": "v", "rivendita_jev": 160, "parti_rivendita": parti}, "https://www.vinted.it/items/1")
-    assert "rivendita ~*160 €* (semaforo 100 · comparabili 200 · Gemini 150)" in t and "🚦" not in t and "ℹ️" not in t
+    assert parti_rivendita_testo(parti) == " (semaforo 100 · comparabili 200 · Gemini 150)" and parti_rivendita_testo({"semaforo": 80.0}) == ""
+    ris = {"esito": "conferma", "rivendita": 160.0, "margine": 110.0, "roi": 550.0, "parti_rivendita": parti}
+    assert riga_verdetto_v(ris) == "✅ CONFERMATO · rivendita ~160 € (semaforo 100 · comparabili 200 · Gemini 150) · margine ~110 € · ROI 550%"
+
+
+def test_messaggio_stile_aerei_identificazione_esito_azione_poi_dettagli():
+    """8/11 (utente: 'capisco dopo troppe righe di che oggetto parliamo'): prima brand, titolo e prezzo, poi esito, originalita', azione, riga vuota, dettagli."""
+    from bot.scheda import testo_preavviso
+    li = {"fair_value": {"semaforo": "🟡"}, "price": 20, "brand": "Jean Paul Gaultier", "title": "Maglia donna", "condition": "Ottime",
+          "righe_jev": ["🔎 Comparabili: 14"], "riga_verdetto_jev": "✅ CONFERMATO · rivendita ~119 € · margine ~83 € · ROI 343%",
+          "riga_originalita_jev": "🔐 Originalità: ⚠️ DA CONTROLLARE\n👉 Prima chiedi: etichetta"}
+    righe = testo_preavviso(li, "https://www.vinted.it/items/1").split("\n")
+    assert righe[0] == "🟡 *Jean Paul Gaultier* · [Maglia donna](https://www.vinted.it/items/1) · *20 €*"
+    assert righe[1].startswith("✅ CONFERMATO") and righe[2].startswith("🔐 Originalità") and righe[3].startswith("👉") and righe[4] == ""
+    assert righe[5].startswith("✨") and "🔎 Comparabili: 14" in righe
+    testo = "\n".join(righe)
+    assert testo.count("20 €") == 1 and "➜" not in testo and "🚦" not in testo and "💶" not in testo   # niente ripetizioni del prezzo
 
 
 def test_evereve_in_blocklist_brand():
