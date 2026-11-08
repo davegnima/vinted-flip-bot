@@ -432,15 +432,19 @@ def test_evereve_in_blocklist_brand():
     assert skip and "BLOCKLIST" in motivo
 
 
-def test_tutti_a_jev_anche_rosso_e_prezzo_basso(monkeypatch):
+def test_tutti_a_jev_mirato_verdi_gialli_e_rossi_di_brand_scelti(monkeypatch):
     import bot.fair_value as fvm
     monkeypatch.setattr(fvm, "PREAVVISO_TUTTI_A_JEV", True)
-    # 8/11 (utente): i veloci si ricevono tutti, decidono Jev, Gemini e i comparabili
-    assert fvm.valuta_preavviso({"semaforo": "🔴", "margine": -5, "conf": "media", "brand": "max mara", "fv": 40}, 50) == (True, fvm.REGOLA_DA_VERIFICARE)
-    assert fvm.valuta_preavviso({"semaforo": "🟢", "margine": 0, "conf": "media", "brand": "missoni", "fv": 10}, 5)[0] is True
-    assert fvm.valuta_preavviso(None, 20) == (True, fvm.REGOLA_DA_VERIFICARE)
-    assert fvm.valuta_preavviso({"semaforo": "🔴", "brand": "marni"}, 20) == (False, "no")   # brand escluso
-    assert fvm.valuta_preavviso({"semaforo": "🔴", "brand": "prada"}, 0) == (False, "no")
+    monkeypatch.setattr(fvm, "PREAVVISO_ROSSI_A_JEV", {"max mara"})
+    da = fvm.REGOLA_DA_VERIFICARE
+    # 8/11 (utente): recuperare i veloci scartati dal semaforo senza aprire tutto
+    assert fvm.valuta_preavviso({"semaforo": "🟢", "margine": 0, "conf": "media", "brand": "missoni", "fv": 10}, 5) == (True, da)
+    assert fvm.valuta_preavviso({"semaforo": "🟡", "margine": 5, "conf": "media", "brand": "prada", "fv": 40}, 25) == (True, da)
+    assert fvm.valuta_preavviso({"semaforo": "🔴", "margine": -5, "conf": "media", "brand": "max mara", "fv": 40}, 50) == (True, da)
+    assert fvm.valuta_preavviso({"semaforo": "🔴", "margine": -5, "conf": "media", "brand": "prada", "fv": 40}, 50) == (False, "no")
+    assert fvm.valuta_preavviso(None, 20) == (False, "no")
+    assert fvm.valuta_preavviso({"semaforo": "🟢", "brand": "marni"}, 20) == (False, "no")   # brand escluso
+    assert fvm.valuta_preavviso({"semaforo": "🟢", "brand": "prada"}, 0) == (False, "no")
 
 
 def test_azione_codice():
