@@ -600,5 +600,5 @@ def test_riga_originalita_sta_subito_sotto_il_verdetto():
             "righe_jev": ["🔎 Comparabili " + "x" * 600, "👁 Gemini " + "y" * 600], "riga_verdetto_jev": "✅ CONFERMATO · 🚨 possibile replica",
             "riga_originalita_jev": "🚨 POSSIBILE REPLICA · Jev foto: replica probabile (36%)", "rivendita_jev": 135.0}
     righe = testo_preavviso(info, url).split("\n")
-    assert righe[0].startswith("✅ CONFERMATO") and righe[1].startswith("🚨 POSSIBILE REPLICA")
-    assert didascalia_verdetto("\n".join(righe)).split("\n")[1].startswith("🚨 POSSIBILE REPLICA")
+    assert righe[0].startswith("🟢 *Brunello Cucinelli*") and righe[1].startswith("✅ CONFERMATO") and righe[2].startswith("🚨 POSSIBILE REPLICA")
+    assert didascalia_verdetto("\n".join(righe)).split("\n")[2].startswith("🚨 POSSIBILE REPLICA")

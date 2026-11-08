@@ -223,14 +223,6 @@ def _riga_titolo(listing_info, url=None):
     return f"[{titolo}]({url})" if url else titolo
 
 
-def _parti_rivendita(parti):
-    """' (semaforo 82 · comparabili 270 · Gemini 250)': i valori da cui nasce la rivendita mista, solo quelli presenti. Vuota con un solo valore. Pura."""
-    if not parti or len(parti) < 2:
-        return ""
-    nomi = {"semaforo": "semaforo", "comparabili": "comparabili", "gemini": "Gemini"}
-    return " (" + " · ".join(f"{nomi[k]} {parti[k]:.0f}" for k in nomi if k in parti) + ")"
-
-
 def testo_preavviso(listing_info, url=None, riga_finale=RIGA_PREAVVISO_IN_ATTESA, riga_tempi=None, compatto=False):
     """Messaggio breve del PREAVVISO (gruppo COMPRA): prima riga = fulmine, semaforo, margine rapido, prezzo e brand
     (e' quello che compare nell'anteprima della notifica), poi titolo, dettagli, fair value rapido, link e riga finale
@@ -239,18 +231,20 @@ def testo_preavviso(listing_info, url=None, riga_finale=RIGA_PREAVVISO_IN_ATTESA
     fv = listing_info.get("fair_value") or {}
     testa = _testa_prezzo_brand(listing_info) or ""
     marca = "⚡ " + (f"{fv['semaforo']} ~+{fv['margine']:.0f} € · " if fv.get("margine") is not None and fv.get("semaforo") else "")
-    riv = listing_info.get("rivendita_jev") if listing_info.get("righe_jev") else None
     verdetto = listing_info.get("riga_verdetto_jev") if listing_info.get("righe_jev") else None
     if listing_info.get("righe_jev"):
         # dopo la verifica Jev: verdetto in chiaro in cima, poi intestazione "🟢 *15 €* ➜ rivendita ~*270 €*" (come il radar) oppure, se scartato,
         # solo prezzo e brand; la stima rapida del semaforo resta come primo passo, spiegata (5/11, utente: 'da dove deriva il ~+90?')
+        # 8/11 (utente: 'capisco dopo troppe righe di che oggetto parliamo'; 'organizza come il linguaggio degli aerei'): prima l'identificazione
+        # (semaforo, brand, titolo con link, prezzo), poi esito con rivendita mista, originalita' e cosa fare, una riga vuota, poi i dettagli.
         prezzo = _a_float(listing_info.get("price"), None)
         brand = (listing_info.get("brand") or "").strip()
         sem = fv.get("semaforo") or "🟢"
-        testa = (f"*{prezzo:g} €*" if prezzo is not None else "") + (f" ➜ rivendita ~*{riv:g} €*" + _parti_rivendita(listing_info.get("parti_rivendita")) if riv else "") + (f" · 🏷️ {esc(brand)}" if brand and brand != "?" else "")
-        originalita = listing_info.get("riga_originalita_jev")   # subito sotto il verdetto: originale o no (6/11)
-        righe = ([esc(listing_info["riga_recupero"])] if listing_info.get("riga_recupero") else []) + ([esc(verdetto)] if verdetto else []) \
-            + ([esc(originalita)] if originalita else []) + [sem + " " + testa, _riga_titolo(listing_info, url)]
+        identificazione = (sem + " " + (f"*{esc(brand)}* · " if brand and brand != "?" else "") + _riga_titolo(listing_info, url)
+                           + (f" · *{prezzo:g} €*" if prezzo is not None else ""))
+        originalita = listing_info.get("riga_originalita_jev")
+        righe = [identificazione] + ([esc(listing_info["riga_recupero"])] if listing_info.get("riga_recupero") else []) \
+            + ([esc(verdetto)] if verdetto else []) + ([esc(originalita)] if originalita else []) + [""]
     else:
         righe = [marca + "*" + testa + "*", _riga_titolo(listing_info, url)]
     if compatto:

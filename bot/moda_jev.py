@@ -388,6 +388,14 @@ def riga_originalita(ris):
     return testa + (" · " + " · ".join(parti) if parti else "") + (("\n" + azione) if azione else "")
 
 
+def parti_rivendita_testo(parti):
+    """' (semaforo 82 · comparabili 270 · Gemini 250)': i valori da cui nasce la rivendita mista, solo quelli presenti. Vuota con un solo valore. Pura."""
+    if not parti or len(parti) < 2:
+        return ""
+    nomi = {"semaforo": "semaforo", "comparabili": "comparabili", "gemini": "Gemini"}
+    return " (" + " · ".join(f"{nomi[k]} {parti[k]:.0f}" for k in nomi if k in parti) + ")"
+
+
 def riga_verdetto(ris):
     """Prima riga del messaggio: la decisione di Jev in chiaro, con il numero che l'ha decisa (5/11, utente: 'capire cosa l'ha fermato'). Pura."""
     mot = str(ris.get("motivo", ""))
@@ -401,10 +409,10 @@ def riga_verdetto(ris):
             return f"🚫 SCARTATO: i {ris['n']} comparabili danno rivendita ~{ris['rivendita']:.0f} €{dif}, {dove}"
         return "🚫 SCARTATO: " + riga_esito_scheda(ris).replace("🚫 ", "").replace("Jev: non avvisato, ", "").replace("Gemini: non avvisato, ", "")
     if ris.get("esito") == "conferma":
-        tag = {"replica": " · 🚨 possibile replica", "dubbio": " · ⚠️ autenticità dubbia"}.get(_stato_originalita(ris)[0], "")   # visibile gia' nell'anteprima
-        if ris.get("sconto_difetti"):
-            tag += f" · difetti −{ris['sconto_difetti']:.0f}%"
-        return f"✅ CONFERMATO: rivendita ~{ris['rivendita']:.0f} €, margine ~{ris['margine']:.0f} €, ROI {ris['roi']:.0f}%{tag}"
+        # 8/11 (utente: stile 'linguaggio degli aerei'): esito, rivendita mista con i tre valori, margine e ROI su una riga; l'originalita' ha la sua riga
+        tag = f" · difetti −{ris['sconto_difetti']:.0f}%" if ris.get("sconto_difetti") else ""
+        return (f"✅ CONFERMATO · rivendita ~{ris['rivendita']:.0f} €{parti_rivendita_testo(ris.get('parti_rivendita'))} · "
+                f"margine ~{ris['margine']:.0f} € · ROI {ris['roi']:.0f}%{tag}")
     if mot == "comparabili_non_simili" and ris.get("rivendita") is not None:
         return (f"⚠️ NON VERIFICATO: i {ris['n']} comparabili non assomigliano alla foto (la rivendita ~{ris['rivendita']:.0f} € dai loro prezzi "
                 "non e' affidabile), resta la stima rapida")
