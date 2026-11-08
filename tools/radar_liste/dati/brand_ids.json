@@ -1,6 +1,6 @@
 {
  "_nota": "ID marchio Vinted letti dagli URL vinted.it/.com gia' indicizzati (ricerca web, 23/10); non verificati visitando Vinted. Formato URL: brand_ids[]=<id>",
- "marchi": { "philips": 80700, "shimano": 273333, "nintendo": 77600, "playstation": 272284,
+ "marchi": { "metabo": 476853, "bosch": 219028, "yamaha": 9583, "shure": 345694, "ibanez": 354698, "rollei": 368151, "olympus": 349574, "polaroid": 86542, "roborock": 3138562, "vorwerk": 440979, "bambu lab": 204624, "lenovo": 314542, "casio": 2575, "g-shock": 39653, "pentax": 125196, "philips": 80700, "shimano": 273333, "nintendo": 77600, "playstation": 272284,
   "dyson": 291992,
   "christofle": 207986,
   "sambonet": 2072679,
