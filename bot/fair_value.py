@@ -730,7 +730,7 @@ def check_skip_fair_value(listing_info):
 #    verdetto), "umana" (tua stima, rispondendo con un numero alla scheda).
 #  - Ricalibrazione: per ogni "brand|categoria" la nuova stima e' la media
 #    pesata tra il valore di partenza (peso 4 se alta, 3 media, 2 bassa, 1.5
-#    stima) e la MEDIANA PESATA dei campioni (Gemini 1, Jev 1,5, tu 3 (2x Jev)),
+#    stima) e la MEDIANA PESATA dei campioni (Gemini 1, Jev per data 1,5, Jev per rilevanza 2,1, tu 3),
 #    riportati alla base "buone condizioni" dividendo per il moltiplicatore.
 #    Limitata a 0.3x-3x del valore di partenza. Gemini conta solo se ha
 #    usato almeno 2 comp reali; la tua stima conta sempre.
@@ -742,6 +742,7 @@ FAIR_VALUE_APPRESO = {}
 _FV_PESO_PARTENZA = {"alta": 4.0, "media": 3.0, "bassa": 2.0, "stima": 1.5}
 _FV_PESO_GEMINI = 1.0
 _FV_PESO_UMANO = 3.0
+_FV_PESO_JEV_RIL = 2.1       # 8/11 (utente): il semaforo impara piu' dai comparabili per rilevanza che da quelli per data (stessi rapporti 2,5 : 1,8 della rivendita mista: 1,5 x 2,5/1,8)
 _FV_PESO_JEV = 1.5           # 6/11: un campione = la rivendita (p25) dei comparabili di una verifica Jev; il mercato, non un giudizio
 _FV_JEV_N_MIN = 5            # meno di 5 comparabili: non si impara
 _FV_JEV_DISPERSIONE_MAX = 2.5
@@ -826,6 +827,12 @@ def fv_registra_jev(listing_info, url, ris):
                       and (disp is None or disp <= _FV_JEV_DISPERSIONE_MAX))
         _fv_scrivi({"tipo": "jev", "item_id": str(item_id), "vendita": riv, "n": ris.get("n"), "dispersione": disp,
                     "linea": ris.get("linea"), "valido": valido, "ombra": bool(ris.get("ombra"))})
+        riv_ril = (ris or {}).get("rivendita_ril")
+        if riv_ril:   # 8/11: campione dalla ricerca per rilevanza (stessi requisiti, dati propri)
+            disp_r = (ris or {}).get("dispersione_ril")
+            _fv_scrivi({"tipo": "jev_ril", "item_id": str(item_id), "vendita": riv_ril, "n": ris.get("n_ril"), "dispersione": disp_r,
+                        "linea": ris.get("linea"), "valido": bool(((ris.get("n_ril") or 0) >= _FV_JEV_N_MIN) and not ris.get("da_foto")
+                                                                  and (disp_r is None or disp_r <= _FV_JEV_DISPERSIONE_MAX))})
     except Exception:
         log.warning("Campione Jev non registrato:\n%s", traceback.format_exc())
 
@@ -903,6 +910,8 @@ def fv_unisci(righe):
             d["umana"] = r
         elif r.get("tipo") == "jev":
             d["jev"] = r
+        elif r.get("tipo") == "jev_ril":
+            d["jev_ril"] = r
     return per_item
 
 
@@ -934,6 +943,11 @@ def fv_ricalibra(righe=None):
             bj = j.get("linea") or rap.get("brand")
             if bj:
                 campioni.setdefault(f"{bj}|{cat}", []).append((j["vendita"] / (rap.get("molt") or 1.0), _FV_PESO_JEV))
+        jr = d.get("jev_ril") or {}
+        if jr.get("valido") and jr.get("vendita") and cat:
+            bj = jr.get("linea") or rap.get("brand")
+            if bj:
+                campioni.setdefault(f"{bj}|{cat}", []).append((jr["vendita"] / (rap.get("molt") or 1.0), _FV_PESO_JEV_RIL))
         if not brand or not cat:
             continue
         molt = rap.get("molt") or 1.0
