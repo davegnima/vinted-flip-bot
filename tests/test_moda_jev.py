@@ -462,3 +462,13 @@ def test_tutti_a_jev_mirato_verdi_gialli_e_rossi_di_brand_scelti(monkeypatch):
 
 def test_azione_codice():
     assert mj.azione_codice({"esito": "scarta"}) == "scartato"
+
+
+def test_semaforo_da_verificare_si_ferma_con_abbastanza_campioni_appresi(monkeypatch):
+    monkeypatch.setattr(mj, "FAIR_VALUE_APPRESO", {"prada|gilet": {"n": 5}, "prada|gonna": {"n": 2}})
+    monkeypatch.setattr(mj, "MODA_JEV_OMBRA_CAMPIONI_MIN", 5)
+    assert not mj.semaforo_da_verificare({"brand": "prada", "categoria": "gilet", "conf": "alta"})    # verificato: stop
+    assert mj.semaforo_da_verificare({"brand": "prada", "categoria": "gonna", "conf": "alta"})       # pochi campioni
+    assert mj.semaforo_da_verificare({"brand": "prada", "categoria": "borsa", "conf": "media"})      # nessun campione
+    assert mj.semaforo_da_verificare({"brand": "sezane", "categoria": "camicia", "conf": "bassa"})
+    assert not mj.semaforo_da_verificare({"brand": "prada", "categoria": None, "conf": "alta"})
