@@ -899,3 +899,39 @@ def test_cache_comparabili_persistita_nel_db(monkeypatch):
     assert radar_v2._url_comps[chiave][("switch lite blu", 80.0)].endswith("/1-a")
     radar_v2._cache.clear()
     assert radar_v2.carica_cache_dal_db(adesso=5000.0 + radar_v2.RADAR_V2_CACHE_ORE * 3600 + 10) == 0     # scaduta
+
+
+def _analizza_quasi_roi(monkeypatch, prezzo, base, jev=("affare_vero", 0.95), n=10):
+    monkeypatch.setattr(radar_v2, "RADAR_V2_OMBRA", True)
+    monkeypatch.setattr(radar_v2, "radar_in_pausa", lambda: False)
+    monkeypatch.setattr(radar_v2.db, "scrivi_evento", lambda *a, **k: None)
+    monkeypatch.setattr(radar_v2, "giudica_completo", lambda *a, **k: (jev[0], jev[1], ("stesso_modello", 0.9), ("ok", "oggetto vero")))
+
+    async def verifica_finta(*a, **k):
+        return None, []
+
+    monkeypatch.setattr(radar_v2, "_verifica_comparabili", verifica_finta)
+    radar_v2._visti.clear(); radar_v2._cache.clear(); radar_v2._conteggio.update(giorno=None, n=0)
+    righe = "\n".join(f"- Set posate argentate — €{base + i}" for i in range(n))
+
+    async def finto(url):
+        return righe, True, {}
+
+    monkeypatch.setattr(radar_v2, "_cerca_vinted_testo_diretto", finto)
+    return asyncio.run(radar_v2.analizza({"title": "Set posate Christofle", "price": str(prezzo), "brand": "Christofle"}, "https://www.vinted.it/items/123456-set"))
+
+
+def test_quasi_roi_diventa_giallo_con_jev_sicuro(monkeypatch):
+    r = _analizza_quasi_roi(monkeypatch, 50, 118)   # margine 52,5 EUR, ROI 94,3%
+    assert r["semaforo"] == "giallo" and r["motivo"] == "quasi_roi" and r["roi"] < 100 and r["margine"] >= 50
+    assert radar._da_mandare(r) is True and radar._con_suono(r) is False   # avviso muto
+    assert "poco sotto 100%" in "\n".join(radar._righe_v2(r))
+
+
+def test_quasi_roi_resta_rosso_se_manca_una_condizione(monkeypatch):
+    assert _analizza_quasi_roi(monkeypatch, 50, 118, jev=("affare_vero", 0.7))["semaforo"] == "rosso"       # Jev poco sicuro
+    assert _analizza_quasi_roi(monkeypatch, 50, 118, jev=("non_affare", 0.95))["semaforo"] == "rosso"
+    assert _analizza_quasi_roi(monkeypatch, 50, 118, n=7)["semaforo"] == "rosso"                            # pochi comparabili
+    assert _analizza_quasi_roi(monkeypatch, 50, 112)["semaforo"] == "rosso"                                 # ROI sotto 90%
+    monkeypatch.setattr(radar_v2, "QUASI_ROI_MIN", 0)
+    assert _analizza_quasi_roi(monkeypatch, 50, 118)["semaforo"] == "rosso"                                 # interruttore spento
