@@ -53,3 +53,11 @@ def test_blocco_429_lungo_gli_album_non_partono_ne_martellano(monkeypatch):
 def test_429_breve_resta_il_vecchio_retry(monkeypatch):
     resp, chiamate, attese = _prova(monkeypatch, "sendMessage", [_Risp(429, 5), _Risp(200)])
     assert resp.is_success and chiamate == 2 and attese == [5.5]
+
+
+def test_blocco_429_di_ore_nessun_invio_ne_testo_ne_album(monkeypatch):
+    resp, chiamate, attese = _prova(monkeypatch, "sendMessage", [_Risp(429, 40000), _Risp(200)])
+    assert resp.status_code == 429 and chiamate == 1 and not attese   # non dorme 11 ore e non riprova
+    assert asyncio.run(ta._telegram_post("sendMessage", json={})) is None and ta.hc._client_telegram.chiamate == 1
+    assert asyncio.run(ta._telegram_post("sendMediaGroup", data={})) is None and ta.hc._client_telegram.chiamate == 1
+    ta._blocco_429.update(fino=0.0, prossimo=0.0)

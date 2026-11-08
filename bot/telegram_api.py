@@ -82,8 +82,8 @@ async def _attendi_fine_blocco(metodo):
     ora = time.monotonic()
     if ora >= _blocco_429["fino"]:
         return True
-    if metodo in _METODI_NON_IN_CODA:
-        return False
+    if metodo in _METODI_NON_IN_CODA or _blocco_429["fino"] - ora > TELEGRAM_BLOCCO_MAX_SECONDI:
+        return False   # foto/album, oppure blocco troppo lungo per aspettare: non si invia (e non si martella Telegram)
     slot = max(_blocco_429["fino"], _blocco_429["prossimo"])
     _blocco_429["prossimo"] = slot + TELEGRAM_PASSO_DOPO_BLOCCO_SECONDI
     await asyncio.sleep(max(0.0, slot - ora))
@@ -123,12 +123,16 @@ async def _telegram_post(metodo, max_tentativi=TELEGRAM_MAX_TENTATIVI, **kwargs)
                 retry_after = 5.0
             if retry_after > TELEGRAM_MAX_ATTESA_429_SECONDI:
                 # blocco lungo: si ferma tutto il bot fino alla fine; questa chiamata riprova (in coda) solo se non e' una foto/album
+                # 8/11 sera: visto retry_after di 40000 s (11 ore): oltre TELEGRAM_BLOCCO_MAX_SECONDI il blocco non veniva registrato e ogni
+                # messaggio tornava a colpire Telegram. Ora si registra sempre (fino a 24 h); se e' troppo lungo per aspettare, niente invii.
+                _blocco_429["fino"] = max(_blocco_429["fino"], time.monotonic() + min(retry_after, 86400.0) + 1.0)
                 if retry_after <= TELEGRAM_BLOCCO_MAX_SECONDI:
-                    _blocco_429["fino"] = max(_blocco_429["fino"], time.monotonic() + retry_after + 1.0)
                     log.warning("Telegram %s: blocco 429 di %.0fs, i messaggi di testo aspettano la fine (a passo di %.0fs)",
                                 metodo, retry_after, TELEGRAM_PASSO_DOPO_BLOCCO_SECONDI)
                     if metodo not in _METODI_NON_IN_CODA and tentativo < max_tentativi:
                         continue
+                else:
+                    log.error("Telegram %s: blocco 429 LUNGO di %.0fs (circa %.1f ore): nessun invio fino alla fine del blocco", metodo, retry_after, retry_after / 3600)
                 return resp
             if tentativo < max_tentativi:
                 attesa = retry_after + 0.5
