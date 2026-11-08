@@ -510,7 +510,7 @@ def testo_risposta_gruppo(v2, esito=None):
     if esito and esito.get("v2"):
         v2 = esito["v2"]
     if not v2:
-        return "⚪ semaforo non calcolato"
+        return "⚪ non valutato: modello fuori dalla lista della ricerca, prezzo sopra il tetto o annuncio gia' visto"
     n = v2.get("n") or 0
     colore = v2.get("semaforo") or "n.d."
     if v2.get("rivendita") is None:
@@ -540,6 +540,10 @@ MOTIVI_NON_OGGETTO = ("parola_vietata", "pezzo_o_accessorio", "prezzo_segnaposto
 RADAR_CANCELLA_ROSSI = os.environ.get("RADAR_CANCELLA_ROSSI", "1").strip() not in ("0", "false", "no", "")
 
 
+# 8/11 (utente): i rossi con modello riconosciuto e stima fatta (margine o ROI bassi, sopra il riferimento) restano nel gruppo.
+MOTIVI_MODELLO_RICONOSCIUTO = ("margine_basso", "roi_basso", "sopra_riferimento")
+
+
 def da_cancellare(v2, esito=None):
     """True se il verdetto e' un rosso da togliere dal gruppo: non e' l'oggetto intero, oppure (RADAR_CANCELLA_ROSSI) e' rosso.
     Con `esito` anche i gialli/verdi scartati nel merito (Jev, comparabili, Gemini, rivalutazione): 1/11, scelta dell'utente. Pura."""
@@ -547,13 +551,9 @@ def da_cancellare(v2, esito=None):
         return True
     if not v2 or v2.get("semaforo") != "rosso":
         return False
+    if (v2.get("motivo") or "").split(":")[0] in MOTIVI_MODELLO_RICONOSCIUTO:
+        return False
     return RADAR_CANCELLA_ROSSI or (v2.get("motivo") or "").split(":")[0] in MOTIVI_NON_OGGETTO
-
-
-def non_valutato_da_togliere(v2):
-    """8/11: annuncio che l'analisi ha saltato (v2 None: fuori famiglia, sopra il tetto del modello, gia' visto, prezzo fuori)
-    non e' un verdetto: niente risposta "semaforo non calcolato" nel gruppo, e si toglie come i rossi (tranne in pausa notturna). Pura."""
-    return v2 is None and RADAR_CANCELLA_ROSSI and not radar_in_pausa()
 
 
 # Verifica dei comparabili (01/11, richiesta dell'utente: "i simili non sono lo stesso modello"): se Jev ha giudicato i comparabili

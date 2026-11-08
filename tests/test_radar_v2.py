@@ -224,7 +224,7 @@ def test_risposta_gruppo_con_stima_e_senza():
     assert "Inviato in COMPRA" in t and "• 90 € https://www.vinted.it/items/1" in t
     r = radar.testo_risposta_gruppo({"semaforo": "rosso", "rivendita": None, "n": 1, "motivo": "pochi_comparabili"})
     assert r.startswith("🔴 rosso · nessuna stima (pochi comparabili")
-    assert radar.testo_risposta_gruppo(None) == "⚪ semaforo non calcolato"
+    assert radar.testo_risposta_gruppo(None) .startswith("⚪ non valutato")
 
 
 def test_da_cancellare_solo_i_non_oggetti(monkeypatch):
@@ -241,8 +241,9 @@ def test_da_cancellare_tutti_i_rossi_ma_non_giallo_e_verde(monkeypatch):
     from bot import radar
     from bot.radar_v2 import _rosso
     monkeypatch.setattr(radar, "RADAR_CANCELLA_ROSSI", True)
-    assert radar.da_cancellare(_rosso("margine_basso")) and radar.da_cancellare(_rosso("pochi_comparabili"))
-    assert radar.da_cancellare(_rosso("sopra_riferimento", 11)) and radar.da_cancellare(_rosso("roi_basso"))
+    assert radar.da_cancellare(_rosso("pochi_comparabili"))
+    assert not radar.da_cancellare(_rosso("margine_basso")) and not radar.da_cancellare(_rosso("sopra_riferimento", 11))
+    assert not radar.da_cancellare(_rosso("roi_basso"))
     assert not radar.da_cancellare({"semaforo": "giallo", "motivo": "ok"}) and not radar.da_cancellare({"semaforo": "verde", "motivo": "ok"})
 
 
@@ -865,12 +866,3 @@ def test_famiglia_console_riconosce_il_modello_e_scarta_accessori():
     assert modello_famiglia("V2 console", "Custodia Nintendo Switch") == (None, None)
     assert modello_famiglia("V2 console", "Xbox Series X") == (None, None)
     assert modello_famiglia("V2 console", "Gioco Switch Zelda") == (None, None)
-
-
-def test_annuncio_saltato_si_toglie_e_non_riceve_risposta(monkeypatch):
-    monkeypatch.setattr(radar, "RADAR_CANCELLA_ROSSI", True)
-    monkeypatch.setattr(radar, "radar_in_pausa", lambda adesso=None: False)
-    assert radar.non_valutato_da_togliere(None)
-    assert not radar.non_valutato_da_togliere({"semaforo": "rosso"})
-    monkeypatch.setattr(radar, "radar_in_pausa", lambda adesso=None: True)
-    assert not radar.non_valutato_da_togliere(None)
