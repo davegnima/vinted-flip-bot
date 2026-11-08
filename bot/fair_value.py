@@ -367,6 +367,10 @@ REGOLA_DA_VERIFICARE = "da_verificare"
 # 8/11 (utente: "voglio ricevere tutti i veloci, poi capisco io se il margine e' alto o basso"): ogni annuncio che la regola del preavviso
 # scarta (anche 🔴, anche a pochi euro, anche senza stima) va comunque a Jev (comparabili Vinted + foto + Gemini); l'avviso parte SOLO se la
 # verifica conferma. Restano fuori i brand esclusi. Spento con PREAVVISO_TUTTI_A_JEV=0.
+# Mirato (8/11, utente: "volevo recuperare i 27 AFFARE/MEDIO scartati, non tutti gli scarti"): sui dati del 7/11 gli scartati dal semaforo
+# erano veloci nel 30% dei 🟢 (23), 24% dei 🟡 (29) e 12% dei 🔴 (110, uguale al caso); fra i 🔴 solo Max Mara (4 su 15) e Jean Paul Gaultier
+# (2 su 12) escono dalla media. Quindi vanno a Jev tutti i 🟢 e 🟡 scartati e, fra i 🔴, solo i brand di PREAVVISO_ROSSI_A_JEV.
+PREAVVISO_ROSSI_A_JEV = {b.strip().lower() for b in os.environ.get("PREAVVISO_ROSSI_A_JEV", "max mara,jean paul gaultier").split(",") if b.strip()}
 PREAVVISO_TUTTI_A_JEV = (os.environ.get("PREAVVISO_TUTTI_A_JEV", "1").strip() != "0"
                          and os.environ.get("MODA_JEV", "1").strip() not in ("0", "false", "no", ""))
 
@@ -375,8 +379,10 @@ def valuta_preavviso(stima, prezzo):
     """(scatta, regola): push sulla scheda anticipata. Pura. Se la regola base non scatta, i candidati con margine e ROI promettenti
     escono con regola 'da_verificare' (solo dopo la verifica Jev)."""
     scatta, regola = _valuta_preavviso_base(stima, prezzo)
-    if (not scatta and PREAVVISO_TUTTI_A_JEV and PREAVVISO_ATTIVO and prezzo and prezzo > 0
-            and ((stima or {}).get("brand") or "").lower() not in PREAVVISO_BRAND_ESCLUSI):
+    if (not scatta and PREAVVISO_TUTTI_A_JEV and PREAVVISO_ATTIVO and prezzo and prezzo > 0 and stima
+            and (stima.get("brand") or "").lower() not in PREAVVISO_BRAND_ESCLUSI
+            and (stima.get("semaforo") in ("🟢", "🟡")
+                 or (stima.get("semaforo") == "🔴" and (stima.get("brand") or "").lower() in PREAVVISO_ROSSI_A_JEV))):
         return True, REGOLA_DA_VERIFICARE
     if scatta or not PREAVVISO_DA_VERIFICARE or not stima or not prezzo or prezzo <= 0 or stima.get("semaforo") not in ("🟢", "🟡"):
         return scatta, regola
