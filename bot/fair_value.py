@@ -364,6 +364,11 @@ PREAVVISO_DA_VERIFICARE = (os.environ.get("PREAVVISO_DA_VERIFICARE", "1").strip(
                            and os.environ.get("MODA_JEV", "1").strip() not in ("0", "false", "no", ""))   # senza Jev nessun candidato
 PREAVVISO_DA_VERIFICARE_MARGINE = _env_float("PREAVVISO_DA_VERIFICARE_MARGINE", 50)
 REGOLA_DA_VERIFICARE = "da_verificare"
+# 8/11 (utente: "se non margino almeno 40 euro non inviare; cerca comunque i comparabili per affinare il semaforo ma non mandarli in compra"):
+# le regole che avvisano subito sul solo semaforo (semaforo, prezzo_basso, brand_facile, ...) scattano solo con margine rapido >= questo valore.
+# Chi resta sotto non e' un avviso immediato: segue il percorso 'da_verificare' (Jev cerca i comparabili, alimenta il semaforo, e il messaggio
+# parte solo se confermato con margine >= MODA_JEV_MARGINE_MIN). 0 = spento.
+PREAVVISO_MARGINE_ASSOLUTO_MIN = _env_float("PREAVVISO_MARGINE_ASSOLUTO_MIN", 40)
 # 8/11 (utente: "voglio ricevere tutti i veloci, poi capisco io se il margine e' alto o basso"): ogni annuncio che la regola del preavviso
 # scarta (anche 🔴, anche a pochi euro, anche senza stima) va comunque a Jev (comparabili Vinted + foto + Gemini); l'avviso parte SOLO se la
 # verifica conferma. Restano fuori i brand esclusi. Spento con PREAVVISO_TUTTI_A_JEV=0.
@@ -379,6 +384,8 @@ def valuta_preavviso(stima, prezzo):
     """(scatta, regola): push sulla scheda anticipata. Pura. Se la regola base non scatta, i candidati con margine e ROI promettenti
     escono con regola 'da_verificare' (solo dopo la verifica Jev)."""
     scatta, regola = _valuta_preavviso_base(stima, prezzo)
+    if scatta and PREAVVISO_MARGINE_ASSOLUTO_MIN > 0 and ((stima or {}).get("margine") or 0) < PREAVVISO_MARGINE_ASSOLUTO_MIN:
+        scatta, regola = False, "no"
     if (not scatta and PREAVVISO_TUTTI_A_JEV and PREAVVISO_ATTIVO and prezzo and prezzo > 0 and stima
             and (stima.get("brand") or "").lower() not in PREAVVISO_BRAND_ESCLUSI
             and (stima.get("semaforo") in ("🟢", "🟡")

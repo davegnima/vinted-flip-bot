@@ -19,13 +19,14 @@ def _stima(sem, margine):
 
 def test_preavviso_semaforo_verde_con_margine():
     assert valuta_preavviso(_stima("🟢", 40), 30) == (True, "semaforo")
-    assert valuta_preavviso(_stima("🟢", 20), 60) == (True, "semaforo")   # dal 10/10 ogni verde con margine positivo scatta
+    assert valuta_preavviso(_stima("🟢", 20), 60) == (False, "no")   # 8/11: sotto 40 EUR di margine rapido niente avviso immediato
     assert valuta_preavviso(_stima("🟢", 0), 60) == (False, "no")         # ma non a margine nullo
     assert valuta_preavviso({**_stima("🟢", 40), "conf": "bassa"}, 30) == (False, "no")   # ne' con stima debole
 
 
 def test_preavviso_prezzo_basso():
-    assert valuta_preavviso(_stima("🟡", 22), 18) == (True, "prezzo_basso")
+    assert valuta_preavviso(_stima("🟡", 42), 18) == (True, "prezzo_basso")
+    assert valuta_preavviso(_stima("🟡", 22), 18) == (False, "no")   # 8/11: margine rapido < 40 non avvisa (va a Jev solo per i comparabili)
     assert valuta_preavviso(_stima("🟡", 22), 40) == (False, "no")
     assert valuta_preavviso(_stima("🟡", 10), 18) == (False, "no")
 
@@ -33,8 +34,9 @@ def test_preavviso_prezzo_basso():
 def test_preavviso_giallo_economico_con_suono():
     from bot.fair_value import preavviso_con_suono
     # 14/10: 🟡 fino a 15 EUR scatta e suona anche con margine piccolo o stima debole
-    assert valuta_preavviso(_stima("🟡", 10), 15) == (True, "giallo_economico")
-    assert valuta_preavviso({**_stima("🟡", 5), "conf": "bassa"}, 8) == (True, "giallo_economico")
+    assert valuta_preavviso(_stima("🟡", 45), 15) == (True, "giallo_economico")
+    assert valuta_preavviso({**_stima("🟡", 41), "conf": "bassa"}, 8) == (True, "giallo_economico")
+    assert valuta_preavviso(_stima("🟡", 10), 15) == (False, "no")   # 8/11: margine < 40
     assert preavviso_con_suono(_stima("🟡", 10), 15) is True
     assert preavviso_con_suono(_stima("🟡", 10), 18) is False          # fv/prezzo 60/18 < 4
     assert valuta_preavviso({**_stima("🟡", 10), "brand": "marni"}, 10) == (False, "no")   # brand esclusi restano fuori
@@ -340,10 +342,11 @@ def test_preavviso_brand_e_suono():
     assert valuta_preavviso({**verde, "brand": "acne studios"}, 30) == (False, "no")
     assert valuta_preavviso({**verde, "brand": "marni"}, 30) == (False, "no")
     # brand facile: soglia di margine piu' bassa, anche con semaforo giallo
-    assert valuta_preavviso({"semaforo": "🟡", "margine": 12, "conf": "media", "fv": 50, "brand": "jean paul gaultier"}, 30) == (True, "brand_facile")
+    assert valuta_preavviso({"semaforo": "🟡", "margine": 42, "conf": "media", "fv": 80, "brand": "jean paul gaultier"}, 30) == (True, "brand_facile")
     # prezzo basso ora <= 20
     giallo = {"semaforo": "🟡", "margine": 22, "conf": "media", "fv": 40, "brand": "prada"}
-    assert valuta_preavviso(giallo, 18) == (True, "prezzo_basso")
+    assert valuta_preavviso({**giallo, "margine": 42}, 18) == (True, "prezzo_basso")
+    assert valuta_preavviso(giallo, 18) == (False, "no")   # 8/11: margine 22 < 40
     assert valuta_preavviso(giallo, 24) == (False, "no")
     # suono: con fv/prezzo >= 4, brand facile o (dal 10/10) semaforo verde; il giallo con rapporto 3 resta muto
     assert preavviso_con_suono({**verde, "fv": 130}, 30)
