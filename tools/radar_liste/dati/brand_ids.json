@@ -1,6 +1,6 @@
 {
  "_nota": "ID marchio Vinted letti dagli URL vinted.it/.com gia' indicizzati (ricerca web, 23/10); non verificati visitando Vinted. Formato URL: brand_ids[]=<id>",
- "marchi": {
+ "marchi": { "philips": 80700, "shimano": 273333, "nintendo": 77600, "playstation": 272284,
   "dyson": 291992,
   "christofle": 207986,
   "sambonet": 2072679,
