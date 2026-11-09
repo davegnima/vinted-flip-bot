@@ -542,3 +542,13 @@ def test_gemini_consigliere_riga_e_non_moda():
     assert righe_messaggio({"rivendita": 90.0, "n": 8, "gemini": d2})[0] == "💬 taglia 46 rara, etichetta Made in Italy"
     assert not e_non_moda({**d, "confidenza": 0.4})
     assert leggi_risposta(__import__("json").dumps(base))["tipo_oggetto"] == "moda"
+
+
+def test_consiglio_gemini_e_la_seconda_riga_del_messaggio():
+    """9/11 (utente): il verdetto di Gemini sta subito dopo titolo e prezzo, e non si ripete piu' in basso."""
+    from bot.scheda import testo_preavviso
+    info = {"title": "Cappotto", "brand": "Max Mara", "price": 30, "fair_value": {"semaforo": "🟢"},
+            "righe_jev": ["💬 Compra: Made in Italy, ottimo stato", "📅 Più recenti: 8 · ~120 €"]}
+    righe = testo_preavviso(info, url="https://x.it/1").split("\n")
+    assert "Cappotto" in righe[0] and righe[1] == "💬 Compra: Made in Italy, ottimo stato"
+    assert sum(r.startswith("💬") for r in righe) == 1

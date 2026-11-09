@@ -85,7 +85,7 @@ CONDIZIONI E VALORE (7/11, utente: non solo autenticita')
 - rivendita_base: max 100 caratteri, su cosa si basa (es. 'maglione base mainline, cashmere, prezzi usati tipici 80-120').
 CONSIGLIERE DI FLIP (9/11, utente: Gemini fa anche il lavoro del vecchio Cervello)
 - tipo_oggetto: "moda" se e' un capo, un paio di scarpe, una borsa o un accessorio di moda; "non_moda" se foto o testo mostrano ALTRO (profumo, cosmetici, giocattolo, libro, oggetto per la casa, ecc.) anche se il titolo cita un brand di moda (es. "Issey Miyake" era un profumo). Se hai dubbi scrivi "moda".
-- consiglio: UNA riga (max 110 caratteri, in italiano) da consigliere di rivendita: cosa noti nelle foto e nel testo che conta per comprare o no (cosa e' davvero, taglia o variante rara, stato, dettagli che alzano o abbassano il prezzo, cosa manca). Fatti concreti, niente frasi generiche. Vuoto se non noti nulla di utile.
+- consiglio: il tuo verdetto da consigliere di rivendita in POCHISSIME parole (max 70 caratteri, italiano, stile telegrafico), che dica tutto: parti con "Compra", "Evita" o "Dubbio" e poi il fatto che decide (originale o replica, cosa e' davvero, stato, taglia o variante rara, cosa manca). Es. "Compra: Made in Italy, ottimo stato", "Evita: etichetta falsa", "Dubbio: niente foto etichetta". Sempre compilato.
 REGOLE PER LA STIMA DI RIVENDITA (`rivendita_gemini_eur`): se ricevi i comparabili Vinted sono prezzi ASK (annunci attivi, non vendite), spesso con linee o capi diversi
 mescolati: usa le regole qui sotto del valutatore (linee ed ere, ancoraggio prezzi, filtro outlier, liquidita'), scarta i comparabili di un'altra linea o categoria e
 non superare mai il comparabile ASK piu' alto dopo lo sconto. Senza comparabili stima dal modello e dalle condizioni che vedi, con confidenza bassa.
@@ -189,7 +189,7 @@ def leggi_risposta(testo):
     d["rivendita_base"] = str(d.get("rivendita_base") or "")[:110]
     d["da_chiedere"] = str(d.get("da_chiedere") or "")[:120]
     d["tipo_oggetto"] = "non_moda" if d.get("tipo_oggetto") == "non_moda" else "moda"
-    d["consiglio"] = re.sub(r"\s+", " ", str(d.get("consiglio") or "")).strip()[:120]
+    d["consiglio"] = re.sub(r"\s+", " ", str(d.get("consiglio") or "")).strip()[:90]
     return d
 
 

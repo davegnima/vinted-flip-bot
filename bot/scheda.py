@@ -243,7 +243,9 @@ def testo_preavviso(listing_info, url=None, riga_finale=RIGA_PREAVVISO_IN_ATTESA
         identificazione = (sem + " " + (f"*{esc(brand)}* · " if brand and brand != "?" else "") + _riga_titolo(listing_info, url)
                            + (f" · *{prezzo:g} €*" if prezzo is not None else ""))
         originalita = listing_info.get("riga_originalita_jev")
-        righe = [identificazione] + ([esc(listing_info["riga_recupero"])] if listing_info.get("riga_recupero") else []) \
+        # 9/11 (utente): il verdetto di Gemini (💬) e' la seconda riga, subito dopo titolo e prezzo
+        consiglio = next((r for r in (listing_info.get("righe_jev") or []) if str(r).startswith("💬")), None)
+        righe = [identificazione] + ([esc(consiglio)] if consiglio else []) + ([esc(listing_info["riga_recupero"])] if listing_info.get("riga_recupero") else []) \
             + ([esc(verdetto)] if verdetto else []) + ([esc(originalita)] if originalita else []) + [""]
     else:
         righe = [marca + "*" + testa + "*", _riga_titolo(listing_info, url)]
@@ -260,7 +262,7 @@ def testo_preavviso(listing_info, url=None, riga_finale=RIGA_PREAVVISO_IN_ATTESA
     righe_jev = listing_info.get("righe_jev")
     if righe_jev:
         # brand nuovo verificato con comparabili e foto (bot/moda_jev.py): il messaggio nasce gia' con l'esito, niente "in attesa"
-        righe += [r if isinstance(r, RigaMd) else esc(r) for r in righe_jev]
+        righe += [r if isinstance(r, RigaMd) else esc(r) for r in righe_jev if not (isinstance(r, str) and r.startswith("💬") and not isinstance(r, RigaMd))]
         if riga_finale == RIGA_PREAVVISO_IN_ATTESA:
             riga_finale = ""
     if url and not righe_jev:   # con la verifica il titolo e' gia' il link all'annuncio
