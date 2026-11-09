@@ -343,6 +343,21 @@ def riga_esito_scheda(ris):
     return "⚠️ Jev: comparabili non trovati, avviso mandato non verificato"
 
 
+def _dati_jev_piatti(ris):
+    """Campi piatti del risultato di Jev per la riga TRACCIATO (solo valori presenti). Pura, mai eccezioni."""
+    try:
+        a = ris.get("autenticita")
+        g = ris.get("gemini") or {}
+        d = {"jev_esito": ris.get("esito"), "jev_motivo": str(ris.get("motivo") or "")[:40], "jev_n": ris.get("n"),
+             "jev_riv": ris.get("rivendita"), "jev_marg": ris.get("margine"), "jev_roi": ris.get("roi"),
+             "jev_disp": round(ris["dispersione"], 2) if ris.get("dispersione") else None,
+             "jev_foto": a[0] if a else None, "jev_foto_conf": a[1] if a else None,
+             "jev_gem": g.get("autenticita"), "jev_gem_conf": g.get("confidenza"), "jev_legit": _stato_originalita(ris)[0]}
+        return {k: (round(v, 2) if isinstance(v, float) else v) for k, v in d.items() if v not in (None, "")}
+    except Exception:
+        return {}
+
+
 def _stato_originalita(ris):
     """('replica'|'dubbio'|'non_chiaro'|'ok'|'nessuno', parti): sintesi dei controlli di autenticita' (Jev sulle foto, risposte del legit check di Jev,
     Gemini su tutte le foto) per il messaggio. Il caso peggiore vince; una replica probabile con confidenza bassa conta comunque (6/11, utente:
@@ -686,8 +701,10 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
                 ris["prezzi_comps"] = (pz[0], pz[-1])
             if stima and stima.get("p25") and not ris.get("da_foto"):
                 ris["dispersione"] = stima["p75"] / stima["p25"]
+        _item = listing_info.get("item_id") or (re.search(r"/items/(\d+)", str(listing_info.get("url") or "")) or [None, "-"])[1]
+        listing_info["jev_dati"] = _dati_jev_piatti(ris)   # 9/11: tutto Jev nella riga TRACCIATO (un annuncio = una riga, join per item)
         log.info("MODA JEV | item=%s | brand=%s | prezzo=%s | esito=%s | motivo=%s | n=%s | rivendita=%s | margine=%s | fv_stima=%s | foto=%s | appreso=%s",
-                 listing_info.get("item_id") or "-", brand, prezzo, ris["esito"], ris["motivo"], ris["n"], ris["rivendita"], ris["margine"],
+                 _item, brand, prezzo, ris["esito"], ris["motivo"], ris["n"], ris["rivendita"], ris["margine"],
                  fv.get("fv"), ris["autenticita"] or "-",
                  (FAIR_VALUE_APPRESO.get(f"{ris.get('linea') or brand}|{fv.get('categoria')}") or {}).get("fv", "-"))
     except Exception:
