@@ -37,6 +37,9 @@ RADAR_V2_MAX_GIORNO = int(os.environ.get("RADAR_V2_MAX_GIORNO", "3000") or 3000)
 QUASI_ROI_MIN = float(os.environ.get("RADAR_QUASI_ROI_MIN", "90") or 0)  # ROI minimo (%) per il giallo "quasi ROI"; 0 = spento
 QUASI_ROI_JEV_CONF = float(os.environ.get("RADAR_QUASI_ROI_JEV_CONF", "0.85") or 0.85)
 QUASI_ROI_MIN_N = int(os.environ.get("RADAR_QUASI_ROI_MIN_N", "8") or 8)
+# 9/11 (utente: 'e' utile fare Jev su tutti gli annunci?'): Jev non alza mai un rosso, quindi il giudizio finale si chiede solo a gialli, verdi e ai
+# rossi che possono diventare 'quasi ROI'. Misurato 9/11 (501 annunci, ~7 h): 461 rossi su 501 (92%). 0 = Jev su tutti come prima.
+JEV_SOLO_UTILI = (os.environ.get("RADAR_JEV_SOLO_UTILI", "1") or "1").strip() != "0"
 RADAR_V2_CACHE_ORE = float(os.environ.get("RADAR_V2_CACHE_ORE", "24") or 24)  # 8/11 (utente: "ormai dovremmo sapere a quanto si rivendono"): da 6 a 24 ore, e persistita nel DB
 RADAR_V2_PARALLELO = int(os.environ.get("RADAR_V2_PARALLELO", "2") or 2)
 # Pre-filtro per ricerca (31/10): per le ricerche con testo (un prodotto preciso) il prezzo di riferimento si calcola UNA volta
@@ -627,8 +630,14 @@ async def analizza(parsed, url, foto=None, query_url=None):
         # Prova foto (25/10): la foto va a Jev solo con i semafori di JEV_FOTO_SEMAFORI (di default il verde).
         foto_jev = foto if v.get("semaforo") in JEV_FOTO_SEMAFORI else None
         descrizione = _descrizioni.pop(url, None)
-        jev, jev_conf, jev_simili, jev_motivo = await asyncio.to_thread(
-            giudica_completo, titolo, prezzo, prezzi, v.get("rivendita"), foto_jev, descrizione, titoli_jev)
+        serve_jev = (not JEV_SOLO_UTILI or v.get("semaforo") != "rosso"
+                     or (QUASI_ROI_MIN and v.get("motivo") == "roi_basso" and len(prezzi) >= QUASI_ROI_MIN_N
+                         and (v.get("margine") or 0) >= RADAR_MARGINE_MIN and (v.get("roi") or 0) >= QUASI_ROI_MIN))
+        if serve_jev:
+            jev, jev_conf, jev_simili, jev_motivo = await asyncio.to_thread(
+                giudica_completo, titolo, prezzo, prezzi, v.get("rivendita"), foto_jev, descrizione, titoli_jev)
+        else:
+            jev, jev_conf, jev_simili, jev_motivo = None, None, None, None
         if jev:
             log.info("RADAR V2 JEV | item=%s | giudizio=%s | confidenza=%s | simili=%s(%s) | motivo=%s | largo=%s | n=%s | titolo=%s", item_id, jev,
                      jev_conf, jev_simili[0] if jev_simili else "-", jev_simili[1] if jev_simili else "-", jev_motivo[0] if jev_motivo else "-", allargata or 0,
