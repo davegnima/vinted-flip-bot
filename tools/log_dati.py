@@ -42,6 +42,30 @@ def _num(x):
         return None
 
 
+def _valore(v):
+    """Numero se il testo e' un numero, altrimenti testo ('-' = assente)."""
+    if v in ("-", ""):
+        return None
+    n = _num(v)
+    return n if n is not None and not v.lstrip("-").startswith("0") or v == "0" else v
+
+
+def _upsert_annuncio(c, ts, d):
+    """Tabella `annunci` (9/11): UNA riga per annuncio con TUTTI i campi della riga TRACCIATO come colonne, create al volo
+    (anche quelle aggiunte dal bot in futuro). Query diretta su qualsiasi campo, niente JSON da aprire."""
+    esistenti = {r[1] for r in c.execute("PRAGMA table_info(annunci)")}
+    if not esistenti:
+        c.execute("CREATE TABLE annunci (item TEXT PRIMARY KEY, ts TEXT)")
+        esistenti = {"item", "ts"}
+    dati = {"item": d["item"], "ts": ts, **{k: _valore(v) for k, v in d.items() if k != "item" and re.fullmatch(r"\w+", k)}}
+    for k in dati:
+        if k not in esistenti:
+            c.execute(f'ALTER TABLE annunci ADD COLUMN "{k}"')
+    cols = list(dati)
+    c.execute(f'INSERT OR REPLACE INTO annunci ({",".join(chr(34) + k + chr(34) for k in cols)}) VALUES ({",".join("?" * len(cols))})',
+              [dati[k] for k in cols])
+
+
 def carica(db, percorsi):
     c = apri(db)
     n = {"tracciato": 0, "gemini_uso": 0, "gemini_timeout": 0, "jev": 0}
@@ -54,6 +78,7 @@ def carica(db, percorsi):
                 d = dict(_KV.findall(m))
                 if not d.get("item"):
                     continue
+                _upsert_annuncio(c, ts, d)
                 storia = d.get("storia", "")
                 cieco = int(not any(x.split(":")[-1] in ("attivo", "venduto", "prenotato") for x in storia.split(",") if x))
                 veloce = int(d.get("classe") in VELOCI or d.get("stato") == "prenotato")

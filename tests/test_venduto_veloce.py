@@ -78,3 +78,12 @@ def test_lampo_parte_anche_senza_categoria_nel_titolo(monkeypatch):
     assert asyncio.run(prova(50)).get("preavviso_lampo") and chiamate
     assert not asyncio.run(prova(80)).get("preavviso_lampo")
     assert not asyncio.run(prova(0)).get("preavviso_lampo")
+
+
+def test_dati_jev_piatti_per_riga_tracciato():
+    from bot.moda_jev import _dati_jev_piatti
+    d = _dati_jev_piatti({"esito": "scarta", "motivo": "foto:replica_probabile", "n": 12, "rivendita": 104.25, "margine": 39.17,
+                          "autenticita": ("replica_probabile", 0.32), "gemini": {"autenticita": "dubbia", "confidenza": 0.7}})
+    assert d["jev_esito"] == "scarta" and d["jev_foto"] == "replica_probabile" and d["jev_foto_conf"] == 0.32
+    assert d["jev_gem"] == "dubbia" and d["jev_legit"] in ("replica", "dubbio") and "jev_roi" not in d
+    assert _dati_jev_piatti(None) == {}
