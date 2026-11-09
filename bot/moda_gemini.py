@@ -296,13 +296,14 @@ async def controlla(titolo, brand, prezzo, descrizione, foto, item_id=None, comp
         testo, _costo, _n = await chiama_gemini(SYSTEM_PROMPT, utente, list(foto)[:MODA_GEMINI_FOTO], grounding=False,
                                                 response_schema=SCHEMA, ruolo="occhio")
         d = leggi_risposta(testo)
-        log.info("MODA GEMINI | item=%s | brand=%s | autenticita=%s | conf=%s | foto=%s | %.1fs | etichetta=%s | made_in=%s | prova=%s | indizi=%s | motivo=%s | capo=%s | materiale=%s | cond=%s | difetti=%s | grav=%s | sconto=%s | riv_gem=%s | conf_riv=%s | titolo=%s",
+        log.info("MODA GEMINI | item=%s | brand=%s | autenticita=%s | conf=%s | foto=%s | %.1fs | etichetta=%s | made_in=%s | prova=%s | indizi=%s | motivo=%s | capo=%s | materiale=%s | cond=%s | difetti=%s | grav=%s | sconto=%s | riv_gem=%s | conf_riv=%s | tipo=%s | consiglio=%s | titolo=%s",
                  item_id or "-", brand, (d or {}).get("autenticita", "nessuna_risposta"), (d or {}).get("confidenza", "-"),
                  min(len(foto), MODA_GEMINI_FOTO), time.time() - t0, (d or {}).get("etichetta_letta", "-"), (d or {}).get("made_in", "-"), (d or {}).get("prova_acquisto", "-"),
                  (d or {}).get("indizi", "-"), (d or {}).get("motivo", (testo or "")[:80]),
                  (d or {}).get("capo", "-"), (d or {}).get("materiale", "-"), (d or {}).get("condizione", "-"), (d or {}).get("difetti", "-"),
                  (d or {}).get("gravita_difetti", "-"), (d or {}).get("sconto_difetti_pct", "-"), (d or {}).get("rivendita_gemini_eur", "-"),
-                 (d or {}).get("rivendita_confidenza", "-"), (titolo or "")[:60])
+                 (d or {}).get("rivendita_confidenza", "-"), (d or {}).get("tipo_oggetto", "-"),
+                 (d or {}).get("consiglio", "-"), (titolo or "")[:60])
         return d
     except Exception as e:  # noqa: BLE001 - il controllo non deve mai fermare l'avviso
         log.warning("MODA GEMINI | item=%s | errore: %s", item_id or "-", e)
