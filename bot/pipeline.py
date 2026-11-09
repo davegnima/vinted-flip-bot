@@ -61,8 +61,10 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
         await _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=msg_date,
                                        t_ricevuto_bot=t_ricevuto_bot, stato=stato,
                                        permesso=permesso)
-    except BaseException:
+    except BaseException as e:
         esito_finale = STATO_ANALISI_INTERROTTA
+        riavvio = not isinstance(e, Exception)   # CancelledError/KeyboardInterrupt: il bot si sta fermando (deploy), non e' un errore dell'analisi
+        stato["_interrotta_da_riavvio"] = riavvio
         raise
     finally:
         if permesso is not None:
@@ -74,7 +76,8 @@ async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricev
                 stato, url, riga_finale=riga_scarto_preavviso(
                     (stato.get("listing_info") or {}).get("_motivo_scarto"),
                     stato.get("msg_id_scheda") or stato.get("msg_id_galleria"),
-                    interrotta=(esito_finale == STATO_ANALISI_INTERROTTA)))
+                    interrotta=(esito_finale == STATO_ANALISI_INTERROTTA),
+                    riavvio=bool(stato.get("_interrotta_da_riavvio"))))
 
 
 def ruoli_gemini(prezzo, stima_rapida, soglia=None):

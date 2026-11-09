@@ -297,10 +297,12 @@ def link_messaggio_chat_principale(msg_id):
     return f"https://t.me/c/{chat[4:]}/{msg_id}"
 
 
-def riga_scarto_preavviso(motivo, msg_id=None, interrotta=False):
+def riga_scarto_preavviso(motivo, msg_id=None, interrotta=False, riavvio=False):
     """Riga finale del preavviso rimasto senza verdetto: motivo dello scarto (max 220 caratteri) e link al messaggio
     originale nella chat principale, dove ci sono scheda e foto. Pura."""
-    if interrotta:
+    if interrotta and riavvio:
+        testa = "🔄 analisi interrotta dal riavvio del bot (aggiornamento): l'annuncio resta valido, controllalo a mano"
+    elif interrotta:
         testa = "⚠️ analisi interrotta per un errore"
     else:
         testa = "🚫 scartato prima del verdetto"
@@ -355,6 +357,8 @@ def didascalia_verdetto(testo, limite=1024):
             break
         tenuti = max(MIN_RIGA, len(righe[i]) - (totale - limite) - 1)
         accorciata = righe[i][:tenuti].rstrip(" \\") + "…"
+        if righe[i][:1] in ("_", "*") and righe[i].endswith(righe[i][:1]) and accorciata.count(righe[i][:1]) % 2:
+            accorciata += righe[i][:1]   # riga tutta in corsivo/grassetto: richiude il segno, senno' Telegram rifiuta il Markdown
         if len(accorciata) >= len(righe[i]):     # nessun progresso (riga gia' accorciata al minimo)
             break
         righe[i] = accorciata
@@ -401,15 +405,18 @@ async def invia_preavviso(listing_info, url, photo_bytes_list=None, riga_tempi=N
     foto = list(photo_bytes_list or [])
     t_inizio = time.time()
     silenzioso = not listing_info.get("preavviso_suono", True)   # suono solo per i migliori (PREAVVISO_SUONO_RAPPORTO_MIN)
+    # 9/11: la didascalia di foto e album ha il limite di 1024 caratteri; il taglio brutale spezzava il link della ricerca (fino a ~600 car.)
+    # e Telegram rifiutava il Markdown (messaggio mostrato con asterischi e parentesi). Si accorcia per righe, come per il verdetto.
+    didascalia = didascalia_verdetto(testo) if foto else testo
     try:
         if len(foto) > 1:
             id_msg = await telegram_send_media_group(
-                TELEGRAM_ALERT_CHAT_ID, foto, caption=testo, disable_notification=silenzioso, parse_mode="Markdown")
+                TELEGRAM_ALERT_CHAT_ID, foto, caption=didascalia, disable_notification=silenzioso, parse_mode="Markdown")
             if id_msg is not None:
                 return _preavviso_inviato(listing_info, id_msg, "album", riga_tempi, secondi, t_inizio)
         elif len(foto) == 1:
             id_msg = await telegram_send_photo_con_bottone(
-                TELEGRAM_ALERT_CHAT_ID, foto[0], testo, url, disable_notification=silenzioso)
+                TELEGRAM_ALERT_CHAT_ID, foto[0], didascalia, url, disable_notification=silenzioso)
             if id_msg is not None:
                 return _preavviso_inviato(listing_info, id_msg, "foto", riga_tempi, secondi, t_inizio)
         id_msg = await telegram_send_with_buttons(
