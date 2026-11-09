@@ -473,6 +473,9 @@ async def aggiorna_preavviso(stato, url, testo_verdetto=None, riga_finale=None):
                 id_album = await asyncio.wait_for(stato["task_album_lampo"], 15)
             except Exception:
                 id_album = None
+        # 9/11: il testo realmente inviato (prime 3 righe) resta nel log, per confrontarlo con quello che si vede su Telegram
+        log.info("PREAVVISO TESTO | item=%s | tipo=%s | car=%d | righe=%r", _estrai_item_id_da_url(url) if url else "n/d", info["tipo"],
+                 len(testo), [r[:110] for r in testo.split("\n")[:3]])
         if info["tipo"] == "testo":
             ok = await telegram_edit_message(TELEGRAM_ALERT_CHAT_ID, info["msg_id"], testo, url)
         elif id_album and await telegram_edit_caption(TELEGRAM_ALERT_CHAT_ID, id_album, didascalia_verdetto(testo), None):
