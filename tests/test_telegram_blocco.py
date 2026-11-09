@@ -63,20 +63,22 @@ def test_blocco_429_di_ore_nessun_invio_ne_testo_ne_album(monkeypatch):
     ta._blocco_429.update(fino=0.0, prossimo=0.0)
 
 
-def test_ritmo_album_vale_una_unita_per_foto_e_aspetta_oltre_il_limite(monkeypatch):
+def test_ritmo_album_muto_oltre_il_limite_non_parte_e_non_aspetta_in_coda(monkeypatch):
     monkeypatch.setattr(ta, "TELEGRAM_MSG_MINUTO", 14)
+    monkeypatch.setattr(ta, "TELEGRAM_ATTESA_MUTI_MAX_S", 3.0)
     ta._finestra_invii.clear()
     attese = []
 
     async def finto_sleep(s):
         attese.append(s)
-        ta._finestra_invii.clear()   # come se fosse passato il minuto
+        monkeypatch.setattr(ta.time, "monotonic", lambda c=[ta.time.monotonic()]: c.__setitem__(0, c[0] + s) or c[0])
     monkeypatch.setattr(ta.asyncio, "sleep", finto_sleep)
     album = {"files": {f"p{i}": 1 for i in range(10)}, "data": {"disable_notification": True}}
-    asyncio.run(ta._rispetta_ritmo("sendMediaGroup", album))
+    assert asyncio.run(ta._rispetta_ritmo("sendMediaGroup", album)) is True
     assert ta.unita_ultimo_minuto() == 10 and not attese
-    asyncio.run(ta._rispetta_ritmo("sendMediaGroup", album))   # 10 + 10 > 14: aspetta
-    assert len(attese) == 1 and attese[0] > 0
+    assert asyncio.run(ta._rispetta_ritmo("sendMediaGroup", album)) is False   # 10 + 10 > 14: dopo al massimo 3 s l'album non parte
+    assert sum(attese) <= 3.2
+    assert asyncio.run(ta._rispetta_ritmo("sendMessage", {"json": {"disable_notification": True}})) is True   # il testo singolo parte
     ta._finestra_invii.clear()
 
 
