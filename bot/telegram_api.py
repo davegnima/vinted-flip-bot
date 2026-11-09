@@ -444,7 +444,7 @@ async def telegram_edit_caption(chat_id, message_id, caption, url_annuncio=None)
     senza reply_markup toglie il bottone). Ritorna True se la modifica e' andata a buon fine ("not modified" = ok)."""
     if not message_id:
         return False
-    payload = {"chat_id": chat_id, "message_id": int(message_id), "caption": (caption or "")[:1024]}
+    payload = {"chat_id": chat_id, "message_id": int(message_id), "caption": caption or ""}
     if url_annuncio:
         payload["reply_markup"] = {"inline_keyboard": tastiera_annuncio(url_annuncio)}
     resp = await _telegram_post("editMessageCaption", json={**payload, "parse_mode": "Markdown"})
