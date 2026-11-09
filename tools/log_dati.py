@@ -20,7 +20,7 @@ VELOCI = ("AFFARE", "MEDIO AFFARE")   # prenotato nella prima ora conta come vel
 _KV = re.compile(r"\| (\w+)=([^|]*?)(?= \||$)")
 _USO = re.compile(r"GEMINI_USO \| (\w+) \| ([\w.\-]+) \| (\d+)ms \| tentativo (\d+)")
 CAMPI_TRACC = ("item", "brand", "brand_n", "prezzo", "esito", "sem", "sem_base", "lift", "fv", "conf", "categoria", "preavviso",
-               "stato", "classe", "venduto_s", "controlli", "incompleto", "storia", "motivo", "legit", "margine", "roi")
+               "stato", "classe", "venduto_s", "controlli", "incompleto", "storia", "motivo", "legit", "legit_jev", "margine", "roi")
 
 
 def apri(db):
