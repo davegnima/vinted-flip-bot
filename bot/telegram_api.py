@@ -82,7 +82,6 @@ _blocco_429 = {"fino": 0.0, "prossimo": 0.0}   # tempi time.monotonic()
 # Ritmo massimo: TELEGRAM_MSG_MINUTO unita' (messaggio o foto) in 60 s; oltre, la chiamata aspetta il suo turno. 0 = spento.
 TELEGRAM_MSG_MINUTO = int(float(os.environ.get("TELEGRAM_MSG_MINUTO", "14")))
 _finestra_invii = deque()   # (tempo monotonic, unita')
-_lock_ritmo = asyncio.Lock()
 
 
 _METODI_CON_RITMO = ("sendMessage", "sendPhoto", "sendMediaGroup")
@@ -112,23 +111,35 @@ def unita_ultimo_minuto(ora=None):
     return sum(n for _, n in _finestra_invii)
 
 
+# 9/11 pomeriggio: la coda dei muti era illimitata e seriale (un album al minuto): la pipeline aspettava l'album PRIMA di Jev e i preavvisi
+# restavano "senza valutazione" per decine di minuti. Ora un invio muto aspetta al massimo TELEGRAM_ATTESA_MUTI_MAX_S secondi: poi un album
+# (il peso grosso, N unita') NON parte (chi lo invia ripiega su foto singola o testo, o rimanda le foto col verdetto), un messaggio singolo parte.
+TELEGRAM_ATTESA_MUTI_MAX_S = float(os.environ.get("TELEGRAM_ATTESA_MUTI_MAX_S", "3"))
+
+
 async def _rispetta_ritmo(metodo, kwargs, urgente=False):
-    """Gli invii con suono partono subito; quelli muti aspettano finche' sono dentro TELEGRAM_MSG_MINUTO unita' al minuto (suoni compresi), una alla volta."""
+    """True se l'invio puo' partire, False se e' un album muto che non entra nel ritmo entro TELEGRAM_ATTESA_MUTI_MAX_S secondi (non va inviato).
+    Gli invii con suono partono subito (ma pesano sul budget); i muti aspettano poco, mai in coda lunga: il verdetto non deve dipendere da loro."""
     if TELEGRAM_MSG_MINUTO <= 0 or metodo not in _METODI_CON_RITMO:
-        return
+        return True
     n = min(_unita_chiamata(metodo, kwargs), TELEGRAM_MSG_MINUTO)
     if _e_urgente(metodo, kwargs, urgente):
         _finestra_invii.append((time.monotonic(), n))   # parte subito, ma pesa sul budget degli invii muti
-        return
-    async with _lock_ritmo:
-        while True:
-            ora = time.monotonic()
-            if unita_ultimo_minuto(ora) + n <= TELEGRAM_MSG_MINUTO:
-                _finestra_invii.append((ora, n))
-                return
-            attesa = 60.0 - (ora - _finestra_invii[0][0]) + 0.1
-            log.info("Telegram %s: ritmo al limite (%d unita' nell'ultimo minuto), attendo %.1fs", metodo, unita_ultimo_minuto(ora), attesa)
-            await asyncio.sleep(max(0.1, attesa))
+        return True
+    scadenza = time.monotonic() + TELEGRAM_ATTESA_MUTI_MAX_S
+    while True:
+        ora = time.monotonic()
+        if unita_ultimo_minuto(ora) + n <= TELEGRAM_MSG_MINUTO:
+            _finestra_invii.append((ora, n))
+            return True
+        attesa = min(60.0 - (ora - _finestra_invii[0][0]) + 0.1, scadenza - ora)
+        if attesa <= 0:
+            if metodo == "sendMediaGroup":
+                log.info("Telegram sendMediaGroup muto: ritmo al limite (%d unita' nell'ultimo minuto), album non inviato", unita_ultimo_minuto(ora))
+                return False
+            _finestra_invii.append((ora, n))
+            return True
+        await asyncio.sleep(max(0.1, attesa))
 
 
 async def _attendi_fine_blocco(metodo):
@@ -162,7 +173,8 @@ async def _telegram_post(metodo, max_tentativi=TELEGRAM_MAX_TENTATIVI, urgente=F
         if not await _attendi_fine_blocco(metodo):
             log.warning("Telegram %s: non inviato, blocco 429 attivo ancora per %.0fs", metodo, _blocco_429["fino"] - time.monotonic())
             return None
-        await _rispetta_ritmo(metodo, kwargs, urgente)
+        if not await _rispetta_ritmo(metodo, kwargs, urgente):
+            return None
         try:
             resp = await hc._client_telegram.post(f"{TELEGRAM_API}/{metodo}", **kwargs)
         except Exception as e:
