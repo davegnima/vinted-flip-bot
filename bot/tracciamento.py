@@ -375,8 +375,25 @@ def venduto_veloce_da_inviare(ctx, prezzo, classe):
     """True se la serie chiusa va segnalata come venduto veloce (vedi VENDUTO_VELOCE_MARGINE_MIN). Pura."""
     if VENDUTO_VELOCE_MARGINE_MIN <= 0 or classe not in ("AFFARE", "MEDIO AFFARE") or not ctx or ctx.get("_veloce_inviato"):
         return False
+    if ctx.get("sem") in ("🔴", "🟡"):
+        return True   # 9/11, utente: i rossi e i gialli venduti in fretta si vogliono vedere sempre, anche sotto soglia (serve a tarare il semaforo)
     m = margine_venduto_veloce(ctx, prezzo)
     return m is not None and m >= VENDUTO_VELOCE_MARGINE_MIN
+
+
+def riga_jev_gemini_legit(ctx):
+    """Una riga veloce 'Jev ~X € · Gemini Y € · legit' (9/11, utente), solo con i pezzi che ci sono. Vuota se non c'e' nulla. Pura."""
+    pezzi = []
+    jev = _a_float((ctx or {}).get("_jev"), None)
+    if jev:
+        pezzi.append(f"Jev ~{jev:.0f} €")
+    gem = _a_float((ctx or {}).get("_gem"), None)
+    if gem:
+        pezzi.append(f"Gemini {gem:.0f} €")
+    legit = (ctx or {}).get("_legit_jev") or {"probabilmente_falso": "🚨 fake probabile", "probabilmente_originale": "✅ legit"}.get(str((ctx or {}).get("legit") or ""))
+    if legit:
+        pezzi.append(f"legit: {legit}")
+    return ("🔎 " + " · ".join(pezzi)) if pezzi else ""
 
 
 def testo_venduto_veloce(item_id, url, brand, prezzo, venduto_s, classe, ctx):
@@ -385,9 +402,13 @@ def testo_venduto_veloce(item_id, url, brand, prezzo, venduto_s, classe, ctx):
     minuti = (venduto_s / 60) if isinstance(venduto_s, (int, float)) else None
     quando = f"{minuti:.0f} min" if minuti is not None and minuti >= 1 else "meno di 1 min" if minuti is not None else "entro 15 min"
     marg = margine_venduto_veloce(ctx, prezzo)
-    righe = [f"🏁 *Venduto in {quando}* · 💶 {_a_float(prezzo, 0):.0f} € · margine ~{marg:.0f} € · 🏷️ {esc(str(brand or 'n/d'))}"]
+    marg_t = f"margine ~{marg:.0f} €" if marg is not None else "margine n/d"
+    righe = [f"🏁 *Venduto in {quando}* · 💶 {_a_float(prezzo, 0):.0f} € · {marg_t} · 🏷️ {esc(str(brand or 'n/d'))}"]
     if ctx.get("_titolo"):
         righe.append(esc(str(ctx["_titolo"])))
+    riga_v = riga_jev_gemini_legit(ctx)
+    if riga_v:
+        righe.append(esc(riga_v))
     esito = str(ctx.get("esito") or "n/d")
     segnalato = "avvisato" if ctx.get("preavviso") == "si" or esito in ("COMPRA", "OTTIMO") else "NON avvisato"
     pezzi = [segnalato, f"il bot: {esito}"]
@@ -629,6 +650,14 @@ def trova_timestamp_candidati(html_pagina, giorni=45, max_voci=40):
     return trovati
 
 
+def _legit_breve(riga):
+    """'🔐 Originalità: ✅ LEGIT (sembra originale) · ...' -> '✅ LEGIT'. None se manca. Pura."""
+    if not riga:
+        return None
+    t = str(riga).split("\n")[0].split("Originalità:", 1)[-1].split(" · ")[0].split(" (")[0].strip()
+    return t or None
+
+
 def _contesto_tracciato(listing_info, esito, campi):
     """Campi dell'annuncio da riportare nella riga TRACCIATO: esito del bot e stima rapida (semaforo, lift del brand)."""
     fv = listing_info.get("fair_value") or {}
@@ -648,6 +677,10 @@ def _contesto_tracciato(listing_info, esito, campi):
         "pub_tg": listing_info.get("pub_tg"),   # secondi fra pubblicazione su Vinted e messaggio del tracker (18/10)
         "motivo": (str(campi.get("motivo") or "")[:60].replace("|", "/") or None),
         "_prezzo": _a_float(listing_info.get("price"), None),
+        # per l'avviso 'venduto veloce' (9/11): rivendita di Jev, valore di Gemini e originalita' (chiavi "_": fuori dalla riga TRACCIATO)
+        "_jev": _a_float(listing_info.get("rivendita_jev"), None),
+        "_gem": _a_float((listing_info.get("parti_rivendita") or {}).get("gemini"), None),
+        "_legit_jev": _legit_breve(listing_info.get("riga_originalita_jev")),
         "_titolo": (str(listing_info.get("title") or "")[:80] or None),   # chiavi con "_": non finiscono nella riga TRACCIATO
     }
     return {k: (v.replace("|", "/") if isinstance(v, str) else v) for k, v in ctx.items() if v not in (None, "")}

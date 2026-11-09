@@ -25,3 +25,17 @@ def test_testo_venduto_veloce():
     assert "Venduto in 2 min" in testo and "margine ~60 €" in testo and "NON avvisato" in testo
     ctx["preavviso"] = "si"
     assert "NON avvisato" not in t.testo_venduto_veloce("1", "u", "B", 30, 140, "AFFARE", ctx)
+
+
+def test_venduto_veloce_rossi_e_gialli_anche_sotto_soglia():
+    assert t.venduto_veloce_da_inviare({"fv": 40, "sem": "🔴"}, 30, "AFFARE")
+    assert t.venduto_veloce_da_inviare({"margine": "5", "sem": "🟡"}, 30, "MEDIO AFFARE")
+    assert not t.venduto_veloce_da_inviare({"fv": 40, "sem": "🟢"}, 30, "AFFARE")
+
+
+def test_testo_venduto_veloce_riga_jev_gemini_legit():
+    ctx = {"esito": "SOLO_SEMAFORO", "sem": "🟢", "fv": 148, "margine": 138, "_jev": 250, "_gem": 240,
+           "_legit_jev": t._legit_breve("🔐 Originalità: ✅ LEGIT (sembra originale) · Gemini 90%")}
+    txt = t.testo_venduto_veloce("1", "https://x", "Balenciaga", 10, 60, "AFFARE", ctx)
+    assert "🔎 Jev ~250 € · Gemini 240 € · legit: ✅ LEGIT" in txt
+    assert "margine n/d" in t.testo_venduto_veloce("1", "https://x", "X", 10, 60, "AFFARE", {"sem": "🔴"})
