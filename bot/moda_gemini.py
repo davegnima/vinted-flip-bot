@@ -7,6 +7,7 @@ solo una replica con confidenza alta scarta (come Jev), il resto diventa una rig
 Solo Gemini gratuito (cascata e chiavi di GEMINI_API_KEYS, ruolo 'occhio'); nessun servizio a pagamento. Mai eccezioni.
 """
 import json
+import re
 import os
 import time
 
@@ -82,6 +83,9 @@ CONDIZIONI E VALORE (7/11, utente: non solo autenticita')
 - rivendita_confidenza: 0-1, quanto sei sicuro di quella stima (sotto 0,4 se il capo e' poco noto o le foto non bastano).
 - da_chiedere: se l'autenticita' non e' "probabile" o mancano dettagli chiave, cosa chiedere al venditore per sciogliere il dubbio, in modo concreto (es. "foto dell'etichetta di lavaggio con il made in", "foto delle cuciture interne", "foto del numero di serie"), max 110 caratteri. Vuoto se non serve.
 - rivendita_base: max 100 caratteri, su cosa si basa (es. 'maglione base mainline, cashmere, prezzi usati tipici 80-120').
+CONSIGLIERE DI FLIP (9/11, utente: Gemini fa anche il lavoro del vecchio Cervello)
+- tipo_oggetto: "moda" se e' un capo, un paio di scarpe, una borsa o un accessorio di moda; "non_moda" se foto o testo mostrano ALTRO (profumo, cosmetici, giocattolo, libro, oggetto per la casa, ecc.) anche se il titolo cita un brand di moda (es. "Issey Miyake" era un profumo). Se hai dubbi scrivi "moda".
+- consiglio: UNA riga (max 110 caratteri, in italiano) da consigliere di rivendita: cosa noti nelle foto e nel testo che conta per comprare o no (cosa e' davvero, taglia o variante rara, stato, dettagli che alzano o abbassano il prezzo, cosa manca). Fatti concreti, niente frasi generiche. Vuoto se non noti nulla di utile.
 REGOLE PER LA STIMA DI RIVENDITA (`rivendita_gemini_eur`): se ricevi i comparabili Vinted sono prezzi ASK (annunci attivi, non vendite), spesso con linee o capi diversi
 mescolati: usa le regole qui sotto del valutatore (linee ed ere, ancoraggio prezzi, filtro outlier, liquidita'), scarta i comparabili di un'altra linea o categoria e
 non superare mai il comparabile ASK piu' alto dopo lo sconto. Senza comparabili stima dal modello e dalle condizioni che vedi, con confidenza bassa.
@@ -91,7 +95,7 @@ SCHEMA = {
     "type": "OBJECT",
     "propertyOrdering": ["autenticita", "confidenza", "linea_etichetta", "etichetta_letta", "made_in", "prova_acquisto", "indizi", "motivo",
                          "capo", "materiale", "condizione", "difetti", "gravita_difetti", "sconto_difetti_pct",
-                         "rivendita_gemini_eur", "rivendita_confidenza", "rivendita_base", "da_chiedere"],
+                         "rivendita_gemini_eur", "rivendita_confidenza", "rivendita_base", "da_chiedere", "tipo_oggetto", "consiglio"],
     "properties": {
         "autenticita": {"type": "STRING", "enum": ["probabile", "dubbia", "replica", "altra_marca", "non_verificabile"]},
         "confidenza": {"type": "NUMBER"},
@@ -111,6 +115,8 @@ SCHEMA = {
         "rivendita_confidenza": {"type": "NUMBER"},
         "rivendita_base": {"type": "STRING"},
         "da_chiedere": {"type": "STRING"},
+        "tipo_oggetto": {"type": "STRING", "enum": ["moda", "non_moda"]},
+        "consiglio": {"type": "STRING"},
     },
     "required": ["autenticita", "confidenza", "etichetta_letta", "made_in", "prova_acquisto", "indizi", "motivo",
                  "capo", "materiale", "condizione", "difetti", "gravita_difetti", "sconto_difetti_pct",
@@ -182,6 +188,8 @@ def leggi_risposta(testo):
         d["rivendita_confidenza"] = None
     d["rivendita_base"] = str(d.get("rivendita_base") or "")[:110]
     d["da_chiedere"] = str(d.get("da_chiedere") or "")[:120]
+    d["tipo_oggetto"] = "non_moda" if d.get("tipo_oggetto") == "non_moda" else "moda"
+    d["consiglio"] = re.sub(r"\s+", " ", str(d.get("consiglio") or "")).strip()[:120]
     return d
 
 
@@ -237,6 +245,20 @@ def riga_stima_gemini(d, rivendita_codice=None):
 def e_replica(d):
     """True se Gemini dice replica (o marchio diverso) con confidenza sufficiente a scartare l'avviso. Pura."""
     return bool(d and d.get("autenticita") in ("replica", "altra_marca") and (d.get("confidenza") or 0) >= CONF_REPLICA_MIN)
+
+
+def e_non_moda(d):
+    """True se Gemini vede che l'oggetto NON e' moda (profumo, cosmetici, ecc.) con confidenza sufficiente a scartare. Pura."""
+    return bool(d and d.get("tipo_oggetto") == "non_moda" and (d.get("confidenza") or 0) >= CONF_REPLICA_MIN)
+
+
+def riga_consiglio(d):
+    """Riga '💬' del consigliere di flip (testo semplice), o None. Pura."""
+    if not d:
+        return None
+    if d.get("tipo_oggetto") == "non_moda":
+        return "💬 Non è moda" + (f": {d['consiglio']}" if d.get("consiglio") else " (profumo, cosmetici o altro)")
+    return f"💬 {d['consiglio']}" if d.get("consiglio") else None
 
 
 def riga_messaggio(d):
