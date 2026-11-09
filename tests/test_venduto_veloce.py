@@ -54,3 +54,27 @@ def test_riga_preavviso_interrotta_dal_riavvio():
     from bot.scheda import riga_scarto_preavviso
     assert "riavvio" in riga_scarto_preavviso(None, None, interrotta=True, riavvio=True)
     assert "errore" in riga_scarto_preavviso(None, None, interrotta=True)
+
+
+def test_lampo_parte_anche_senza_categoria_nel_titolo(monkeypatch):
+    import asyncio
+    import bot.pipeline as pl
+    chiamate = []
+
+    async def finto_invio(*a, **k):
+        chiamate.append(1)
+    monkeypatch.setattr(pl, "invia_preavviso", finto_invio)
+    fv = {"semaforo": "🟢", "margine": 66.0, "conf": "bassa", "fonte_categoria": "nessuna", "fv": 71, "brand": "jean paul gaultier"}
+    monkeypatch.setattr(pl, "stima_fair_value", lambda li: fv)
+    li = {"title": "Tunique", "brand": "Jean Paul Gaultier", "price": "5"}
+
+    async def prova(soglia):
+        monkeypatch.setattr(pl, "LAMPO_SENZA_CATEGORIA_MARGINE_MIN", soglia)
+        stato = {}
+        pl._preavviso_lampo(li, "https://www.vinted.it/items/1-x", b"x", None, None, stato)
+        if stato.get("task_preavviso"):
+            await stato["task_preavviso"]
+        return stato
+    assert asyncio.run(prova(50)).get("preavviso_lampo") and chiamate
+    assert not asyncio.run(prova(80)).get("preavviso_lampo")
+    assert not asyncio.run(prova(0)).get("preavviso_lampo")

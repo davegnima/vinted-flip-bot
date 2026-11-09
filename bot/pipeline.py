@@ -1,4 +1,5 @@
 """Modulo estratto da main_telethon.py (spostamento meccanico)."""
+import os
 import json
 import time
 import asyncio
@@ -102,6 +103,9 @@ def ruoli_gemini(prezzo, stima_rapida, soglia=None):
     return alto, ("occhio_alto" if alto else "occhio"), ("cervello_alto" if alto else "cervello"), da
 
 
+LAMPO_SENZA_CATEGORIA_MARGINE_MIN = float(os.environ.get("LAMPO_SENZA_CATEGORIA_MARGINE_MIN", "50"))   # 0 = spento
+
+
 def _preavviso_lampo(listing_info, url, cover_photo_bytes, msg_date, t_ricevuto_bot, stato):
     """Preavviso prima dello scrape (PREAVVISO_LAMPO): usa solo titolo, brand e prezzo del tracker e la foto di copertina.
     Parte solo se la categoria si legge dal titolo (stima affidabile senza pagina) e la regola del preavviso scatta.
@@ -109,10 +113,18 @@ def _preavviso_lampo(listing_info, url, cover_photo_bytes, msg_date, t_ricevuto_
     try:
         fv = stima_fair_value(listing_info)
         prezzo = _a_float(listing_info.get("price"), None)
-        if not fv or fv.get("fonte_categoria") != "titolo":
+        if not fv:
             return
         attivo, regola = valuta_preavviso(fv, prezzo)
-        if not attivo or regola == REGOLA_DA_VERIFICARE or (tratteni_per_verifica(fv, regola) and not MODA_JEV_SUBITO):
+        senza_categoria = fv.get("fonte_categoria") != "titolo"
+        if senza_categoria:
+            # 9/11 (utente: 'fai partire anche senza categoria nel titolo', preavviso arrivato dopo 22 s): parte lo stesso se la stima rapida
+            # e' 🟢 con margine >= LAMPO_SENZA_CATEGORIA_MARGINE_MIN (anche 'da verificare'); il verdetto lo corregge dopo (scartato/confermato).
+            marg = _a_float(fv.get("margine"), None)
+            if not (LAMPO_SENZA_CATEGORIA_MARGINE_MIN > 0 and attivo and fv.get("semaforo") == "🟢" and marg is not None
+                    and marg >= LAMPO_SENZA_CATEGORIA_MARGINE_MIN):
+                return
+        elif not attivo or regola == REGOLA_DA_VERIFICARE or (tratteni_per_verifica(fv, regola) and not MODA_JEV_SUBITO):
             return   # con MODA_JEV_SUBITO=0 l'avviso aspetta la verifica Jev (comparabili e foto): niente lampo
         info = dict(listing_info, fair_value=fv, preavviso=True, preavviso_suono=preavviso_con_suono(fv, prezzo))
         try:
@@ -278,7 +290,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
                      "".join(f" | {k}={v}" for k, v in _feat.items()
                              if k not in ("prezzo", "semaforo", "fv", "margine", "conf", "regola")))
             listing_info["verifica_jev"] = bool(listing_info["preavviso"] and tratteni_per_verifica(_fv_pre, _regola_pre))
-            listing_info["jev_subito"] = bool(MODA_JEV_SUBITO and _regola_pre != REGOLA_DA_VERIFICARE)   # i candidati partono solo se confermati
+            listing_info["jev_subito"] = bool((MODA_JEV_SUBITO and _regola_pre != REGOLA_DA_VERIFICARE) or (stato or {}).get("preavviso_lampo"))   # i candidati partono solo se confermati
             if listing_info["preavviso"] and TELEGRAM_ALERT_CHAT_ID and (listing_info["jev_subito"] or not listing_info["verifica_jev"]):
                 # l'invio parte appena le foto sono scaricate (album completo nel gruppo COMPRA, vedi sotto)
                 listing_info["preavviso_gruppo"] = True

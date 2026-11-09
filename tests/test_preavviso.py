@@ -438,7 +438,10 @@ def test_preavviso_lampo_parte_prima_dello_scrape_solo_con_categoria_dal_titolo(
         return stato
 
     assert asyncio.run(prova("titolo"))["task_preavviso"] is not None and inviati == [("🟢", 1)]
-    assert asyncio.run(prova("catalogo")).get("task_preavviso") is None      # categoria dal catalogo: serve la pagina
+    monkeypatch.setattr(p, "LAMPO_SENZA_CATEGORIA_MARGINE_MIN", 0)
+    assert asyncio.run(prova("catalogo")).get("task_preavviso") is None      # lampo senza categoria spento: serve la pagina
+    monkeypatch.setattr(p, "LAMPO_SENZA_CATEGORIA_MARGINE_MIN", 50)
+    assert asyncio.run(prova("catalogo")).get("task_preavviso") is not None  # 9/11: verde con margine >= 50 parte anche senza categoria
 
 
 def test_galleria_completa_dopo_il_lampo_in_risposta_e_senza_suono(monkeypatch):
