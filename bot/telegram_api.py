@@ -88,9 +88,11 @@ _lock_ritmo = asyncio.Lock()
 _METODI_CON_RITMO = ("sendMessage", "sendPhoto", "sendMediaGroup")
 
 
-def _e_urgente(metodo, kwargs):
+def _e_urgente(metodo, kwargs, urgente=False):
     """9/11 (utente: 'ogni secondo perso e' una vendita persa'): un invio CON SUONO (COMPRA e preavvisi migliori) non aspetta mai il limitatore;
     ad aspettare sono solo gli invii muti (preavvisi bassi, gallerie, venduti, report). Pura."""
+    if urgente:
+        return True
     corpo = kwargs.get("json") or kwargs.get("data") or {}
     dn = corpo.get("disable_notification") if isinstance(corpo, dict) else None
     return dn is False or str(dn).lower() == "false"
@@ -110,12 +112,12 @@ def unita_ultimo_minuto(ora=None):
     return sum(n for _, n in _finestra_invii)
 
 
-async def _rispetta_ritmo(metodo, kwargs):
+async def _rispetta_ritmo(metodo, kwargs, urgente=False):
     """Gli invii con suono partono subito; quelli muti aspettano finche' sono dentro TELEGRAM_MSG_MINUTO unita' al minuto (suoni compresi), una alla volta."""
     if TELEGRAM_MSG_MINUTO <= 0 or metodo not in _METODI_CON_RITMO:
         return
     n = min(_unita_chiamata(metodo, kwargs), TELEGRAM_MSG_MINUTO)
-    if _e_urgente(metodo, kwargs):
+    if _e_urgente(metodo, kwargs, urgente):
         _finestra_invii.append((time.monotonic(), n))   # parte subito, ma pesa sul budget degli invii muti
         return
     async with _lock_ritmo:
@@ -143,7 +145,7 @@ async def _attendi_fine_blocco(metodo):
     return True
 
 
-async def _telegram_post(metodo, max_tentativi=TELEGRAM_MAX_TENTATIVI, **kwargs):
+async def _telegram_post(metodo, max_tentativi=TELEGRAM_MAX_TENTATIVI, urgente=False, **kwargs):
     """POST alla Bot API con retry su 429 (flood control, rispettando il
     retry_after indicato da Telegram) e su errori di rete. Prima ogni
     chiamata era un singolo post senza controllo dell'esito: un 429 durante
@@ -160,7 +162,7 @@ async def _telegram_post(metodo, max_tentativi=TELEGRAM_MAX_TENTATIVI, **kwargs)
         if not await _attendi_fine_blocco(metodo):
             log.warning("Telegram %s: non inviato, blocco 429 attivo ancora per %.0fs", metodo, _blocco_429["fino"] - time.monotonic())
             return None
-        await _rispetta_ritmo(metodo, kwargs)
+        await _rispetta_ritmo(metodo, kwargs, urgente)
         try:
             resp = await hc._client_telegram.post(f"{TELEGRAM_API}/{metodo}", **kwargs)
         except Exception as e:
@@ -239,7 +241,7 @@ def _bottone_vinted(url):
     return json.dumps({"inline_keyboard": [[{"text": "🔗 Apri su Vinted", "url": url}]]}) if url else None
 
 
-async def telegram_send_message(chat_id, text, disable_notification=False, reply_to=None, url_bottone=None):
+async def telegram_send_message(chat_id, text, disable_notification=False, reply_to=None, url_bottone=None, urgente=False):
     """Ritorna True se TUTTI i pezzi sono stati consegnati, False altrimenti (l'errore e' gia' nel log)."""
     MAX_LEN = 3500
     tutti_ok = True
@@ -248,7 +250,7 @@ async def telegram_send_message(chat_id, text, disable_notification=False, reply
         # comunque subito sotto, ripetere la citazione sarebbe solo rumore.
         extra_reply = _parametri_reply(reply_to) if i == 0 else {}
         resp = await _telegram_post(
-            "sendMessage",
+            "sendMessage", urgente=urgente,
             json={
                 "chat_id": chat_id, "text": chunk, "parse_mode": "Markdown",
                 "disable_web_page_preview": True, "disable_notification": disable_notification,
@@ -258,7 +260,7 @@ async def telegram_send_message(chat_id, text, disable_notification=False, reply
         if resp is not None and not resp.is_success:
             log.warning("sendMessage Markdown fallita -- HTTP %d: %s -- ritento senza parse_mode", resp.status_code, resp.text[:300])
             resp = await _telegram_post(
-                "sendMessage",
+                "sendMessage", urgente=urgente,
                 json={
                     "chat_id": chat_id, "text": chunk,
                     "disable_web_page_preview": True, "disable_notification": disable_notification,
@@ -269,7 +271,7 @@ async def telegram_send_message(chat_id, text, disable_notification=False, reply
     return tutti_ok
 
 
-async def telegram_send_photo(chat_id, photo_bytes, caption=None, disable_notification=False, url_bottone=None):
+async def telegram_send_photo(chat_id, photo_bytes, caption=None, disable_notification=False, url_bottone=None, urgente=False):
     """Ritorna il message_id della foto inviata (None se fallita). Con `url_bottone` aggiunge 'Apri su Vinted'."""
     files = {"photo": ("photo.jpg", photo_bytes)}
     data = {"chat_id": chat_id, "disable_notification": disable_notification}
@@ -277,7 +279,7 @@ async def telegram_send_photo(chat_id, photo_bytes, caption=None, disable_notifi
         data["reply_markup"] = _bottone_vinted(url_bottone)
     if caption:
         data["caption"] = caption[:1024]
-    resp = await _telegram_post("sendPhoto", data=data, files=files, timeout=30)
+    resp = await _telegram_post("sendPhoto", urgente=urgente, data=data, files=files, timeout=30)
     _telegram_esito_ok(resp, "sendPhoto")
     return _primo_message_id(resp)
 

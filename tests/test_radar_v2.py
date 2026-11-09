@@ -542,9 +542,9 @@ def test_invia_radar_bottone_e_resto(monkeypatch):
     import asyncio
     from bot import radar
     inviati = []
-    async def foto_(chat, foto, caption=None, disable_notification=False, url_bottone=None):
+    async def foto_(chat, foto, caption=None, disable_notification=False, url_bottone=None, urgente=False):
         inviati.append(("foto", len(caption), url_bottone))
-    async def msg_(chat, testo, disable_notification=False, reply_to=None, url_bottone=None):
+    async def msg_(chat, testo, disable_notification=False, reply_to=None, url_bottone=None, urgente=False):
         inviati.append(("msg", len(testo), url_bottone))
     monkeypatch.setattr(radar, "telegram_send_photo", foto_)
     monkeypatch.setattr(radar, "telegram_send_message", msg_)

@@ -98,4 +98,8 @@ def test_invii_con_suono_non_aspettano_mai(monkeypatch):
     assert not attese and ta.unita_ultimo_minuto() == 5
     assert ta._e_urgente("sendMessage", {"json": {"disable_notification": False}})
     assert not ta._e_urgente("sendMediaGroup", {"data": {"disable_notification": True}})
+    # 9/11: un avviso radar muto (verde con Gemini "da rivedere") restava 22 minuti in coda dietro gli album: urgente=True lo fa partire subito
+    assert ta._e_urgente("sendPhoto", {"data": {"disable_notification": True}}, urgente=True)
+    asyncio.run(ta._rispetta_ritmo("sendPhoto", {"data": {"disable_notification": True}}, urgente=True))
+    assert not attese
     ta._finestra_invii.clear()
