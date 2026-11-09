@@ -276,3 +276,12 @@ def test_riga_tracciato_porta_il_caricato_della_pagina():
     from bot.tracciamento import _contesto_tracciato
     ctx = _contesto_tracciato({"title": "x", "price": "10", "uploaded_text": "Proprio adesso, Spedizione, da 0,00 €"}, "COMPRA", {})
     assert ctx["caricato"] == "Proprio adesso"
+
+
+def test_venduto_veloce_radar_solo_gialli_e_verdi():
+    ctx = {"semaforo": "verde", "margine": 85.05, "rivendita": 165, "jev": "affare_vero", "ricerca": "V2 console", "titolo": "nintendo switch"}
+    assert tr.venduto_veloce_radar_da_inviare(ctx, "AFFARE") and tr.venduto_veloce_radar_da_inviare({**ctx, "semaforo": "giallo"}, "MEDIO AFFARE")
+    assert not tr.venduto_veloce_radar_da_inviare({**ctx, "semaforo": "rosso"}, "AFFARE")
+    assert not tr.venduto_veloce_radar_da_inviare(ctx, "NORMALE") and not tr.venduto_veloce_radar_da_inviare({**ctx, "_veloce_inviato": True}, "AFFARE")
+    t = tr.testo_venduto_veloce_radar("1", "https://www.vinted.it/items/1", 55, 240, ctx)
+    assert "Venduto in 4 min" in t and "55 €" in t and "margine ~85 €" in t and "🟢" in t and "vedi su Vinted" in t

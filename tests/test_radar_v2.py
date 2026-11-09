@@ -219,10 +219,10 @@ def test_risposta_gruppo_con_stima_e_senza():
     from bot import radar
     v2 = {"semaforo": "verde", "rivendita": 80, "margine": 60, "roi": 150, "n": 7}
     assert radar.testo_risposta_gruppo(v2).startswith("🟢 verde · rivendita stimata 80 € · margine 60 € · ROI 150% · 7 comparabili")
-    assert "Non inviato in COMPRA: Jev non lo da' come affare" in radar.testo_risposta_gruppo(v2)
+    assert "Avviso non inviato: Jev non lo da' come affare" in radar.testo_risposta_gruppo(v2)
     ok = {**v2, "jev": "affare_vero", "jev_conf": 0.95, "link_comps": [("t", 90.0, "https://www.vinted.it/items/1")]}
     t = radar.testo_risposta_gruppo(ok)
-    assert "Inviato in COMPRA" in t and "• 90 € https://www.vinted.it/items/1" in t
+    assert "Avviso inviato" in t and "• 90 € https://www.vinted.it/items/1" in t
     r = radar.testo_risposta_gruppo({"semaforo": "rosso", "rivendita": None, "n": 1, "motivo": "pochi_comparabili"})
     assert r.startswith("🔴 rosso · nessuna stima (pochi comparabili")
     assert radar.testo_risposta_gruppo(None) .startswith("⚪ non valutato")
@@ -234,8 +234,8 @@ def test_da_cancellare_solo_i_non_oggetti(monkeypatch):
     monkeypatch.setattr(radar, "RADAR_CANCELLA_ROSSI", False)
     assert radar.da_cancellare(_rosso("pezzo_o_accessorio:")) and radar.da_cancellare(_rosso("parola_vietata:"))
     assert radar.da_cancellare(_rosso("prezzo_segnaposto")) and radar.da_cancellare(_rosso("titolo_generico"))
-    assert not radar.da_cancellare(_rosso("pochi_comparabili")) and not radar.da_cancellare(_rosso("sopra_riferimento", 11))
-    assert not radar.da_cancellare(None) and not radar.da_cancellare({"semaforo": "verde", "motivo": "ok"})
+    assert radar.da_cancellare(_rosso("pochi_comparabili")) and radar.da_cancellare(_rosso("sopra_riferimento", 11))
+    assert radar.da_cancellare(None) and not radar.da_cancellare({"semaforo": "verde", "motivo": "ok"})
 
 
 def test_da_cancellare_tutti_i_rossi_ma_non_giallo_e_verde(monkeypatch):
@@ -243,8 +243,11 @@ def test_da_cancellare_tutti_i_rossi_ma_non_giallo_e_verde(monkeypatch):
     from bot.radar_v2 import _rosso
     monkeypatch.setattr(radar, "RADAR_CANCELLA_ROSSI", True)
     assert radar.da_cancellare(_rosso("pochi_comparabili"))
-    assert not radar.da_cancellare(_rosso("margine_basso")) and not radar.da_cancellare(_rosso("sopra_riferimento", 11))
-    assert not radar.da_cancellare(_rosso("roi_basso"))
+    assert radar.da_cancellare(_rosso("margine_basso")) and radar.da_cancellare(_rosso("sopra_riferimento", 11))
+    assert radar.da_cancellare(_rosso("roi_basso"))
+    # giallo o verde gia' inviato: il messaggio del tracker e' un doppione e si toglie; giallo non inviato (pausa) resta
+    assert radar.da_cancellare({"semaforo": "giallo", "motivo": "ok"}, {"inviato": True})
+    assert not radar.da_cancellare({"semaforo": "giallo", "motivo": "ok"}, {"inviato": False, "scartato": False})
     assert not radar.da_cancellare({"semaforo": "giallo", "motivo": "ok"}) and not radar.da_cancellare({"semaforo": "verde", "motivo": "ok"})
 
 
@@ -396,7 +399,8 @@ def test_da_mandare_richiede_jev_affare(monkeypatch):
     assert radar._da_mandare({**ok, "jev_conf": 0.6}) is False
     assert radar._da_mandare({"semaforo": "verde", "jev": None, "jev_conf": None}) is False
     assert radar._da_mandare({**ok, "semaforo": "rosso"}) is False
-    assert radar.RADAR_CHAT_ID == (radar.TELEGRAM_ALERT_CHAT_ID or radar.TELEGRAM_OWNER_CHAT_ID)
+    assert radar.chat_avvisi_radar() == (radar.RADAR_CHAT_ID or radar.RADAR_GROUP_ID or next(iter(sorted(radar.RADAR_CHAT_IDS)), None)
+                                         or radar.TELEGRAM_ALERT_CHAT_ID or radar.TELEGRAM_OWNER_CHAT_ID)
 
 
 def test_verifica_comparabili_filtra_e_toglie_il_suffisso(monkeypatch):
@@ -677,12 +681,12 @@ def test_risposta_gruppo_dice_inviato_solo_se_consegnato(monkeypatch):
     u = "https://www.vinted.it/items/920-x"
     assert asyncio.run(radar.invia_verdetto_v2({"title": "Gba", "price": "40"}, u, V2_GIALLO, esito=esito)) is True
     assert esito["inviato"] is True and len(inviati) == 1
-    assert "Inviato in COMPRA" in radar.testo_risposta_gruppo(V2_GIALLO, esito)
+    assert "Avviso inviato" in radar.testo_risposta_gruppo(V2_GIALLO, esito)
     # secondo passaggio: duplicato, non parte e la riga lo dice
     esito2 = {}
     assert asyncio.run(radar.invia_verdetto_v2({"title": "Gba", "price": "40"}, u, V2_GIALLO, esito=esito2)) is False
     riga = radar.testo_risposta_gruppo(V2_GIALLO, esito2)
-    assert "Non inviato in COMPRA: avviso gia' mandato" in riga and "Inviato in COMPRA" not in riga.replace("Non inviato in COMPRA", "")
+    assert "Avviso non inviato: avviso gia' mandato" in riga and "Avviso inviato" not in riga.replace("Avviso non inviato", "")
 
 
 def test_risposta_gruppo_gemini_scarta(monkeypatch):
@@ -693,7 +697,7 @@ def test_risposta_gruppo_gemini_scarta(monkeypatch):
     assert asyncio.run(radar.invia_verdetto_v2({"title": "Ps vita", "price": "30"}, "https://www.vinted.it/items/921-x", V2_GIALLO, esito=esito)) is False
     assert inviati == []
     riga = radar.testo_risposta_gruppo(V2_GIALLO, esito)
-    assert "Non inviato in COMPRA: Gemini lo scarta" in riga and "manca il caricabatterie" in riga
+    assert "Avviso non inviato: Gemini lo scarta" in riga and "manca il caricabatterie" in riga
 
 
 def test_risposta_gruppo_rivalutazione_a_rosso_mostra_i_numeri_nuovi(monkeypatch):
@@ -709,7 +713,7 @@ def test_risposta_gruppo_rivalutazione_a_rosso_mostra_i_numeri_nuovi(monkeypatch
     assert asyncio.run(radar.invia_verdetto_v2({"title": "Switch", "price": "40"}, "https://www.vinted.it/items/922-x", vecchio, rivaluta=rosso, esito=esito)) is False
     riga = radar.testo_risposta_gruppo(vecchio, esito)
     assert "margine 36.5" in riga and "133.3" not in riga
-    assert "Non inviato in COMPRA: rifatta la stima sul modello letto da Gemini" in riga
+    assert "Avviso non inviato: rifatta la stima sul modello letto da Gemini" in riga
 
 
 def test_invio_fallito_non_blocca_il_ritentativo(monkeypatch):
@@ -719,7 +723,7 @@ def test_invio_fallito_non_blocca_il_ritentativo(monkeypatch):
     esito = {}
     u = "https://www.vinted.it/items/923-x"
     assert asyncio.run(radar.invia_verdetto_v2({"title": "Gba", "price": "40"}, u, V2_GIALLO, esito=esito)) is False
-    assert "Non inviato in COMPRA: Telegram non ha consegnato" in radar.testo_risposta_gruppo(V2_GIALLO, esito)
+    assert "Avviso non inviato: Telegram non ha consegnato" in radar.testo_risposta_gruppo(V2_GIALLO, esito)
     assert "923" not in radar._radar_inviati   # un invio fallito si puo' ritentare
 
 
