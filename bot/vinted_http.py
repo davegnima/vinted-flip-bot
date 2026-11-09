@@ -12,6 +12,8 @@ from bot.config import VINTED_ACCESS_TOKEN, VINTED_REFRESH_TOKEN
 from bot.costanti import VINTED_HEADERS
 from bot.proxy import _CLIENT_VINTED_POOL, _CLIENT_VINTED_POOL_KEYS, _ETICHETTA_PER_CHIAVE_PROXY, _etichetta_proxy, _registra_banda, _registra_esito_proxy
 from bot.http_clients import _prossimo_indice_vinted
+
+VINTED_ATTESA_403_S = float(os.environ.get("VINTED_ATTESA_403_S", "1"))   # attesa dopo un 403 prima di riprovare su un altro proxy
 from bot.logger import log
 from bot import http_clients as hc
 # ---- fine import ----
@@ -375,7 +377,9 @@ async def _vinted_get_con_retry(url, timeout=15, max_retries=3, headers_extra=No
                 # attenuarsi prima del prossimo tentativo. Ora e' un'attesa
                 # asincrona: non blocca il resto del bot.
                 e_403 = "403" in str(e)
-                attesa = (6.0 * tentativo) if e_403 else (1.5 * tentativo)
+                # 9/11 (utente: preavviso arrivato dopo 22 s): il tentativo dopo usa un ALTRO proxy (round-robin), quindi aspettare 6-12 s dopo
+                # un 403 serviva solo a far perdere tempo (due 403 + attesa = 21 s prima dello scrape riuscito). Ora VINTED_ATTESA_403_S (1 s).
+                attesa = (VINTED_ATTESA_403_S * tentativo) if e_403 else (1.5 * tentativo)
                 await asyncio.sleep(attesa)
                 continue
     log.warning(
