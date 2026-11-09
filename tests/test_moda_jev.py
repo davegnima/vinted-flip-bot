@@ -386,12 +386,13 @@ def test_messaggio_compatto_con_link_comparabili_nei_1024_caratteri():
            "foto_comps": [("simile", 0.8)] * 3, "gemini": {"autenticita": "probabile", "confidenza": 0.9, "motivo": "x" * 120, "capo": "pantaloni", "materiale": "lana",
                                                           "condizione": "buona", "gravita_difetti": "nessuno", "difetti": "", "rivendita_gemini_eur": 60.0, "rivendita_confidenza": 0.7}}
     righe = righe_messaggio(ris, brand="missoni")
-    assert righe[0].startswith("📅") and righe[1].startswith("• 80 € https://www.vinted.it/items/1")
+    assert righe[0].startswith("📅") and righe[1].startswith("• [Pantaloni Missoni](https://www.vinted.it/items/1-missoni) · 80 €")
     info = {"fair_value": {"semaforo": "🟡", "fv": 40, "minimo": 30, "massimo": 70, "margine": 25, "conf": "alta"}, "price": 15, "brand": "Missoni", "title": "Pantaloni Missoni lunghi",
             "righe_jev": righe + ["y" * 150], "riga_verdetto_jev": "✅ CONFERMATO: rivendita ~90 €", "rivendita_jev": 90,
             "query_name": "Avanguardia Rick Yohji Dries AnnD Raf Loewe Lemaire Khaite 50", "query_url": "https://x.it/q"}
     t = testo_preavviso(info, "https://www.vinted.it/items/9")
-    assert len(t) <= 1024 and t.count("https://www.vinted.it/items/") >= 4   # titolo + 3 comparabili
+    import re
+    assert len(re.sub(r"\]\([^)]*\)", "]", t)) <= 1024 and t.count("https://www.vinted.it/items/") >= 4   # limite sul testo visibile; titolo + 3 comparabili
 
 
 def test_riga_originalita_dice_cosa_fare_e_cosa_chiedere():
@@ -513,14 +514,31 @@ def test_riga_scartato_mostra_i_valori_della_rivendita_mista():
 
 def test_righe_messaggio_mostra_anche_i_comparabili_per_rilevanza_con_link():
     from bot.moda_jev import righe_messaggio
+    from bot.testo import RigaMd
     ris = {"n": 8, "rivendita": 60.0, "rivendita_comps": 65.0, "prezzi_comps": (30.0, 160.0), "link_comps": [("a", 65.0, "https://v/1")],
            "rivendita_ril": 30.0, "n_ril": 9, "prezzi_comps_ril": (20.0, 90.0), "link_comps_ril": [("b", 28.0, "https://v/2"), ("a", 65.0, "https://v/1")]}
     r = righe_messaggio(ris)
-    assert r[0] == "📅 Più recenti: 8 · 30–160 € · ~65 €" and r[1] == "• 65 € https://v/1"
-    assert r[2] == "🎯 Più rilevanti: 9 · 20–90 € · ~30 €" and r[3] == "• 28 € https://v/2" and len(r) == 4   # il link gia' mostrato non si ripete
+    assert r[0] == "📅 Più recenti: 8 · 30–160 € · ~65 €" and r[1] == "• [a](https://v/1) · 65 €" and isinstance(r[1], RigaMd)
+    assert r[2] == "🎯 Più rilevanti: 9 · 20–90 € · ~30 €" and r[3] == "• [b](https://v/2) · 28 €" and len(r) == 4   # il link gia' mostrato non si ripete
 
 
 def test_riga_verdetto_non_verificato_senza_comparabili_e_senza_parole_inutili():
     from bot.moda_jev import riga_verdetto
     r = riga_verdetto({"esito": "non_verificato", "motivo": "nessun", "n": 0})
     assert r == "⚠️ NON VERIFICATO · nessun comparabile" and "stima" not in r
+
+
+def test_gemini_consigliere_riga_e_non_moda():
+    """9/11 (utente): Gemini come consigliere di flip: riga 💬 in testa e scarto se l'oggetto non e' moda (es. profumo)."""
+    from bot.moda_gemini import e_non_moda, leggi_risposta, riga_consiglio
+    from bot.moda_jev import decidi, righe_messaggio, riga_verdetto
+    base = {"autenticita": "probabile", "confidenza": 0.9, "etichetta_letta": "", "made_in": "", "prova_acquisto": "nessuna", "indizi": "", "motivo": "m"}
+    d = leggi_risposta(__import__("json").dumps({**base, "tipo_oggetto": "non_moda", "consiglio": "flacone di profumo, non un capo"}))
+    assert d["tipo_oggetto"] == "non_moda" and e_non_moda(d) and riga_consiglio(d).startswith("💬 Non è moda: flacone")
+    assert decidi({"ok": True}, None, d) == ("scarta", "gemini:non_moda")
+    assert riga_verdetto({"esito": "scarta", "motivo": "gemini:non_moda", "gemini": d}).startswith("🚫 SCARTATO · non è moda")
+    d2 = leggi_risposta(__import__("json").dumps({**base, "tipo_oggetto": "moda", "consiglio": "taglia 46 rara, etichetta Made in Italy"}))
+    assert not e_non_moda(d2) and riga_consiglio(d2) == "💬 taglia 46 rara, etichetta Made in Italy"
+    assert righe_messaggio({"rivendita": 90.0, "n": 8, "gemini": d2})[0] == "💬 taglia 46 rara, etichetta Made in Italy"
+    assert not e_non_moda({**d, "confidenza": 0.4})
+    assert leggi_risposta(__import__("json").dumps(base))["tipo_oggetto"] == "moda"

@@ -10,7 +10,7 @@ import traceback
 from bot.config import (BRAND_ESCLUSI_ALERT_CHIEDI_FOTO, MAX_ANALISI_PARALLELE, SOGLIA_MARGINE_ALERT_CHIEDI_FOTO,
                         SOGLIA_MARGINE_ALERT_CHIEDI_FOTO_BRAND_ESCLUSI, TELEGRAM_ALERT_CHAT_ID, TELEGRAM_OWNER_CHAT_ID)
 from bot.verdetto import EMOJI_DECISIONE, ETICHETTA_CONFIDENZA, ETICHETTA_RISCHIO, _a_float, _estrai_item_id_da_url
-from bot.testo import _escapa_markdown_legacy
+from bot.testo import RigaMd, _escapa_markdown_legacy
 from bot.fair_value import _riga_fair_value_testo, _riga_fair_value_unica
 from bot.logger import log
 from bot.telegram_api import telegram_delete_message, telegram_edit_caption, telegram_edit_message, telegram_send_media_group, telegram_send_message, telegram_send_photo, telegram_send_photo_con_bottone, telegram_send_with_buttons
@@ -260,7 +260,7 @@ def testo_preavviso(listing_info, url=None, riga_finale=RIGA_PREAVVISO_IN_ATTESA
     righe_jev = listing_info.get("righe_jev")
     if righe_jev:
         # brand nuovo verificato con comparabili e foto (bot/moda_jev.py): il messaggio nasce gia' con l'esito, niente "in attesa"
-        righe += [esc(r) for r in righe_jev]
+        righe += [r if isinstance(r, RigaMd) else esc(r) for r in righe_jev]
         if riga_finale == RIGA_PREAVVISO_IN_ATTESA:
             riga_finale = ""
     if url and not righe_jev:   # con la verifica il titolo e' gia' il link all'annuncio
@@ -282,7 +282,8 @@ def _entra_nella_didascalia(righe, limite=1000):
     """Testo del messaggio con al massimo `limite` caratteri: toglie le righe meno utili (vedi _RIGHE_DA_TOGLIERE) finche' ci sta. Pura."""
     righe = list(righe)
     for prefisso in _RIGHE_DA_TOGLIERE:
-        if len("\n".join(righe)) <= limite:
+        # il limite di Telegram conta il testo visibile: l'indirizzo dentro "[titolo](url)" non conta (9/11)
+        if len(re.sub(r"\]\([^)]*\)", "]", "\n".join(righe))) <= limite:
             break
         righe = [r for r in righe if not r.startswith(prefisso)]
     return "\n".join(righe)
