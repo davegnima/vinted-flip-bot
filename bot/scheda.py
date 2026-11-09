@@ -297,10 +297,12 @@ def link_messaggio_chat_principale(msg_id):
     return f"https://t.me/c/{chat[4:]}/{msg_id}"
 
 
-def riga_scarto_preavviso(motivo, msg_id=None, interrotta=False):
+def riga_scarto_preavviso(motivo, msg_id=None, interrotta=False, riavvio=False):
     """Riga finale del preavviso rimasto senza verdetto: motivo dello scarto (max 220 caratteri) e link al messaggio
     originale nella chat principale, dove ci sono scheda e foto. Pura."""
-    if interrotta:
+    if interrotta and riavvio:
+        testa = "🔄 analisi interrotta dal riavvio del bot (aggiornamento): l'annuncio resta valido, controllalo a mano"
+    elif interrotta:
         testa = "⚠️ analisi interrotta per un errore"
     else:
         testa = "🚫 scartato prima del verdetto"
