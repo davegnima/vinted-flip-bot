@@ -72,7 +72,7 @@ def test_ritmo_album_vale_una_unita_per_foto_e_aspetta_oltre_il_limite(monkeypat
         attese.append(s)
         ta._finestra_invii.clear()   # come se fosse passato il minuto
     monkeypatch.setattr(ta.asyncio, "sleep", finto_sleep)
-    album = {"files": {f"p{i}": 1 for i in range(10)}}
+    album = {"files": {f"p{i}": 1 for i in range(10)}, "data": {"disable_notification": True}}
     asyncio.run(ta._rispetta_ritmo("sendMediaGroup", album))
     assert ta.unita_ultimo_minuto() == 10 and not attese
     asyncio.run(ta._rispetta_ritmo("sendMediaGroup", album))   # 10 + 10 > 14: aspetta
@@ -83,3 +83,19 @@ def test_ritmo_album_vale_una_unita_per_foto_e_aspetta_oltre_il_limite(monkeypat
 def test_unita_chiamata():
     assert ta._unita_chiamata("sendMessage", {}) == 1
     assert ta._unita_chiamata("sendMediaGroup", {"files": {"a": 1, "b": 2, "c": 3}}) == 3
+
+
+def test_invii_con_suono_non_aspettano_mai(monkeypatch):
+    monkeypatch.setattr(ta, "TELEGRAM_MSG_MINUTO", 2)
+    ta._finestra_invii.clear()
+    attese = []
+
+    async def finto_sleep(s):
+        attese.append(s)
+    monkeypatch.setattr(ta.asyncio, "sleep", finto_sleep)
+    for _ in range(5):
+        asyncio.run(ta._rispetta_ritmo("sendMessage", {"json": {"disable_notification": False}}))
+    assert not attese and ta.unita_ultimo_minuto() == 5
+    assert ta._e_urgente("sendMessage", {"json": {"disable_notification": False}})
+    assert not ta._e_urgente("sendMediaGroup", {"data": {"disable_notification": True}})
+    ta._finestra_invii.clear()

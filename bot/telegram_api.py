@@ -85,6 +85,17 @@ _finestra_invii = deque()   # (tempo monotonic, unita')
 _lock_ritmo = asyncio.Lock()
 
 
+_METODI_CON_RITMO = ("sendMessage", "sendPhoto", "sendMediaGroup")
+
+
+def _e_urgente(metodo, kwargs):
+    """9/11 (utente: 'ogni secondo perso e' una vendita persa'): un invio CON SUONO (COMPRA e preavvisi migliori) non aspetta mai il limitatore;
+    ad aspettare sono solo gli invii muti (preavvisi bassi, gallerie, venduti, report). Pura."""
+    corpo = kwargs.get("json") or kwargs.get("data") or {}
+    dn = corpo.get("disable_notification") if isinstance(corpo, dict) else None
+    return dn is False or str(dn).lower() == "false"
+
+
 def _unita_chiamata(metodo, kwargs):
     """Quanti messaggi vale la chiamata per il limite di Telegram: un album vale una unita' per foto. Pura."""
     if metodo == "sendMediaGroup":
@@ -100,10 +111,13 @@ def unita_ultimo_minuto(ora=None):
 
 
 async def _rispetta_ritmo(metodo, kwargs):
-    """Aspetta finche' l'invio sta dentro TELEGRAM_MSG_MINUTO unita' al minuto, poi lo registra. Le chiamate sono servite una alla volta."""
-    if TELEGRAM_MSG_MINUTO <= 0:
+    """Gli invii con suono partono subito; quelli muti aspettano finche' sono dentro TELEGRAM_MSG_MINUTO unita' al minuto (suoni compresi), una alla volta."""
+    if TELEGRAM_MSG_MINUTO <= 0 or metodo not in _METODI_CON_RITMO:
         return
     n = min(_unita_chiamata(metodo, kwargs), TELEGRAM_MSG_MINUTO)
+    if _e_urgente(metodo, kwargs):
+        _finestra_invii.append((time.monotonic(), n))   # parte subito, ma pesa sul budget degli invii muti
+        return
     async with _lock_ritmo:
         while True:
             ora = time.monotonic()
