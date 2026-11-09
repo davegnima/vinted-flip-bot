@@ -180,12 +180,12 @@ VINTED_BRAND_IDS = {
     # se sono veri"): grandi griffe e contemporary visti nelle pagine We Love di Vestiaire
     # (docs/analisi/vestiaire_brand_confronto.json). Id dal dataset teddy-vltn/vinted-dataset
     # (statico su GitHub, non una richiesta a Vinted), NON verificati a mano; servono anche a
-    # Jev per i comparabili. Esclusi di proposito Polo Ralph Lauren, Lacoste, Diesel (prezzi
+    # Jev per i comparabili. Esclusi di proposito Celine (regola 20, 9/11: tolto, era entrato l'8/11 dal dataset), Polo Ralph Lauren, Lacoste, Diesel (prezzi
     # bassi anche su Vestiaire: mediana 40-75 EUR) e "ami" da solo (parola comune nei titoli).
     "gucci": "567", "louis vuitton": "417", "dior": "671", "christian dior": "15430438",
     "burberry": "364", "balenciaga": "2369", "moncler": "6539", "golden goose": "38923",
     "canada goose": "14939", "givenchy": "2371", "valentino": "5928803", "valentino garavani": "5928803",
-    "hermes": "4785", "hermès": "4785", "chanel": "481", "celine": "1443", "saint laurent": "83122",
+    "hermes": "4785", "hermès": "4785", "chanel": "481", "saint laurent": "83122",
     "dolce & gabbana": "1043", "off-white": "170880", "versace": "2293", "palm angels": "395367",
     "etro": "12723", "ami paris": "7228770", "amiri": "407726", "belstaff": "131166",
     "dsquared2": "1363", "casablanca": "46009", "balmain": "5101", "giorgio armani": "15447534",
