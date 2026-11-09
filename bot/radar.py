@@ -689,15 +689,15 @@ async def _invia_radar(testo, foto=None, suono=False, ricerca=None, url=None):
     con_foto = False
     if foto:
         didascalia, resto = spezza_didascalia(compatta_didascalia(testo))
-        if await telegram_send_photo(RADAR_CHAT_ID, foto, caption=didascalia, disable_notification=not suono, url_bottone=url):
+        if await telegram_send_photo(RADAR_CHAT_ID, foto, caption=didascalia, disable_notification=not suono, url_bottone=url, urgente=True):
             consegnato = con_foto = True
             log.info("RADAR FOTO | inviata con foto (%d KB)", len(foto) // 1024)
             if resto:
-                await telegram_send_message(RADAR_CHAT_ID, resto, disable_notification=True)
+                await telegram_send_message(RADAR_CHAT_ID, resto, disable_notification=True, urgente=True)
         else:
             log.warning("RADAR FOTO | rifiutata da Telegram, ripiego sul solo testo | ricerca=%s", ricerca or "-")
     if not consegnato:
-        consegnato = bool(await telegram_send_message(RADAR_CHAT_ID, testo, disable_notification=not suono, url_bottone=url))
+        consegnato = bool(await telegram_send_message(RADAR_CHAT_ID, testo, disable_notification=not suono, url_bottone=url, urgente=True))
     log.info("RADAR PRIVATO | consegnato=%s | foto=%s | ricerca=%s | testo=%s", "si" if consegnato else "NO", "si" if con_foto else "no",
              ricerca or "-", testo.replace("\n", " / "))
     return consegnato
