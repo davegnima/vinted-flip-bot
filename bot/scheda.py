@@ -341,21 +341,28 @@ def testo_avviso_solo_semaforo(listing_info, url=None, msg_id=None):
     return "\n".join(righe)
 
 
+def _testo_visibile(testo):
+    """Testo come lo conta Telegram (limite 1024 della didascalia): senza l'indirizzo dentro '[titolo](url)'. Pura."""
+    return re.sub(r"\]\([^)]*\)", "]", testo or "")
+
+
 def didascalia_verdetto(testo, limite=1024):
     """Riduce il messaggio del verdetto alla didascalia di una foto (max 1024, limite di Telegram): se non ci sta accorcia le
     righe piu' lunghe (analisi, dubbi: troncate con "…") e tiene tutte le altre, cosi' restano esito, prezzi, dettagli e fair
     value. Se non basta ancora, toglie le righe dal fondo. Pura."""
     testo = (testo or "").strip()
-    if len(testo) <= limite:
+    if len(testo) > limite:   # la riga della ricerca (link lungo) cade per prima, come prima
+        testo = "\n".join(r for r in testo.split("\n") if not r.startswith("🔎 Query:"))
+    if len(_testo_visibile(testo)) <= limite:   # Telegram conta il testo visibile: l'indirizzo di "[titolo](url)" non conta (9/11, avviso Sacai senza riga Gemini e senza stime)
         return testo
     # la riga della ricerca (link lungo fino a ~600 caratteri) e' la prima a cadere: accorciata spezzerebbe il link
     righe = [r for r in testo.split("\n") if not r.startswith("🔎 Query:")]
     MIN_RIGA = 140
     for _ in range(len(righe) * 2 + 5):          # numero di giri limitato: la funzione deve sempre finire
-        totale = len("\n".join(righe))
+        totale = len(_testo_visibile("\n".join(righe)))
         if totale <= limite:
             break
-        i = max(range(len(righe)), key=lambda k: len(righe[k]))
+        i = max(range(len(righe)), key=lambda k: len(_testo_visibile(righe[k])))
         if len(righe[i]) <= MIN_RIGA:
             break
         tenuti = max(MIN_RIGA, len(righe[i]) - (totale - limite) - 1)
@@ -365,10 +372,10 @@ def didascalia_verdetto(testo, limite=1024):
         if len(accorciata) >= len(righe[i]):     # nessun progresso (riga gia' accorciata al minimo)
             break
         righe[i] = accorciata
-    while len("\n".join(righe)) > limite and len(righe) > 1:
+    while len(_testo_visibile("\n".join(righe))) > limite and len(righe) > 1:
         righe.pop()
     out = "\n".join(righe).rstrip()
-    return out if len(out) <= limite else out[:limite - 1] + "…"
+    return out if len(_testo_visibile(out)) <= limite else out[:limite - 1] + "…"
 
 
 def _preavviso_inviato(listing_info, id_msg, tipo, riga_tempi, secondi, t_inizio):

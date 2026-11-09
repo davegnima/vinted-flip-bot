@@ -552,3 +552,15 @@ def test_consiglio_gemini_e_la_seconda_riga_del_messaggio():
     righe = testo_preavviso(info, url="https://x.it/1").split("\n")
     assert "Cappotto" in righe[0] and righe[1] == "💬 Compra: Made in Italy, ottimo stato"
     assert sum(r.startswith("💬") for r in righe) == 1
+
+
+def test_didascalia_non_conta_gli_indirizzi_dei_link():
+    """9/11: il testo con link lunghi che visibile sta in 1024 caratteri non va accorciato (avviso Sacai senza riga Gemini e senza stime)."""
+    from bot.scheda import didascalia_verdetto
+    url = "https://www.vinted.it/items/10740919272-" + "x" * 150
+    righe = [f"🟢 *sacai* · [Cardigan]({url}) · *46 €*", "💬 Compra: originale, ottime condizioni",
+             "✅ CONFERMATO · rivendita ~165 € (semaforo 156 · recenti 285 · rilevanti 100) · margine ~97 € · ROI 188%"]
+    righe += [f"• [Sacai]({url}) · 285 €"] * 4 + ["riga lunga " + "a" * 300]
+    testo = "\n".join(righe)
+    assert len(testo) > 1024
+    assert didascalia_verdetto(testo) == testo
