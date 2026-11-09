@@ -325,7 +325,17 @@ if os.environ.get("RADAR_SOLO_VERDI", "0").strip() in ("1", "true", "si"):
     RADAR_SEMAFORI = {"verde"}
 # Chat dove arrivano gli avvisi del radar (1/11, utente: il gruppo "COMPRA Vinted" dei verdi della moda): RADAR_CHAT_ID, poi
 # TELEGRAM_ALERT_CHAT_ID (il gruppo COMPRA), poi l'owner.
-RADAR_CHAT_ID = (os.environ.get("RADAR_CHAT_ID") or "").strip() or TELEGRAM_ALERT_CHAT_ID or TELEGRAM_OWNER_CHAT_ID
+RADAR_CHAT_ID = (os.environ.get("RADAR_CHAT_ID") or "").strip() or None
+
+
+def chat_avvisi_radar():
+    """Chat degli avvisi radar (9/11, utente: gialli e verdi nel gruppo Vinted bot, niente COMPRA): RADAR_CHAT_ID se impostata,
+    altrimenti il gruppo radar (quello dei messaggi del tracker, anche trovato per nome all'avvio), poi COMPRA e l'owner come ultima risorsa."""
+    if RADAR_CHAT_ID:
+        return RADAR_CHAT_ID
+    if RADAR_GROUP_ID is not None:
+        return RADAR_GROUP_ID
+    return next(iter(sorted(RADAR_CHAT_IDS)), None) or TELEGRAM_ALERT_CHAT_ID or TELEGRAM_OWNER_CHAT_ID
 # Filtro Jev (1/11, utente): si manda solo cio' che Jev dichiara "affare" (niente rotti, ricambi, incompleti) con confidenza minima.
 RADAR_JEV_RICHIESTO = os.environ.get("RADAR_JEV_RICHIESTO", "1").strip() not in ("0", "false", "no", "")
 try:
@@ -536,7 +546,7 @@ def testo_risposta_gruppo(v2, esito=None):
             motivo = None if esito.get("inviato") else (esito.get("motivo") or "non inviato")
         else:
             motivo = perche_non_inviato(v2)
-        testo += "\n" + ("Inviato in COMPRA" if motivo is None else f"Non inviato in COMPRA: {motivo}")
+        testo += "\n" + ("Avviso inviato" if motivo is None else f"Avviso non inviato: {motivo}")
         testo += "".join("\n" + r for r in _righe_link_comps(v2))
     return testo
 
@@ -554,22 +564,22 @@ RADAR_CANCELLA_ROSSI = os.environ.get("RADAR_CANCELLA_ROSSI", "1").strip() not i
 
 # 8/11 (utente): i rossi con modello riconosciuto e stima fatta (margine o ROI bassi, sopra il riferimento) restano nel gruppo.
 MOTIVI_FILTRATI_DIRETTAMENTE = ("fuori_famiglia", "sopra_tetto_modello")
+MOTIVI_TECNICI_NON_CANCELLA = ("gia_visto", "senza_id", "ombra_spenta", "pausa_notturna")   # non sono un verdetto: il messaggio resta
 MOTIVI_MODELLO_RICONOSCIUTO = ("margine_basso", "roi_basso", "sopra_riferimento")
 
 
 def da_cancellare(v2, esito=None):
     """True se il verdetto e' un rosso da togliere dal gruppo: non e' l'oggetto intero, oppure (RADAR_CANCELLA_ROSSI) e' rosso.
     Con `esito` anche i gialli/verdi scartati nel merito (Jev, comparabili, Gemini, rivalutazione): 1/11, scelta dell'utente. Pura."""
-    if esito and esito.get("scartato"):
-        return True
+    if esito and (esito.get("scartato") or esito.get("inviato")):
+        return True   # inviato: l'avviso completo e' gia' nel gruppo, il messaggio del tracker sarebbe un doppione
     if not v2:
-        # modello fuori lista o prezzo sopra il tetto del modello: non vale la pena vederlo (8/11, utente), si toglie dal gruppo
-        return (((esito or {}).get("saltato") or "").split(":")[0]) in MOTIVI_FILTRATI_DIRETTAMENTE
+        # non valutato (modello fuori lista, sopra il tetto, ecc.): non e' un giallo ne' un verde, si toglie dal gruppo (9/11, utente)
+        return (((esito or {}).get("saltato") or "").split(":")[0]) not in MOTIVI_TECNICI_NON_CANCELLA
     if v2.get("semaforo") != "rosso":
         return False
-    if (v2.get("motivo") or "").split(":")[0] in MOTIVI_MODELLO_RICONOSCIUTO:
-        return False
-    return RADAR_CANCELLA_ROSSI or (v2.get("motivo") or "").split(":")[0] in MOTIVI_NON_OGGETTO
+    # 9/11 (utente): nel gruppo Vinted bot niente rossi, nemmeno con modello riconosciuto e stima fatta (restano nel tracciamento).
+    return True
 
 
 # Verifica dei comparabili (01/11, richiesta dell'utente: "i simili non sono lo stesso modello"): se Jev ha giudicato i comparabili
@@ -689,15 +699,15 @@ async def _invia_radar(testo, foto=None, suono=False, ricerca=None, url=None):
     con_foto = False
     if foto:
         didascalia, resto = spezza_didascalia(compatta_didascalia(testo))
-        if await telegram_send_photo(RADAR_CHAT_ID, foto, caption=didascalia, disable_notification=not suono, url_bottone=url, urgente=True):
+        if await telegram_send_photo(chat_avvisi_radar(), foto, caption=didascalia, disable_notification=not suono, url_bottone=url, urgente=True):
             consegnato = con_foto = True
             log.info("RADAR FOTO | inviata con foto (%d KB)", len(foto) // 1024)
             if resto:
-                await telegram_send_message(RADAR_CHAT_ID, resto, disable_notification=True, urgente=True)
+                await telegram_send_message(chat_avvisi_radar(), resto, disable_notification=True, urgente=True)
         else:
             log.warning("RADAR FOTO | rifiutata da Telegram, ripiego sul solo testo | ricerca=%s", ricerca or "-")
     if not consegnato:
-        consegnato = bool(await telegram_send_message(RADAR_CHAT_ID, testo, disable_notification=not suono, url_bottone=url, urgente=True))
+        consegnato = bool(await telegram_send_message(chat_avvisi_radar(), testo, disable_notification=not suono, url_bottone=url, urgente=True))
     log.info("RADAR PRIVATO | consegnato=%s | foto=%s | ricerca=%s | testo=%s", "si" if consegnato else "NO", "si" if con_foto else "no",
              ricerca or "-", testo.replace("\n", " / "))
     return consegnato
@@ -841,7 +851,7 @@ def traccia_verdetto_v2(parsed, url, v2, t0=None):
         "audit": "si" if audit else None, "vendita_stimata": v2.get("rivendita"), "richiesto_med": v2.get("richiesto_mediano"),
         "qualita": (v2.get("qualita") or {}).get("punteggio"), "costo_tot": v2.get("costo_totale"),
         "sped": v2.get("spedizione_stato"), "calib": v2.get("calibrazione"),
-        "ricerca": (str(parsed.get("query_name") or "")[:40] or None)}.items()
+        "ricerca": (str(parsed.get("query_name") or "")[:40] or None), "titolo": (parsed.get("title") or "")[:80] or None}.items()
         if v is not None}
     tr.tracc_avvia_serie(info, url, t0 or time.time(), offsets=RADAR_RICONTROLLI_SECONDI)
     log.info("RADAR TRACCIA AVVIO | item=%s | semaforo=%s | prezzo=%s", item_id, sem, prezzo)

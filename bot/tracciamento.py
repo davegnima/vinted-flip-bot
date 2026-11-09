@@ -279,6 +279,15 @@ def _tracc_scrivi_finale(item_id, brand, prezzo, storia, radar=False):
                         item_id, f"https://www.vinted.it/items/{item_id}", brand, prezzo, _venduto_f, _classe_f, dict(ctx)))
                 except RuntimeError:
                     pass   # nessun loop (test o chiusura): la riga TRACCIATO resta
+        if radar:
+            _stato_r, _classe_r, _venduto_r = _tracc_esito_finale(storia)
+            if venduto_veloce_radar_da_inviare(ctx, _classe_r):
+                ctx["_veloce_inviato"] = True
+                try:
+                    asyncio.get_running_loop().create_task(_invia_venduto_veloce_radar(
+                        item_id, f"https://www.vinted.it/items/{item_id}", prezzo, _venduto_r, _classe_r, dict(ctx)))
+                except RuntimeError:
+                    pass
         if not radar:
             db.scrivi_evento("tracciato", item_id, brand, {"prezzo": prezzo, **ctx, "storia": storia})
         else:
@@ -427,6 +436,47 @@ async def _invia_venduto_veloce(item_id, url, brand, prezzo, venduto_s, classe, 
     if TELEGRAM_ALERT_CHAT_ID:
         await telegram_send_with_buttons(TELEGRAM_ALERT_CHAT_ID, testo_venduto_veloce(item_id, url, brand, prezzo, venduto_s, classe, ctx),
                                          url, None, disable_notification=True)
+
+
+def venduto_veloce_radar_da_inviare(ctx, classe):
+    """Radar (9/11, utente): venduto veloce (AFFARE o MEDIO AFFARE) solo per i gialli e i verdi, mai i rossi. Pura."""
+    if VENDUTO_VELOCE_MARGINE_MIN <= 0 or classe not in ("AFFARE", "MEDIO AFFARE") or not ctx or ctx.get("_veloce_inviato"):
+        return False
+    return ctx.get("semaforo") in ("verde", "giallo")
+
+
+def testo_venduto_veloce_radar(item_id, url, prezzo, venduto_s, ctx):
+    """Messaggio Markdown del venduto veloce del radar: tempo, prezzo, margine, semaforo e giudizio di Jev. Pura."""
+    from bot.testo import _escapa_markdown_legacy as esc
+    minuti = (venduto_s / 60) if isinstance(venduto_s, (int, float)) else None
+    quando = f"{minuti:.0f} min" if minuti is not None and minuti >= 1 else "meno di 1 min" if minuti is not None else "entro 15 min"
+    marg = _a_float((ctx or {}).get("margine"), None)
+    marg_t = f"margine ~{marg:.0f} €" if marg is not None else "margine n/d"
+    pallino = "🟢" if (ctx or {}).get("semaforo") == "verde" else "🟡"
+    righe = [f"🏁 *Venduto in {quando}* · 💶 {_a_float(prezzo, 0):.0f} € · {marg_t} · {pallino} radar"]
+    if ctx.get("titolo"):
+        righe.append(esc(str(ctx["titolo"])))
+    pezzi = []
+    if ctx.get("rivendita"):
+        pezzi.append(f"rivendita ~{ctx['rivendita']} €")
+    if ctx.get("jev"):
+        pezzi.append(f"Jev: {ctx['jev']}")
+    if ctx.get("ricerca"):
+        pezzi.append(str(ctx["ricerca"]))
+    if pezzi:
+        righe.append(esc(" · ".join(pezzi)))
+    righe.append(f"[vedi su Vinted]({url})")
+    return "\n".join(righe)
+
+
+async def _invia_venduto_veloce_radar(item_id, url, prezzo, venduto_s, classe, ctx):
+    from bot.radar import chat_avvisi_radar   # import tardivo: radar importa questo modulo
+    chat = chat_avvisi_radar()
+    log.info("RADAR VENDUTO VELOCE | item=%s | classe=%s | venduto_s=%s | semaforo=%s | margine=%s | chat=%s",
+             item_id, classe, venduto_s, ctx.get("semaforo"), ctx.get("margine"), "si" if chat else "no")
+    if chat:
+        await telegram_send_with_buttons(chat, testo_venduto_veloce_radar(item_id, url, prezzo, venduto_s, ctx), url, None,
+                                         disable_notification=True)
 
 
 async def _invia_allarme_preferiti(item_id, url, brand, prezzo, offset_s, preferiti):
