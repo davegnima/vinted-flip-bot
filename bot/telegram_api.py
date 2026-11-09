@@ -4,6 +4,7 @@ import os
 import re
 import asyncio
 import time
+from collections import deque
 
 
 from bot.config import TELEGRAM_API
@@ -76,6 +77,44 @@ _METODI_NON_IN_CODA = ("sendMediaGroup", "sendPhoto")
 _blocco_429 = {"fino": 0.0, "prossimo": 0.0}   # tempi time.monotonic()
 
 
+# 9/11: terzo blocco 429 in 14 ore (retry_after 12159 s, alle 08:47 UTC, 55 min dopo la fine del precedente) senza nessun 429 breve prima: i
+# blocchi lunghi arrivano quando si supera il limite di Telegram (circa 20 messaggi al minuto per gruppo) e un album da N foto vale N messaggi.
+# Ritmo massimo: TELEGRAM_MSG_MINUTO unita' (messaggio o foto) in 60 s; oltre, la chiamata aspetta il suo turno. 0 = spento.
+TELEGRAM_MSG_MINUTO = int(float(os.environ.get("TELEGRAM_MSG_MINUTO", "14")))
+_finestra_invii = deque()   # (tempo monotonic, unita')
+_lock_ritmo = asyncio.Lock()
+
+
+def _unita_chiamata(metodo, kwargs):
+    """Quanti messaggi vale la chiamata per il limite di Telegram: un album vale una unita' per foto. Pura."""
+    if metodo == "sendMediaGroup":
+        return max(1, len((kwargs.get("files") or {})))
+    return 1
+
+
+def unita_ultimo_minuto(ora=None):
+    ora = time.monotonic() if ora is None else ora
+    while _finestra_invii and ora - _finestra_invii[0][0] >= 60.0:
+        _finestra_invii.popleft()
+    return sum(n for _, n in _finestra_invii)
+
+
+async def _rispetta_ritmo(metodo, kwargs):
+    """Aspetta finche' l'invio sta dentro TELEGRAM_MSG_MINUTO unita' al minuto, poi lo registra. Le chiamate sono servite una alla volta."""
+    if TELEGRAM_MSG_MINUTO <= 0:
+        return
+    n = min(_unita_chiamata(metodo, kwargs), TELEGRAM_MSG_MINUTO)
+    async with _lock_ritmo:
+        while True:
+            ora = time.monotonic()
+            if unita_ultimo_minuto(ora) + n <= TELEGRAM_MSG_MINUTO:
+                _finestra_invii.append((ora, n))
+                return
+            attesa = 60.0 - (ora - _finestra_invii[0][0]) + 0.1
+            log.info("Telegram %s: ritmo al limite (%d unita' nell'ultimo minuto), attendo %.1fs", metodo, unita_ultimo_minuto(ora), attesa)
+            await asyncio.sleep(max(0.1, attesa))
+
+
 async def _attendi_fine_blocco(metodo):
     """True quando si puo' inviare; False se c'e' un blocco 429 attivo e il metodo non va messo in coda. Con il blocco attivo ogni chiamata
     prende uno slot dopo la fine del blocco (uno ogni TELEGRAM_PASSO_DOPO_BLOCCO_SECONDI) e dorme fino ad allora."""
@@ -107,6 +146,7 @@ async def _telegram_post(metodo, max_tentativi=TELEGRAM_MAX_TENTATIVI, **kwargs)
         if not await _attendi_fine_blocco(metodo):
             log.warning("Telegram %s: non inviato, blocco 429 attivo ancora per %.0fs", metodo, _blocco_429["fino"] - time.monotonic())
             return None
+        await _rispetta_ritmo(metodo, kwargs)
         try:
             resp = await hc._client_telegram.post(f"{TELEGRAM_API}/{metodo}", **kwargs)
         except Exception as e:
@@ -132,7 +172,8 @@ async def _telegram_post(metodo, max_tentativi=TELEGRAM_MAX_TENTATIVI, **kwargs)
                     if metodo not in _METODI_NON_IN_CODA and tentativo < max_tentativi:
                         continue
                 else:
-                    log.error("Telegram %s: blocco 429 LUNGO di %.0fs (circa %.1f ore): nessun invio fino alla fine del blocco", metodo, retry_after, retry_after / 3600)
+                    log.error("Telegram %s: blocco 429 LUNGO di %.0fs (circa %.1f ore): nessun invio fino alla fine del blocco (unita' inviate nell'ultimo minuto: %d)",
+                              metodo, retry_after, retry_after / 3600, unita_ultimo_minuto())
                 return resp
             if tentativo < max_tentativi:
                 attesa = retry_after + 0.5
