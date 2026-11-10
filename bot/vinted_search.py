@@ -19,14 +19,14 @@ def build_vinted_search_url(brand, categoria, materiale=None, catalog_id=None):
             f"https://www.vinted.it/catalog?brand_ids[]={brand_id}"
             f"{catalog_str}"
             f"&search_text={quote(search_text_finale)}"
-            "&order=newest_first&status_ids[]=1&status_ids[]=2&status_ids[]=3"
+            "&order=newest_first&status_ids[]=2&status_ids[]=3"
         )
         return url, True
     query_text = f"{brand} {search_text_finale}".strip()
     url = (
         f"https://www.vinted.it/catalog?search_text={quote(query_text)}"
         f"{catalog_str}"
-        "&order=newest_first"
+        "&order=newest_first&status_ids[]=2&status_ids[]=3"
     )
     return url, False
 
@@ -236,7 +236,7 @@ async def build_vinted_visual_search_url(item_id, photo_id, brand):
     url = (
         f"https://www.vinted.it/catalog?search_by_image_id={quote(search_by_image_id)}"
         f"&brand_ids[]={brand_id}"
-        "&status_ids[]=1&status_ids[]=2&status_ids[]=3"
+        "&status_ids[]=2&status_ids[]=3"
     )
     log.info("build_vinted_visual_search_url: URL catalogo costruito: %s", url)
     return url

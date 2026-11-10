@@ -479,8 +479,8 @@ def test_semaforo_da_verificare_si_ferma_con_abbastanza_campioni_appresi(monkeyp
 
 
 def test_url_comparabili_ordine_configurabile():
-    assert mj.url_comparabili("zimmermann", "abito", 10).endswith("&order=newest_first")
-    assert mj.url_comparabili("zimmermann", "abito", 10, "relevance").endswith("&order=relevance")
+    assert "&order=newest_first" in mj.url_comparabili("zimmermann", "abito", 10)
+    assert "&order=relevance" in mj.url_comparabili("zimmermann", "abito", 10, "relevance")
     assert "order=price_low_to_high" in mj.url_comparabili("marchio inesistente", "giacca", 5, "price_low_to_high")
 
 
@@ -607,3 +607,9 @@ def test_sigle_foto_sm_s_d_accanto_ai_comparabili():
     righe = [str(r) for r in righe_messaggio(ris)]
     assert any("foto: 1 SM · 1 S · 1 D · 1 ?" in r for r in righe)
     assert any(r.startswith("• SM · ") for r in righe)
+
+
+def test_url_comparabili_sempre_condizioni_ottime_e_buone():
+    """10/11 (utente): i comparabili si cercano sempre con condizioni ottime e buone (status 2 e 3)."""
+    for u in (mj.url_comparabili("zimmermann", "abito", 10), mj.url_comparabili("marchio inesistente", "giacca", 5)):
+        assert u.endswith("&status_ids[]=2&status_ids[]=3")

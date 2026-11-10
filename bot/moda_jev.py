@@ -75,6 +75,10 @@ MODA_COMPS_ORDINE = os.environ.get("MODA_COMPS_ORDINE", "newest_first").strip() 
 MODA_COMPS_PROVA = [o.strip() for o in os.environ.get("MODA_COMPS_PROVA", "").split(",") if o.strip()]
 
 
+# 10/11 (utente): la ricerca dei comparabili usa SEMPRE condizioni ottime e buone (status 2 e 3), oltre a brand e categoria
+STATO_COMPS = "&status_ids[]=2&status_ids[]=3"
+
+
 def url_comparabili(brand, testo=None, catalogo=None, ordine=None):
     """Ricerca dei simili: brand_ids[] + categoria foglia dell'annuncio + parole del titolo (se ci sono). None senza id brand. Pura."""
     bid = id_brand(brand)
@@ -84,7 +88,7 @@ def url_comparabili(brand, testo=None, catalogo=None, ordine=None):
     t = f"&search_text={quote(testo if bid else ((brand or '') + ' ' + (testo or '')).strip())}" if (testo or not bid) else ""
     c = f"&catalog[]={catalogo}" if catalogo else ""
     b = f"brand_ids[]={bid}" if bid else "currency=EUR"
-    return f"https://www.vinted.it/catalog?{b}{c}{t}&order={ordine or MODA_COMPS_ORDINE}"
+    return f"https://www.vinted.it/catalog?{b}{c}{t}&order={ordine or MODA_COMPS_ORDINE}{STATO_COMPS}"
 
 
 MODA_JEV_OMBRA = os.environ.get("MODA_JEV_OMBRA", "1").strip() not in ("0", "false", "no", "")
