@@ -159,9 +159,16 @@ async def controlla(titolo, prezzo, url, foto_tracker=None, item_id=None):
         foto, descrizione, condizione = await _foto_pagina(url, foto_tracker)
         _chiamate.append(time.time())
         t0 = time.time()
+        # 10/11 (utente: Gemini deve girare su ogni giallo e verde): ruolo "occhio_radar" = pausa timeout separata da
+        # quella della moda (prima 2 timeout della moda mettevano il radar in pausa 120 s e l'avviso partiva senza lettura).
         testo, costo, _n = await chiama_gemini(SYSTEM_PROMPT, testo_utente(titolo, prezzo, descrizione, condizione), foto,
-                                               grounding=False, response_schema=SCHEMA, ruolo="occhio")
+                                               grounding=False, response_schema=SCHEMA, ruolo="occhio_radar")
         d = leggi_risposta(testo)
+        if d is None:  # un secondo tentativo (chiave/modello diversi dalla rotazione) prima di rinunciare alla lettura
+            log.info("RADAR GEMINI | item=%s | nessuna risposta, secondo tentativo", item_id)
+            testo, costo, _n = await chiama_gemini(SYSTEM_PROMPT, testo_utente(titolo, prezzo, descrizione, condizione), foto,
+                                                   grounding=False, response_schema=SCHEMA, ruolo="occhio_radar")
+            d = leggi_risposta(testo)
         log.info("RADAR GEMINI | item=%s | verdetto=%s | conf=%s | oggetto=%s | funz=%s | completo=%s | danni=%s | autent=%s | foto=%s | %.1fs | rivendita_gem=%s | conf_riv=%s | velocita=%s | ric_modello=%s | ric_sem=%s | motivo=%s | titolo=%s",
                  item_id, d["verdetto"] if d else "nessuna_risposta", d.get("confidenza") if d else "-", (d or {}).get("oggetto", "-"),
                  (d or {}).get("funzionante", "-"), (d or {}).get("completo", "-"), (d or {}).get("danni_visibili", "-"),

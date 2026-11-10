@@ -210,8 +210,12 @@ def _registra_banda(url, resp, tipo=None):
         tipo = tipo or _tipo_richiesta_vinted(url)
         rete = int(getattr(resp, "num_bytes_downloaded", 0) or 0)
         decodificati = len(resp.content or b"")
-        s = _BANDA_PER_TIPO.setdefault(tipo, {"n": 0, "rete": 0, "decod": 0})
+        s = _BANDA_PER_TIPO.setdefault(tipo, {"n": 0, "rete": 0, "decod": 0, "ko": 0})
         s["n"] += 1
+        # 403/429 = Vinted ci sta limitando (il vincolo vero e' il numero di
+        # richieste, non i byte): contati per tipo nel riepilogo.
+        if getattr(resp, "status_code", 200) in (403, 429):
+            s["ko"] = s.get("ko", 0) + 1
         s["rete"] += rete
         s["decod"] += decodificati
         _BANDA_REGISTRAZIONI[0] += 1
@@ -230,7 +234,7 @@ def _logga_riepilogo_banda():
         pezzi.append(
             f"{tipo}: {s['n']} richieste, {s['rete'] / 1048576:.1f}MB in rete "
             f"({s['rete'] / tot_rete * 100:.0f}% del totale), media {media_rete:.0f}KB/richiesta "
-            f"(decompressi {media_decod:.0f}KB)"
+            f"(decompressi {media_decod:.0f}KB), rifiutate 403/429: {s.get('ko', 0)}"
         )
     log.info("RIEPILOGO BANDA (dall'avvio, %.1fMB totali in rete): %s",
              tot_rete / 1048576, " | ".join(pezzi))

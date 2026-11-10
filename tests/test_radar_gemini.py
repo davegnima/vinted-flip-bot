@@ -143,3 +143,25 @@ def test_velocita_e_ricerca_modello():
     # valore fuori elenco o assente: nessuna velocita'
     assert rg.leggi_risposta(json.dumps({**OK, "velocita_rivendita": "boh"}))["velocita_rivendita"] is None
     assert "Velocità" not in rg.riga_gemini(rg.leggi_risposta(json.dumps(OK)))
+
+
+def test_ruolo_radar_separato_e_secondo_tentativo(monkeypatch):
+    """10/11: il radar usa il ruolo 'occhio_radar' (pausa timeout propria) e ritenta una volta se manca la risposta."""
+    from bot import gemini_stato as gs
+    assert gs.cascata_per("occhio_radar") == gs.cascata_per("occhio")
+    chiamate = []
+
+    async def pagina(url, foto):
+        return [b"x"], "desc", "Buone"
+
+    async def gemini(*a, **k):
+        chiamate.append(k.get("ruolo"))
+        return ("[ERRORE: tentativi esauriti]", 0.0, 0) if len(chiamate) == 1 else (json.dumps(OK), 0.0, 0)
+
+    monkeypatch.setattr(rg, "_foto_pagina", pagina)
+    monkeypatch.setattr(rg, "chiama_gemini", gemini)
+    monkeypatch.setattr(rg, "RADAR_GEMINI", True)
+    rg._chiamate.clear()
+    assert asyncio.run(rg.controlla("Switch", 40.0, "https://x", None, "1"))["verdetto"] == "conferma"
+    assert chiamate == ["occhio_radar", "occhio_radar"]
+    rg._chiamate.clear()

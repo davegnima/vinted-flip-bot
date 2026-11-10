@@ -881,7 +881,7 @@ def test_motivo_saltato_nel_gruppo_e_cancellazione():
     assert da_cancellare(None, esito) is True
     assert da_cancellare(None, {"saltato": "sopra_tetto_modello:switch:90"}) is True
     assert "switch" in motivo_saltato_leggibile("sopra_tetto_modello:switch:90") and "90" in motivo_saltato_leggibile("sopra_tetto_modello:switch:90")
-    assert da_cancellare(None, {"saltato": "gia_visto"}) is False
+    assert da_cancellare(None, {"saltato": "gia_visto"}) is True   # 9/11 utente: i doppioni non si analizzano e spariscono
     assert "gia' valutato" in testo_risposta_gruppo(None, {"saltato": "gia_visto"})
     assert "semaforo non calcolato" not in perche_non_inviato(None)
     assert "semaforo non calcolato" not in perche_non_inviato({"semaforo": None, "motivo": "pochi_comparabili"})
