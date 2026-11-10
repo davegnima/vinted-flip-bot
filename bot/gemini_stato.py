@@ -127,6 +127,8 @@ GEMINI_CASCATA_CERVELLO_ALTO = [m.strip() for m in os.environ.get("GEMINI_CASCAT
 
 def cascata_per(ruolo=None):
     """Catena di modelli (dal migliore al piu' leggero) per la fase `ruolo` ("occhio" | "cervello"), [] = nessuna."""
+    if ruolo == "occhio_radar":  # 10/11: il radar ha lo stato di timeout/pausa suo, ma stessa cascata dell'occhio
+        ruolo = "occhio"
     if ruolo in ("occhio_alto", "cervello_alto"):
         alta = GEMINI_CASCATA_OCCHIO_ALTO if ruolo == "occhio_alto" else GEMINI_CASCATA_CERVELLO_ALTO
         if alta:
