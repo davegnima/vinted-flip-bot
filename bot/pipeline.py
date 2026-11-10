@@ -678,6 +678,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
                 catalog_id=catalog_id, material_per_ricerca=material_per_ricerca,
                 cover_photo_id=cover_photo_id, item_id=item_id_annuncio,
                 nome_sarto=nome_sarto_o_maker, dettaglio_distintivo=dettaglio_distintivo,
+                condizione=listing_info.get("condition"),
             ),
             verifica_codici_prodotto_reddit(occhio_json, brand_per_ricerca, categoria_per_ricerca=categoria_per_ricerca),
         )

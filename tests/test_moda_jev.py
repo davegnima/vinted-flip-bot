@@ -479,8 +479,8 @@ def test_semaforo_da_verificare_si_ferma_con_abbastanza_campioni_appresi(monkeyp
 
 
 def test_url_comparabili_ordine_configurabile():
-    assert mj.url_comparabili("zimmermann", "abito", 10).endswith("&order=newest_first")
-    assert mj.url_comparabili("zimmermann", "abito", 10, "relevance").endswith("&order=relevance")
+    assert "&order=newest_first" in mj.url_comparabili("zimmermann", "abito", 10)
+    assert "&order=relevance" in mj.url_comparabili("zimmermann", "abito", 10, "relevance")
     assert "order=price_low_to_high" in mj.url_comparabili("marchio inesistente", "giacca", 5, "price_low_to_high")
 
 
@@ -607,3 +607,23 @@ def test_sigle_foto_sm_s_d_accanto_ai_comparabili():
     righe = [str(r) for r in righe_messaggio(ris)]
     assert any("foto: 1 SM · 1 S · 1 D · 1 ?" in r for r in righe)
     assert any(r.startswith("• SM · ") for r in righe)
+
+
+def test_url_comparabili_stessa_condizione_dell_annuncio():
+    """10/11 (utente): comparabili con la stessa condizione dell'annuncio; nuovo senza cartellino ammesso."""
+    from bot.vinted_search import stati_comps
+    assert stati_comps("Ottime") == "&status_ids[]=2"
+    assert stati_comps("Buone") == "&status_ids[]=3"
+    assert stati_comps("Soddisfacenti") == "&status_ids[]=4"
+    assert stati_comps("Nuovo senza cartellino") == "&status_ids[]=1"
+    assert stati_comps("Nuovo con cartellino") == "&status_ids[]=6&status_ids[]=1"
+    assert stati_comps(None) == "&status_ids[]=1&status_ids[]=2&status_ids[]=3"
+    assert mj.url_comparabili("zimmermann", "abito", 10, None, "Ottime").endswith("&status_ids[]=2")
+    assert mj.url_comparabili("marchio inesistente", "giacca", 5, None, "Buone").endswith("&status_ids[]=3")
+    assert mj.url_comparabili("zimmermann", "abito", 10).endswith("&status_ids[]=1&status_ids[]=2&status_ids[]=3")
+
+
+def test_ricerca_classica_stessa_condizione():
+    from bot.vinted_search import build_vinted_search_url
+    assert build_vinted_search_url("zimmermann", "abito", None, 10, "Ottime")[0].endswith("&status_ids[]=2")
+    assert build_vinted_search_url("marchio inesistente", "abito", None, 10, "Buone")[0].endswith("&status_ids[]=3")

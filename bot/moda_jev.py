@@ -23,6 +23,7 @@ from bot.comps_filtri import BRAND_SOTTOLINEE_DA_ESCLUDERE
 from bot.fair_value import FAIR_VALUE_APPRESO, FAIR_VALUE_BRAND_NUOVI, FAIR_VALUE_SOTTOLINEE, _jsonl_append
 from bot.jev import CONF_AUTENTICITA_MIN, MAX_FOTO_AUTENTICITA, DOMANDA_FOTO_COMP_MODA, JEV_FOTO_COMPS, MAX_FOTO_COMPS, confronta_foto_comparabili, giudica_autenticita
 from bot.logger import log
+from bot.vinted_search import stati_comps
 from bot.velocita import riga_velocita
 from bot.moda_gemini import controlla as controlla_gemini, e_non_moda, e_replica, riga_consiglio, riga_condizioni, riga_stima_gemini, serve_controllo, sconto_difetti
 from bot.testo import RigaMd, _normalizza_titolo_per_link, link_markdown
@@ -75,7 +76,7 @@ MODA_COMPS_ORDINE = os.environ.get("MODA_COMPS_ORDINE", "newest_first").strip() 
 MODA_COMPS_PROVA = [o.strip() for o in os.environ.get("MODA_COMPS_PROVA", "").split(",") if o.strip()]
 
 
-def url_comparabili(brand, testo=None, catalogo=None, ordine=None):
+def url_comparabili(brand, testo=None, catalogo=None, ordine=None, condizione=None):
     """Ricerca dei simili: brand_ids[] + categoria foglia dell'annuncio + parole del titolo (se ci sono). None senza id brand. Pura."""
     bid = id_brand(brand)
     if not bid and not brand:
@@ -84,7 +85,7 @@ def url_comparabili(brand, testo=None, catalogo=None, ordine=None):
     t = f"&search_text={quote(testo if bid else ((brand or '') + ' ' + (testo or '')).strip())}" if (testo or not bid) else ""
     c = f"&catalog[]={catalogo}" if catalogo else ""
     b = f"brand_ids[]={bid}" if bid else "currency=EUR"
-    return f"https://www.vinted.it/catalog?{b}{c}{t}&order={ordine or MODA_COMPS_ORDINE}"
+    return f"https://www.vinted.it/catalog?{b}{c}{t}&order={ordine or MODA_COMPS_ORDINE}{stati_comps(condizione)}"
 
 
 MODA_JEV_OMBRA = os.environ.get("MODA_JEV_OMBRA", "1").strip() not in ("0", "false", "no", "")
@@ -638,7 +639,7 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
                     testo = f"{parola} {testo}".strip()
             usate, mappe = [], []
             for t in ([testo, None] if testo else [None]):
-                url_c = url_comparabili(brand, t, catalogo, ordine)
+                url_c = url_comparabili(brand, t, catalogo, ordine, listing_info.get("condition"))
                 if not url_c:
                     break
                 risposta, ok, _mappa = await _cerca_vinted_testo_diretto(url_c)
