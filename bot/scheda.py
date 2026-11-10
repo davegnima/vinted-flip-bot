@@ -240,6 +240,8 @@ def testo_preavviso(listing_info, url=None, riga_finale=RIGA_PREAVVISO_IN_ATTESA
         prezzo = _a_float(listing_info.get("price"), None)
         brand = (listing_info.get("brand") or "").strip()
         sem = fv.get("semaforo") or "🟢"
+        if str(verdetto or "").startswith("🚫"):
+            sem = "🚫"   # 10/11 (utente): se Jev scarta, il bollino del semaforo diventa quello di scartato
         identificazione = (sem + " " + (f"*{esc(brand)}* · " if brand and brand != "?" else "") + _riga_titolo(listing_info, url)
                            + (f" · *{prezzo:g} €*" if prezzo is not None else ""))
         originalita = listing_info.get("riga_originalita_jev")
