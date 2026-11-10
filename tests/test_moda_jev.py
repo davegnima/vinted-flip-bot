@@ -253,7 +253,7 @@ def test_comparabili_tutti_diversi_dalla_foto_non_confermano():
     ris = {"esito": "non_verificato", "motivo": "comparabili_non_simili", "n": 4, "rivendita": 80.0, "margine": 64.0, "roi": 752.0,
            "prezzi_comps": (3.0, 600.0), "foto_comps": diversi}
     assert "non simili alla foto" in mj.riga_verdetto(ris)
-    assert any("non simili alla foto" in r for r in mj.righe_messaggio(ris))
+    assert not any("non simili alla foto" in r for r in mj.righe_messaggio(ris))   # già nella riga del verdetto
 
 
 def test_prezzi_troppo_dispersi_non_confermano():
@@ -263,7 +263,7 @@ def test_prezzi_troppo_dispersi_non_confermano():
     assert mj.decidi({"ok": True}, ("originale_plausibile", 0.9), None, None, None) == ("conferma", "ok")
     ris = {"esito": "non_verificato", "motivo": "prezzi_dispersi", "n": 4, "rivendita": 80.0, "margine": 64.0, "roi": 752.0, "dispersione": 3.4}
     assert "3.4×" in mj.riga_verdetto(ris)
-    assert any("prezzi dispersi" in r for r in mj.righe_messaggio(ris))
+    assert not any("prezzi dispersi" in r for r in mj.righe_messaggio(ris))
 
 
 def test_filtra_per_linea_weekend_non_e_max_mara():
@@ -386,12 +386,13 @@ def test_messaggio_compatto_con_link_comparabili_nei_1024_caratteri():
            "foto_comps": [("simile", 0.8)] * 3, "gemini": {"autenticita": "probabile", "confidenza": 0.9, "motivo": "x" * 120, "capo": "pantaloni", "materiale": "lana",
                                                           "condizione": "buona", "gravita_difetti": "nessuno", "difetti": "", "rivendita_gemini_eur": 60.0, "rivendita_confidenza": 0.7}}
     righe = righe_messaggio(ris, brand="missoni")
-    assert righe[0].startswith("📅") and righe[1].startswith("• 80 € https://www.vinted.it/items/1")
+    assert righe[0].startswith("📅") and righe[1].startswith("• [Pantaloni Missoni](https://www.vinted.it/items/1-missoni) · 80 €")
     info = {"fair_value": {"semaforo": "🟡", "fv": 40, "minimo": 30, "massimo": 70, "margine": 25, "conf": "alta"}, "price": 15, "brand": "Missoni", "title": "Pantaloni Missoni lunghi",
             "righe_jev": righe + ["y" * 150], "riga_verdetto_jev": "✅ CONFERMATO: rivendita ~90 €", "rivendita_jev": 90,
             "query_name": "Avanguardia Rick Yohji Dries AnnD Raf Loewe Lemaire Khaite 50", "query_url": "https://x.it/q"}
     t = testo_preavviso(info, "https://www.vinted.it/items/9")
-    assert len(t) <= 1024 and t.count("https://www.vinted.it/items/") >= 4   # titolo + 3 comparabili
+    import re
+    assert len(re.sub(r"\]\([^)]*\)", "]", t)) <= 1024 and t.count("https://www.vinted.it/items/") >= 4   # limite sul testo visibile; titolo + 3 comparabili
 
 
 def test_riga_originalita_dice_cosa_fare_e_cosa_chiedere():
@@ -412,12 +413,12 @@ def test_rivendita_mista_pesa_semaforo_comparabili_e_gemini_e_li_mostra_in_testa
     from bot.moda_jev import rivendita_mista
     from bot.moda_jev import parti_rivendita_testo, riga_verdetto as riga_verdetto_v
     from bot.scheda import testo_preavviso
-    # pesi relativi al semaforo (8/11): w=0,2 (media); comparabili 1,8 x w; rilevanza 2,5 x w; Gemini w
+    # pesi relativi al semaforo (8/11): w=0,2 (media); comparabili 0,8 x w; rilevanza w; Gemini w (10/11)
     mix, parti = rivendita_mista({"fv": 100, "conf": "media"}, 200, 5, {"rivendita_gemini_eur": 150, "rivendita_confidenza": 0.7})
     assert parti == {"semaforo": 100.0, "comparabili": 200.0, "gemini": 150.0}
-    assert abs(mix - (100 * 0.2 + 200 * 0.36 + 150 * 0.2) / 0.76) < 0.01
-    mix2, parti2 = rivendita_mista({"fv": 100, "conf": "media"}, 200, 5, None, 160)   # con la ricerca per rilevanza: 2,5 x w
-    assert parti2["rilevanza"] == 160.0 and abs(mix2 - (100 * 0.2 + 200 * 0.36 + 160 * 0.5) / 1.06) < 0.01
+    assert abs(mix - (100 * 0.2 + 200 * 0.16 + 150 * 0.2) / 0.56) < 0.01
+    mix2, parti2 = rivendita_mista({"fv": 100, "conf": "media"}, 200, 5, None, 160)   # con la ricerca per rilevanza: 1 x w
+    assert parti2["rilevanza"] == 160.0 and abs(mix2 - (100 * 0.2 + 200 * 0.16 + 160 * 0.2) / 0.56) < 0.01
     assert parti_rivendita_testo(parti2) == " (semaforo 100 · recenti 200 · rilevanti 160)"
     # Gemini poco sicuro o assente: non entra; nessuna stima: (None, {})
     assert "gemini" not in rivendita_mista({"fv": 100, "conf": "alta"}, 200, 9, {"rivendita_gemini_eur": 150, "rivendita_confidenza": 0.3})[1]
@@ -513,14 +514,96 @@ def test_riga_scartato_mostra_i_valori_della_rivendita_mista():
 
 def test_righe_messaggio_mostra_anche_i_comparabili_per_rilevanza_con_link():
     from bot.moda_jev import righe_messaggio
+    from bot.testo import RigaMd
     ris = {"n": 8, "rivendita": 60.0, "rivendita_comps": 65.0, "prezzi_comps": (30.0, 160.0), "link_comps": [("a", 65.0, "https://v/1")],
            "rivendita_ril": 30.0, "n_ril": 9, "prezzi_comps_ril": (20.0, 90.0), "link_comps_ril": [("b", 28.0, "https://v/2"), ("a", 65.0, "https://v/1")]}
     r = righe_messaggio(ris)
-    assert r[0] == "📅 Più recenti: 8 · 30–160 € · ~65 €" and r[1] == "• 65 € https://v/1"
-    assert r[2] == "🎯 Più rilevanti: 9 · 20–90 € · ~30 €" and r[3] == "• 28 € https://v/2" and len(r) == 4   # il link gia' mostrato non si ripete
+    assert r[0] == "📅 Più recenti: 8 · 30–160 € · ~65 €" and r[1] == "• [a](https://v/1) · 65 €" and isinstance(r[1], RigaMd)
+    assert r[2] == "🎯 Più rilevanti: 9 · 20–90 € · ~30 €" and r[3] == "• [b](https://v/2) · 28 €" and len(r) == 4   # il link gia' mostrato non si ripete
 
 
 def test_riga_verdetto_non_verificato_senza_comparabili_e_senza_parole_inutili():
     from bot.moda_jev import riga_verdetto
     r = riga_verdetto({"esito": "non_verificato", "motivo": "nessun", "n": 0})
     assert r == "⚠️ NON VERIFICATO · nessun comparabile" and "stima" not in r
+    # 10/11 (utente): senza comparabili l'avviso dice che la stima viene solo da semaforo e Gemini
+    from bot.moda_jev import riga_verdetto as _rv
+    r2 = _rv({"esito": "non_verificato", "motivo": "comparabili_non_trovati", "rivendita_testata": 90.0, "parti_rivendita": {"semaforo": 100.0, "gemini": 80.0}})
+    assert r2 == "⚠️ NON VERIFICATO · senza comparabili · rivendita ~90 € (semaforo 100 · Gemini 80)"
+    assert "senza comparabili · rivendita ~70 €" in _rv({"esito": "non_verificato", "motivo": "x", "rivendita_testata": 70.0, "parti_rivendita": {"semaforo": 70.0}})
+
+
+def test_gemini_consigliere_riga_e_non_moda():
+    """9/11 (utente): Gemini come consigliere di flip: riga 💬 in testa e scarto se l'oggetto non e' moda (es. profumo)."""
+    from bot.moda_gemini import e_non_moda, leggi_risposta, riga_consiglio
+    from bot.moda_jev import decidi, righe_messaggio, riga_verdetto
+    base = {"autenticita": "probabile", "confidenza": 0.9, "etichetta_letta": "", "made_in": "", "prova_acquisto": "nessuna", "indizi": "", "motivo": "m"}
+    d = leggi_risposta(__import__("json").dumps({**base, "tipo_oggetto": "non_moda", "consiglio": "flacone di profumo, non un capo"}))
+    assert d["tipo_oggetto"] == "non_moda" and e_non_moda(d) and riga_consiglio(d).startswith("💬 Non è moda: flacone")
+    assert decidi({"ok": True}, None, d) == ("scarta", "gemini:non_moda")
+    assert riga_verdetto({"esito": "scarta", "motivo": "gemini:non_moda", "gemini": d}).startswith("🚫 SCARTATO · non è moda")
+    d2 = leggi_risposta(__import__("json").dumps({**base, "tipo_oggetto": "moda", "consiglio": "taglia 46 rara, etichetta Made in Italy"}))
+    assert not e_non_moda(d2) and riga_consiglio(d2) == "💬 taglia 46 rara, etichetta Made in Italy"
+    assert righe_messaggio({"rivendita": 90.0, "n": 8, "gemini": d2})[0] == "💬 taglia 46 rara, etichetta Made in Italy"
+    assert not e_non_moda({**d, "confidenza": 0.4})
+    assert leggi_risposta(__import__("json").dumps(base))["tipo_oggetto"] == "moda"
+
+
+def test_consiglio_gemini_e_la_seconda_riga_del_messaggio():
+    """9/11 (utente): il verdetto di Gemini sta subito dopo titolo e prezzo, e non si ripete piu' in basso."""
+    from bot.scheda import testo_preavviso
+    info = {"title": "Cappotto", "brand": "Max Mara", "price": 30, "fair_value": {"semaforo": "🟢"},
+            "righe_jev": ["💬 Compra: Made in Italy, ottimo stato", "📅 Più recenti: 8 · ~120 €"]}
+    righe = testo_preavviso(info, url="https://x.it/1").split("\n")
+    assert "Cappotto" in righe[0] and righe[1] == "💬 Compra: Made in Italy, ottimo stato"
+    assert sum(r.startswith("💬") for r in righe) == 1
+
+
+def test_didascalia_non_conta_gli_indirizzi_dei_link():
+    """9/11: il testo con link lunghi che visibile sta in 1024 caratteri non va accorciato (avviso Sacai senza riga Gemini e senza stime)."""
+    from bot.scheda import didascalia_verdetto
+    url = "https://www.vinted.it/items/10740919272-" + "x" * 150
+    righe = [f"🟢 *sacai* · [Cardigan]({url}) · *46 €*", "💬 Compra: originale, ottime condizioni",
+             "✅ CONFERMATO · rivendita ~165 € (semaforo 156 · recenti 285 · rilevanti 100) · margine ~97 € · ROI 188%"]
+    righe += [f"• [Sacai]({url}) · 285 €"] * 4 + ["riga lunga " + "a" * 300]
+    testo = "\n".join(righe)
+    assert len(testo) > 1024
+    assert didascalia_verdetto(testo) == testo
+
+
+def test_contesto_tracciato_porta_venditore_foto_e_cuori_allo_scrape():
+    """10/11: la riga TRACCIATO include le caratteristiche del PREAVVISO (dataset per i pattern del primo avviso)."""
+    from bot.tracciamento import _contesto_tracciato
+    ctx = _contesto_tracciato({"feat_pre": {"n_foto": 5, "v_rec": 12, "pref_scrape": 1}}, "SOLO_SEMAFORO", {})
+    assert ctx["n_foto"] == 5 and ctx["v_rec"] == 12 and ctx["pref_scrape"] == 1
+
+
+def test_prezzi_pesati_da_foto_stesso_modello_vale_il_doppio_di_simile():
+    """10/11 (utente): Jev guarda le miniature; stesso_modello pesa 2, simile 1, diverso 0; senza nessun stesso_modello resta la stima testuale."""
+    from bot.moda_jev import prezzi_pesati_da_foto
+    coppie = [(("a", 100.0, "u1"), b""), (("b", 60.0, "u2"), b""), (("c", 500.0, "u3"), b""), (("d", 80.0, "u4"), b"")]
+    prezzi, comp = prezzi_pesati_da_foto(coppie, [("stesso_modello", 0.9), ("simile", 0.8), ("diverso", 0.9), ("stesso_modello", 0.3)])
+    assert sorted(prezzi) == [60.0, 100.0, 100.0] and [c[0] for c in comp] == ["a", "b"]   # il 500 e' "diverso", l'80 ha confidenza bassa
+    assert prezzi_pesati_da_foto(coppie, [("simile", 0.9), ("simile", 0.9), ("diverso", 0.9), ("non_chiaro", 0.9)]) == ([], [])
+    assert prezzi_pesati_da_foto([], None) == ([], [])
+
+
+def test_preavviso_scartato_da_jev_sostituisce_il_bollino_del_semaforo():
+    """10/11 (utente): con un verdetto 🚫 la prima riga non mostra piu' il bollino del semaforo ma quello di scartato."""
+    from bot.scheda import testo_preavviso
+    base = {"fair_value": {"semaforo": "🟢"}, "price": 19, "brand": "Bottega Veneta", "title": "Long Jacke", "righe_jev": ["x"]}
+    t = testo_preavviso({**base, "riga_verdetto_jev": "🚫 SCARTATO · replica (Gemini 95%)"}, "https://v/1")
+    assert t.splitlines()[0].startswith("🚫 *Bottega Veneta*") and "🟢" not in t.splitlines()[0]
+    assert testo_preavviso({**base, "riga_verdetto_jev": "✅ CONFERMATO · x"}, "https://v/1").startswith("🟢 *Bottega Veneta*")
+
+
+def test_sigle_foto_sm_s_d_accanto_ai_comparabili():
+    from bot.moda_jev import sigle_foto_comps, riassunto_sigle, righe_messaggio
+    coppie = [(("a", 10, "u1"), b""), (("b", 20, "u2"), b""), (("c", 30, "u3"), b""), (("d", 40, "u4"), b"")]
+    sigle = sigle_foto_comps(coppie, [("diverso", 0.9), ("stesso_modello", 0.9), ("simile", 0.8), ("stesso_modello", 0.2)])
+    assert [s[3] for s in sigle] == ["SM", "S", "D", "?"]
+    assert riassunto_sigle(sigle) == "1 SM · 1 S · 1 D · 1 ?"
+    ris = {"n": 2, "rivendita_comps": 25.0, "rivendita": 25.0, "link_comps_foto": sigle, "link_comps": [], "da_foto": True}
+    righe = [str(r) for r in righe_messaggio(ris)]
+    assert any("foto: 1 SM · 1 S · 1 D · 1 ?" in r for r in righe)
+    assert any(r.startswith("• SM · ") for r in righe)

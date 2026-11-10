@@ -24,8 +24,8 @@ from bot.fair_value import FAIR_VALUE_APPRESO, FAIR_VALUE_BRAND_NUOVI, FAIR_VALU
 from bot.jev import CONF_AUTENTICITA_MIN, MAX_FOTO_AUTENTICITA, DOMANDA_FOTO_COMP_MODA, JEV_FOTO_COMPS, MAX_FOTO_COMPS, confronta_foto_comparabili, giudica_autenticita
 from bot.logger import log
 from bot.velocita import riga_velocita
-from bot.moda_gemini import controlla as controlla_gemini, e_replica, riga_condizioni, riga_stima_gemini, serve_controllo, sconto_difetti
-from bot.testo import _normalizza_titolo_per_link
+from bot.moda_gemini import controlla as controlla_gemini, e_non_moda, e_replica, riga_consiglio, riga_condizioni, riga_stima_gemini, serve_controllo, sconto_difetti
+from bot.testo import RigaMd, _normalizza_titolo_per_link, link_markdown
 from bot.valore_mercato import comparabili_simili, parse_comp, query_comp, solo_usato, stima_mercato, valuta
 # ---- fine import ----
 
@@ -229,6 +229,45 @@ def molto_simili(coppie, confronti, conf_min=CONF_FOTO_MOLTO_SIMILE):
     return [c for (c, _b), (sc, cf) in zip(coppie, confronti) if sc == "stesso_modello" and (cf or 0) >= conf_min]
 
 
+def prezzi_pesati_da_foto(coppie, confronti, conf_min=CONF_FOTO_MOLTO_SIMILE):
+    """(prezzi, comparabili): prezzi dei comparabili che Jev giudica dalla foto, con pesi 10/11 (utente): stesso_modello vale il doppio di
+    simile, diverso (o non chiaro, o confidenza bassa) 0. Il peso 2 e' il prezzo ripetuto due volte, cosi' stima_mercato lo conta il doppio.
+    Se nessun comparabile e' 'stesso_modello' ritorna ([], []): resta la stima testuale. Pura."""
+    if not coppie or not confronti:
+        return [], []
+    prezzi, comp, stesso = [], [], False
+    for (c, _b), (sc, cf) in zip(coppie, confronti):
+        if (cf or 0) < conf_min or sc not in ("stesso_modello", "simile"):
+            continue
+        peso = 2 if sc == "stesso_modello" else 1
+        stesso = stesso or sc == "stesso_modello"
+        prezzi += [c[1]] * peso
+        comp.append(c)
+    return (prezzi, comp) if stesso else ([], [])
+
+
+SIGLE_FOTO = {"stesso_modello": "SM", "simile": "S", "diverso": "D"}
+
+
+def sigle_foto_comps(coppie, confronti, conf_min=CONF_FOTO_MOLTO_SIMILE):
+    """Lista (titolo, prezzo, url, sigla) dei comparabili guardati da Jev, in ordine SM, S, D, ? (10/11, utente: 'SM, S, D vicino ai comps').
+    SM stesso modello, S simile, D diverso, ? non chiaro o confidenza bassa. Pura."""
+    ordine = {"SM": 0, "S": 1, "D": 2, "?": 3}
+    out = []
+    for (c, _b), (sc, cf) in zip(coppie or [], confronti or []):
+        sigla = SIGLE_FOTO.get(sc, "?") if (cf or 0) >= conf_min else "?"
+        out.append((c[0], c[1], c[2], sigla))
+    return sorted(out, key=lambda x: ordine[x[3]])
+
+
+def riassunto_sigle(elenco):
+    """'2 SM · 1 S · 1 D' dai comparabili con sigla (vuoto se non ce ne sono). Pura."""
+    conta = {}
+    for *_r, sg in elenco or []:
+        conta[sg] = conta.get(sg, 0) + 1
+    return " · ".join(f"{conta[k]} {k}" for k in ("SM", "S", "D", "?") if conta.get(k))
+
+
 def _entro_il_tetto():
     oggi = time.strftime("%Y-%m-%d")
     if _conteggio["giorno"] != oggi:
@@ -266,8 +305,9 @@ def correggi_per_difetti(v, prezzo, gemini):
 def rivendita_mista(fv, riv_comps, n_comps, gemini, riv_rilevanza=None):
     """(rivendita, parti): media pesata di stime indipendenti (7/11, utente: 'prezzo di rivendita bilanciato tra semaforo, comparabili e
     Gemini, con i loro valori tra parentesi'). 8/11 (utente): pesi RELATIVI al semaforo, che vale w = 0,3 con confidenza alta / 0,2 media /
-    0,1 bassa: comparabili per rilevanza 2,5 x w, comparabili per data (newest_first) 1,8 x w, Gemini w (uguale al semaforo, solo se la sua
-    confidenza e' almeno 0,4). Rapporti scelti dall'utente, non misurati. `parti` = {'semaforo','comparabili','rilevanza','gemini'} con i soli
+    0,1 bassa: comparabili per rilevanza w, comparabili per data (newest_first) 0,8 x w, Gemini w (uguale al semaforo, solo se la sua
+    confidenza e' almeno 0,4). Rapporti scelti dall'utente (10/11: prima rilevanza 2,5 x e newest_first 1,8 x; ora Gemini e rilevanza
+    contano uguale, newest_first un po' meno), non misurati. `parti` = {'semaforo','comparabili','rilevanza','gemini'} con i soli
     valori presenti. (None, {}) se non c'e' nessuna stima. Pura."""
     parti, pesi = {}, {}
     w = {"alta": 0.3, "media": 0.2}.get((fv or {}).get("conf"), 0.1)
@@ -276,10 +316,10 @@ def rivendita_mista(fv, riv_comps, n_comps, gemini, riv_rilevanza=None):
         pesi["semaforo"] = w
     if riv_comps:
         parti["comparabili"] = float(riv_comps)
-        pesi["comparabili"] = 1.8 * w
+        pesi["comparabili"] = 0.8 * w
     if riv_rilevanza:
         parti["rilevanza"] = float(riv_rilevanza)
-        pesi["rilevanza"] = 2.5 * w
+        pesi["rilevanza"] = w
     rg, cg = (gemini or {}).get("rivendita_gemini_eur"), (gemini or {}).get("rivendita_confidenza")
     if rg and cg is not None and cg >= 0.4:
         parti["gemini"] = float(rg)
@@ -308,6 +348,8 @@ def decidi(valutazione, autenticita, gemini=None, foto_comps=None, dispersione=N
     l'avviso parte non verificato. Pura."""
     if e_replica(gemini):
         return "scarta", "gemini:replica"
+    if e_non_moda(gemini):   # 9/11: Gemini vede che non e' moda (es. un profumo con il nome di un brand): niente avviso
+        return "scarta", "gemini:non_moda"
     if autenticita and autenticita[0] in ("replica_probabile", "altra_marca") and (autenticita[1] or 0) >= CONF_AUTENTICITA_MIN \
             and not gemini_prevale(autenticita, gemini):
         return "scarta", "foto:" + autenticita[0]
@@ -326,6 +368,8 @@ def riga_esito_scheda(ris):
     """Riga (testo semplice) per la scheda della chat principale dopo la verifica: perche' l'avviso e' partito o no. Pura."""
     a = ris.get("autenticita")
     if ris.get("esito") == "scarta":
+        if ris.get("motivo") == "gemini:non_moda":
+            return f"🚫 Gemini: non avvisato, non è moda ({((ris.get('gemini') or {}).get('confidenza') or 0):.0%})"
         if ris.get("motivo") == "gemini:replica":
             return f"🚫 Gemini: non avvisato, indizi di replica nelle foto ({((ris.get('gemini') or {}).get('confidenza') or 0):.0%})"
         if str(ris.get("motivo", "")).startswith("foto:") and a:
@@ -352,7 +396,7 @@ def _dati_jev_piatti(ris):
              "jev_riv": ris.get("rivendita"), "jev_marg": ris.get("margine"), "jev_roi": ris.get("roi"),
              "jev_disp": round(ris["dispersione"], 2) if ris.get("dispersione") else None,
              "jev_foto": a[0] if a else None, "jev_foto_conf": a[1] if a else None,
-             "jev_gem": g.get("autenticita"), "jev_gem_conf": g.get("confidenza"), "jev_legit": _stato_originalita(ris)[0]}
+             "jev_gem": g.get("autenticita"), "jev_gem_conf": g.get("confidenza"), "jev_tipo": g.get("tipo_oggetto"), "jev_legit": _stato_originalita(ris)[0]}
         return {k: (round(v, 2) if isinstance(v, float) else v) for k, v in d.items() if v not in (None, "")}
     except Exception:
         return {}
@@ -455,6 +499,8 @@ def riga_verdetto(ris):
             # 8/11: la rivendita e' quella mista (semaforo, comparabili per data e per rilevanza, Gemini): si mostrano i valori da cui nasce
             return f"🚫 SCARTATO · rivendita ~{ris['rivendita']:.0f} €{parti_rivendita_testo(ris.get('parti_rivendita'))}{dif} · {dove}"
         a = ris.get("autenticita")
+        if mot == "gemini:non_moda":
+            return f"🚫 SCARTATO · non è moda (Gemini {((ris.get('gemini') or {}).get('confidenza') or 0):.0%})"
         if mot == "gemini:replica":
             return f"🚫 SCARTATO · replica (Gemini {((ris.get('gemini') or {}).get('confidenza') or 0):.0%})"
         if mot.startswith("foto:") and a:
@@ -469,6 +515,10 @@ def riga_verdetto(ris):
         return f"⚠️ NON VERIFICATO · {ris['n']} comparabili non simili alla foto"
     if mot == "prezzi_dispersi" and ris.get("rivendita") is not None:
         return f"⚠️ NON VERIFICATO · prezzi dispersi (quartile alto {ris['dispersione']:.1f}× il basso)"
+    parti, mix = ris.get("parti_rivendita") or {}, ris.get("rivendita_testata")
+    if mix and parti and not any(k in parti for k in ("comparabili", "rilevanza")):
+        # 10/11 (utente): senza comparabili l'avviso parte lo stesso; riga corta, le fonti stanno tra parentesi
+        return f"⚠️ NON VERIFICATO · senza comparabili · rivendita ~{mix:.0f} €{parti_rivendita_testo(parti)}"
     return "⚠️ NON VERIFICATO · nessun comparabile"
 
 
@@ -492,7 +542,11 @@ def righe_messaggio(ris, brand=None):
     e' gia' sotto il verdetto (riga_originalita) e la rivendita mista con i tre valori e' nell'intestazione, quindi niente righe sparse per
     Jev, Gemini e semaforo. Pura."""
     righe = []
+    consiglio = riga_consiglio(ris.get("gemini"))   # 9/11 (utente): Gemini come consigliere di flip, una riga
+    if consiglio:
+        righe.append(consiglio)
     n = ris.get("n") or 0
+    sigle = ris.get("link_comps_foto")
     comps = ris.get("rivendita_comps") if ris.get("rivendita_comps") is not None else ris.get("rivendita")
     if comps is None and not ris.get("rivendita_ril"):
         righe.append("🔎 Comparabili: nessuno")
@@ -502,13 +556,13 @@ def righe_messaggio(ris, brand=None):
         if pc:
             riga += f" · {pc[0]:g}–{pc[1]:g} €" if pc[0] != pc[1] else f" · {pc[0]:g} €"
         riga += f" · ~{comps:.0f} €"
-        riga += " · molto simili alla foto" if ris.get("da_foto") else ""
-        riga += " · ⚠️ non simili alla foto" if ris.get("motivo") == "comparabili_non_simili" else ""
-        riga += " · ⚠️ prezzi dispersi" if ris.get("motivo") == "prezzi_dispersi" else ""
+        riga += f" · foto: {riassunto_sigle(sigle)}" if sigle else ""
         righe.append(riga)
         link = ris.get("link_comps") or []
-        if link:   # comparabili identificati, con il link all'annuncio (richiesta dell'utente, 02/11): subito sotto i numeri
-            righe += [f"• {p:g} € {u}" for _t, p, u in link[:3]]
+        if sigle:   # 10/11 (utente): vicino a ogni comparabile SM stesso modello, S simile, D diverso (giudizio di Jev sulle miniature)
+            righe += [RigaMd(f"• {sg} · {link_markdown(t, u)} · {p:g} €") for t, p, u, sg in sigle[:3]]
+        elif link:   # comparabili identificati, con il link all'annuncio (richiesta dell'utente, 02/11): subito sotto i numeri
+            righe += [RigaMd(f"• {link_markdown(t, u)} · {p:g} €") for t, p, u in link[:3]]
         else:
             righe += [f"• {p:g} € {t[:40]}" for t, p in (ris.get("esempi") or [])[:3]]
     if ris.get("rivendita_ril"):
@@ -518,10 +572,10 @@ def righe_messaggio(ris, brand=None):
         if pr:
             riga += f" · {pr[0]:g}–{pr[1]:g} €" if pr[0] != pr[1] else f" · {pr[0]:g} €"
         righe.append(riga + f" · ~{ris['rivendita_ril']:.0f} €")
-        visti = {u for _t, _p, u in (ris.get("link_comps") or [])[:3]}
+        visti = {c[2] for c in (sigle or ris.get("link_comps") or [])[:3]}
         link_ril = [c for c in (ris.get("link_comps_ril") or []) if c[2] not in visti]
         if link_ril:
-            righe += [f"• {p:g} € {u}" for _t, p, u in link_ril[:3]]
+            righe += [RigaMd(f"• {link_markdown(t, u)} · {p:g} €") for t, p, u in link_ril[:2]]
         elif not ris.get("link_comps_ril"):
             righe += [f"• {p:g} € {t[:40]}" for t, p in (ris.get("esempi_ril") or [])[:3]]
     if ris.get("legit_saltato"):
@@ -628,14 +682,15 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
             coppie = await _miniature_dei_comparabili(link_comps)
             if coppie:
                 ris["foto_comps"] = await asyncio.to_thread(confronta_foto_comparabili, titolo, foto_jpeg, [b for _c, b in coppie], DOMANDA_FOTO_COMP_MODA)
-                vicini = molto_simili(coppie, ris["foto_comps"])
+                ris["link_comps_foto"] = sigle_foto_comps(coppie, ris["foto_comps"])
+                prezzi_v, vicini = prezzi_pesati_da_foto(coppie, ris["foto_comps"])
                 if vicini:
-                    stima_v = stima_mercato([c[1] for c in vicini], min_n=1)
+                    stima_v = stima_mercato(prezzi_v, min_n=1)
                     if stima_v:
-                        v = valuta(prezzo, stima_v, spedizione_eur=SPEDIZIONE_STIMATA_EUR, margine_min=MODA_JEV_MARGINE_MIN)
+                        v = {**valuta(prezzo, stima_v, spedizione_eur=SPEDIZIONE_STIMATA_EUR, margine_min=MODA_JEV_MARGINE_MIN), "n": len(vicini)}
                         link_comps = vicini
                         ris["da_foto"] = True
-                        log.info("MODA JEV FOTO | brand=%s | molto_simili=%s/%s | rivendita=%s | titolo=%s", brand, len(vicini), len(coppie), v.get("rivendita"), titolo[:60])
+                        log.info("MODA JEV FOTO | brand=%s | stesso_o_simili=%s/%s | rivendita=%s | titolo=%s", brand, len(vicini), len(coppie), v.get("rivendita"), titolo[:60])
         if v is not None and not v.get("ok"):
             # 5/11 (utente): se i comparabili scartano gia' l'annuncio il legit check (Jev e Gemini, token e quota) non serve
             ris["legit_saltato"] = True
@@ -658,8 +713,8 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
                 ris["linea"], ris["linea_da_foto"] = linea, True
                 comps_pool, link_comps, stima, v = await cerca(linea)
                 prezzi = [p for _t, p in comps_pool]
-                ris["da_foto"], ris["foto_comps"] = False, None
-        # 8/11 (utente): stessa ricerca ordinata per rilevanza, entra nella rivendita mista con peso 2,5 x semaforo (newest_first 1,8 x)
+                ris["da_foto"], ris["foto_comps"], ris["link_comps_foto"] = False, None, None
+        # 8/11 (utente): stessa ricerca ordinata per rilevanza, entra nella rivendita mista con peso 2,5 x semaforo (newest_first 1,8 x); 10/11 (utente): rilevanza 1 x, newest_first 0,8 x, Gemini 1 x
         riv_ril = None
         try:
             _u, _l, st_ril, v_ril = await cerca(linea, "relevance")

@@ -732,6 +732,7 @@ def _contesto_tracciato(listing_info, esito, campi):
         "_gem": _a_float((listing_info.get("parti_rivendita") or {}).get("gemini"), None),
         "_legit_jev": _legit_breve(listing_info.get("riga_originalita_jev")),
         "legit_jev": _legit_breve(listing_info.get("riga_originalita_jev")),
+        **(listing_info.get("feat_pre") or {}),   # 10/11: n_foto, desc_len, v_rec, v_rep, v_art, v_paese, lingua, ora_utc, gs, pref_scrape
         **(listing_info.get("jev_dati") or {}),   # 9/11: nella riga TRACCIATO, per misurare la rotazione per verdetto legit
         "_titolo": (str(listing_info.get("title") or "")[:80] or None),   # chiavi con "_": non finiscono nella riga TRACCIATO
     }

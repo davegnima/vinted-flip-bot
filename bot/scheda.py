@@ -10,7 +10,7 @@ import traceback
 from bot.config import (BRAND_ESCLUSI_ALERT_CHIEDI_FOTO, MAX_ANALISI_PARALLELE, SOGLIA_MARGINE_ALERT_CHIEDI_FOTO,
                         SOGLIA_MARGINE_ALERT_CHIEDI_FOTO_BRAND_ESCLUSI, TELEGRAM_ALERT_CHAT_ID, TELEGRAM_OWNER_CHAT_ID)
 from bot.verdetto import EMOJI_DECISIONE, ETICHETTA_CONFIDENZA, ETICHETTA_RISCHIO, _a_float, _estrai_item_id_da_url
-from bot.testo import _escapa_markdown_legacy
+from bot.testo import RigaMd, _escapa_markdown_legacy
 from bot.fair_value import _riga_fair_value_testo, _riga_fair_value_unica
 from bot.logger import log
 from bot.telegram_api import telegram_delete_message, telegram_edit_caption, telegram_edit_message, telegram_send_media_group, telegram_send_message, telegram_send_photo, telegram_send_photo_con_bottone, telegram_send_with_buttons
@@ -240,10 +240,14 @@ def testo_preavviso(listing_info, url=None, riga_finale=RIGA_PREAVVISO_IN_ATTESA
         prezzo = _a_float(listing_info.get("price"), None)
         brand = (listing_info.get("brand") or "").strip()
         sem = fv.get("semaforo") or "🟢"
+        if str(verdetto or "").startswith("🚫"):
+            sem = "🚫"   # 10/11 (utente): se Jev scarta, il bollino del semaforo diventa quello di scartato
         identificazione = (sem + " " + (f"*{esc(brand)}* · " if brand and brand != "?" else "") + _riga_titolo(listing_info, url)
                            + (f" · *{prezzo:g} €*" if prezzo is not None else ""))
         originalita = listing_info.get("riga_originalita_jev")
-        righe = [identificazione] + ([esc(listing_info["riga_recupero"])] if listing_info.get("riga_recupero") else []) \
+        # 9/11 (utente): il verdetto di Gemini (💬) e' la seconda riga, subito dopo titolo e prezzo
+        consiglio = next((r for r in (listing_info.get("righe_jev") or []) if str(r).startswith("💬")), None)
+        righe = [identificazione] + ([esc(consiglio)] if consiglio else []) + ([esc(listing_info["riga_recupero"])] if listing_info.get("riga_recupero") else []) \
             + ([esc(verdetto)] if verdetto else []) + ([esc(originalita)] if originalita else []) + [""]
     else:
         righe = [marca + "*" + testa + "*", _riga_titolo(listing_info, url)]
@@ -260,7 +264,7 @@ def testo_preavviso(listing_info, url=None, riga_finale=RIGA_PREAVVISO_IN_ATTESA
     righe_jev = listing_info.get("righe_jev")
     if righe_jev:
         # brand nuovo verificato con comparabili e foto (bot/moda_jev.py): il messaggio nasce gia' con l'esito, niente "in attesa"
-        righe += [esc(r) for r in righe_jev]
+        righe += [r if isinstance(r, RigaMd) else esc(r) for r in righe_jev if not (isinstance(r, str) and r.startswith("💬") and not isinstance(r, RigaMd))]
         if riga_finale == RIGA_PREAVVISO_IN_ATTESA:
             riga_finale = ""
     if url and not righe_jev:   # con la verifica il titolo e' gia' il link all'annuncio
@@ -275,14 +279,15 @@ def testo_preavviso(listing_info, url=None, riga_finale=RIGA_PREAVVISO_IN_ATTESA
 
 # Righe da togliere per prime, in quest'ordine, se il messaggio supera la didascalia di Telegram (1024 caratteri): mai i link dei comparabili,
 # il verdetto, l'originalita' e i difetti (7/11, utente: il link dei comparabili mancava perche' la didascalia era tagliata).
-_RIGHE_DA_TOGLIERE = ("ℹ️", "🖼", "⚡", "🔎 Query", "💶", "👁", "🧠", "⏭", "🚦", "👤")
+_RIGHE_DA_TOGLIERE = ("ℹ️", "🖼", "⚡", "🔎 Query", "💶", "👁", "🧠", "⏭", "🚦", "💬", "👤")
 
 
 def _entra_nella_didascalia(righe, limite=1000):
     """Testo del messaggio con al massimo `limite` caratteri: toglie le righe meno utili (vedi _RIGHE_DA_TOGLIERE) finche' ci sta. Pura."""
     righe = list(righe)
     for prefisso in _RIGHE_DA_TOGLIERE:
-        if len("\n".join(righe)) <= limite:
+        # il limite di Telegram conta il testo visibile: l'indirizzo dentro "[titolo](url)" non conta (9/11)
+        if len(re.sub(r"\]\([^)]*\)", "]", "\n".join(righe))) <= limite:
             break
         righe = [r for r in righe if not r.startswith(prefisso)]
     return "\n".join(righe)
@@ -338,21 +343,28 @@ def testo_avviso_solo_semaforo(listing_info, url=None, msg_id=None):
     return "\n".join(righe)
 
 
+def _testo_visibile(testo):
+    """Testo come lo conta Telegram (limite 1024 della didascalia): senza l'indirizzo dentro '[titolo](url)'. Pura."""
+    return re.sub(r"\]\([^)]*\)", "]", testo or "")
+
+
 def didascalia_verdetto(testo, limite=1024):
     """Riduce il messaggio del verdetto alla didascalia di una foto (max 1024, limite di Telegram): se non ci sta accorcia le
     righe piu' lunghe (analisi, dubbi: troncate con "…") e tiene tutte le altre, cosi' restano esito, prezzi, dettagli e fair
     value. Se non basta ancora, toglie le righe dal fondo. Pura."""
     testo = (testo or "").strip()
-    if len(testo) <= limite:
+    if len(testo) > limite:   # la riga della ricerca (link lungo) cade per prima, come prima
+        testo = "\n".join(r for r in testo.split("\n") if not r.startswith("🔎 Query:"))
+    if len(_testo_visibile(testo)) <= limite:   # Telegram conta il testo visibile: l'indirizzo di "[titolo](url)" non conta (9/11, avviso Sacai senza riga Gemini e senza stime)
         return testo
     # la riga della ricerca (link lungo fino a ~600 caratteri) e' la prima a cadere: accorciata spezzerebbe il link
     righe = [r for r in testo.split("\n") if not r.startswith("🔎 Query:")]
     MIN_RIGA = 140
     for _ in range(len(righe) * 2 + 5):          # numero di giri limitato: la funzione deve sempre finire
-        totale = len("\n".join(righe))
+        totale = len(_testo_visibile("\n".join(righe)))
         if totale <= limite:
             break
-        i = max(range(len(righe)), key=lambda k: len(righe[k]))
+        i = max(range(len(righe)), key=lambda k: len(_testo_visibile(righe[k])))
         if len(righe[i]) <= MIN_RIGA:
             break
         tenuti = max(MIN_RIGA, len(righe[i]) - (totale - limite) - 1)
@@ -362,10 +374,10 @@ def didascalia_verdetto(testo, limite=1024):
         if len(accorciata) >= len(righe[i]):     # nessun progresso (riga gia' accorciata al minimo)
             break
         righe[i] = accorciata
-    while len("\n".join(righe)) > limite and len(righe) > 1:
+    while len(_testo_visibile("\n".join(righe))) > limite and len(righe) > 1:
         righe.pop()
     out = "\n".join(righe).rstrip()
-    return out if len(out) <= limite else out[:limite - 1] + "…"
+    return out if len(_testo_visibile(out)) <= limite else out[:limite - 1] + "…"
 
 
 def _preavviso_inviato(listing_info, id_msg, tipo, riga_tempi, secondi, t_inizio):
@@ -470,6 +482,9 @@ async def aggiorna_preavviso(stato, url, testo_verdetto=None, riga_finale=None):
                 id_album = await asyncio.wait_for(stato["task_album_lampo"], 15)
             except Exception:
                 id_album = None
+        # 9/11: il testo realmente inviato (prime 3 righe) resta nel log, per confrontarlo con quello che si vede su Telegram
+        log.info("PREAVVISO TESTO | item=%s | tipo=%s | car=%d | righe=%r", _estrai_item_id_da_url(url) if url else "n/d", info["tipo"],
+                 len(testo), [r[:110] for r in testo.split("\n")[:3]])
         if info["tipo"] == "testo":
             ok = await telegram_edit_message(TELEGRAM_ALERT_CHAT_ID, info["msg_id"], testo, url)
         elif id_album and await telegram_edit_caption(TELEGRAM_ALERT_CHAT_ID, id_album, didascalia_verdetto(testo), None):

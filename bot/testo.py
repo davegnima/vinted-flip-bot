@@ -89,6 +89,18 @@ def _normalizza_titolo_per_link(titolo):
     return re.sub(r"\s+", " ", titolo.strip().lower())
 
 
+class RigaMd(str):
+    """Riga di messaggio GIA' in Markdown legacy (link e formattazione gia' scritti e sfuggiti): la scheda non la sfugge di nuovo (9/11)."""
+
+
+def link_markdown(titolo, url, max_car=36):
+    """'[Titolo](url)' con il titolo accorciato e sfuggito (il testo del link non deve rompere il Markdown). Pura."""
+    t = re.sub(r"\s+", " ", str(titolo or "annuncio")).strip()
+    t = (t[:max_car - 1].rstrip() + "…") if len(t) > max_car else t
+    t = re.sub(r"([_*`\[\]])", r"\\\1", t)
+    return f"[{t}]({url})"
+
+
 def _escapa_markdown_legacy(testo):
     """Sfugge i caratteri speciali della sintassi Markdown legacy di Telegram
     (_, *, `, [) in un testo che finira' dentro un messaggio con
