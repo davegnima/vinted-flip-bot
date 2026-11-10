@@ -246,6 +246,28 @@ def prezzi_pesati_da_foto(coppie, confronti, conf_min=CONF_FOTO_MOLTO_SIMILE):
     return (prezzi, comp) if stesso else ([], [])
 
 
+SIGLE_FOTO = {"stesso_modello": "SM", "simile": "S", "diverso": "D"}
+
+
+def sigle_foto_comps(coppie, confronti, conf_min=CONF_FOTO_MOLTO_SIMILE):
+    """Lista (titolo, prezzo, url, sigla) dei comparabili guardati da Jev, in ordine SM, S, D, ? (10/11, utente: 'SM, S, D vicino ai comps').
+    SM stesso modello, S simile, D diverso, ? non chiaro o confidenza bassa. Pura."""
+    ordine = {"SM": 0, "S": 1, "D": 2, "?": 3}
+    out = []
+    for (c, _b), (sc, cf) in zip(coppie or [], confronti or []):
+        sigla = SIGLE_FOTO.get(sc, "?") if (cf or 0) >= conf_min else "?"
+        out.append((c[0], c[1], c[2], sigla))
+    return sorted(out, key=lambda x: ordine[x[3]])
+
+
+def riassunto_sigle(elenco):
+    """'2 SM · 1 S · 1 D' dai comparabili con sigla (vuoto se non ce ne sono). Pura."""
+    conta = {}
+    for *_r, sg in elenco or []:
+        conta[sg] = conta.get(sg, 0) + 1
+    return " · ".join(f"{conta[k]} {k}" for k in ("SM", "S", "D", "?") if conta.get(k))
+
+
 def _entro_il_tetto():
     oggi = time.strftime("%Y-%m-%d")
     if _conteggio["giorno"] != oggi:
@@ -524,6 +546,7 @@ def righe_messaggio(ris, brand=None):
     if consiglio:
         righe.append(consiglio)
     n = ris.get("n") or 0
+    sigle = ris.get("link_comps_foto")
     comps = ris.get("rivendita_comps") if ris.get("rivendita_comps") is not None else ris.get("rivendita")
     if comps is None and not ris.get("rivendita_ril"):
         righe.append("🔎 Comparabili: nessuno")
@@ -533,12 +556,14 @@ def righe_messaggio(ris, brand=None):
         if pc:
             riga += f" · {pc[0]:g}–{pc[1]:g} €" if pc[0] != pc[1] else f" · {pc[0]:g} €"
         riga += f" · ~{comps:.0f} €"
-        riga += " · molto simili alla foto" if ris.get("da_foto") else ""
+        riga += f" · foto: {riassunto_sigle(sigle)}" if sigle else ""
         riga += " · ⚠️ non simili alla foto" if ris.get("motivo") == "comparabili_non_simili" else ""
         riga += " · ⚠️ prezzi dispersi" if ris.get("motivo") == "prezzi_dispersi" else ""
         righe.append(riga)
         link = ris.get("link_comps") or []
-        if link:   # comparabili identificati, con il link all'annuncio (richiesta dell'utente, 02/11): subito sotto i numeri
+        if sigle:   # 10/11 (utente): vicino a ogni comparabile SM stesso modello, S simile, D diverso (giudizio di Jev sulle miniature)
+            righe += [RigaMd(f"• {sg} · {link_markdown(t, u)} · {p:g} €") for t, p, u, sg in sigle[:3]]
+        elif link:   # comparabili identificati, con il link all'annuncio (richiesta dell'utente, 02/11): subito sotto i numeri
             righe += [RigaMd(f"• {link_markdown(t, u)} · {p:g} €") for t, p, u in link[:3]]
         else:
             righe += [f"• {p:g} € {t[:40]}" for t, p in (ris.get("esempi") or [])[:3]]
@@ -549,7 +574,7 @@ def righe_messaggio(ris, brand=None):
         if pr:
             riga += f" · {pr[0]:g}–{pr[1]:g} €" if pr[0] != pr[1] else f" · {pr[0]:g} €"
         righe.append(riga + f" · ~{ris['rivendita_ril']:.0f} €")
-        visti = {u for _t, _p, u in (ris.get("link_comps") or [])[:3]}
+        visti = {c[2] for c in (sigle or ris.get("link_comps") or [])[:3]}
         link_ril = [c for c in (ris.get("link_comps_ril") or []) if c[2] not in visti]
         if link_ril:
             righe += [RigaMd(f"• {link_markdown(t, u)} · {p:g} €") for t, p, u in link_ril[:3]]
@@ -659,6 +684,7 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
             coppie = await _miniature_dei_comparabili(link_comps)
             if coppie:
                 ris["foto_comps"] = await asyncio.to_thread(confronta_foto_comparabili, titolo, foto_jpeg, [b for _c, b in coppie], DOMANDA_FOTO_COMP_MODA)
+                ris["link_comps_foto"] = sigle_foto_comps(coppie, ris["foto_comps"])
                 prezzi_v, vicini = prezzi_pesati_da_foto(coppie, ris["foto_comps"])
                 if vicini:
                     stima_v = stima_mercato(prezzi_v, min_n=1)
@@ -689,7 +715,7 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
                 ris["linea"], ris["linea_da_foto"] = linea, True
                 comps_pool, link_comps, stima, v = await cerca(linea)
                 prezzi = [p for _t, p in comps_pool]
-                ris["da_foto"], ris["foto_comps"] = False, None
+                ris["da_foto"], ris["foto_comps"], ris["link_comps_foto"] = False, None, None
         # 8/11 (utente): stessa ricerca ordinata per rilevanza, entra nella rivendita mista con peso 2,5 x semaforo (newest_first 1,8 x); 10/11 (utente): rilevanza 1 x, newest_first 0,8 x, Gemini 1 x
         riv_ril = None
         try:

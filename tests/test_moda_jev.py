@@ -595,3 +595,15 @@ def test_preavviso_scartato_da_jev_sostituisce_il_bollino_del_semaforo():
     t = testo_preavviso({**base, "riga_verdetto_jev": "🚫 SCARTATO · replica (Gemini 95%)"}, "https://v/1")
     assert t.splitlines()[0].startswith("🚫 *Bottega Veneta*") and "🟢" not in t.splitlines()[0]
     assert testo_preavviso({**base, "riga_verdetto_jev": "✅ CONFERMATO · x"}, "https://v/1").startswith("🟢 *Bottega Veneta*")
+
+
+def test_sigle_foto_sm_s_d_accanto_ai_comparabili():
+    from bot.moda_jev import sigle_foto_comps, riassunto_sigle, righe_messaggio
+    coppie = [(("a", 10, "u1"), b""), (("b", 20, "u2"), b""), (("c", 30, "u3"), b""), (("d", 40, "u4"), b"")]
+    sigle = sigle_foto_comps(coppie, [("diverso", 0.9), ("stesso_modello", 0.9), ("simile", 0.8), ("stesso_modello", 0.2)])
+    assert [s[3] for s in sigle] == ["SM", "S", "D", "?"]
+    assert riassunto_sigle(sigle) == "1 SM · 1 S · 1 D · 1 ?"
+    ris = {"n": 2, "rivendita_comps": 25.0, "rivendita": 25.0, "link_comps_foto": sigle, "link_comps": [], "da_foto": True}
+    righe = [str(r) for r in righe_messaggio(ris)]
+    assert any("foto: 1 SM · 1 S · 1 D · 1 ?" in r for r in righe)
+    assert any(r.startswith("• SM · ") for r in righe)
