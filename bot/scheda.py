@@ -279,7 +279,7 @@ def testo_preavviso(listing_info, url=None, riga_finale=RIGA_PREAVVISO_IN_ATTESA
 
 # Righe da togliere per prime, in quest'ordine, se il messaggio supera la didascalia di Telegram (1024 caratteri): mai i link dei comparabili,
 # il verdetto, l'originalita' e i difetti (7/11, utente: il link dei comparabili mancava perche' la didascalia era tagliata).
-_RIGHE_DA_TOGLIERE = ("ℹ️", "🖼", "⚡", "🔎 Query", "💶", "👁", "🧠", "⏭", "🚦", "👤")
+_RIGHE_DA_TOGLIERE = ("ℹ️", "🖼", "⚡", "🔎 Query", "💶", "👁", "🧠", "⏭", "🚦", "💬", "👤")
 
 
 def _entra_nella_didascalia(righe, limite=1000):

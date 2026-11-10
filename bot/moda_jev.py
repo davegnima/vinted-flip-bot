@@ -557,8 +557,6 @@ def righe_messaggio(ris, brand=None):
             riga += f" · {pc[0]:g}–{pc[1]:g} €" if pc[0] != pc[1] else f" · {pc[0]:g} €"
         riga += f" · ~{comps:.0f} €"
         riga += f" · foto: {riassunto_sigle(sigle)}" if sigle else ""
-        riga += " · ⚠️ non simili alla foto" if ris.get("motivo") == "comparabili_non_simili" else ""
-        riga += " · ⚠️ prezzi dispersi" if ris.get("motivo") == "prezzi_dispersi" else ""
         righe.append(riga)
         link = ris.get("link_comps") or []
         if sigle:   # 10/11 (utente): vicino a ogni comparabile SM stesso modello, S simile, D diverso (giudizio di Jev sulle miniature)
@@ -577,7 +575,7 @@ def righe_messaggio(ris, brand=None):
         visti = {c[2] for c in (sigle or ris.get("link_comps") or [])[:3]}
         link_ril = [c for c in (ris.get("link_comps_ril") or []) if c[2] not in visti]
         if link_ril:
-            righe += [RigaMd(f"• {link_markdown(t, u)} · {p:g} €") for t, p, u in link_ril[:3]]
+            righe += [RigaMd(f"• {link_markdown(t, u)} · {p:g} €") for t, p, u in link_ril[:2]]
         elif not ris.get("link_comps_ril"):
             righe += [f"• {p:g} € {t[:40]}" for t, p in (ris.get("esempi_ril") or [])[:3]]
     if ris.get("legit_saltato"):
