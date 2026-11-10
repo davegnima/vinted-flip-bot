@@ -586,3 +586,12 @@ def test_prezzi_pesati_da_foto_stesso_modello_vale_il_doppio_di_simile():
     assert sorted(prezzi) == [60.0, 100.0, 100.0] and [c[0] for c in comp] == ["a", "b"]   # il 500 e' "diverso", l'80 ha confidenza bassa
     assert prezzi_pesati_da_foto(coppie, [("simile", 0.9), ("simile", 0.9), ("diverso", 0.9), ("non_chiaro", 0.9)]) == ([], [])
     assert prezzi_pesati_da_foto([], None) == ([], [])
+
+
+def test_preavviso_scartato_da_jev_sostituisce_il_bollino_del_semaforo():
+    """10/11 (utente): con un verdetto 🚫 la prima riga non mostra piu' il bollino del semaforo ma quello di scartato."""
+    from bot.scheda import testo_preavviso
+    base = {"fair_value": {"semaforo": "🟢"}, "price": 19, "brand": "Bottega Veneta", "title": "Long Jacke", "righe_jev": ["x"]}
+    t = testo_preavviso({**base, "riga_verdetto_jev": "🚫 SCARTATO · replica (Gemini 95%)"}, "https://v/1")
+    assert t.splitlines()[0].startswith("🚫 *Bottega Veneta*") and "🟢" not in t.splitlines()[0]
+    assert testo_preavviso({**base, "riga_verdetto_jev": "✅ CONFERMATO · x"}, "https://v/1").startswith("🟢 *Bottega Veneta*")
