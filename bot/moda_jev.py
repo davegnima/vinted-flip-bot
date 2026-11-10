@@ -476,6 +476,11 @@ def riga_verdetto(ris):
         return f"⚠️ NON VERIFICATO · {ris['n']} comparabili non simili alla foto"
     if mot == "prezzi_dispersi" and ris.get("rivendita") is not None:
         return f"⚠️ NON VERIFICATO · prezzi dispersi (quartile alto {ris['dispersione']:.1f}× il basso)"
+    parti, mix = ris.get("parti_rivendita") or {}, ris.get("rivendita_testata")
+    if mix and parti and not any(k in parti for k in ("comparabili", "rilevanza")):
+        # 10/11 (utente): senza comparabili l'avviso parte lo stesso e dice su cosa si regge la stima (solo semaforo, o semaforo e Gemini)
+        fonti = " e ".join(n for k, n in (("semaforo", "semaforo"), ("gemini", "Gemini")) if k in parti)
+        return f"⚠️ NON VERIFICATO · nessun comparabile, stima solo da {fonti} ~{mix:.0f} €{parti_rivendita_testo(parti)}"
     return "⚠️ NON VERIFICATO · nessun comparabile"
 
 

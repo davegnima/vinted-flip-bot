@@ -526,6 +526,11 @@ def test_riga_verdetto_non_verificato_senza_comparabili_e_senza_parole_inutili()
     from bot.moda_jev import riga_verdetto
     r = riga_verdetto({"esito": "non_verificato", "motivo": "nessun", "n": 0})
     assert r == "⚠️ NON VERIFICATO · nessun comparabile" and "stima" not in r
+    # 10/11 (utente): senza comparabili l'avviso dice che la stima viene solo da semaforo e Gemini
+    from bot.moda_jev import riga_verdetto as _rv
+    r2 = _rv({"esito": "non_verificato", "motivo": "comparabili_non_trovati", "rivendita_testata": 90.0, "parti_rivendita": {"semaforo": 100.0, "gemini": 80.0}})
+    assert r2 == "⚠️ NON VERIFICATO · nessun comparabile, stima solo da semaforo e Gemini ~90 € (semaforo 100 · Gemini 80)"
+    assert "solo da semaforo ~" in _rv({"esito": "non_verificato", "motivo": "x", "rivendita_testata": 70.0, "parti_rivendita": {"semaforo": 70.0}})
 
 
 def test_gemini_consigliere_riga_e_non_moda():
