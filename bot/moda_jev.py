@@ -229,6 +229,23 @@ def molto_simili(coppie, confronti, conf_min=CONF_FOTO_MOLTO_SIMILE):
     return [c for (c, _b), (sc, cf) in zip(coppie, confronti) if sc == "stesso_modello" and (cf or 0) >= conf_min]
 
 
+def prezzi_pesati_da_foto(coppie, confronti, conf_min=CONF_FOTO_MOLTO_SIMILE):
+    """(prezzi, comparabili): prezzi dei comparabili che Jev giudica dalla foto, con pesi 10/11 (utente): stesso_modello vale il doppio di
+    simile, diverso (o non chiaro, o confidenza bassa) 0. Il peso 2 e' il prezzo ripetuto due volte, cosi' stima_mercato lo conta il doppio.
+    Se nessun comparabile e' 'stesso_modello' ritorna ([], []): resta la stima testuale. Pura."""
+    if not coppie or not confronti:
+        return [], []
+    prezzi, comp, stesso = [], [], False
+    for (c, _b), (sc, cf) in zip(coppie, confronti):
+        if (cf or 0) < conf_min or sc not in ("stesso_modello", "simile"):
+            continue
+        peso = 2 if sc == "stesso_modello" else 1
+        stesso = stesso or sc == "stesso_modello"
+        prezzi += [c[1]] * peso
+        comp.append(c)
+    return (prezzi, comp) if stesso else ([], [])
+
+
 def _entro_il_tetto():
     oggi = time.strftime("%Y-%m-%d")
     if _conteggio["giorno"] != oggi:
@@ -478,9 +495,8 @@ def riga_verdetto(ris):
         return f"⚠️ NON VERIFICATO · prezzi dispersi (quartile alto {ris['dispersione']:.1f}× il basso)"
     parti, mix = ris.get("parti_rivendita") or {}, ris.get("rivendita_testata")
     if mix and parti and not any(k in parti for k in ("comparabili", "rilevanza")):
-        # 10/11 (utente): senza comparabili l'avviso parte lo stesso e dice su cosa si regge la stima (solo semaforo, o semaforo e Gemini)
-        fonti = " e ".join(n for k, n in (("semaforo", "semaforo"), ("gemini", "Gemini")) if k in parti)
-        return f"⚠️ NON VERIFICATO · nessun comparabile, stima solo da {fonti} ~{mix:.0f} €{parti_rivendita_testo(parti)}"
+        # 10/11 (utente): senza comparabili l'avviso parte lo stesso; riga corta, le fonti stanno tra parentesi
+        return f"⚠️ NON VERIFICATO · senza comparabili · rivendita ~{mix:.0f} €{parti_rivendita_testo(parti)}"
     return "⚠️ NON VERIFICATO · nessun comparabile"
 
 
@@ -643,14 +659,14 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
             coppie = await _miniature_dei_comparabili(link_comps)
             if coppie:
                 ris["foto_comps"] = await asyncio.to_thread(confronta_foto_comparabili, titolo, foto_jpeg, [b for _c, b in coppie], DOMANDA_FOTO_COMP_MODA)
-                vicini = molto_simili(coppie, ris["foto_comps"])
+                prezzi_v, vicini = prezzi_pesati_da_foto(coppie, ris["foto_comps"])
                 if vicini:
-                    stima_v = stima_mercato([c[1] for c in vicini], min_n=1)
+                    stima_v = stima_mercato(prezzi_v, min_n=1)
                     if stima_v:
-                        v = valuta(prezzo, stima_v, spedizione_eur=SPEDIZIONE_STIMATA_EUR, margine_min=MODA_JEV_MARGINE_MIN)
+                        v = {**valuta(prezzo, stima_v, spedizione_eur=SPEDIZIONE_STIMATA_EUR, margine_min=MODA_JEV_MARGINE_MIN), "n": len(vicini)}
                         link_comps = vicini
                         ris["da_foto"] = True
-                        log.info("MODA JEV FOTO | brand=%s | molto_simili=%s/%s | rivendita=%s | titolo=%s", brand, len(vicini), len(coppie), v.get("rivendita"), titolo[:60])
+                        log.info("MODA JEV FOTO | brand=%s | stesso_o_simili=%s/%s | rivendita=%s | titolo=%s", brand, len(vicini), len(coppie), v.get("rivendita"), titolo[:60])
         if v is not None and not v.get("ok"):
             # 5/11 (utente): se i comparabili scartano gia' l'annuncio il legit check (Jev e Gemini, token e quota) non serve
             ris["legit_saltato"] = True

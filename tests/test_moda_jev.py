@@ -529,8 +529,8 @@ def test_riga_verdetto_non_verificato_senza_comparabili_e_senza_parole_inutili()
     # 10/11 (utente): senza comparabili l'avviso dice che la stima viene solo da semaforo e Gemini
     from bot.moda_jev import riga_verdetto as _rv
     r2 = _rv({"esito": "non_verificato", "motivo": "comparabili_non_trovati", "rivendita_testata": 90.0, "parti_rivendita": {"semaforo": 100.0, "gemini": 80.0}})
-    assert r2 == "⚠️ NON VERIFICATO · nessun comparabile, stima solo da semaforo e Gemini ~90 € (semaforo 100 · Gemini 80)"
-    assert "solo da semaforo ~" in _rv({"esito": "non_verificato", "motivo": "x", "rivendita_testata": 70.0, "parti_rivendita": {"semaforo": 70.0}})
+    assert r2 == "⚠️ NON VERIFICATO · senza comparabili · rivendita ~90 € (semaforo 100 · Gemini 80)"
+    assert "senza comparabili · rivendita ~70 €" in _rv({"esito": "non_verificato", "motivo": "x", "rivendita_testata": 70.0, "parti_rivendita": {"semaforo": 70.0}})
 
 
 def test_gemini_consigliere_riga_e_non_moda():
@@ -576,3 +576,13 @@ def test_contesto_tracciato_porta_venditore_foto_e_cuori_allo_scrape():
     from bot.tracciamento import _contesto_tracciato
     ctx = _contesto_tracciato({"feat_pre": {"n_foto": 5, "v_rec": 12, "pref_scrape": 1}}, "SOLO_SEMAFORO", {})
     assert ctx["n_foto"] == 5 and ctx["v_rec"] == 12 and ctx["pref_scrape"] == 1
+
+
+def test_prezzi_pesati_da_foto_stesso_modello_vale_il_doppio_di_simile():
+    """10/11 (utente): Jev guarda le miniature; stesso_modello pesa 2, simile 1, diverso 0; senza nessun stesso_modello resta la stima testuale."""
+    from bot.moda_jev import prezzi_pesati_da_foto
+    coppie = [(("a", 100.0, "u1"), b""), (("b", 60.0, "u2"), b""), (("c", 500.0, "u3"), b""), (("d", 80.0, "u4"), b"")]
+    prezzi, comp = prezzi_pesati_da_foto(coppie, [("stesso_modello", 0.9), ("simile", 0.8), ("diverso", 0.9), ("stesso_modello", 0.3)])
+    assert sorted(prezzi) == [60.0, 100.0, 100.0] and [c[0] for c in comp] == ["a", "b"]   # il 500 e' "diverso", l'80 ha confidenza bassa
+    assert prezzi_pesati_da_foto(coppie, [("simile", 0.9), ("simile", 0.9), ("diverso", 0.9), ("non_chiaro", 0.9)]) == ([], [])
+    assert prezzi_pesati_da_foto([], None) == ([], [])
