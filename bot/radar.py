@@ -564,7 +564,7 @@ RADAR_CANCELLA_ROSSI = os.environ.get("RADAR_CANCELLA_ROSSI", "1").strip() not i
 
 # 8/11 (utente): i rossi con modello riconosciuto e stima fatta (margine o ROI bassi, sopra il riferimento) restano nel gruppo.
 MOTIVI_FILTRATI_DIRETTAMENTE = ("fuori_famiglia", "sopra_tetto_modello")
-MOTIVI_TECNICI_NON_CANCELLA = ("gia_visto", "senza_id", "ombra_spenta", "pausa_notturna")   # non sono un verdetto: il messaggio resta
+MOTIVI_TECNICI_NON_CANCELLA = ("senza_id", "ombra_spenta", "pausa_notturna")   # non sono un verdetto: il messaggio resta
 MOTIVI_MODELLO_RICONOSCIUTO = ("margine_basso", "roi_basso", "sopra_riferimento")
 
 
