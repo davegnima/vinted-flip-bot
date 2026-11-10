@@ -253,7 +253,7 @@ def test_comparabili_tutti_diversi_dalla_foto_non_confermano():
     ris = {"esito": "non_verificato", "motivo": "comparabili_non_simili", "n": 4, "rivendita": 80.0, "margine": 64.0, "roi": 752.0,
            "prezzi_comps": (3.0, 600.0), "foto_comps": diversi}
     assert "non simili alla foto" in mj.riga_verdetto(ris)
-    assert any("non simili alla foto" in r for r in mj.righe_messaggio(ris))
+    assert not any("non simili alla foto" in r for r in mj.righe_messaggio(ris))   # già nella riga del verdetto
 
 
 def test_prezzi_troppo_dispersi_non_confermano():
@@ -263,7 +263,7 @@ def test_prezzi_troppo_dispersi_non_confermano():
     assert mj.decidi({"ok": True}, ("originale_plausibile", 0.9), None, None, None) == ("conferma", "ok")
     ris = {"esito": "non_verificato", "motivo": "prezzi_dispersi", "n": 4, "rivendita": 80.0, "margine": 64.0, "roi": 752.0, "dispersione": 3.4}
     assert "3.4×" in mj.riga_verdetto(ris)
-    assert any("prezzi dispersi" in r for r in mj.righe_messaggio(ris))
+    assert not any("prezzi dispersi" in r for r in mj.righe_messaggio(ris))
 
 
 def test_filtra_per_linea_weekend_non_e_max_mara():
