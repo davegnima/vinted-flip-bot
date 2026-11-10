@@ -266,8 +266,9 @@ def correggi_per_difetti(v, prezzo, gemini):
 def rivendita_mista(fv, riv_comps, n_comps, gemini, riv_rilevanza=None):
     """(rivendita, parti): media pesata di stime indipendenti (7/11, utente: 'prezzo di rivendita bilanciato tra semaforo, comparabili e
     Gemini, con i loro valori tra parentesi'). 8/11 (utente): pesi RELATIVI al semaforo, che vale w = 0,3 con confidenza alta / 0,2 media /
-    0,1 bassa: comparabili per rilevanza 2,5 x w, comparabili per data (newest_first) 1,8 x w, Gemini w (uguale al semaforo, solo se la sua
-    confidenza e' almeno 0,4). Rapporti scelti dall'utente, non misurati. `parti` = {'semaforo','comparabili','rilevanza','gemini'} con i soli
+    0,1 bassa: comparabili per rilevanza w, comparabili per data (newest_first) 0,8 x w, Gemini w (uguale al semaforo, solo se la sua
+    confidenza e' almeno 0,4). Rapporti scelti dall'utente (10/11: prima rilevanza 2,5 x e newest_first 1,8 x; ora Gemini e rilevanza
+    contano uguale, newest_first un po' meno), non misurati. `parti` = {'semaforo','comparabili','rilevanza','gemini'} con i soli
     valori presenti. (None, {}) se non c'e' nessuna stima. Pura."""
     parti, pesi = {}, {}
     w = {"alta": 0.3, "media": 0.2}.get((fv or {}).get("conf"), 0.1)
@@ -276,10 +277,10 @@ def rivendita_mista(fv, riv_comps, n_comps, gemini, riv_rilevanza=None):
         pesi["semaforo"] = w
     if riv_comps:
         parti["comparabili"] = float(riv_comps)
-        pesi["comparabili"] = 1.8 * w
+        pesi["comparabili"] = 0.8 * w
     if riv_rilevanza:
         parti["rilevanza"] = float(riv_rilevanza)
-        pesi["rilevanza"] = 2.5 * w
+        pesi["rilevanza"] = w
     rg, cg = (gemini or {}).get("rivendita_gemini_eur"), (gemini or {}).get("rivendita_confidenza")
     if rg and cg is not None and cg >= 0.4:
         parti["gemini"] = float(rg)
@@ -668,7 +669,7 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
                 comps_pool, link_comps, stima, v = await cerca(linea)
                 prezzi = [p for _t, p in comps_pool]
                 ris["da_foto"], ris["foto_comps"] = False, None
-        # 8/11 (utente): stessa ricerca ordinata per rilevanza, entra nella rivendita mista con peso 2,5 x semaforo (newest_first 1,8 x)
+        # 8/11 (utente): stessa ricerca ordinata per rilevanza, entra nella rivendita mista con peso 2,5 x semaforo (newest_first 1,8 x); 10/11 (utente): rilevanza 1 x, newest_first 0,8 x, Gemini 1 x
         riv_ril = None
         try:
             _u, _l, st_ril, v_ril = await cerca(linea, "relevance")

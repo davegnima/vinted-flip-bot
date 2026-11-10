@@ -749,7 +749,7 @@ FAIR_VALUE_APPRESO = {}
 _FV_PESO_PARTENZA = {"alta": 4.0, "media": 3.0, "bassa": 2.0, "stima": 1.5}
 _FV_PESO_GEMINI = 1.0
 _FV_PESO_UMANO = 3.0
-_FV_PESO_JEV_RIL = 2.1       # 8/11 (utente): il semaforo impara piu' dai comparabili per rilevanza che da quelli per data (stessi rapporti 2,5 : 1,8 della rivendita mista: 1,5 x 2,5/1,8)
+_FV_PESO_JEV_RIL = 1.9       # 8/11 (utente): il semaforo impara piu' dai comparabili per rilevanza che da quelli per data (stessi rapporti 1 : 0,8 della rivendita mista, 10/11: 1,5 x 1/0,8)
 _FV_PESO_JEV = 1.5           # 6/11: un campione = la rivendita (p25) dei comparabili di una verifica Jev; il mercato, non un giudizio
 _FV_JEV_N_MIN = 5            # meno di 5 comparabili: non si impara
 _FV_JEV_DISPERSIONE_MAX = 2.5
