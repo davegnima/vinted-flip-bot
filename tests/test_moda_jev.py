@@ -609,7 +609,21 @@ def test_sigle_foto_sm_s_d_accanto_ai_comparabili():
     assert any(r.startswith("• SM · ") for r in righe)
 
 
-def test_url_comparabili_sempre_condizioni_ottime_e_buone():
-    """10/11 (utente): i comparabili si cercano sempre con condizioni ottime e buone (status 2 e 3)."""
-    for u in (mj.url_comparabili("zimmermann", "abito", 10), mj.url_comparabili("marchio inesistente", "giacca", 5)):
-        assert u.endswith("&status_ids[]=2&status_ids[]=3")
+def test_url_comparabili_stessa_condizione_dell_annuncio():
+    """10/11 (utente): comparabili con la stessa condizione dell'annuncio; nuovo senza cartellino ammesso."""
+    from bot.vinted_search import stati_comps
+    assert stati_comps("Ottime") == "&status_ids[]=2"
+    assert stati_comps("Buone") == "&status_ids[]=3"
+    assert stati_comps("Soddisfacenti") == "&status_ids[]=4"
+    assert stati_comps("Nuovo senza cartellino") == "&status_ids[]=1"
+    assert stati_comps("Nuovo con cartellino") == "&status_ids[]=6&status_ids[]=1"
+    assert stati_comps(None) == "&status_ids[]=1&status_ids[]=2&status_ids[]=3"
+    assert mj.url_comparabili("zimmermann", "abito", 10, None, "Ottime").endswith("&status_ids[]=2")
+    assert mj.url_comparabili("marchio inesistente", "giacca", 5, None, "Buone").endswith("&status_ids[]=3")
+    assert mj.url_comparabili("zimmermann", "abito", 10).endswith("&status_ids[]=1&status_ids[]=2&status_ids[]=3")
+
+
+def test_ricerca_classica_stessa_condizione():
+    from bot.vinted_search import build_vinted_search_url
+    assert build_vinted_search_url("zimmermann", "abito", None, 10, "Ottime")[0].endswith("&status_ids[]=2")
+    assert build_vinted_search_url("marchio inesistente", "abito", None, 10, "Buone")[0].endswith("&status_ids[]=3")

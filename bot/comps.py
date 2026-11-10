@@ -129,7 +129,7 @@ _miniature_comp = {}
 MAX_MINIATURE_COMP = 3000
 
 
-async def _recupera_comp_visuali_vinted(item_id, photo_id, brand):
+async def _recupera_comp_visuali_vinted(item_id, photo_id, brand, condizione=None):
     """Wrapper per la fonte visuale, pensato per essere sottomesso come UN
     solo future nello stesso executor delle altre 3 fonti (vedi
     search_comps_completo) cosi' la risoluzione dell'ID (chiamata di rete
@@ -145,7 +145,7 @@ async def _recupera_comp_visuali_vinted(item_id, photo_id, brand):
 
     Scrape diretto dal 2026-09-20: vedi docstring di
     _scrape_catalogo_vinted_diretto per il perche'."""
-    url = await build_vinted_visual_search_url(item_id, photo_id, brand)
+    url = await build_vinted_visual_search_url(item_id, photo_id, brand, condizione)
     if not url:
         log.info(
             "_recupera_comp_visuali_vinted: fonte non disponibile per item_id=%s "
@@ -483,8 +483,8 @@ async def verifica_codici_prodotto_reddit(occhio_json, brand, categoria_per_rice
     return "\n\n--- VERIFICA CODICI PRODOTTO (Reddit) ---\n" + "\n".join(righe)
 
 
-async def search_comps_completo(brand, categoria, query_base, catalog_id=None, material_per_ricerca=None, cover_photo_id=None, item_id=None, nome_sarto=None, dettaglio_distintivo=None):
-    vinted_url, vinted_per_id = build_vinted_search_url(brand, categoria, material_per_ricerca, catalog_id)
+async def search_comps_completo(brand, categoria, query_base, catalog_id=None, material_per_ricerca=None, cover_photo_id=None, item_id=None, nome_sarto=None, dettaglio_distintivo=None, condizione=None):
+    vinted_url, vinted_per_id = build_vinted_search_url(brand, categoria, material_per_ricerca, catalog_id, condizione)
     # Ricerca extra per nome del sarto/maker (aggiunta il 2026-09-20, vedi il
     # commento in process_listing su nome_sarto_o_maker): SEMPRE testo libero
     # (VINTED_BRAND_IDS quasi certamente non mappa sartorie/maker minori),
@@ -493,7 +493,7 @@ async def search_comps_completo(brand, categoria, query_base, catalog_id=None, m
     # quando il brand non e' in mappa, e' il comportamento voluto qui.
     url_sarto = None
     if nome_sarto:
-        url_sarto, _ = build_vinted_search_url(nome_sarto, categoria, material_per_ricerca, catalog_id)
+        url_sarto, _ = build_vinted_search_url(nome_sarto, categoria, material_per_ricerca, catalog_id, condizione)
     # Se manca l'ingrediente minimo (photo_id o brand mappato) la fonte
     # visuale e' inutile: lo sappiamo gia' qui senza fare rete, quindi non la
     # sottomettiamo affatto all'executor invece di sprecare uno slot/tempo.
@@ -551,7 +551,7 @@ async def search_comps_completo(brand, categoria, query_base, catalog_id=None, m
         timeout=TIMEOUT_FONTE_VINTED_SECONDI)]
     if tentare_ricerca_visuale:
         lavori.append(_esegui_fonte(
-            "vinted_visuale", _recupera_comp_visuali_vinted(item_id, cover_photo_id, brand)))
+            "vinted_visuale", _recupera_comp_visuali_vinted(item_id, cover_photo_id, brand, condizione)))
     if url_sarto:
         lavori.append(_esegui_fonte(
             "vinted_sarto", _cerca_vinted_testo_diretto(url_sarto),

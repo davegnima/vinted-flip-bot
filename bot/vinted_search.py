@@ -9,7 +9,21 @@ from bot.vinted_http import _VINTED_COOKIES, _jwt_scaduto, _rinnova_token_vinted
 from bot.logger import log
 from bot import http_clients as hc
 # ---- fine import ----
-def build_vinted_search_url(brand, categoria, materiale=None, catalog_id=None):
+# 10/11 (utente): i comparabili si cercano con la STESSA condizione dell'annuncio (oltre a brand e categoria); il nuovo
+# senza cartellino va bene anche per il nuovo con cartellino. Ids Vinted: 6 nuovo con cartellino, 1 nuovo senza, 2 ottime,
+# 3 buone, 4 soddisfacenti. Condizione assente o non riconosciuta: 1, 2 e 3 (nuovo senza cartellino, ottime, buone).
+_STATI_PER_CONDIZIONE = (("con cartellino", (6, 1)), ("senza cartellino", (1,)), ("ottim", (2,)), ("buon", (3,)), ("soddisfacent", (4,)))
+STATI_COMPS_DEFAULT = (1, 2, 3)
+
+
+def stati_comps(condizione=None):
+    """Parametri `&status_ids[]=N` per la ricerca dei comparabili, dalla condizione dell'annuncio. Pura."""
+    t = str(condizione or "").lower()
+    ids = next((i for chiave, i in _STATI_PER_CONDIZIONE if chiave in t), STATI_COMPS_DEFAULT)
+    return "".join(f"&status_ids[]={i}" for i in ids)
+
+
+def build_vinted_search_url(brand, categoria, materiale=None, catalog_id=None, condizione=None):
     brand_id = VINTED_BRAND_IDS.get((brand or "").strip().lower())
     parti_search_text = [p for p in (categoria, materiale) if p]
     search_text_finale = " ".join(parti_search_text)
@@ -19,14 +33,14 @@ def build_vinted_search_url(brand, categoria, materiale=None, catalog_id=None):
             f"https://www.vinted.it/catalog?brand_ids[]={brand_id}"
             f"{catalog_str}"
             f"&search_text={quote(search_text_finale)}"
-            "&order=newest_first&status_ids[]=2&status_ids[]=3"
+            f"&order=newest_first{stati_comps(condizione)}"
         )
         return url, True
     query_text = f"{brand} {search_text_finale}".strip()
     url = (
         f"https://www.vinted.it/catalog?search_text={quote(query_text)}"
         f"{catalog_str}"
-        "&order=newest_first&status_ids[]=2&status_ids[]=3"
+        f"&order=newest_first{stati_comps(condizione)}"
     )
     return url, False
 
@@ -204,7 +218,7 @@ async def _risolvi_search_by_image_id(item_id, photo_id):
     return None
 
 
-async def build_vinted_visual_search_url(item_id, photo_id, brand):
+async def build_vinted_visual_search_url(item_id, photo_id, brand, condizione=None):
     """URL equivalente al bottone Vinted "Cerca articoli simili" + filtro
     per brand. Risolve prima il vero search_by_image_id (vedi
     _risolvi_search_by_image_id -- il photo_id della foto da solo NON
@@ -236,7 +250,7 @@ async def build_vinted_visual_search_url(item_id, photo_id, brand):
     url = (
         f"https://www.vinted.it/catalog?search_by_image_id={quote(search_by_image_id)}"
         f"&brand_ids[]={brand_id}"
-        "&status_ids[]=2&status_ids[]=3"
+        f"{stati_comps(condizione)}"
     )
     log.info("build_vinted_visual_search_url: URL catalogo costruito: %s", url)
     return url
