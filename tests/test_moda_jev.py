@@ -564,3 +564,10 @@ def test_didascalia_non_conta_gli_indirizzi_dei_link():
     testo = "\n".join(righe)
     assert len(testo) > 1024
     assert didascalia_verdetto(testo) == testo
+
+
+def test_contesto_tracciato_porta_venditore_foto_e_cuori_allo_scrape():
+    """10/11: la riga TRACCIATO include le caratteristiche del PREAVVISO (dataset per i pattern del primo avviso)."""
+    from bot.tracciamento import _contesto_tracciato
+    ctx = _contesto_tracciato({"feat_pre": {"n_foto": 5, "v_rec": 12, "pref_scrape": 1}}, "SOLO_SEMAFORO", {})
+    assert ctx["n_foto"] == 5 and ctx["v_rec"] == 12 and ctx["pref_scrape"] == 1

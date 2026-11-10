@@ -279,6 +279,10 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             if _fv_pre.get("categoria"):
                 _feat["categoria"] = _fv_pre["categoria"]   # include la categoria ricavata dal catalogo Vinted
             _feat["fonte_cat"] = _fv_pre.get("fonte_categoria") or "-"   # titolo | descrizione | catalogo | nessuna
+            # 10/11: venditore, foto, descrizione e cuori allo scrape nella riga TRACCIATO (dataset per cercare i pattern del primo avviso)
+            listing_info["feat_pre"] = {("pref_scrape" if k == "pref" else k): _feat[k]
+                                        for k in ("n_foto", "desc_len", "v_rec", "v_rep", "v_art", "v_paese", "lingua", "ora_utc", "gs", "pref")
+                                        if k in _feat}
             _feat.update({"prezzo": _prezzo_pre, "semaforo": _fv_pre.get("semaforo") or "-", "fv": _fv_pre.get("fv"),
                           "margine": _fv_pre.get("margine"), "conf": _fv_pre.get("conf") or "-", "regola": _regola_pre,
                           "suono": "si" if listing_info["preavviso_suono"] else "no",
