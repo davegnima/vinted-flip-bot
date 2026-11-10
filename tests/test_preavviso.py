@@ -608,3 +608,13 @@ def test_riga_originalita_sta_subito_sotto_il_verdetto():
     righe = testo_preavviso(info, url).split("\n")
     assert righe[0].startswith("🟢 *Brunello Cucinelli*") and righe[1].startswith("✅ CONFERMATO") and righe[2].startswith("🚨 POSSIBILE REPLICA")
     assert didascalia_verdetto("\n".join(righe)).split("\n")[2].startswith("🚨 POSSIBILE REPLICA")
+
+
+def test_caricato_ore_non_diventa_un_tempo():
+    from datetime import datetime, timezone
+    from bot.tempi import _calcola_tempi_pipeline, caricato_attendibile
+    assert not caricato_attendibile("un'ora fa") and not caricato_attendibile("2 ore fa, x")
+    assert caricato_attendibile("3 minuti fa") and caricato_attendibile("Proprio adesso")
+    msg = datetime.fromtimestamp(1_000_000, tz=timezone.utc)
+    pezzi, sec = _calcola_tempi_pipeline({"uploaded_text": "un'ora fa", "t_scrape": 999_990}, msg, None, t_riferimento=1_000_003)
+    assert "pub_telegram" not in sec

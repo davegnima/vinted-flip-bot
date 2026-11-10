@@ -54,6 +54,13 @@ def parse_caricato_secondi(testo):
     return None
 
 
+def caricato_attendibile(testo):
+    """False se il 'Caricato' relativo della pagina dice un'ora o piu' (10/11: sempre "un'ora fa" anche per annunci
+    appena caricati, quindi inutilizzabile); True per secondi/minuti o testo non interpretabile ("Proprio adesso"). Pura."""
+    letto = parse_caricato_secondi(testo)
+    return letto is None or letto[0] < 3600
+
+
 def _calcola_tempi_pipeline(listing_info, msg_date, t_ricevuto_bot, t_riferimento=None):
     """Le tre tappe del footer '⏱ Tempi' del messaggio Telegram (vedi
     process_listing), come funzione a se' per poterle anche LOGGARE nei
@@ -75,7 +82,9 @@ def _calcola_tempi_pipeline(listing_info, msg_date, t_ricevuto_bot, t_riferiment
         # data di caricamento non esposta dalla pagina: si ricava dal "Caricato N secondi fa" letto al momento dello
         # scrape (richiesto dall'utente il 2026-10-04: tempi da caricato). Errore tipico: 1-2 s (durata dello scrape).
         letto = parse_caricato_secondi(listing_info.get("uploaded_text"))
-        if letto and letto[0] <= 6 * 3600:
+        # 10/11: da un'ora in su il testo della pagina NON e' attendibile (nei log tracciati e' sempre "un'ora fa",
+        # mai minuti o secondi, anche per annunci appena caricati: conferma dell'utente), quindi non diventa un tempo.
+        if letto and letto[0] < 3600:
             created_dt = datetime.fromtimestamp(listing_info["t_scrape"] - letto[0], tz=timezone.utc)
             grossolano = letto[1]
     pref = "~" if grossolano else ""

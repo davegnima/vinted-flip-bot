@@ -95,6 +95,10 @@ def test_messaggio_compatto_markdown_valido_e_tappe_senza_underscore():
 
 def test_caricato_senza_descrizione():
     assert m._riga_caricato_annuncio(LISTING) == "🕒 Caricato: Proprio adesso"
+    # da un'ora in su il testo della pagina non e' attendibile (10/11): niente riga
+    assert m._riga_caricato_annuncio({"uploaded_text": "un'ora fa, Spedizione"}) is None
+    assert m._riga_caricato_annuncio({"uploaded_text": "2 ore fa"}) is None
+    assert m._riga_caricato_annuncio({"uploaded_text": "3 minuti fa"}) == "🕒 Caricato: 3 minuti fa"
 
 
 def test_comp_con_prezzo_una_volta():
