@@ -13,6 +13,7 @@ from bot.verdetto import EMOJI_DECISIONE, ETICHETTA_CONFIDENZA, ETICHETTA_RISCHI
 from bot.testo import RigaMd, _escapa_markdown_legacy
 from bot.fair_value import _riga_fair_value_testo, _riga_fair_value_unica
 from bot.logger import log
+from bot.tempi import caricato_attendibile
 from bot.telegram_api import telegram_delete_message, telegram_edit_caption, telegram_edit_message, telegram_send_media_group, telegram_send_message, telegram_send_photo, telegram_send_photo_con_bottone, telegram_send_with_buttons
 # ---- fine import ----
 # GALLERIA ANTICIPATA (richiesto dall'utente il 2026-09-28): la galleria
@@ -94,7 +95,7 @@ def _riga_caricato_annuncio(listing_info):
     eta = _eta_annuncio_testo(listing_info.get("age_days"))
     if eta:
         return f"🕒 {eta}"
-    if listing_info.get("uploaded_text"):
+    if listing_info.get("uploaded_text") and caricato_attendibile(listing_info["uploaded_text"]):
         relativo = str(listing_info["uploaded_text"]).split(",")[0].strip()
         if relativo:
             return f"🕒 Caricato: {_escapa_markdown_legacy(relativo)}"
