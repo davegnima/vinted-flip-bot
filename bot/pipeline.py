@@ -224,6 +224,11 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             _letto_pub = parse_caricato_secondi(listing_info.get("uploaded_text"))
             if _sec_pub.get("pub_telegram") is not None and _letto_pub and not _letto_pub[1]:
                 listing_info["pub_tg"] = round(max(_sec_pub["pub_telegram"], 0), 1)
+            if _sec_pub.get("pub_telegram") is not None:
+                # 10/11 (utente: 'annunci di un'ora fa'): una riga per annuncio con il ritardo pubblicazione -> messaggio del tracker
+                # (anche se grossolano, "~"), per contarli in tutte le ricerche e non solo nei casi che arrivano al preavviso
+                log.info("RITARDO PUBBLICAZIONE | item=%s | pub_tg=%.0f | grossolano=%s | query=%s", _estrai_item_id_da_url(url),
+                         max(_sec_pub["pub_telegram"], 0), "si" if (_letto_pub and _letto_pub[1]) else "no", str(listing_info.get("query_name") or "-")[:40])
         except Exception:
             log.debug("pub_tg non calcolato", exc_info=True)
 
