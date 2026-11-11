@@ -1501,6 +1501,11 @@ async def _arresto_ordinato(attesa_max=None, passo=1.0):
     while _analisi_attive["n"] > 0 and time.time() - t0 < attesa_max:
         await asyncio.sleep(passo)
     log.info("ARRESTO ORDINATO | analisi_rimaste=%d | attesa=%.0fs", _analisi_attive["n"], time.time() - t0)
+    try:
+        from bot.proxy import _salva_contatori_banda
+        _salva_contatori_banda(forza=True)
+    except Exception:
+        pass
     await client.disconnect()
 
 
