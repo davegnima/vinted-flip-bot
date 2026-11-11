@@ -16,10 +16,11 @@ from bot import http_clients as hc
 # 3 buone, 4 soddisfacenti. Prima (10/11): solo la condizione dell'annuncio.
 _STATI_PER_CONDIZIONE = (("con cartellino", 6), ("senza cartellino", 1), ("ottim", 2), ("buon", 3), ("soddisfacent", 4))
 STATI_COMPS_BASE = (1, 2, 3)
-# scala di qualita' (piu' basso = migliore): 6 < 1 < 2 < 3 < 4
-_LIVELLO_STATO = {6: 0, 1: 1, 2: 2, 3: 3, 4: 4}
-# correzione del prezzo per ogni gradino di condizione di differenza: STIMA scelta dall'utente ("leggermente"), non misurata
-COMPS_COND_PASSO = float(os.environ.get("COMPS_COND_PASSO", "0.05") or 0)
+# scala di valore in punti percentuali (piu' basso = migliore), cumulata dai gradini scelti dall'utente (11/11, STIME non misurate):
+# nuovo con cartellino -> nuovo senza 5%, nuovo senza -> ottime 5%, ottime -> buone 10%, buone -> soddisfacenti 10%
+_LIVELLO_STATO = {6: 0, 1: 5, 2: 10, 3: 20, 4: 30}
+# moltiplicatore della scala (1 = i valori sopra, 0 = nessuna correzione)
+COMPS_COND_SCALA = float(os.environ.get("COMPS_COND_SCALA", "1") or 0)
 
 
 def stato_da_condizione(condizione):
@@ -41,11 +42,14 @@ def stati_comps(condizione=None):
 
 def aggiusta_prezzo_comp(prezzo, stato_comp, condizione_annuncio):
     """Prezzo del comparabile portato alla condizione dell'annuncio: comparabile peggiore -> il nostro vale di piu' (prezzo su),
-    comparabile migliore -> prezzo giu', `COMPS_COND_PASSO` per gradino. Senza condizione nota di uno dei due non cambia. Pura."""
+    comparabile migliore -> prezzo giu', secondo la scala `_LIVELLO_STATO`. `stato_comp` e' l'id o la condizione scritta del comparabile.
+    Senza condizione nota di uno dei due non cambia. Pura."""
     proprio = stato_da_condizione(condizione_annuncio)
-    if proprio is None or stato_comp not in _LIVELLO_STATO or COMPS_COND_PASSO <= 0:
+    if isinstance(stato_comp, str):
+        stato_comp = stato_da_condizione(stato_comp)
+    if proprio is None or stato_comp not in _LIVELLO_STATO or COMPS_COND_SCALA <= 0:
         return prezzo
-    return prezzo * max(0.5, 1 + COMPS_COND_PASSO * (_LIVELLO_STATO[stato_comp] - _LIVELLO_STATO[proprio]))
+    return prezzo * max(0.5, 1 + COMPS_COND_SCALA * (_LIVELLO_STATO[stato_comp] - _LIVELLO_STATO[proprio]) / 100)
 
 
 def build_vinted_search_url(brand, categoria, materiale=None, catalog_id=None, condizione=None):

@@ -622,13 +622,30 @@ def test_comparabili_sempre_nuovo_senza_cartellino_ottime_e_buone():
 
 
 def test_aggiusta_prezzo_comp_per_condizione_diversa():
-    """11/11 (utente): annuncio ottime e comparabile buono -> il nostro vale di piu'; viceversa il contrario; stessa condizione invariato."""
-    from bot.vinted_search import aggiusta_prezzo_comp, COMPS_COND_PASSO
+    """11/11 (utente): buone->ottime 10%, ottime->nuovo senza cartellino 5%; annuncio ottime e comparabile buono -> il nostro vale di piu'."""
+    from bot.vinted_search import aggiusta_prezzo_comp
     assert aggiusta_prezzo_comp(100, 2, "Ottime") == 100
-    assert aggiusta_prezzo_comp(100, 3, "Ottime") == 100 * (1 + COMPS_COND_PASSO)
-    assert aggiusta_prezzo_comp(100, 2, "Buone") == 100 * (1 - COMPS_COND_PASSO)
-    assert aggiusta_prezzo_comp(100, 1, "Buone") == 100 * (1 - 2 * COMPS_COND_PASSO)
+    assert round(aggiusta_prezzo_comp(100, 3, "Ottime"), 6) == 110       # comparabile buono, annuncio ottime
+    assert round(aggiusta_prezzo_comp(100, 2, "Buone"), 6) == 90         # comparabile ottime, annuncio buono
+    assert round(aggiusta_prezzo_comp(100, 1, "Ottime"), 6) == 95        # comparabile nuovo senza cartellino, annuncio ottime
+    assert round(aggiusta_prezzo_comp(100, 1, "Buone"), 6) == 85         # 5% + 10%
+    assert round(aggiusta_prezzo_comp(100, "Buone condizioni", "Ottime"), 6) == 110   # condizione scritta
     assert aggiusta_prezzo_comp(100, 3, None) == 100 and aggiusta_prezzo_comp(100, None, "Ottime") == 100
+
+
+def test_condizioni_da_json_catalogo():
+    """La condizione del comparabile si legge da `status` o dall'ultimo pezzo di item_box.second_line; senza, la voce manca."""
+    import json
+    from bot.vinted_api import condizioni_da_json_catalogo
+    dati = {"items": [
+        {"id": 1, "title": "Blazer uno", "price": {"amount": "30.0"}, "item_box": {"second_line": "M · Ottime condizioni"}},
+        {"id": 2, "title": "Gonna due", "price": {"amount": "20.0"}, "item_box": {"second_line": "Buone condizioni"}},
+        {"id": 3, "title": "Abito tre", "price": {"amount": "10.0"}, "status": "Nuovo senza cartellino"},
+        {"id": 4, "title": "Top quattro", "price": {"amount": "5.0"}},
+    ]}
+    assert condizioni_da_json_catalogo(json.dumps(dati)) == {
+        ("blazer uno", "30.00"): "Ottime condizioni", ("gonna due", "20.00"): "Buone condizioni", ("abito tre", "10.00"): "Nuovo senza cartellino"}
+    assert condizioni_da_json_catalogo("non json") == {}
 
 
 def test_ricerca_classica_stati_larghi():
@@ -637,21 +654,21 @@ def test_ricerca_classica_stati_larghi():
     assert build_vinted_search_url("marchio inesistente", "abito", None, 10, "Buone")[0].endswith("&status_ids[]=1&status_ids[]=2&status_ids[]=3")
 
 
-def test_verifica_cerca_per_condizione_e_corregge_il_prezzo(monkeypatch):
-    """11/11 (utente): una ricerca per condizione (1, 2, 3); annuncio ottime con comparabili solo buoni: la rivendita sale di poco."""
+def test_verifica_una_sola_richiesta_e_corregge_il_prezzo(monkeypatch):
+    """11/11 (utente): una sola richiesta con 1, 2, 3 concatenati; annuncio ottime con comparabili buoni: la rivendita sale (10% sui comparabili)."""
     import asyncio
     from bot import moda_jev as mj
-    from bot.vinted_search import COMPS_COND_PASSO
     visti = []
 
     async def cerca(url):
         visti.append(url)
-        return ("x", True, {}) if url.endswith("status_ids[]=3") else ("", True, {})
+        return "x", True, {}
     comps = [("Bottega Veneta blazer", p) for p in (150.0, 170.0, 180.0, 200.0, 220.0)]
     monkeypatch.setattr(mj, "_cerca_vinted_testo_diretto", cerca)
-    monkeypatch.setattr(mj, "parse_comp", lambda r: comps if r == "x" else [])
+    monkeypatch.setattr(mj, "parse_comp", lambda r: comps)
     monkeypatch.setattr(mj, "solo_usato", lambda c: c)
     monkeypatch.setattr(mj, "comparabili_simili", lambda c, t, b: c)
+    monkeypatch.setattr(mj, "condizione_comp", lambda t, p: "Buone condizioni")
     monkeypatch.setattr(mj, "giudica_autenticita", lambda *a: ("non_chiaro", 0.56))
     monkeypatch.setattr(mj, "optimize_image_bytes", lambda b, n: b)
     monkeypatch.setattr(mj, "JEV_FOTO_COMPS", False)
@@ -661,7 +678,8 @@ def test_verifica_cerca_per_condizione_e_corregge_il_prezzo(monkeypatch):
     monkeypatch.setattr(mj, "controlla_gemini", nessun_gemini)
     base = {"title": "Bottega veneta navy blue blazer", "price": 50, "catalog_id": 2050, "fair_value": {"brand": "bottega veneta", "fv": 211}}
     ris_buone = asyncio.run(mj.verifica({**base, "condition": "Buone"}, b"img", [b"img"]))
+    # una richiesta per tentativo (con parole del titolo, poi solo brand+categoria), mai una per condizione
+    assert 1 <= len(visti) <= 2 and all(u.endswith("&status_ids[]=1&status_ids[]=2&status_ids[]=3") for u in visti)
     ris_ottime = asyncio.run(mj.verifica({**base, "condition": "Ottime"}, b"img", [b"img"]))
-    assert {u.rsplit("=", 1)[1] for u in visti} == {"1", "2", "3"}
     assert ris_ottime["rivendita"] > ris_buone["rivendita"]
-    assert ris_ottime["rivendita"] / ris_buone["rivendita"] <= 1 + COMPS_COND_PASSO + 0.01  # la rivendita mista pesa anche semaforo e altro
+    assert ris_ottime["rivendita"] / ris_buone["rivendita"] <= 1.10 + 0.01  # la rivendita mista pesa anche semaforo e altro

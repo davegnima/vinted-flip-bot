@@ -23,7 +23,8 @@ from bot.comps_filtri import BRAND_SOTTOLINEE_DA_ESCLUDERE
 from bot.fair_value import FAIR_VALUE_APPRESO, FAIR_VALUE_BRAND_NUOVI, FAIR_VALUE_SOTTOLINEE, _jsonl_append
 from bot.jev import CONF_AUTENTICITA_MIN, MAX_FOTO_AUTENTICITA, DOMANDA_FOTO_COMP_MODA, JEV_FOTO_COMPS, MAX_FOTO_COMPS, confronta_foto_comparabili, giudica_autenticita
 from bot.logger import log
-from bot.vinted_search import aggiusta_prezzo_comp, stati_comps, stati_ricerca_comps
+from bot.vinted_api import condizione_comp
+from bot.vinted_search import aggiusta_prezzo_comp, stati_comps
 from bot.velocita import riga_velocita
 from bot.moda_gemini import controlla as controlla_gemini, e_non_moda, e_replica, riga_consiglio, riga_condizioni, riga_stima_gemini, serve_controllo, sconto_difetti
 from bot.testo import RigaMd, _normalizza_titolo_per_link, link_markdown
@@ -637,34 +638,28 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
                 parola = linea.replace((brand or "").strip().lower(), "").strip() or linea
                 if parola not in testo.lower():
                     testo = f"{parola} {testo}".strip()
-            usate, mappe, stato_usato = [], [], {}
+            usate, mappe = [], []
             for t in ([testo, None] if testo else [None]):
-                # 11/11 (utente): una ricerca per ogni condizione (nuovo senza cartellino, ottime, buone + quella dell'annuncio), cosi' ogni
-                # comparabile ha la sua; i prezzi dei comparabili in condizione diversa si correggono di poco nella stima (vedi sotto)
-                stati = stati_ricerca_comps(listing_info.get("condition"))
-                urls = [url_comparabili(brand, t, catalogo, ordine, None, s) for s in stati]
-                if not urls[0]:
+                # 11/11 (utente): UNA richiesta con le condizioni concatenate (nuovo senza cartellino, ottime, buone + quella dell'annuncio);
+                # la condizione di ogni comparabile si legge dalla risposta e il prezzo si corregge di poco nella stima (vedi sotto)
+                url = url_comparabili(brand, t, catalogo, ordine, listing_info.get("condition"))
+                if not url:
                     break
-                esiti = await asyncio.gather(*[_cerca_vinted_testo_diretto(u) for u in urls])
-                comps, stato_comp = [], {}
-                for s_id, (risposta, ok, _mappa) in zip(stati, esiti):
-                    mappe.append(_mappa)
-                    if not ok:
-                        continue
-                    for c in solo_usato(parse_comp(risposta)):
-                        if not (c[0] == titolo and abs(c[1] - prezzo) < 0.01):
-                            comps.append(c)
-                            stato_comp.setdefault((c[0], c[1]), s_id)
+                risposta, ok, _mappa = await _cerca_vinted_testo_diretto(url)
+                mappe.append(_mappa)
+                if not ok:
+                    continue
+                comps = [c for c in solo_usato(parse_comp(risposta)) if not (c[0] == titolo and abs(c[1] - prezzo) < 0.01)]
                 if not comps:
                     continue
                 comps = filtra_per_linea(comps, brand, linea)
                 if t:
                     comps = comparabili_simili(comps, t, brand)
-                usate, stato_usato = comps, stato_comp
+                usate = comps
                 if len(comps) >= MIN_COMPARABILI:
                     break
-            # prezzi portati alla condizione dell'annuncio (comparabile peggiore: sale di poco; migliore: scende), solo per la stima
-            st = stima_mercato([aggiusta_prezzo_comp(p, stato_usato.get((_t, p)), listing_info.get("condition")) for _t, p in usate], min_n=MIN_COMPARABILI)
+            # prezzi portati alla condizione dell'annuncio (comparabile peggiore: sale; migliore: scende), solo per la stima; condizione ignota = invariato
+            st = stima_mercato([aggiusta_prezzo_comp(p, condizione_comp(_t, p), listing_info.get("condition")) for _t, p in usate], min_n=MIN_COMPARABILI)
             return usate, comparabili_con_link(usate, mappe), st, (valuta(prezzo, st, spedizione_eur=SPEDIZIONE_STIMATA_EUR, margine_min=MODA_JEV_MARGINE_MIN) if st else None)
 
         if linea:
