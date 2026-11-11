@@ -609,21 +609,59 @@ def test_sigle_foto_sm_s_d_accanto_ai_comparabili():
     assert any(r.startswith("• SM · ") for r in righe)
 
 
-def test_url_comparabili_stessa_condizione_dell_annuncio():
-    """10/11 (utente): comparabili con la stessa condizione dell'annuncio; nuovo senza cartellino ammesso."""
-    from bot.vinted_search import stati_comps
-    assert stati_comps("Ottime") == "&status_ids[]=2"
-    assert stati_comps("Buone") == "&status_ids[]=3"
-    assert stati_comps("Soddisfacenti") == "&status_ids[]=4"
-    assert stati_comps("Nuovo senza cartellino") == "&status_ids[]=1"
-    assert stati_comps("Nuovo con cartellino") == "&status_ids[]=6&status_ids[]=1"
-    assert stati_comps(None) == "&status_ids[]=1&status_ids[]=2&status_ids[]=3"
-    assert mj.url_comparabili("zimmermann", "abito", 10, None, "Ottime").endswith("&status_ids[]=2")
-    assert mj.url_comparabili("marchio inesistente", "giacca", 5, None, "Buone").endswith("&status_ids[]=3")
-    assert mj.url_comparabili("zimmermann", "abito", 10).endswith("&status_ids[]=1&status_ids[]=2&status_ids[]=3")
+def test_comparabili_sempre_nuovo_senza_cartellino_ottime_e_buone():
+    """11/11 (utente): si cerca sempre in 1, 2, 3; la condizione dell'annuncio si aggiunge solo se e' un'altra (6 o 4)."""
+    from bot.vinted_search import stati_comps, stati_ricerca_comps, stato_da_condizione
+    assert stato_da_condizione("Ottime") == 2 and stato_da_condizione("Nuovo con cartellino") == 6 and stato_da_condizione(None) is None
+    for c in ("Ottime", "Buone", "Nuovo senza cartellino", None, "boh"):
+        assert stati_comps(c) == "&status_ids[]=1&status_ids[]=2&status_ids[]=3"
+    assert stati_ricerca_comps("Nuovo con cartellino") == (1, 2, 3, 6)
+    assert stati_ricerca_comps("Soddisfacenti") == (1, 2, 3, 4)
+    assert mj.url_comparabili("zimmermann", "abito", 10, None, "Ottime").endswith("&status_ids[]=1&status_ids[]=2&status_ids[]=3")
+    assert mj.url_comparabili("zimmermann", "abito", 10, None, None, 2).endswith("&order=newest_first&status_ids[]=2")
 
 
-def test_ricerca_classica_stessa_condizione():
+def test_aggiusta_prezzo_comp_per_condizione_diversa():
+    """11/11 (utente): annuncio ottime e comparabile buono -> il nostro vale di piu'; viceversa il contrario; stessa condizione invariato."""
+    from bot.vinted_search import aggiusta_prezzo_comp, COMPS_COND_PASSO
+    assert aggiusta_prezzo_comp(100, 2, "Ottime") == 100
+    assert aggiusta_prezzo_comp(100, 3, "Ottime") == 100 * (1 + COMPS_COND_PASSO)
+    assert aggiusta_prezzo_comp(100, 2, "Buone") == 100 * (1 - COMPS_COND_PASSO)
+    assert aggiusta_prezzo_comp(100, 1, "Buone") == 100 * (1 - 2 * COMPS_COND_PASSO)
+    assert aggiusta_prezzo_comp(100, 3, None) == 100 and aggiusta_prezzo_comp(100, None, "Ottime") == 100
+
+
+def test_ricerca_classica_stati_larghi():
     from bot.vinted_search import build_vinted_search_url
-    assert build_vinted_search_url("zimmermann", "abito", None, 10, "Ottime")[0].endswith("&status_ids[]=2")
-    assert build_vinted_search_url("marchio inesistente", "abito", None, 10, "Buone")[0].endswith("&status_ids[]=3")
+    assert build_vinted_search_url("zimmermann", "abito", None, 10, "Ottime")[0].endswith("&status_ids[]=1&status_ids[]=2&status_ids[]=3")
+    assert build_vinted_search_url("marchio inesistente", "abito", None, 10, "Buone")[0].endswith("&status_ids[]=1&status_ids[]=2&status_ids[]=3")
+
+
+def test_verifica_cerca_per_condizione_e_corregge_il_prezzo(monkeypatch):
+    """11/11 (utente): una ricerca per condizione (1, 2, 3); annuncio ottime con comparabili solo buoni: la rivendita sale di poco."""
+    import asyncio
+    from bot import moda_jev as mj
+    from bot.vinted_search import COMPS_COND_PASSO
+    visti = []
+
+    async def cerca(url):
+        visti.append(url)
+        return ("x", True, {}) if url.endswith("status_ids[]=3") else ("", True, {})
+    comps = [("Bottega Veneta blazer", p) for p in (150.0, 170.0, 180.0, 200.0, 220.0)]
+    monkeypatch.setattr(mj, "_cerca_vinted_testo_diretto", cerca)
+    monkeypatch.setattr(mj, "parse_comp", lambda r: comps if r == "x" else [])
+    monkeypatch.setattr(mj, "solo_usato", lambda c: c)
+    monkeypatch.setattr(mj, "comparabili_simili", lambda c, t, b: c)
+    monkeypatch.setattr(mj, "giudica_autenticita", lambda *a: ("non_chiaro", 0.56))
+    monkeypatch.setattr(mj, "optimize_image_bytes", lambda b, n: b)
+    monkeypatch.setattr(mj, "JEV_FOTO_COMPS", False)
+
+    async def nessun_gemini(*a, **k):
+        return None
+    monkeypatch.setattr(mj, "controlla_gemini", nessun_gemini)
+    base = {"title": "Bottega veneta navy blue blazer", "price": 50, "catalog_id": 2050, "fair_value": {"brand": "bottega veneta", "fv": 211}}
+    ris_buone = asyncio.run(mj.verifica({**base, "condition": "Buone"}, b"img", [b"img"]))
+    ris_ottime = asyncio.run(mj.verifica({**base, "condition": "Ottime"}, b"img", [b"img"]))
+    assert {u.rsplit("=", 1)[1] for u in visti} == {"1", "2", "3"}
+    assert ris_ottime["rivendita"] > ris_buone["rivendita"]
+    assert ris_ottime["rivendita"] / ris_buone["rivendita"] <= 1 + COMPS_COND_PASSO + 0.01  # la rivendita mista pesa anche semaforo e altro
