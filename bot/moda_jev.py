@@ -674,8 +674,9 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
                            ok_comps=bool(v.get("ok")))   # ok_comps: i comparabili da soli darebbero margine e ROI sufficienti
                 if stima and stima.get("p25"):
                     ris["dispersione"] = stima["p75"] / stima["p25"]
-            log.info("MODA JEV OMBRA | item=%s | brand=%s | prezzo=%s | n=%s | rivendita=%s | dispersione=%s | fv_stima=%s | linea=%s",
-                     listing_info.get("item_id") or "-", brand, prezzo, ris["n"], ris["rivendita"], ris.get("dispersione"), fv.get("fv"), ris.get("linea"))
+            log.info("MODA JEV OMBRA | item=%s | brand=%s | prezzo=%s | n=%s | rivendita=%s | dispersione=%s | fv_stima=%s | linea=%s | categoria=%s | campioni=%s | conf=%s",
+                     listing_info.get("item_id") or "-", brand, prezzo, ris["n"], ris["rivendita"], ris.get("dispersione"), fv.get("fv"), ris.get("linea"),
+                     fv.get("categoria"), (FAIR_VALUE_APPRESO.get(f"{brand}|{fv.get('categoria')}") or {}).get("n", 0), fv.get("conf"))
             if MODA_COMPS_PROVA:
                 await _prova_ordini(listing_info, brand, prezzo, stima, cerca, linea)
             return ris
