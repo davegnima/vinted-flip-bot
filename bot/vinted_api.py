@@ -106,6 +106,52 @@ def articoli_da_json_catalogo(testo_json, max_articoli=MAX_ARTICOLI_CATALOGO):
     return "\n".join(righe), mappa, miniature
 
 
+def condizioni_da_json_catalogo(testo_json, max_articoli=MAX_ARTICOLI_CATALOGO):
+    """{(titolo[:60] minuscolo, prezzo '0.00'): condizione scritta} dalla risposta JSON del catalogo. Pura.
+    La condizione sta in `status` se c'e', altrimenti nell'ultimo pezzo di `item_box.second_line` ('taglia · condizione', o solo
+    'condizione' senza brand), come legge il tracker. Le voci senza condizione leggibile non compaiono. Stesse chiavi e stesso ordine
+    di `articoli_da_json_catalogo` (stessi scarti e stesso tetto)."""
+    try:
+        dati = json.loads(testo_json)
+    except Exception:
+        return {}
+    voci = dati.get("items") if isinstance(dati, dict) else None
+    if not isinstance(voci, list):
+        return {}
+    out, visti, n = {}, set(), 0
+    for v in voci:
+        if not isinstance(v, dict):
+            continue
+        titolo = str(v.get("title") or "").strip()
+        prezzo = _prezzo(v)
+        if len(titolo) < 3 or prezzo is None:
+            continue
+        chiave = (titolo[:60].lower(), f"{prezzo:.2f}")
+        if chiave in visti:
+            continue
+        visti.add(chiave)
+        n += 1
+        stato = v.get("status")
+        if not (isinstance(stato, str) and stato.strip()):
+            riga = str((v.get("item_box") or {}).get("second_line") or "")
+            stato = riga.split(" · ")[-1].strip() if riga else ""
+        if stato:
+            out[chiave] = stato
+        if n >= max_articoli:
+            break
+    return out
+
+
+# condizione dei comparabili visti dall'API, per riportarne il prezzo alla condizione dell'annuncio (vedi vinted_search.aggiusta_prezzo_comp)
+_CONDIZIONE_COMP = {}
+MAX_CONDIZIONI_COMP = 5000
+
+
+def condizione_comp(titolo, prezzo):
+    """Condizione scritta (es. 'Ottime condizioni') di un comparabile visto dall'API, None se ignota (HTML o campo assente)."""
+    return _CONDIZIONE_COMP.get((str(titolo or "").strip()[:60].lower(), f"{float(prezzo):.2f}"))
+
+
 def scheda_da_json_item(testo_json):
     """Dati di un annuncio dalla risposta JSON del dettaglio: {'foto': {photo_id: url}, 'descrizione', 'taglia', 'stato'}. Pura.
     {} se il JSON non e' un annuncio. Le foto: stessa logica di vinted_scrape._estrai_foto_da_json_item (full_size_url prima)."""
@@ -229,6 +275,12 @@ async def cerca_catalogo(url_web, per_page=20):
     if resp is None:
         return None
     testo, mappa, miniature = articoli_da_json_catalogo(resp.text)
+    if testo:
+        if len(_CONDIZIONE_COMP) > MAX_CONDIZIONI_COMP:
+            _CONDIZIONE_COMP.clear()
+        cond = condizioni_da_json_catalogo(resp.text)
+        _CONDIZIONE_COMP.update(cond)
+        log.info("VINTED API | condizioni lette=%d/%d", len(cond), testo.count("\n") + 1)
     log.info("VINTED API | catalogo articoli=%d proxy=%s -- %s", testo.count("\n") + 1 if testo else 0,
              getattr(resp, "_proxy_etichetta", "?"), url_web)
     return (testo, mappa, miniature) if testo else None
