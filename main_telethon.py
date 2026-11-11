@@ -1690,6 +1690,12 @@ async def main():
     )
     await inizializza_client_http()
     try:
+        from bot import log_db
+        if log_db.avvia():
+            log.info("LOG DB | storico righe strutturate attivo (tabella log_righe in %s)", DB_FILE)
+    except Exception:
+        log.warning("Storico log su DB non avviato:\n%s", traceback.format_exc())
+    try:
         n_quote, n_esclusi = ripristina_stato_gemini()
         importati = importa_tracciamento_jsonl() if TRACCIAMENTO_ATTIVO else 0
         log.info("DB %s: ripristinati %d cooldown di quota Gemini e %d modelli esclusi; tracciamento importato: %d righe.",
