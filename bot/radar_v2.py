@@ -21,7 +21,7 @@ from bot.qualita_comps import fascia_numero, guasto_nella_descrizione, product_i
 from bot.spedizione import UNKNOWN, campi_spedizione_da_html, classe_taglia, costo_spedizione, paese_da_html
 from bot.logger import log
 from bot.radar import RADAR_SPESA_MAX, parola_vietata, radar_in_pausa
-from bot.radar_famiglie import modello_famiglia
+from bot.radar_famiglie import consenti_nuova, modello_famiglia
 from bot.radar_matrice import RADAR_MARGINE_MIN, buy_max, costo_acquisto
 from bot.testo import _normalizza_titolo_per_link
 from bot.verdetto import _a_float, _estrai_item_id_da_url
@@ -496,6 +496,9 @@ async def analizza(parsed, url, foto=None, query_url=None):
         if modello_fam is None or (tetto_fam is not None and prezzo > tetto_fam):
             # ricerca a famiglia (8/11): titolo fuori lista o prezzo sopra il tetto del modello, nessuna richiesta a Vinted
             _log_saltato("fuori_famiglia" if modello_fam is None else f"sopra_tetto_modello:{modello_fam}:{tetto_fam:g}", url, parsed)
+            return
+        if modello_fam and not consenti_nuova(modello_fam):
+            _log_saltato("tetto_orario_nuovi:" + modello_fam, url, parsed)
             return
         if prezzo <= 1:
             # 31/10: "Bugaboo Fox 5 ... 1000€ VB" a 1 EUR: prezzo segnaposto, non un affare

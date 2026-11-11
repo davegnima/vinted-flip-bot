@@ -939,3 +939,26 @@ def test_quasi_roi_resta_rosso_se_manca_una_condizione(monkeypatch):
     assert _analizza_quasi_roi(monkeypatch, 50, 112)["semaforo"] == "rosso"                                 # ROI sotto 90%
     monkeypatch.setattr(radar_v2, "QUASI_ROI_MIN", 0)
     assert _analizza_quasi_roi(monkeypatch, 50, 118)["semaforo"] == "rosso"                                 # interruttore spento
+
+
+def test_famiglie_nuove_e_tetto_orario():
+    from bot import radar_famiglie as rf
+    assert rf.modello_famiglia("V2 console", "Sony PS4 500GB") == ("ps4", 50)
+    assert rf.modello_famiglia("V2 console", "PS4 Pro 1TB")[0] == "ps4 pro"
+    assert rf.modello_famiglia("V2 console", "PlayStation Vita")[0] == "ps vita"
+    assert rf.modello_famiglia("V2 console", "Nintendo Wii U 32GB")[0] == "wii u"
+    assert rf.modello_famiglia("V2 console", "Game Boy Advance SP")[0] == "game boy"
+    assert rf.modello_famiglia("V2 console", "Nintendo DS Lite rosa")[0] == "ds"
+    assert rf.modello_famiglia("V2 console", "Nintendo 3DS XL")[0] == "3ds"
+    assert rf.modello_famiglia("V2 console", "Nintendo Wii bianca") == (None, None)
+    rf._recenti.clear()
+    vecchio = rf.NUOVI_MAX_ORA
+    rf.NUOVI_MAX_ORA = 2
+    try:
+        assert rf.consenti_nuova("ps4", 1000) and rf.consenti_nuova("psp", 1001)
+        assert not rf.consenti_nuova("ds", 1002)
+        assert rf.consenti_nuova("switch", 1002)  # i modelli storici non hanno tetto
+        assert rf.consenti_nuova("ds", 1000 + 3700)  # dopo un'ora si libera
+    finally:
+        rf.NUOVI_MAX_ORA = vecchio
+        rf._recenti.clear()
