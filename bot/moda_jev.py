@@ -23,7 +23,7 @@ from bot.comps_filtri import BRAND_SOTTOLINEE_DA_ESCLUDERE
 from bot.fair_value import FAIR_VALUE_APPRESO, FAIR_VALUE_BRAND_NUOVI, FAIR_VALUE_SOTTOLINEE, _jsonl_append
 from bot.jev import CONF_AUTENTICITA_MIN, MAX_FOTO_AUTENTICITA, DOMANDA_FOTO_COMP_MODA, JEV_FOTO_COMPS, MAX_FOTO_COMPS, confronta_foto_comparabili, giudica_autenticita
 from bot.logger import log
-from bot.vinted_search import stati_comps
+from bot.vinted_search import aggiusta_prezzo_comp, stati_comps, stati_ricerca_comps
 from bot.velocita import riga_velocita
 from bot.moda_gemini import controlla as controlla_gemini, e_non_moda, e_replica, riga_consiglio, riga_condizioni, riga_stima_gemini, serve_controllo, sconto_difetti
 from bot.testo import RigaMd, _normalizza_titolo_per_link, link_markdown
@@ -76,7 +76,7 @@ MODA_COMPS_ORDINE = os.environ.get("MODA_COMPS_ORDINE", "newest_first").strip() 
 MODA_COMPS_PROVA = [o.strip() for o in os.environ.get("MODA_COMPS_PROVA", "").split(",") if o.strip()]
 
 
-def url_comparabili(brand, testo=None, catalogo=None, ordine=None, condizione=None):
+def url_comparabili(brand, testo=None, catalogo=None, ordine=None, condizione=None, stato=None):
     """Ricerca dei simili: brand_ids[] + categoria foglia dell'annuncio + parole del titolo (se ci sono). None senza id brand. Pura."""
     bid = id_brand(brand)
     if not bid and not brand:
@@ -85,7 +85,7 @@ def url_comparabili(brand, testo=None, catalogo=None, ordine=None, condizione=No
     t = f"&search_text={quote(testo if bid else ((brand or '') + ' ' + (testo or '')).strip())}" if (testo or not bid) else ""
     c = f"&catalog[]={catalogo}" if catalogo else ""
     b = f"brand_ids[]={bid}" if bid else "currency=EUR"
-    return f"https://www.vinted.it/catalog?{b}{c}{t}&order={ordine or MODA_COMPS_ORDINE}{stati_comps(condizione)}"
+    return f"https://www.vinted.it/catalog?{b}{c}{t}&order={ordine or MODA_COMPS_ORDINE}{f'&status_ids[]={stato}' if stato else stati_comps(condizione)}"
 
 
 MODA_JEV_OMBRA = os.environ.get("MODA_JEV_OMBRA", "1").strip() not in ("0", "false", "no", "")
@@ -637,23 +637,34 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
                 parola = linea.replace((brand or "").strip().lower(), "").strip() or linea
                 if parola not in testo.lower():
                     testo = f"{parola} {testo}".strip()
-            usate, mappe = [], []
+            usate, mappe, stato_usato = [], [], {}
             for t in ([testo, None] if testo else [None]):
-                url_c = url_comparabili(brand, t, catalogo, ordine, listing_info.get("condition"))
-                if not url_c:
+                # 11/11 (utente): una ricerca per ogni condizione (nuovo senza cartellino, ottime, buone + quella dell'annuncio), cosi' ogni
+                # comparabile ha la sua; i prezzi dei comparabili in condizione diversa si correggono di poco nella stima (vedi sotto)
+                stati = stati_ricerca_comps(listing_info.get("condition"))
+                urls = [url_comparabili(brand, t, catalogo, ordine, None, s) for s in stati]
+                if not urls[0]:
                     break
-                risposta, ok, _mappa = await _cerca_vinted_testo_diretto(url_c)
-                mappe.append(_mappa)
-                if not ok:
+                esiti = await asyncio.gather(*[_cerca_vinted_testo_diretto(u) for u in urls])
+                comps, stato_comp = [], {}
+                for s_id, (risposta, ok, _mappa) in zip(stati, esiti):
+                    mappe.append(_mappa)
+                    if not ok:
+                        continue
+                    for c in solo_usato(parse_comp(risposta)):
+                        if not (c[0] == titolo and abs(c[1] - prezzo) < 0.01):
+                            comps.append(c)
+                            stato_comp.setdefault((c[0], c[1]), s_id)
+                if not comps:
                     continue
-                comps = [c for c in solo_usato(parse_comp(risposta)) if not (c[0] == titolo and abs(c[1] - prezzo) < 0.01)]
                 comps = filtra_per_linea(comps, brand, linea)
                 if t:
                     comps = comparabili_simili(comps, t, brand)
-                usate = comps
+                usate, stato_usato = comps, stato_comp
                 if len(comps) >= MIN_COMPARABILI:
                     break
-            st = stima_mercato([p for _t, p in usate], min_n=MIN_COMPARABILI)
+            # prezzi portati alla condizione dell'annuncio (comparabile peggiore: sale di poco; migliore: scende), solo per la stima
+            st = stima_mercato([aggiusta_prezzo_comp(p, stato_usato.get((_t, p)), listing_info.get("condition")) for _t, p in usate], min_n=MIN_COMPARABILI)
             return usate, comparabili_con_link(usate, mappe), st, (valuta(prezzo, st, spedizione_eur=SPEDIZIONE_STIMATA_EUR, margine_min=MODA_JEV_MARGINE_MIN) if st else None)
 
         if linea:
