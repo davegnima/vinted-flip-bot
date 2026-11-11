@@ -34,6 +34,9 @@ CREATE INDEX IF NOT EXISTS eventi_item ON eventi (item_id);
 CREATE TABLE IF NOT EXISTS serie_pendenti (
     item_id TEXT PRIMARY KEY, url TEXT NOT NULL, brand TEXT, prezzo REAL, t0 REAL NOT NULL,
     offsets TEXT NOT NULL, storia TEXT NOT NULL DEFAULT '[]', ctx TEXT NOT NULL DEFAULT '{}');
+CREATE TABLE IF NOT EXISTS contatori (
+    giorno TEXT NOT NULL, nome TEXT NOT NULL, chiave TEXT NOT NULL, valore REAL NOT NULL DEFAULT 0,
+    PRIMARY KEY (giorno, nome, chiave));
 """
 
 _conn = None
@@ -111,6 +114,36 @@ def leggi_eventi(tipo, dal_ts=0.0, limite=100000):
         except ValueError:
             continue
     return out
+
+
+# ---- contatori persistenti (non ripartono a ogni deploy) --------------------------------------------------
+def aggiungi_contatori(giorno, nome, delta):
+    """Somma `delta` ({chiave: valore}) ai contatori del `giorno` (AAAA-MM-GG, UTC). Upsert atomico: piu' avvii
+    sommano senza sovrascrivere. Ritorna True/False, non solleva mai."""
+    righe = [(giorno, nome, str(k), float(v)) for k, v in (delta or {}).items() if v]
+    if not righe:
+        return True
+    try:
+        with _lock:
+            c = _connessione()
+            c.executemany(
+                "INSERT INTO contatori (giorno, nome, chiave, valore) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(giorno, nome, chiave) DO UPDATE SET valore = valore + excluded.valore", righe)
+            c.commit()
+        return True
+    except Exception:
+        log.warning("DB: contatori non salvati:\n%s", traceback.format_exc())
+        return False
+
+
+def leggi_contatori(nome, dal_giorno=None):
+    """Somma per chiave dei contatori `nome` dal giorno indicato (incluso) in poi; tutto lo storico se None."""
+    if dal_giorno:
+        righe = _leggi("SELECT chiave, SUM(valore) FROM contatori WHERE nome = ? AND giorno >= ? GROUP BY chiave",
+                       (nome, dal_giorno))
+    else:
+        righe = _leggi("SELECT chiave, SUM(valore) FROM contatori WHERE nome = ? GROUP BY chiave", (nome,))
+    return {k: v for k, v in righe}
 
 
 def conta_eventi(tipo):

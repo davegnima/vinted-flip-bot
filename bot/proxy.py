@@ -186,6 +186,12 @@ def _logga_riepilogo_proxy():
 _BANDA_PER_TIPO = {}
 _BANDA_REGISTRAZIONI = [0]
 INTERVALLO_RIEPILOGO_BANDA = 50
+# Contatori persistenti (10/11, utente: non devono ripartire a ogni deploy): le differenze dall'ultimo salvataggio
+# si sommano nel DB (tabella `contatori`) ogni SALVA_CONTATORI_OGNI secondi e allo spegnimento. Nessuna richiesta di
+# rete: scrive solo su SQLite. Si perdono al massimo gli ultimi secondi se il processo muore di colpo.
+SALVA_CONTATORI_OGNI = 60
+_BANDA_DELTA = {}
+_ULTIMO_SALVATAGGIO = [0.0]
 
 
 def _tipo_richiesta_vinted(url):
@@ -218,11 +224,49 @@ def _registra_banda(url, resp, tipo=None):
             s["ko"] = s.get("ko", 0) + 1
         s["rete"] += rete
         s["decod"] += decodificati
+        ko = 1 if getattr(resp, "status_code", 200) in (403, 429) else 0
+        for campo, v in (("n", 1), ("rete", rete), ("decod", decodificati), ("ko", ko)):
+            if v:
+                _BANDA_DELTA[f"{tipo}|{campo}"] = _BANDA_DELTA.get(f"{tipo}|{campo}", 0) + v
+        _salva_contatori_banda()
         _BANDA_REGISTRAZIONI[0] += 1
         if _BANDA_REGISTRAZIONI[0] % INTERVALLO_RIEPILOGO_BANDA == 0:
             _logga_riepilogo_banda()
     except Exception:
         pass
+
+
+def _salva_contatori_banda(forza=False):
+    """Scrive nel DB le differenze accumulate (ogni SALVA_CONTATORI_OGNI s, o subito se forza). Mai bloccante."""
+    try:
+        import time
+        from bot import db
+        if not _BANDA_DELTA:
+            return
+        if not forza and time.time() - _ULTIMO_SALVATAGGIO[0] < SALVA_CONTATORI_OGNI:
+            return
+        _ULTIMO_SALVATAGGIO[0] = time.time()
+        giorno = time.strftime("%Y-%m-%d", time.gmtime())
+        delta = dict(_BANDA_DELTA)
+        if db.aggiungi_contatori(giorno, "banda", delta):
+            for k, v in delta.items():
+                _BANDA_DELTA[k] = _BANDA_DELTA.get(k, 0) - v
+                if not _BANDA_DELTA[k]:
+                    del _BANDA_DELTA[k]
+    except Exception:
+        pass
+
+
+def _riepilogo_periodo(dati):
+    """Da {'tipo|campo': valore} a 'tipo: N richieste, X MB, 403/429: K' (testo). Pura."""
+    tipi = {}
+    for k, v in dati.items():
+        tipo, _, campo = k.partition("|")
+        tipi.setdefault(tipo, {})[campo] = v
+    tot = sum(t.get("rete", 0) for t in tipi.values())
+    pezzi = [f"{tipo}: {int(t.get('n', 0))} richieste, {t.get('rete', 0) / 1048576:.0f}MB, 403/429 {int(t.get('ko', 0))}"
+             for tipo, t in sorted(tipi.items(), key=lambda kv: -kv[1].get("rete", 0))]
+    return f"{tot / 1048576 / 1024:.2f}GB totali: " + "; ".join(pezzi) if pezzi else "nessun dato"
 
 
 def _logga_riepilogo_banda():
@@ -238,6 +282,15 @@ def _logga_riepilogo_banda():
         )
     log.info("RIEPILOGO BANDA (dall'avvio, %.1fMB totali in rete): %s",
              tot_rete / 1048576, " | ".join(pezzi))
+    try:
+        import time
+        from bot import db
+        _salva_contatori_banda(forza=True)
+        oggi = time.strftime("%Y-%m-%d", time.gmtime())
+        log.info("RIEPILOGO BANDA OGGI (UTC, dai contatori salvati) | %s", _riepilogo_periodo(db.leggi_contatori("banda", oggi)))
+        log.info("RIEPILOGO BANDA STORICO (da sempre) | %s", _riepilogo_periodo(db.leggi_contatori("banda")))
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
