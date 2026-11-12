@@ -386,6 +386,8 @@ def riga_esito_scheda(ris):
         return "⚠️ Jev: i prezzi dei comparabili sono troppo diversi tra loro, rivendita non affidabile, avviso mandato non verificato"
     if ris.get("motivo") == "comparabili_non_simili":
         return "⚠️ Jev: i comparabili non assomigliano alla foto, rivendita non affidabile, avviso mandato non verificato"
+    if ris.get("motivo") == "tetto_giornaliero":
+        return "⚠️ Jev: tetto giornaliero di verifiche raggiunto, avviso mandato non verificato"
     return "⚠️ Jev: comparabili non trovati, avviso mandato non verificato"
 
 
@@ -624,7 +626,8 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
         titolo = listing_info.get("title") or ""
         prezzo = float(listing_info.get("price") or 0)
         catalogo = listing_info.get("catalog_id")
-        if not _entro_il_tetto():
+        # le verifiche in ombra (solo_comparabili) hanno il loro tetto orario e non consumano quello giornaliero (12/11, utente)
+        if not solo_comparabili and not _entro_il_tetto():
             ris["motivo"] = "tetto_giornaliero"
             return ris
         # i comparabili cercano brand + categoria + prime parole del titolo; se sono pochi, solo brand + categoria.
