@@ -31,8 +31,6 @@ from bot.valore_mercato import comparabili_simili, e_un_pezzo, nomi_candidati, p
 # ---- fine import ----
 
 RADAR_V2_OMBRA = os.environ.get("RADAR_V2_OMBRA", "0").strip() in ("1", "true", "si")
-# Semafori per cui la foto va a Jev (25/10): di default solo il verde. Per la prova si puo' allargare, es. "verde,giallo".
-JEV_FOTO_SEMAFORI = {x.strip() for x in os.environ.get("JEV_FOTO_SEMAFORI", "verde").split(",") if x.strip()}
 RADAR_V2_MAX_GIORNO = int(os.environ.get("RADAR_V2_MAX_GIORNO", "3000") or 3000)
 QUASI_ROI_MIN = float(os.environ.get("RADAR_QUASI_ROI_MIN", "90") or 0)  # ROI minimo (%) per il giallo "quasi ROI"; 0 = spento
 QUASI_ROI_JEV_CONF = float(os.environ.get("RADAR_QUASI_ROI_JEV_CONF", "0.85") or 0.85)
@@ -431,7 +429,7 @@ async def rivaluta(parsed, url, v2, g):
         if v2.get("spedizione_stato") == UNKNOWN and v.get("semaforo") == "verde":
             v["semaforo"] = "giallo"
         jev, jev_conf, jev_simili, jev_motivo = await asyncio.to_thread(
-            giudica_completo, titolo, prezzo, prezzi, v.get("rivendita"), None, descrizione, _titoli_simili.get((usata, catalogo)))
+            giudica_completo, titolo, prezzo, prezzi, v.get("rivendita"), descrizione, _titoli_simili.get((usata, catalogo)))
         link_comps = (verificata["link"] if verificata and verificata["n_usabili"] >= 3 else
                       link_comparabili(_comps_simili.get((usata, catalogo)) or [], [_url_comps.get((usata, catalogo))])) if v.get("semaforo") in ("verde", "giallo") else []
         nuovo = {**v2, **v, "q": usata, "n": len(prezzi), "n_grezzi": n_grezzi, "allargata": 1 if semantica else None, "verificata": verificata, "link_comps": link_comps,
@@ -630,15 +628,13 @@ async def analizza(parsed, url, foto=None, query_url=None):
         log.info("RADAR V2 QUALITA | item=%s | punteggio=%s | fascia=%s | n=%s | stesso=%s | dup=%s | disp=%s | codice=%s | titolo=%s", item_id,
                  qualita["punteggio"], qualita["fascia"], qualita["n"], qualita["quota_stesso"], qualita["duplicati"], qualita["dispersione"],
                  identita["codice_modello"], titolo[:60])
-        # Prova foto (25/10): la foto va a Jev solo con i semafori di JEV_FOTO_SEMAFORI (di default il verde).
-        foto_jev = foto if v.get("semaforo") in JEV_FOTO_SEMAFORI else None
         descrizione = _descrizioni.pop(url, None)
         serve_jev = (not JEV_SOLO_UTILI or v.get("semaforo") != "rosso"
                      or (QUASI_ROI_MIN and v.get("motivo") == "roi_basso" and len(prezzi) >= QUASI_ROI_MIN_N
                          and (v.get("margine") or 0) >= RADAR_MARGINE_MIN and (v.get("roi") or 0) >= QUASI_ROI_MIN))
         if serve_jev:
             jev, jev_conf, jev_simili, jev_motivo = await asyncio.to_thread(
-                giudica_completo, titolo, prezzo, prezzi, v.get("rivendita"), foto_jev, descrizione, titoli_jev)
+                giudica_completo, titolo, prezzo, prezzi, v.get("rivendita"), descrizione, titoli_jev)
         else:
             jev, jev_conf, jev_simili, jev_motivo = None, None, None, None
         if jev:

@@ -87,18 +87,15 @@ def _finto(monkeypatch, risposte_per_chiamata):
     return richieste
 
 
-def _risposta(foto=None, token=300):
+def _risposta(token=300):
     answers = {"tipo": {"choice": "oggetto_principale", "confidence": 0.8},
                "completo": {"choice": "si", "confidence": 0.7},
                "prezzo": {"choice": "sotto", "confidence": 0.9}}
-    if foto:
-        answers["foto"] = {"choice": foto, "confidence": 0.6}
     return {"answers": answers, "usage": {"input_tokens": token}}
 
 
-def _attiva(monkeypatch, foto_on):
+def _attiva(monkeypatch):
     monkeypatch.setattr(jev, "JEV_GIUDICE", True)
-    monkeypatch.setattr(jev, "JEV_FOTO", foto_on)
     monkeypatch.setenv("TYPESAFE_API_KEY", "chiave-finta")
 
 
@@ -107,38 +104,6 @@ def test_formato_foto_riconosce_png_e_jpeg_e_scarta_il_resto():
     assert jev._formato_foto(JPEG) == "jpeg"
     assert jev._formato_foto(b"GIF89a") is None
     assert jev._formato_foto(None) is None
-
-
-def test_foto_non_corrisponde_e_falso_o_ricambio():
-    assert jev.verdetto_jev({**_r(), "foto": ("non_corrisponde", 0.9)})[0] == "falso_o_ricambio"
-    assert jev.verdetto_jev({**_r(), "foto": ("corrisponde", 0.9)})[0] == "affare_vero"
-    assert jev.verdetto_jev({**_r(), "foto": ("non_chiaro", 0.9)})[0] == "affare_vero"
-
-
-def test_con_foto_manda_immagine_intestazione_e_domanda(monkeypatch):
-    _attiva(monkeypatch, foto_on=True)
-    richieste = _finto(monkeypatch, [_risposta(foto="corrisponde")])
-    esito = jev.giudica("Psp portatile", 30, [60, 70], 80, foto=JPEG)
-    corpo = richieste[0]
-    assert "foto1" in corpo["state"]
-    assert corpo["assets"]["foto1"]["format"] == "jpeg" and corpo["assets"]["foto1"]["type"] == "image"
-    assert "foto" in corpo["questions"] and set(corpo["questions"]) == {"tipo", "completo", "prezzo", "foto"}
-    assert esito == ("affare_vero", 0.6)
-
-
-def test_senza_flag_la_foto_non_parte(monkeypatch):
-    _attiva(monkeypatch, foto_on=False)
-    richieste = _finto(monkeypatch, [_risposta()])
-    jev.giudica("Psp portatile", 30, [60], 80, foto=JPEG)
-    assert "assets" not in richieste[0] and "foto" not in richieste[0]["questions"]
-
-
-def test_richiesta_con_foto_rifiutata_riprova_solo_testo(monkeypatch):
-    _attiva(monkeypatch, foto_on=True)
-    richieste = _finto(monkeypatch, [RuntimeError("400 immagine non valida"), _risposta()])
-    esito = jev.giudica("Psp portatile", 30, [60], 80, foto=JPEG)
-    assert "assets" in richieste[0] and "assets" not in richieste[1]
-    assert esito == ("affare_vero", 0.7)
 
 
 def test_fascia_di_confidenza():
@@ -180,7 +145,6 @@ def test_motivo_jev_un_codice_per_ogni_caso():
     assert jev.motivo_jev(_r(completo="no"))[0] == "guasto_incompleto"
     assert jev.motivo_jev(_r(prezzo="sopra"))[0] == "prezzo_alto"
     assert jev.motivo_jev(_r(prezzo="in_linea"))[0] == "prezzo_in_linea"
-    assert jev.motivo_jev({**_r(), "foto": ("non_corrisponde", 0.9)})[0] == "foto_diversa"
     assert jev.motivo_jev({"tipo": ("lotto", 0.9)}) == (None, None)
 
 
@@ -206,7 +170,7 @@ def test_prezzi_stesso_modello_tiene_solo_i_sicuri():
 
 
 def test_classifica_comparabili_una_risposta_per_titolo(monkeypatch):
-    _attiva(monkeypatch, foto_on=False)
+    _attiva(monkeypatch)
     monkeypatch.setattr(jev, "JEV_COMPS", True)
     answers = {"c0": {"choice": "stesso_modello", "confidence": 0.9}, "c1": {"choice": "altro", "confidence": 0.8}}
     richieste = _finto(monkeypatch, [{"answers": answers, "usage": {"input_tokens": 500}}])
@@ -216,7 +180,7 @@ def test_classifica_comparabili_una_risposta_per_titolo(monkeypatch):
 
 
 def test_classifica_comparabili_spenta_o_guasta_ritorna_none(monkeypatch):
-    _attiva(monkeypatch, foto_on=False)
+    _attiva(monkeypatch)
     monkeypatch.setattr(jev, "JEV_COMPS", False)
     assert jev.classifica_comparabili("x", ["a"]) is None
     monkeypatch.setattr(jev, "JEV_COMPS", True)

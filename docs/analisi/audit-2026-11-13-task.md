@@ -78,7 +78,8 @@ Ordine consigliato: T1, T2, T7 (ondata 1) -> T3, T4, T5 (pulizia) -> T8, T9, T14
 - **Cosa cambiare**: (1) per la fase `occhio_radar` mettere in testa alla cascata `gemini-3.5-flash-lite` (p50 4,0 s contro 3,6 s ma senza timeout nel campione: verificare prima con 24 h di `GEMINI_USO` filtrato su `occhio_radar`; se il campione non conferma, non cambiare l'ordine e dirlo); (2) se la fase e' in pausa al momento dell'avviso, inviare subito l'avviso (come oggi) e ritentare UNA volta a fine pausa aggiornando il messaggio; (3) riga di log `RADAR GEMINI | esito=ok|timeout|pausa|quota` per ogni giallo/verde.
 - **Verifica**: test in `tests/test_radar_gemini.py` per il ritento; in produzione dopo 48 h quota di `Gemini: non disponibile` nelle righe `RADAR PRIVATO` sotto 2 su 10. Solo Gemini gratuito, nessun modello a pagamento.
 
-## T8. Jev: far passare `foto_diversa` come giallo muto (prova 7 giorni)
+## T8. SUPERATO (13/11): la domanda foto di Jev e il motivo `foto_diversa` sono stati tolti del tutto su richiesta dell'utente. Testo originale sotto, da non eseguire.
+### (vecchio) Jev: far passare `foto_diversa` come giallo muto
 - **File**: `bot/radar.py` (blocco `RADAR_JEV_RICHIESTO`, vicino a riga 340), `bot/jev.py` (`motivo_jev`).
 - **Dato**: `foto_diversa` 23 venduti entro 1 h su 34 (68%); `ricambio` 2 su 19.
 - **Cosa cambiare**: nuova variabile `RADAR_JEV_PASSA_MOTIVI` (default vuoto = comportamento di oggi). Se il motivo di Jev e' nell'elenco, l'avviso parte come giallo SENZA suono con la riga "Jev: foto diversa dai comparabili, controllare il modello". `ricambio`, `replica_dubbio`, `guasto_incompleto` restano bloccati. Impostare su Railway `RADAR_JEV_PASSA_MOTIVI=foto_diversa` (procedura `variabili-railway.md`).
