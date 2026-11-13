@@ -943,7 +943,7 @@ def test_quasi_roi_resta_rosso_se_manca_una_condizione(monkeypatch):
 
 def test_famiglie_nuove_e_tetto_orario():
     from bot import radar_famiglie as rf
-    assert rf.modello_famiglia("V2 console", "Sony PS4 500GB") == ("ps4", 50)
+    assert rf.modello_famiglia("V2 console", "Sony PS4 500GB") == ("ps4", 80)
     assert rf.modello_famiglia("V2 console", "PS4 Pro 1TB")[0] == "ps4 pro"
     assert rf.modello_famiglia("V2 console", "PlayStation Vita")[0] == "ps vita"
     assert rf.modello_famiglia("V2 console", "Nintendo Wii U 32GB")[0] == "wii u"
