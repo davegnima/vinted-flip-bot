@@ -83,15 +83,6 @@ def test_semaforo_verde_giallo_rosso():
     assert semaforo({"ok": True, "n": 1}) == "rosso"
 
 
-def test_semaforo_radar_dal_buy_max():
-    from bot.radar import semaforo_radar
-    assert semaforo_radar(40, 50) == "🟢"
-    assert semaforo_radar(55, 50) == "🟡"
-    assert semaforo_radar(60, 50) == "🔴"
-    assert semaforo_radar(None, 50) is None
-    assert semaforo_radar(40, None) is None
-
-
 def test_query_comp_parte_dalla_serie_prima_della_sigla_modello():
     # 31/10: il modello restava fuori dalle prime 4 parole e i comparabili erano fotocamere qualsiasi
     assert query_comp("Fotocamera compatta digitale Fujifilm FinePix S1900 12.2MP", "Fujifilm") == "fujifilm finepix s1900"

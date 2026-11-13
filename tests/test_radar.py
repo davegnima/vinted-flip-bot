@@ -82,7 +82,7 @@ def test_campione_scarti_deterministico(monkeypatch):
 def test_scartato_non_visita_la_pagina(monkeypatch):
     visitate = []
 
-    async def finto_scrape(url, includi_guardaroba=True):
+    async def finto_scrape(url):
         visitate.append(url)
         return {}
 
@@ -95,8 +95,8 @@ def test_scartato_non_visita_la_pagina(monkeypatch):
 def test_promosso_visita_la_pagina_una_volta(monkeypatch):
     visitate = []
 
-    async def finto_scrape(url, includi_guardaroba=True):
-        visitate.append((url, includi_guardaroba))
+    async def finto_scrape(url):
+        visitate.append(url)
         return {"photo_urls": ["a", "b"], "description": "Funziona perfettamente", "catalog_id": "1234",
                 "stato_vendita": "venduto"}
 
@@ -105,7 +105,7 @@ def test_promosso_visita_la_pagina_una_volta(monkeypatch):
     url = "https://www.vinted.it/items/2234567891-tolomeo"
     asyncio.run(radar.gestisci_annuncio_radar(parsed, url))
     asyncio.run(radar.gestisci_annuncio_radar(parsed, url))
-    assert visitate == [(url, False)]
+    assert visitate == [url]
 
 
 def test_risolvi_gruppo_per_nome(monkeypatch):

@@ -135,7 +135,7 @@ async def _foto_pagina(url, foto_tracker):
     from bot.vinted_scrape import scrape_vinted_listing   # import tardivo: il modulo e' pesante e si carica solo se serve
     scraped = {}
     try:
-        scraped = await scrape_vinted_listing(url, includi_guardaroba=False) or {}
+        scraped = await scrape_vinted_listing(url) or {}
     except Exception:  # noqa: BLE001 - senza pagina restano la foto del tracker e il titolo
         log.warning("RADAR GEMINI | pagina non letta per %s", url)
     urls = (scraped.get("photo_urls") or [])[:RADAR_GEMINI_FOTO]

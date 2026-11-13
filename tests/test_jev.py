@@ -52,7 +52,7 @@ def test_giudica_manda_tre_domande_e_decide_il_codice(monkeypatch):
         return io.BytesIO(json.dumps(risposta).encode())
 
     monkeypatch.setattr(jev.urllib.request, "urlopen", finto_urlopen)
-    assert jev.giudica("Psp portatile", 30, [60, 70], 80) == ("affare_vero", 0.7)
+    assert jev.giudica_completo("Psp portatile", 30, [60, 70], 80)[:2] == ("affare_vero", 0.7)
     assert set(inviato["questions"]) == {"tipo", "completo", "prezzo"}
     assert all(q["type"] == "choice" for q in inviato["questions"].values())
 
@@ -65,7 +65,7 @@ def test_giudica_senza_rete_non_blocca(monkeypatch):
         raise OSError("rete giu'")
 
     monkeypatch.setattr(jev.urllib.request, "urlopen", guasto)
-    assert jev.giudica("x", 10, [20], 30) == (None, None)
+    assert jev.giudica_completo("x", 10, [20], 30)[:2] == (None, None)
 
 
 JPEG = b"\xff\xd8\xff\xe0" + b"0" * 50
@@ -104,12 +104,6 @@ def test_formato_foto_riconosce_png_e_jpeg_e_scarta_il_resto():
     assert jev._formato_foto(JPEG) == "jpeg"
     assert jev._formato_foto(b"GIF89a") is None
     assert jev._formato_foto(None) is None
-
-
-def test_fascia_di_confidenza():
-    assert jev.fascia(0.9) == "passa" and jev.fascia(0.85) == "passa"
-    assert jev.fascia(0.75) == "da_rivedere" and jev.fascia(0.7) == "da_rivedere"
-    assert jev.fascia(0.69) == "scartato" and jev.fascia(None) == "scartato"
 
 
 def test_descrizione_e_titoli_simili_vanno_a_jev_e_simili_non_cambia_l_esito(monkeypatch):

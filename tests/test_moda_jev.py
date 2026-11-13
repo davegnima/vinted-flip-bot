@@ -75,17 +75,12 @@ def test_fair_value_borse_lancel_e_kurt_geiger_dai_comparabili():
 
 
 def test_comparabili_con_link_e_diversi():
-    from bot.moda_jev import comparabili_con_link, molto_simili, righe_messaggio
+    from bot.moda_jev import comparabili_con_link, righe_messaggio
     from bot.testo import _normalizza_titolo_per_link as norm
     coppie = [("Borsa A", 40.0), ("Borsa B", 60.0), ("Borsa C", 200.0), ("Borsa D", 55.0)]
     mappa = {(norm(t), f"{p:.2f}"): f"https://www.vinted.it/items/{i}-x" for i, (t, p) in enumerate(coppie, 1)}
     out = comparabili_con_link(coppie, [None, mappa], n=2)
     assert sorted(c[1] for c in out) == [55.0, 60.0]   # i piu' vicini alla mediana (60), non gli estremi
-    # la foto conta solo se Jev trova il comparabile MOLTO simile (stesso_modello, confidenza >= 0,6); altrimenti nessun effetto
-    coppie = [(("A", 40.0, "u1"), b"x"), (("B", 55.0, "u2"), b"x"), (("C", 60.0, "u3"), b"x")]
-    assert [c[1] for c in molto_simili(coppie, [("stesso_modello", 0.8), ("simile", 0.9), ("stesso_modello", 0.4)])] == [40.0]
-    assert molto_simili(coppie, [("diverso", 0.9), ("simile", 0.9), ("non_chiaro", 0.9)]) == []
-    assert molto_simili(coppie, None) == [] and molto_simili([], [("stesso_modello", 0.9)]) == []
     righe = righe_messaggio({"rivendita": 60, "n": 4, "margine": 50, "roi": 150, "esempi": [], "autenticita": None,
                              "foto_comps": [("stesso_modello", 0.8), ("diverso", 0.7)]})
     assert not any("Foto vs" in r for r in righe)   # il confronto foto sta nel verdetto, non in una riga a parte (7/11)
@@ -105,7 +100,6 @@ def test_gemini_moda_serve_controllo_e_decisione():
     g.MODA_GEMINI_SEMPRE = True
     d2 = g.leggi_risposta('{"autenticita":"altra_marca","confidenza":0.9,"etichetta_letta":"Kapitales","made_in":"China","prova_acquisto":"fattura","indizi":"x","motivo":"y"}')
     assert g.e_replica(d2) and d2["prova_acquisto"] == "fattura"
-    assert "made in China" in g.riga_messaggio(d2) and "fattura" in g.riga_messaggio(d2)
     d = g.leggi_risposta('{"autenticita":"replica","confidenza":0.85,"indizi":"logo storto","motivo":"logo storto"}')
     assert g.e_replica(d)
     assert not g.e_replica(g.leggi_risposta('{"autenticita":"replica","confidenza":0.5,"indizi":"","motivo":""}'))

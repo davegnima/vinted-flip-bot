@@ -256,22 +256,6 @@ def riga_consiglio(d):
     return f"💬 {d['consiglio']}" if d.get("consiglio") else None
 
 
-def riga_messaggio(d):
-    """Riga (testo semplice) per il messaggio: esito del controllo Gemini sulle foto. Pura."""
-    if not d:
-        return None
-    etichetta = {"probabile": "coerente con la marca", "dubbia": "qualche dubbio", "replica": "indizi di replica",
-                 "altra_marca": "etichetta di un altro marchio", "non_verificabile": "non verificabile dalle foto"}[d["autenticita"]]
-    conf = f" ({d['confidenza']:.0%})" if d.get("confidenza") is not None else ""
-    extra = []
-    if d.get("made_in"):
-        extra.append(f"made in {d['made_in']}")
-    if d.get("prova_acquisto") and d["prova_acquisto"] != "nessuna":
-        extra.append(f"visibile: {d['prova_acquisto'].replace('_', '/')}")
-    dettagli = f" [{'; '.join(extra)}]" if extra else ""
-    return f"👁 Gemini: {etichetta}{conf}" + (f", {d['motivo'][:90]}" if d.get("motivo") else "") + dettagli
-
-
 async def controlla(titolo, brand, prezzo, descrizione, foto, item_id=None, comps=None):
     """Controllo Gemini su tutte le foto (al massimo MODA_GEMINI_FOTO). Ritorna il dict di leggi_risposta o None (spento, oltre il tetto
     orario, senza foto o senza risposta). Mai eccezioni."""

@@ -223,14 +223,6 @@ async def _miniature_dei_comparabili(link_comps):
     return out
 
 
-def molto_simili(coppie, confronti, conf_min=CONF_FOTO_MOLTO_SIMILE):
-    """[(titolo, prezzo, url)] dei comparabili che Jev giudica MOLTO simili alla foto dell'annuncio (stesso_modello con confidenza >=
-    conf_min). `coppie` = [(comparabile, byte)] come da _miniature_dei_comparabili; `confronti` = [(scelta, conf)] nello stesso ordine. Pura."""
-    if not coppie or not confronti:
-        return []
-    return [c for (c, _b), (sc, cf) in zip(coppie, confronti) if sc == "stesso_modello" and (cf or 0) >= conf_min]
-
-
 def prezzi_pesati_da_foto(coppie, confronti, conf_min=CONF_FOTO_MOLTO_SIMILE):
     """(prezzi, comparabili): prezzi dei comparabili che Jev giudica dalla foto, con pesi 10/11 (utente): stesso_modello vale il doppio di
     simile, diverso (o non chiaro, o confidenza bassa) 0. Il peso 2 e' il prezzo ripetuto due volte, cosi' stima_mercato lo conta il doppio.
@@ -524,20 +516,6 @@ def riga_verdetto(ris):
         # 10/11 (utente): senza comparabili l'avviso parte lo stesso; riga corta, le fonti stanno tra parentesi
         return f"⚠️ NON VERIFICATO · senza comparabili · rivendita ~{mix:.0f} €{parti_rivendita_testo(parti)}"
     return "⚠️ NON VERIFICATO · nessun comparabile"
-
-
-def _riga_dettagli_legit(dettagli):
-    """'etichetta: coerente (80%) · made in: coerente (70%) · ...' dalle risposte di Jev (solo quelle date). Pura."""
-    nomi = {"etichetta": "etichetta", "made_in": "made in", "lavorazione": "lavorazione", "prova": "documenti"}
-    valori = {"coerente": "coerente", "incoerente": "INCOERENTE", "non_visibile": "non visibile", "sospetta": "SOSPETTA",
-              "non_valutabile": "non valutabile", "nessuna": "nessuno", "cartellino": "cartellino", "documento": "scontrino/fattura",
-              "scatola_dustbag": "scatola/dustbag"}
-    parti = []
-    for k, nome in nomi.items():
-        r = (dettagli or {}).get(k)
-        if r and r[0]:
-            parti.append(f"{nome}: {valori.get(r[0], r[0])}" + (f" ({r[1]:.0%})" if r[1] is not None else ""))
-    return " · ".join(parti)
 
 
 def righe_messaggio(ris, brand=None):

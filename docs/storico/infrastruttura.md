@@ -60,3 +60,5 @@ Voci spostate da `STATO.md` il 13/11 senza modifiche al testo (ordine del vecchi
 
 - [Regole di lavoro apprese] Niente AI a pagamento; niente API/scraping Vinted da parte di Claude; non toccare `PROXY_LIST` / `PROXY_ESCLUSI`.
 
+- 13/11 sera (pulizia dopo l'archiviazione di Occhio e Cervello): tolto lo scrape del guardaroba del venditore (`_scrapa_guardaroba_venditore`): partiva per ogni annuncio moda e veniva sempre annullato, e il suo risultato (`seller_top_items`) non era piu' letto da nessuno. Erano le richieste `profilo_venditore` del `RIEPILOGO BANDA`: 1.355 l'11/11 e 982 il 12/11, con 24 e 17 rifiuti 403/429. Tolti anche funzioni e costanti senza chiamanti e 201 nomi importati e mai usati in `main_telethon.py` (avvisi pyflakes da 242 a 39). Codice da 14.010 a 13.619 righe, 471 test verdi. Da controllare: nel `RIEPILOGO BANDA OGGI` la voce `profilo_venditore` deve sparire.
+
