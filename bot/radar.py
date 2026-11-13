@@ -638,8 +638,8 @@ def _da_mandare(v2):
 
 
 def _con_suono(v2):
-    """Solo i verdi fanno suono nel chat degli avvisi (31/10: il gruppo del tracker e' silenzioso, la notifica deve essere un affare vero)."""
-    return bool(v2) and v2.get("semaforo") == "verde"
+    """Verdi e gialli fanno suono nel gruppo COMPRA (13/11, utente: i gialli muti passavano inosservati, giorni senza notifiche)."""
+    return bool(v2) and v2.get("semaforo") in ("verde", "giallo")
 
 
 _RE_URL_VINTED = re.compile(r"https://www\.vinted\.[a-z.]+/items/\S+")
