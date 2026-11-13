@@ -15,12 +15,15 @@ FAMIGLIE = {
         ("ps4 pro", [("ps4", "pro"), ("playstation", "4", "pro")], 60),
         ("switch", [("switch",)], 90),
         ("3ds", [("3ds",)], 60),
+        # 13/11: ps4, ps vita e wii u a 80 EUR (non piu' 50): nelle console (ps5, switch, 3ds, ps4 pro, 5 giorni) la fascia 50-100 EUR
+        # da' 32 affari su 70 gialli/verdi (46%) contro 25 su 88 nella fascia 25-50 e 9 su 46 sotto 25; il tetto 50 le tagliava.
+        # Il tetto orario `consenti_nuova` non cambia: nessuna richiesta in piu'. game boy, psp, ds restano a 50 (rivendita bassa).
         # 11/11 (richiesta utente: piu' affari fuori moda): modelli che prima finivano in "fuori_famiglia" (circa 150 annunci/ora
         # scartati senza valutazione). Tetto 50 EUR = regola 10 per i modelli senza buy max misurato. Hanno un tetto orario di
         # valutazioni (`consenti_nuova`) per non gonfiare le richieste a Vinted; i tetti veri si fissano sui dati di 24 ore.
-        ("ps4", [("ps4",), ("playstation", "4")], 50),
-        ("ps vita", [("ps", "vita"), ("playstation", "vita"), ("psvita",)], 50),
-        ("wii u", [("wii", "u"), ("wiiu",)], 50),
+        ("ps4", [("ps4",), ("playstation", "4")], 80),
+        ("ps vita", [("ps", "vita"), ("playstation", "vita"), ("psvita",)], 80),
+        ("wii u", [("wii", "u"), ("wiiu",)], 80),
         ("game boy", [("gameboy",), ("gba",), ("gbc",)], 50),
         ("psp", [("psp",)], 50),
         ("ds", [("nintendo", "ds"), ("ds", "lite"), ("dsi",), ("2ds",)], 50),
