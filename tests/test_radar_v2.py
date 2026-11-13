@@ -150,7 +150,7 @@ def test_invia_verdetto_v2_gialli_e_verdi_una_volta(monkeypatch):
     assert asyncio.run(radar.invia_verdetto_v2(p, u, {"semaforo": "giallo"})) is False
     assert asyncio.run(radar.invia_verdetto_v2(p, "https://www.vinted.it/items/902-x", {"semaforo": "verde"})) is True
     assert asyncio.run(radar.invia_verdetto_v2(p, "https://www.vinted.it/items/903-x", {"semaforo": "rosso"})) is False
-    assert [x[1] for x in inviati] == [False, True]
+    assert [x[1] for x in inviati] == [True, True]   # dal 13/11 suonano anche i gialli
     assert inviati[0][0].startswith("🟡 *Switch oled*\n*40 €*")
     # il vecchio ramo non rimanda lo stesso annuncio
     asyncio.run(radar._manda_annuncio_senza_modello("901", "Switch oled", 40.0, u, {"semaforo": "giallo"}, None))
@@ -319,10 +319,10 @@ def test_marca_dal_titolo_vince_sul_tracker():
     assert marca_dal_titolo("Canon BG-E7 per Nikonos", "Canon") == "Canon"
 
 
-def test_solo_i_verdi_fanno_suono():
+def test_verdi_e_gialli_fanno_suono():
     from bot import radar
     assert radar._con_suono({"semaforo": "verde"})
-    assert not radar._con_suono({"semaforo": "giallo"}) and not radar._con_suono(None)
+    assert radar._con_suono({"semaforo": "giallo"}) and not radar._con_suono({"semaforo": "rosso"}) and not radar._con_suono(None)
 
 
 def test_descrizione_dalla_pagina():
@@ -613,7 +613,7 @@ def test_invia_verdetto_v2_rivaluta_col_modello_di_gemini(monkeypatch):
     u = "https://www.vinted.it/items/910-switch"
     assert asyncio.run(radar.invia_verdetto_v2({"title": "Switch", "price": "40"}, u, {"semaforo": "verde", "rivendita": 90}, rivaluta=rivaluta)) is True
     testo, suono, url_bottone = inviati[0]
-    assert chiamate == ["nintendo switch oled"] and suono is False   # il verde e' diventato giallo: niente suono
+    assert chiamate == ["nintendo switch oled"] and suono is True   # verde diventato giallo: suona lo stesso (13/11)
     assert url_bottone == u and "Comparabili rifatti sul modello letto da Gemini" in testo and "Velocità di rivendita stimata da Gemini" in testo
 
     # se la rivalutazione la porta a rosso l'avviso non parte
@@ -843,7 +843,7 @@ def test_senza_simili_il_verde_diventa_giallo_e_foto_diversa_non_filtra(monkeypa
     monkeypatch.setattr(radar, "RADAR_VERIFICA", True)
     verde = {"semaforo": "verde", "jev": "affare_vero", "jev_conf": 0.9, "verificata": {"semaforo": "rosso", "n_stesso": 0, "n_giudicati": 7}}
     d = radar._declassa_senza_simili(verde)
-    assert d["semaforo"] == "giallo" and radar._da_mandare(d) is True and radar._con_suono(d) is False
+    assert d["semaforo"] == "giallo" and radar._da_mandare(d) is True and radar._con_suono(d) is True
     verificato = {**verde, "verificata": {"semaforo": "verde", "n_stesso": 8, "n_giudicati": 8}}
     assert radar._declassa_senza_simili(verificato)["semaforo"] == "verde"
     foto = {"semaforo": "giallo", "jev": "falso_o_ricambio", "jev_conf": 0.9, "jev_motivo": "foto_diversa"}
@@ -928,7 +928,7 @@ def _analizza_quasi_roi(monkeypatch, prezzo, base, jev=("affare_vero", 0.95), n=
 def test_quasi_roi_diventa_giallo_con_jev_sicuro(monkeypatch):
     r = _analizza_quasi_roi(monkeypatch, 50, 118)   # margine 52,5 EUR, ROI 94,3%
     assert r["semaforo"] == "giallo" and r["motivo"] == "quasi_roi" and r["roi"] < 100 and r["margine"] >= 50
-    assert radar._da_mandare(r) is True and radar._con_suono(r) is False   # avviso muto
+    assert radar._da_mandare(r) is True and radar._con_suono(r) is True   # dal 13/11 anche i gialli suonano
     assert "poco sotto 100%" in "\n".join(radar._righe_v2(r))
 
 
