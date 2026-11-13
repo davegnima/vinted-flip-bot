@@ -296,7 +296,6 @@ FAIR_VALUE_MOLT_MATERIALE = {
     "cashmere": 1.15, "vicuna": 1.30, "vigogna": 1.30, "pelle": 1.25, "seta": 1.05,
     "lana": 1.05, "mohair": 1.05, "alpaca": 1.05, "viscosa": 0.95,
 }
-FAIR_VALUE_SCONTO_COMP = 0.70  # solo documentazione: gia' applicato nella tabella
 
 
 # Semaforo: ROI = (fair value - prezzo) / prezzo.

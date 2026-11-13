@@ -90,8 +90,6 @@ CONF_COMP_MIN = 0.6
 MAX_COMPS_VERIFICA = 20
 MAX_DESCRIZIONE = 600
 MAX_TITOLI_SIMILI = 15
-# Esiti del radar: stessa lista di prima, ora decisa dal codice.
-ESITI = ("affare_vero", "non_affare", "falso_o_ricambio")
 TIPI_NON_VENDIBILI = ("ricambio_accessorio", "lotto", "replica_o_dubbio")
 FORMATI_FOTO = {b"\x89PNG": "png", b"\xff\xd8\xff": "jpeg"}
 
@@ -179,19 +177,6 @@ def descrizione_jev(esito, conf, frase):
     return f"{testo} (confidenza {conf})"
 
 
-# Fasce di confidenza (31/10): sopra SOGLIA_PASSA l'esito vale; tra le due soglie e' un caso limite da valutare a mano con i
-# bottoni (taratura di soglie e domande); sotto SOGLIA_RIVEDERE e' scartato. Ipotesi iniziali, da tarare sui dati.
-SOGLIA_PASSA = 0.85
-SOGLIA_RIVEDERE = 0.70
-
-
-def fascia(confidenza):
-    """'passa', 'da_rivedere' o 'scartato' dalla confidenza di Jev (None = scartato). Pura."""
-    if confidenza is None or confidenza < SOGLIA_RIVEDERE:
-        return "scartato"
-    return "passa" if confidenza >= SOGLIA_PASSA else "da_rivedere"
-
-
 def _formato_foto(foto):
     """'png' o 'jpeg' dai primi byte del file, None se non e' una foto utilizzabile. Pura."""
     for firma, formato in FORMATI_FOTO.items():
@@ -209,11 +194,6 @@ def _chiama_jev(corpo):
     req = urllib.request.Request(ENDPOINT, data=json.dumps(corpo).encode(), method="POST", headers=intestazioni)
     with urllib.request.urlopen(req, timeout=30) as r:
         return json.loads(r.read().decode())
-
-
-def giudica(titolo, prezzo, prezzi_simili, rivendita):
-    """(esito, confidenza) oppure (None, None). Versione senza descrizione ne' titoli dei simili: vedi giudica_completo."""
-    return giudica_completo(titolo, prezzo, prezzi_simili, rivendita)[:2]
 
 
 def giudica_completo(titolo, prezzo, prezzi_simili, rivendita, descrizione=None, titoli_simili=None):

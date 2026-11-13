@@ -72,7 +72,6 @@ _tracc_attesa_esito = set()   # item_id con serie avviata e verdetto del bot non
 _tracc_differiti = {}   # item_id -> (brand, prezzo, storia): serie finita (venduto in pochi secondi) prima del verdetto
 TRACC_ATTESA_ESITO_MAX_S = 240   # oltre, la riga esce comunque (senza esito del bot)
 _STATI_SPARITO = ('rimosso', 'rimosso?', 'n.d.')
-TRACCIAMENTO_SERIE_RIDOTTA_MAX_S = 300
 _SCARTI_DA_SEGUIRE = ("[FALSO CONCLAMATO", "[ANNUNCIO FRAUDOLENTO")
 _tracc_esiti = {}  # item_id -> (esito, target): lo valorizza _log_esito, lo legge la serie nei log
 _tracc_sem = asyncio.Semaphore(8)

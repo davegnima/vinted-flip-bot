@@ -24,10 +24,6 @@ VELOCITA_VERDE_X = float(os.environ.get("VELOCITA_VERDE_X", "1.6"))
 VELOCITA_GIALLO_X = float(os.environ.get("VELOCITA_GIALLO_X", "0.8"))
 VELOCITA_SOGLIA_VERDE = float(os.environ.get("VELOCITA_SOGLIA_VERDE") or 0)     # 0 = proporzionale alla media
 VELOCITA_SOGLIA_GIALLO = float(os.environ.get("VELOCITA_SOGLIA_GIALLO") or 0)
-# Brand "lento" (9/10): con almeno VELOCITA_LENTO_N_MIN annunci e un lift <= VELOCITA_LENTO_LIFT il rosso salta il Cervello anche
-# a margine rapido positivo (vedi fair_value.check_skip_rosso). Oggi solo Max Mara (n ~155, lift 0,51).
-VELOCITA_LENTO_N_MIN = float(os.environ.get("VELOCITA_LENTO_N_MIN", "100"))
-VELOCITA_LENTO_LIFT = float(os.environ.get("VELOCITA_LENTO_LIFT", "0.60"))
 # Capi economici (15/10): sotto VELOCITA_PREZZO_NEUTRO il lift di un brand lento (< 1) non si applica. Il lift viene quasi tutto da
 # annunci a 40-70 EUR; a <= 20 EUR (8-14/10, 297 annunci di brand con lift < 0,8) il semaforo d'origine distingue meglio: 🟢 27% venduti
 # entro 15 min e 🟡 11%, contro 🟢 20% e 🟡 26% col semaforo corretto. Es. Acne a 12 EUR con fair value 62: era sempre 🔴 (lift 0,36),
@@ -70,13 +66,6 @@ def lift_brand(brand, dati=None):
     n, veloci = dati["brand"].get(str(brand or "").lower(), (0.0, 0.0))
     base = dati["base"]
     return ((veloci + VELOCITA_K * base) / (n + VELOCITA_K)) / base if base > 0 else 1.0
-
-
-def brand_lento(brand, dati=None):
-    """True se il brand ha abbastanza annunci (VELOCITA_LENTO_N_MIN) e un lift basso (VELOCITA_LENTO_LIFT). Pura."""
-    dati = dati or _DATI
-    n, _ = dati["brand"].get(str(brand or "").lower(), (0.0, 0.0))
-    return VELOCITA_ATTIVA and n >= VELOCITA_LENTO_N_MIN and lift_brand(brand, dati) <= VELOCITA_LENTO_LIFT
 
 
 def semaforo_corretto(semaforo, brand, dati=None, prezzo=None):

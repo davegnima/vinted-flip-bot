@@ -13,7 +13,7 @@ from bot.fair_value import REGOLA_DA_VERIFICARE, FAIR_VALUE_FILTRA, catalogo_imp
 from bot import db
 from bot.tracciamento import SKIP_GIA_VENDUTI, _log_esito, campi_annuncio, tracc_avvia_serie, tracc_registra_gia_venduto
 from bot.tempi import parse_caricato_secondi, _calcola_tempi_pipeline, _formatta_tappe_pipeline
-from bot.vinted_scrape import _scrapa_guardaroba_venditore, scrape_vinted_listing
+from bot.vinted_scrape import scrape_vinted_listing
 from bot.filtri import check_skip_pre_gemini
 from bot.foto import download_image_bytes
 from bot.categorie import estrai_categoria_da_titolo
@@ -102,7 +102,6 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
     t_tappe = [("ricevuto", t_ricevuto_bot if t_ricevuto_bot is not None else time.time())]
 
     photo_bytes_list = []
-    task_guardaroba = None
     if url:
         # FILTRO PRE-SCRAPE (aggiunto 2026-09-27, utente: ridurre il consumo
         # di banda dei proxy in vista del passaggio a proxy residenziali a
@@ -134,10 +133,7 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
         if PREAVVISO_LAMPO and stato is not None and TELEGRAM_ALERT_CHAT_ID and cover_photo_bytes:
             _preavviso_lampo(listing_info, url, cover_photo_bytes, msg_date, t_ricevuto_bot, stato)
 
-        # Guardaroba venditore escluso qui e lanciato in parallelo alle foto
-        # poco sotto (vedi _scrapa_guardaroba_venditore): le foto non lo
-        # aspettano piu'.
-        scraped = await scrape_vinted_listing(url, includi_guardaroba=False)
+        scraped = await scrape_vinted_listing(url)
         t_tappe.append(("scrape", time.time()))
         listing_info["t_scrape"] = time.time()   # per ricavare l'ora di caricamento dal "Caricato N secondi fa"
         listing_info.update({
@@ -156,8 +152,6 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             "seller_feedback_reputation": scraped.get("seller_feedback_reputation"),
             "seller_items_count": scraped.get("seller_items_count"),
             "seller_country": scraped.get("seller_country"),
-            "seller_top_items": scraped.get("seller_top_items") or [],
-            "seller_wardrobe_debug": scraped.get("seller_wardrobe_debug") or "n/d",
         })
         # ritardo pubblicazione -> messaggio del tracker (18/10): "Caricato N secondi fa" letto allo scrape meno il tempo
         # trascorso dal messaggio; solo se la pagina lo da' in secondi (non grossolano). Va nella riga TRACCIATO (`pub_tg`).
@@ -261,8 +255,6 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             log.info("FAIR VALUE PROVA (nessuno scarto, FAIR_VALUE_FILTRA=0): avrebbe scartato '%s'. Motivo: %s",
                      listing_info.get("title"), motivo_skip_fv)
 
-        task_guardaroba = asyncio.create_task(_scrapa_guardaroba_venditore(scraped, url))
-
         photo_urls = scraped.get("photo_urls", [])
         if not photo_urls:
             log.warning(
@@ -325,8 +317,6 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
         await telegram_send_message(
             TELEGRAM_OWNER_CHAT_ID,
             f"⚠️ Niente foto per: {listing_info.get('title')}\nURL: {url or 'non trovato'}\nSalto valutazione.")
-        if task_guardaroba is not None:
-            task_guardaroba.cancel()
         return
 
     # Galleria subito nella chat principale (vedi GALLERIA_ANTICIPATA), prima
@@ -341,8 +331,6 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
 
     # Niente Occhio ne' Cervello: l'avviso e' la regola del preavviso (stima rapida). Chi non scatta resta tracciato
     # (serie ridotta) per misurare quanti veloci si perdono.
-    if task_guardaroba is not None:
-        task_guardaroba.cancel()
     fv_sem = listing_info.get("fair_value") or {}
     if listing_info.get("preavviso") and listing_info.get("verifica_jev"):
         # brand nuovo (stima a priori non misurata): comparabili Vinted + Jev + foto prima di avvisare (bot/moda_jev.py)

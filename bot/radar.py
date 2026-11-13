@@ -310,15 +310,6 @@ def radar_in_pausa(adesso=None):
 RADAR_MOSTRA_TUTTI = os.environ.get("RADAR_MOSTRA_TUTTI", "1").strip() not in ("0", "false", "")
 
 
-def semaforo_radar(prezzo, buy_max):
-    """Semaforo dal buy max della matrice, stessa tolleranza di radar_matrice. Pura."""
-    if prezzo is None or not buy_max or buy_max <= 0:
-        return None
-    if prezzo <= buy_max:
-        return "🟢"
-    return "🟡" if prezzo <= buy_max * rm.RADAR_TOLLERANZA_BUY_MAX else "🔴"
-
-
 # Filtro sul rumore (31/10): al chat degli avvisi arrivano solo i semafori elencati in RADAR_SEMAFORI (default verde,giallo);
 # i rossi mai. RADAR_SOLO_VERDI=1 (vecchia variabile) restringe a solo verdi.
 RADAR_SEMAFORI = {x.strip() for x in os.environ.get("RADAR_SEMAFORI", "verde,giallo").split(",") if x.strip()}
@@ -564,9 +555,7 @@ RADAR_CANCELLA_ROSSI = os.environ.get("RADAR_CANCELLA_ROSSI", "1").strip() not i
 
 
 # 8/11 (utente): i rossi con modello riconosciuto e stima fatta (margine o ROI bassi, sopra il riferimento) restano nel gruppo.
-MOTIVI_FILTRATI_DIRETTAMENTE = ("fuori_famiglia", "sopra_tetto_modello")
 MOTIVI_TECNICI_NON_CANCELLA = ("senza_id", "ombra_spenta", "pausa_notturna")   # non sono un verdetto: il messaggio resta
-MOTIVI_MODELLO_RICONOSCIUTO = ("margine_basso", "roi_basso", "sopra_riferimento")
 
 
 def da_cancellare(v2, esito=None):
@@ -956,7 +945,7 @@ async def gestisci_annuncio_radar(parsed, url, t0=None, v2=None, foto=None):
         return
     try:
         async with _radar_sem:
-            pagina = await scrape_vinted_listing(url, includi_guardaroba=False)
+            pagina = await scrape_vinted_listing(url)
         info = {**pagina, "title": titolo, "price": prezzo, "brand": brand_radar or parsed.get("brand"),
                 "url": url}
         n_foto = len(pagina.get("photo_urls") or [])

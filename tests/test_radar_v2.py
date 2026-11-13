@@ -67,7 +67,7 @@ def test_jev_senza_chiave_non_chiama_nulla(monkeypatch):
     from bot import jev
     monkeypatch.setattr(jev, "JEV_GIUDICE", True)
     monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
-    assert jev.giudica("x", 10, [20], 30) == (None, None)
+    assert jev.giudica_completo("x", 10, [20], 30)[:2] == (None, None)
 
 
 def test_righe_v2_mostra_sempre_il_motivo():

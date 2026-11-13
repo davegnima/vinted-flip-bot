@@ -7,22 +7,15 @@ Questo file ha il client Telethon, i comandi, main() e un blocco di re-export (i
 import os
 import re
 import sys
-import html
 import json
 import time
-import uuid
 import asyncio
 import signal
 import base64
 import logging
-import statistics
-import difflib
 import traceback
-import zlib
-import importlib.util
-from io import BytesIO
 from datetime import datetime, timezone
-from urllib.parse import quote, urlparse
+from urllib.parse import quote
 
 import httpx
 try:
@@ -34,7 +27,6 @@ except Exception:
     CurlAsyncSession = None
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
-from PIL import Image
 
 from bot import http_clients as hc
 from bot import db
@@ -47,21 +39,10 @@ from bot.operazioni import parse_operazione, margine_reale
 from bot.radar_v2 import analizza as radar_v2_analizza, rivaluta as radar_v2_rivaluta
 from bot.radar import RADAR_CHAT_IDS, RADAR_RISPOSTA_GRUPPO, RADAR_CANCELLA_SCARTI, da_cancellare, testo_risposta_gruppo, radar_in_pausa, e_messaggio_radar, gestisci_annuncio_radar, traccia_verdetto_v2, invia_verdetto_v2, risolvi_gruppo_radar, togli_marcatore
 from bot.costanti import (
-    BRAND_BLOCKLIST,
-    CATEGORIA_KEYWORDS,
-    IMAGE_DOWNLOAD_HEADERS,
-    MATERIALI_PREGIATI_PRIORITA,
-    MATERIALI_TRADUZIONI,
-    VENDITORI_BLOCKLIST,
-    VINTED_BRAND_IDS,
     VINTED_HEADERS,
 )  # noqa: F401  (re-export)
 
 from bot.logger import (
-    _LOG_FORMATO,
-    _SoloSottoWarning,
-    _log_err,
-    _log_out,
     log,
 )  # noqa: F401  (re-export)
 
@@ -69,17 +50,8 @@ from bot.config import (
     VISUAL_SEARCH_ATTIVA,
     VINTED_TRACKER_NAME_HINTS,
     BOT_VERSION,
-    COMMISSIONE_PROTEZIONE_FISSA,
-    COMMISSIONE_PROTEZIONE_PCT,
     GEMINI_API_KEY,
-    GEMINI_API_URL_OCCHIO,
     GEMINI_MODEL_OCCHIO,
-    MAX_GALLERY_PHOTOS,
-    PREZZO_GROUNDING_PER_QUERY,
-    PREZZO_OCCHIO_INPUT,
-    PREZZO_OCCHIO_OUTPUT,
-    SCONTO_TIPICO_TRATTATIVA_VENDITA,
-    SPEDIZIONE_STIMATA_EUR,
     TELEGRAM_ALERT_CHAT_ID,
     TELEGRAM_API,
     TELEGRAM_API_HASH,
@@ -88,74 +60,27 @@ from bot.config import (
     TELEGRAM_GROUP_ID,
     TELEGRAM_OWNER_CHAT_ID,
     TELEGRAM_SESSION_STRING,
-    VINTED_ACCESS_TOKEN,
-    VINTED_REFRESH_TOKEN,
-    _env_float,
 )  # noqa: F401  (re-export)
 
 from bot.testo import (
-    _RE_ALT_PRODOTTO_VINTED,
-    _RE_PRODOTTO_VINTED_CON_ID,
-    _escapa_markdown_legacy,
     _normalizza_titolo_per_dedup,
-    _normalizza_titolo_per_link,
 )  # noqa: F401  (re-export)
 
-from bot.categorie import (
-    _cerca_categoria_in_testo,
-    estrai_categoria_da_titolo,
-    scegli_materiale_per_ricerca,
-)  # noqa: F401  (re-export)
 
 from bot.fair_value import (
     FAIR_VALUE_APPRESO,
     FAIR_VALUE_APPRESO_FILE,
-    FAIR_VALUE_BORSE,
-    FAIR_VALUE_BRAND,
-    FAIR_VALUE_FATTORE_CATEGORIA,
-    FAIR_VALUE_FILTRA,
-    FAIR_VALUE_FILTRA_ROI_MIN,
-    FAIR_VALUE_LIVELLO_BRAND,
     FAIR_VALUE_LOG_FILE,
-    FAIR_VALUE_MARGINE_MIN_VERDE,
-    FAIR_VALUE_MOLT_CONDIZIONE,
-    FAIR_VALUE_MOLT_MATERIALE,
-    FAIR_VALUE_ROI_GIALLO,
-    FAIR_VALUE_ROI_VERDE,
-    FAIR_VALUE_SCONTO_COMP,
-    FAIR_VALUE_SOTTOLINEE,
-    FAIR_VALUE_TABELLA,
-    _DECISIONI_POSITIVE,
-    _FV_NUOVE_RIGHE_PER_RICALCOLO,
-    _FV_PESO_GEMINI,
-    _FV_PESO_PARTENZA,
-    _FV_PESO_UMANO,
-    _JSONL_CARTELLE_CREATE,
-    _brand_fair_value,
-    _fv_dopo_scrittura,
     _fv_leggi,
-    _fv_righe_da_ricalcolo,
-    _fv_scrivi,
-    _jsonl_append,
     _jsonl_read,
-    _mediana_pesata,
-    _moltiplicatore_fair_value,
-    _riga_fair_value_testo,
-    _sottolinea_da_testo,
-    check_skip_fair_value,
     fv_carica_appreso,
     fv_rapporto,
-    fv_registra_rapida,
-    fv_registra_umana,
     fv_ricalibra,
     fv_unisci,
     stima_fair_value,
 )  # noqa: F401  (re-export)
 
 from bot.filtri import (
-    _RE_MIUMIU,
-    _RE_TOP_LEGGERO,
-    _miumiu_top_economico,
     check_skip_pre_gemini,
 )  # noqa: F401  (re-export)
 
@@ -163,82 +88,31 @@ from bot.gemini_stato import (
     GEMINI_API_KEYS,
     GEMINI_CASCATA,
     GEMINI_CASCATA_OCCHIO,
-    GEMINI_MODELLI_RISERVA,
-    MAX_RETRIES_GEMINI_IN_BLACKOUT,
-    RAFFREDDAMENTO_GEMINI_SECONDI,
-    RAFFREDDAMENTO_MODELLO_INESISTENTE_SECONDI,
-    RAFFREDDAMENTO_MODELLO_SOVRACCARICO_SECONDI,
-    RAFFREDDAMENTO_QUOTA_ESAURITA_GEMINI_SECONDI,
-    SOGLIA_5XX_GEMINI_PER_BLACKOUT,
-    _GEMINI_API_KEYS_RAW,
-    _gemini_5xx_consecutivi,
-    _gemini_e_errore_quota_giornaliera,
-    _gemini_e_modello_inesistente,
-    _gemini_e_sovraccarico_modello,
-    _gemini_gestisci_modello_non_disponibile,
-    _gemini_in_blackout,
     _gemini_key_attuale,
     _gemini_key_in_quota_esaurita,
     _gemini_key_index,
     _gemini_key_quota_esaurita_fino,
-    _gemini_modello_da_url,
-    _gemini_modello_escluso,
     _gemini_modello_escluso_fino,
-    _gemini_modello_senza_quota,
-    _gemini_prossima_key,
-    _gemini_registra_esito,
     _gemini_secondi_retry,
     _gemini_segna_key_quota_esaurita,
-    _gemini_segna_modello_non_disponibile,
-    _gemini_timestamp_ultimo_5xx,
     _gemini_url_effettivo,
 )  # noqa: F401  (re-export)
 
 from bot.proxy import (
-    INTERVALLO_RIEPILOGO_BANDA,
-    INTERVALLO_RIEPILOGO_PROXY,
     PROXY_LIST,
-    PROXY_QUARANTENA_SECONDI,
-    PROXY_QUARANTENA_SOGLIA,
-    _BANDA_PER_TIPO,
-    _BANDA_REGISTRAZIONI,
     _CLIENT_VINTED_POOL,
     _CLIENT_VINTED_POOL_KEYS,
     _ETICHETTA_PER_CHIAVE_PROXY,
-    _PROXY_BLOCCHI_DI_FILA,
-    _PROXY_ESCLUSI,
-    _PROXY_LIST_RAW,
-    _PROXY_QUARANTENA_FINO,
-    _PROXY_STATS,
-    _PROXY_STATS_RICHIESTE_TOTALI,
     _etichetta_proxy,
-    _host_porta_proxy,
-    _logga_riepilogo_banda,
-    _logga_riepilogo_proxy,
-    _proxy_in_quarantena,
-    _proxy_indice_rotazione,
-    _registra_banda,
-    _registra_blocco_proxy,
-    _registra_esito_proxy,
-    _tipo_richiesta_vinted,
 )  # noqa: F401  (re-export)
 
 from bot.http_clients import (
-    _crea_client_vinted,
-    _prossimo_client_vinted,
-    _prossimo_indice_vinted,
     chiudi_client_http,
     inizializza_client_http,
 )  # noqa: F401  (re-export)
 
 from bot.telegram_api import (
-    TELEGRAM_MAX_ATTESA_429_SECONDI,
-    TELEGRAM_MAX_TENTATIVI,
-    _parametri_reply,
-    _primo_message_id,
     _spezza_per_telegram,
-    _telegram_esito_ok,
-    _telegram_post,
     telegram_edit_message,
     telegram_send_media_group,
     telegram_send_message,
@@ -247,13 +121,8 @@ from bot.telegram_api import (
 )  # noqa: F401  (re-export)
 
 from bot.parsing import (
-    _a_float,
     _estrai_item_id_da_url,
-    BRAND_REGEX,
-    BRAND_VALORI_VUOTI,
-    PRICE_REGEX,
     TITOLO_NON_RILEVATO,
-    URL_REGEX,
     _brand_da_titolo,
     extract_url_from_text,
     parse_vinted_tracker_message,
@@ -261,137 +130,63 @@ from bot.parsing import (
     url_da_entita,
 )  # noqa: F401  (re-export)
 
-from bot.tempi import (
-    _calcola_tempi_pipeline,
-    _formatta_durata,
-    _formatta_tappe_pipeline,
-    _parse_created_at_dt,
-)  # noqa: F401  (re-export)
 
 from bot.vinted_http import (
-    PAUSA_MINIMA_TRA_RICHIESTE_VINTED_SECONDI,
-    TOKEN_FILE,
     VINTED_COOKIES_EXTRA,
     _VINTED_COOKIES,
-    _attendi_turno_vinted,
     _jwt_scaduto,
-    _lock_rate_limit_vinted,
-    _parse_cookie_header,
     _rinnova_token_vinted,
     _vinted_get_con_retry,
-    _vinted_rate_limit_locks,
     _vinted_refresh_lock,
-    _vinted_timestamp_ultima_richiesta_per_chiave,
 )  # noqa: F401  (re-export)
 
 from bot.tracciamento import (
-    SKIP_GIA_VENDUTI,
     TRACCIAMENTO_ATTIVO,
     TRACCIAMENTO_FILE,
     TRACCIAMENTO_SERIE_SECONDI,
-    _CAND_TS_RE,
-    _TRACC_AVAILABILITY_RE,
-    _TRACC_BARRA_RE,
-    _TRACC_FASCE,
-    _TRACC_PREZZO_RES,
-    _TRACC_SEGNALI_RE,
-    _log_esito,
     _tracc_bucket,
     _tracc_classe,
-    _tracc_esiti,
     _tracc_estrai_segnali,
     _tracc_item_visti,
     _tracc_leggi_pagina,
     _tracc_scrivi,
-    _tracc_sem,
     _tracc_serie,
     _tracc_stato,
     _tracc_stop,
     tracc_avvia_serie,
-    tracc_registra_gia_venduto,
-    tracc_registra_valutato,
     trova_timestamp_candidati,
 )  # noqa: F401  (re-export)
 
 from bot.vinted_scrape import (
-    BROTLI_DISPONIBILE,
-    SONDA_BANDA_CAMPIONI,
-    _CHIAVI_ATTRIBUTI,
-    _DIAGNOSTICA_ATTRIBUTI_RESTANTI,
-    _ETICHETTE_ATTRIBUTI,
-    _REGEX_FOTO_F800,
-    _RE_ATTRIBUTO_ANNUNCIO,
-    _SONDA_CAMPI,
-    _SONDA_PAROLE_CHIAVE_CAMPI,
-    _decodifica_stringa_json,
-    _diagnostica_attributi_mancanti,
-    _estrai_attributi_annuncio,
-    _estrai_foto_gallery,
-    _formati_foto_nella_pagina,
-    _scrapa_guardaroba_venditore,
-    _sonda_analizza_offset,
-    _sonda_avvia_se_serve,
-    _sonda_campioni_fatti,
-    _sonda_composizione,
-    _sonda_contesto_campi_mancanti,
-    _sonda_e_pagina_vera,
-    _sonda_stima_lettura_parziale,
-    _sonda_struttura_pagina,
-    _sonda_task_attivi,
-    _testi_visibili,
     scrape_vinted_listing,
 )  # noqa: F401  (re-export)
 
 from bot.foto import (
-    FOTO_DIRETTE_ABILITATE,
-    FOTO_DIRETTE_PAUSA_SECONDI,
-    FOTO_DIRETTE_SOGLIA_FALLIMENTI,
-    _costruisci_parts_foto_sync,
-    _download_foto_diretta,
-    _foto_dirette_attive,
-    _foto_dirette_registra,
-    _foto_dirette_stato,
-    costruisci_parts_foto,
-    download_image_bytes,
     optimize_image_bytes,
 )  # noqa: F401  (re-export)
 
 from bot.gemini_api import (
     testa_chiavi_gemini,
     chiama_gemini,
-    costo_gemini_token,
 )  # noqa: F401  (re-export)
 
 
 from bot.comps_filtri import (
     _articoli_vinted,
-    BRAND_SOTTOLINEE_DA_ESCLUDERE,
     _estrai_articoli_da_alt_vinted,
-    _estrai_mappa_url_comp_vinted,
 )  # noqa: F401  (re-export)
 
 from bot.comps import (
     MARKER_NESSUN_ARTICOLO_VINTED,
-    TIMEOUT_SCRAPE_DIRETTO_VINTED_TESTO_SECONDI,
     _cerca_vinted_testo_diretto,
 )  # noqa: F401  (re-export)
 
 from bot.scheda import (
-    LUNGHEZZA_MAX_DESCRIZIONE_SCHEDA,
     _descrizione_utile,
-    _didascalia_galleria_anticipata,
-    _eta_annuncio_testo,
-    _invia_galleria_anticipata,
     _riga_caricato_annuncio,
-    _riga_venditore_annuncio,
-    _righe_dettagli_annuncio,
-    _scheda_annuncio_testo,
-    _stato_analisi_testo,
-    _testa_prezzo_brand,
 )  # noqa: F401  (re-export)
 
 from bot.pipeline import (
-    _process_listing_interno,
     process_listing,
 )  # noqa: F401  (re-export)
 
@@ -651,7 +446,7 @@ async def testa_ricerca_visuale(url_annuncio):
             righe.append("(proseguo lo stesso: l'esito sotto dira' se la sessione viene accettata)")
 
     item_id = _estrai_item_id_da_url(url_annuncio)
-    scraped = await scrape_vinted_listing(url_annuncio, includi_guardaroba=False)
+    scraped = await scrape_vinted_listing(url_annuncio)
     photo_id = scraped.get("cover_photo_id")
     if not item_id or not photo_id:
         righe += ["", f"❌ Non riesco a leggere item id / foto dall'annuncio (item_id={item_id}, "

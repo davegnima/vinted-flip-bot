@@ -6,7 +6,6 @@ import json
 import asyncio
 import traceback
 import zlib
-import importlib.util
 from datetime import datetime, timezone
 
 
@@ -40,8 +39,6 @@ from bot.categorie import scegli_materiale_per_ricerca
 SONDA_BANDA_CAMPIONI = int(os.environ.get("SONDA_BANDA_CAMPIONI", "10"))
 _sonda_campioni_fatti = [0]
 _sonda_task_attivi = set()
-BROTLI_DISPONIBILE = (importlib.util.find_spec("brotli") is not None
-                      or importlib.util.find_spec("brotlicffi") is not None)
 
 _REGEX_FOTO_F800 = re.compile(
     r'https://images\d?\.vinted\.net/t/[a-zA-Z0-9_]+/f800/'
@@ -436,7 +433,7 @@ async def _foto_da_api_vinted(url):
     return foto
 
 
-async def scrape_vinted_listing(url, includi_guardaroba=True):
+async def scrape_vinted_listing(url):
     result = {
         "photo_urls": [], "cover_photo_id": None, "size": None, "condition": None, "description": None,
         "created_at": None, "age_days": None, "catalog_id": None,
@@ -444,8 +441,7 @@ async def scrape_vinted_listing(url, includi_guardaroba=True):
         "seller_login": None, "seller_id": None,
         "seller_feedback_count": None, "seller_feedback_reputation": None,
         "seller_items_count": None, "seller_country": None,
-        "seller_top_items": [],
-        "seller_wardrobe_debug": "non tentato", "uploaded_text": None, "stato_vendita": None,
+        "uploaded_text": None, "stato_vendita": None,
         "preferiti": None,
     }
     try:
@@ -719,95 +715,7 @@ async def scrape_vinted_listing(url, includi_guardaroba=True):
         if country_m:
             result["seller_country"] = country_m.group(1)
 
-        if includi_guardaroba:
-            await _scrapa_guardaroba_venditore(result, url)
-
     except Exception as e:
         log.warning("Scraping Vinted fallito per %s: %s", url, e)
 
     return result
-
-
-async def _scrapa_guardaroba_venditore(result, url):
-    """Scarica il profilo venditore e riempie result["seller_top_items"] /
-    result["seller_wardrobe_debug"]. Separata da scrape_vinted_listing il
-    2026-09-28 (galleria il prima possibile): era una seconda richiesta
-    SEQUENZIALE dopo la pagina annuncio, e le foto aspettavano anche lei
-    (spesso con retry su 403) pur non servendole. Ora process_listing la
-    lancia in parallelo al download foto e la attende solo prima di Occhio,
-    l'unico che usa i primi articoli del venditore. Mai solleva: su errore
-    lascia i campi di default e annota seller_wardrobe_debug."""
-    try:
-        seller_id = result.get("seller_id")
-        seller_login = result.get("seller_login")
-        if seller_id or seller_login:
-            profilo_url = (
-                f"https://www.vinted.it/member/{seller_id}"
-                if seller_id
-                else f"https://www.vinted.it/member/{seller_login}"
-            )
-            try:
-                resp_profilo = await _vinted_get_con_retry(profilo_url, timeout=12, max_retries=2)
-                if resp_profilo is not None and resp_profilo.is_success:
-                    html_profilo = resp_profilo.text
-                    # SOLO questo pattern e' verificato su HTML reale:
-                    # data-testid="other_user_items-N--description-title">Brand</p>.
-                    # I fallback generici su "title":"..." erano un problema
-                    # serio: estraevano nomi di CATEGORIE del menu invece degli
-                    # articoli reali -- dato sbagliato ma plausibile, piu'
-                    # pericoloso di nessun dato perche' alimentava il giudizio
-                    # sul venditore con informazioni false.
-                    titoli = re.findall(
-                        r'data-testid="other_user_items-\d+--description-title">([^<]+)<',
-                        html_profilo
-                    )
-
-                    diagnostica_markup = ""
-                    if not titoli:
-                        idx = html_profilo.find("other_user_items")
-                        if idx == -1:
-                            diagnostica_markup = " [stringa 'other_user_items' assente dalla risposta HTTP grezza -- rendering lato client via JS, non catturabile senza browser headless]"
-                        else:
-                            estratto = html_profilo[max(0, idx - 50):idx + 150].replace("\n", " ")
-                            diagnostica_markup = f" [stringa presente, contesto: ...{estratto}...]"
-
-                    ELEMENTI_UI_DA_SCARTARE = {
-                        "vinted", "facebook", "instagram", "linkedin", "twitter", "x",
-                        "tiktok", "app store", "google play", "logo", "logo di vinted",
-                        "scarica l'app", "pinterest", "youtube", "whatsapp", "telegram",
-                    }
-                    titoli = [
-                        t for t in titoli
-                        if t.strip().lower() not in ELEMENTI_UI_DA_SCARTARE
-                        and len(t.strip()) >= 4
-                    ]
-
-                    visti = set()
-                    titoli_unici = []
-                    for t in titoli:
-                        t_clean = t.strip()
-                        if t_clean.lower() not in visti and not t_clean.startswith("http"):
-                            visti.add(t_clean.lower())
-                            titoli_unici.append(t_clean)
-                        if len(titoli_unici) >= 8:
-                            break
-                    result["seller_top_items"] = titoli_unici
-                    if not titoli_unici:
-                        result["seller_wardrobe_debug"] = f"pagina caricata (status {resp_profilo.status_code}, {len(html_profilo)} char) ma 0 titoli estratti.{diagnostica_markup}"
-                        # Declassato a DEBUG: sistematico su tutti i profili
-                        # (rendering lato client), inutile come INFO ricorrente.
-                        log.debug("Scraping guardaroba venditore: pagina caricata ma nessun titolo estratto per %s", profilo_url)
-                    else:
-                        result["seller_wardrobe_debug"] = f"ok: {len(titoli_unici)} titoli trovati"
-                else:
-                    result["seller_wardrobe_debug"] = "fetch fallito dopo i retry (nessuna risposta valida)"
-                    log.debug("Scraping guardaroba venditore fallito (nessuna risposta valida) per %s", profilo_url)
-            except Exception as e:
-                result["seller_wardrobe_debug"] = f"eccezione durante il parsing: {e}"
-                log.warning("Scraping guardaroba venditore fallito (eccezione): %s", e)
-        else:
-            result["seller_wardrobe_debug"] = "nessun seller_id/seller_login trovato nella pagina annuncio -- profilo mai contattato"
-            log.debug("Guardaroba venditore non tentato: ne' seller_id ne' seller_login trovati per %s", url)
-    except Exception as e:
-        result["seller_wardrobe_debug"] = f"eccezione: {e}"
-        log.warning("Scraping guardaroba venditore fallito (eccezione esterna): %s", e)
