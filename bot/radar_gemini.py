@@ -1,6 +1,6 @@
 """Controllo Gemini sui gialli e verdi del radar non moda (01/11, richiesta dell'utente).
 
-Perche': la moda gira in SOLO_SEMAFORO (niente Occhio/Cervello) e la quota gratuita di Gemini resta libera. Ai pochi avvisi del radar
+Perche': la moda non usa piu' Occhio/Cervello (tolti il 13/11) e la quota gratuita di Gemini resta libera. Ai pochi avvisi del radar
 che hanno gia' superato semaforo e Jev si aggiunge una lettura delle FOTO (scaricate dalla pagina come nella moda) piu' descrizione:
 Occhio e Cervello in UNA sola chiamata, con prompt per oggetti non moda (stato, completezza, danni, replica), non per capi di marca.
 Regole: Gemini NON calcola margine, ROI o decisione (restano del codice); conferma, mette in dubbio o scarta, e dà la SUA stima di rivendita

@@ -4,31 +4,7 @@ import html
 
 
 from bot.testo import _RE_ALT_PRODOTTO_VINTED, _RE_PRODOTTO_VINTED_CON_ID, _RE_TITOLO_PRODOTTO_VINTED, _normalizza_titolo_per_link
-# ---- fine import ----
-# Falsi positivi idiomatici: "dress" in "dress shirt"/"dress pants" e' un
-# aggettivo (capo elegante), non indica un abito. Senza questa esclusione,
-# il filtro categoria "abito" li fa passare per errore.
-ESCLUSIONI_FALSI_POSITIVI_CATEGORIA = {
-    "abito": ["dress shirt", "dress pants", "dress code", "dress shoes"],
-}
 
-# Rumore generico da scartare sempre, indipendentemente dalla categoria:
-# taglie bambino (non comparabili a un capo adulto), collab diffusion
-# economiche (es. "for Target"), e frasi che indicano che il brand e' citato
-# solo come RIFERIMENTO/ispirazione, non come brand reale del prodotto.
-RUMORE_GENERICO_COMP = [
-    # taglie/target bambino
-    "girls age", "boys age", "kids size", "toddler", "baby size",
-    "girl's", "girls'", "girls ", " girls", "boy's", "boys'", "boys ", " boys",
-    "kids ", " kids", "kids logo", "kids cotton",
-    "years old", "age 4", "age 6", "age 8", "age 10", "age 12",
-    # collab diffusion economiche
-    "for target", "x target", "for h&m", "x h&m",
-    # brand citato solo come riferimento/ispirazione, non prodotto reale
-    "similar to", "similar graphic", "similar style to", "inspired by",
-    "reference to", "in the style of", "style of", "style inspired",
-    "homage to", "tribute to",
-]
 
 # Per ogni brand monitorato, le sue sottolinee/collaborazioni da escludere
 # SEMPRE dai comp quando si valuta la linea principale -- condividono il
@@ -58,34 +34,6 @@ BRAND_SOTTOLINEE_DA_ESCLUDERE = {
     "versace": ["versace jeans", "versus versace", "versace collection"],
     "vivienne westwood": ["vivienne westwood anglomania kids"],
 }
-
-
-# Valori di linea_o_era che NON sono un'etichetta letterale spendibile come
-# testo di ricerca (una descrizione di epoca/generica, non qualcosa che
-# compare scritto su un'etichetta o in un titolo Vinted) -- esclusi
-# dall'arricchimento della ricerca comp sotto per non aggiungere rumore.
-LINEA_O_ERA_NON_UTILI_PER_RICERCA = {"mainline", "non determinabile", "non_determinabile"}
-
-
-def _e_linea_o_era_utile_per_ricerca(linea_o_era):
-    """True se linea_o_era e' un'etichetta letterale spendibile in una query
-    di ricerca (es. "JEAN'S PAUL GAULTIER", "JPG.JEAN'S", "Veilance", "Linea
-    10"), False se e' una descrizione di era/epoca generica (es. "Era Lang
-    1986-2005") o un valore segnaposto ("mainline", "non determinabile") che
-    aggiungerebbe solo rumore invece di aiutare la ricerca."""
-    if not linea_o_era or not isinstance(linea_o_era, str):
-        return False
-    testo = linea_o_era.strip()
-    if not testo or testo.lower() in LINEA_O_ERA_NON_UTILI_PER_RICERCA:
-        return False
-    # Una descrizione di era contiene quasi sempre un anno a 4 cifre
-    # ("1986-2005", "post-2006", "pre-2012"): utile per il Cervello come
-    # informazione (resta in linea_o_era_rilevata), ma inutile come testo di
-    # ricerca letterale -- nessuna etichetta reale scrive "post-2006" su un
-    # capo, quindi cercarlo alla lettera non trova nulla.
-    if re.search(r"\b(19|20)\d{2}\b", testo):
-        return False
-    return True
 
 
 def campione_pagina_vinted(html_content, lunghezza=900):

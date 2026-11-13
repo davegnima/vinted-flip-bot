@@ -273,7 +273,6 @@ def riga_scarto_preavviso(motivo, msg_id=None, interrotta=False, riavvio=False):
     return testa + (f"\n[messaggio originale nell'altra chat]({link})" if link else "")
 
 
-RIGA_JEV_VERIFICATO = "ℹ️ Legit check = indizio dalle foto, non certificazione"
 RIGA_SOLO_SEMAFORO = "🚦 Avviso dal solo semaforo (stima rapida, senza AI): autenticita' non verificata"
 
 

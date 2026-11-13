@@ -108,7 +108,6 @@ GEMINI_MODELLI_RISERVA = [
         "GEMINI_MODEL_FALLBACK", "gemini-3.1-flash-lite").split(",")
     if m.strip()
 ]
-GEMINI_MODEL_FALLBACK = GEMINI_MODELLI_RISERVA[0] if GEMINI_MODELLI_RISERVA else ""
 # CASCATA DI QUOTE (richiesta dall'utente il 2026-10-03): ogni modello Gemini ha la sua quota giornaliera per key.
 # Con GEMINI_CASCATA="gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite" (dal migliore al piu' leggero)
 # le chiamate sulle foto partono dal primo modello e, quando la quota giornaliera finisce su TUTTE le key, scalano al

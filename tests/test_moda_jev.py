@@ -648,12 +648,6 @@ def test_condizioni_da_json_catalogo():
     assert condizioni_da_json_catalogo("non json") == {}
 
 
-def test_ricerca_classica_stati_larghi():
-    from bot.vinted_search import build_vinted_search_url
-    assert build_vinted_search_url("zimmermann", "abito", None, 10, "Ottime")[0].endswith("&status_ids[]=1&status_ids[]=2&status_ids[]=3")
-    assert build_vinted_search_url("marchio inesistente", "abito", None, 10, "Buone")[0].endswith("&status_ids[]=1&status_ids[]=2&status_ids[]=3")
-
-
 def test_verifica_una_sola_richiesta_e_corregge_il_prezzo(monkeypatch):
     """11/11 (utente): una sola richiesta con 1, 2, 3 concatenati; annuncio ottime con comparabili buoni: la rivendita sale (10% sui comparabili)."""
     import asyncio

@@ -49,7 +49,6 @@ from bot.radar import RADAR_CHAT_IDS, RADAR_RISPOSTA_GRUPPO, RADAR_CANCELLA_SCAR
 from bot.costanti import (
     BRAND_BLOCKLIST,
     CATEGORIA_KEYWORDS,
-    CATEGORIA_TERMINE_EN,
     IMAGE_DOWNLOAD_HEADERS,
     MATERIALI_PREGIATI_PRIORITA,
     MATERIALI_TRADUZIONI,
@@ -145,7 +144,6 @@ from bot.fair_value import (
     _sottolinea_da_testo,
     check_skip_fair_value,
     fv_carica_appreso,
-    fv_classifica_campione,
     fv_rapporto,
     fv_registra_rapida,
     fv_registra_umana,
@@ -166,7 +164,6 @@ from bot.gemini_stato import (
     GEMINI_CASCATA,
     GEMINI_CASCATA_OCCHIO,
     GEMINI_MODELLI_RISERVA,
-    GEMINI_MODEL_FALLBACK,
     MAX_RETRIES_GEMINI_IN_BLACKOUT,
     RAFFREDDAMENTO_GEMINI_SECONDI,
     RAFFREDDAMENTO_MODELLO_INESISTENTE_SECONDI,
@@ -369,10 +366,6 @@ from bot.gemini_api import (
 from bot.comps_filtri import (
     _articoli_vinted,
     BRAND_SOTTOLINEE_DA_ESCLUDERE,
-    ESCLUSIONI_FALSI_POSITIVI_CATEGORIA,
-    LINEA_O_ERA_NON_UTILI_PER_RICERCA,
-    RUMORE_GENERICO_COMP,
-    _e_linea_o_era_utile_per_ricerca,
     _estrai_articoli_da_alt_vinted,
     _estrai_mappa_url_comp_vinted,
 )  # noqa: F401  (re-export)

@@ -457,17 +457,6 @@ async def telegram_edit_caption(chat_id, message_id, caption, url_annuncio=None)
     return bool(resp is not None and resp.is_success)
 
 
-async def telegram_send_con_tastiera(chat_id, testo, tastiera, reply_to=None, disable_notification=True):
-    """Messaggio con una tastiera inline arbitraria (lista di righe di bottoni: url o callback_data). Ritorna il message_id o None."""
-    payload = {"chat_id": chat_id, "text": testo[:4000], "disable_web_page_preview": True,
-               "disable_notification": disable_notification, "reply_markup": {"inline_keyboard": tastiera},
-               **_parametri_reply(reply_to)}
-    resp = await _telegram_post("sendMessage", json={**payload, "parse_mode": "Markdown"})
-    if resp is not None and not resp.is_success:
-        resp = await _telegram_post("sendMessage", json=payload)
-    return _primo_message_id(resp)
-
-
 async def telegram_edit_con_tastiera(chat_id, message_id, testo, tastiera=None):
     """Riscrive testo e tastiera di un messaggio del bot (tastiera None o [] = nessun bottone). True se riuscito o invariato."""
     if not message_id:

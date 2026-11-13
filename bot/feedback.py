@@ -6,18 +6,15 @@ qualunque scheda o verdetto del bot ("f", "o", "o 90", "90"). Ogni input finisce
 log `FEEDBACK |` con il contesto dell'annuncio: sono le etichette VERE con cui tarare Occhio, Cervello e semaforo."""
 import os
 import re
-import time
 import asyncio
 import traceback
 
 from bot.logger import log
 from bot import db
-from bot.testo import _escapa_markdown_legacy as esc
 from bot.telegram_api import (telegram_edit_con_tastiera, telegram_get_updates, telegram_answer_callback,
                               telegram_edit_tastiera, telegram_send_richiesta_prezzo, righe_feedback)
 
 FEEDBACK_ATTIVO = os.environ.get("FEEDBACK_ATTIVO", "1").strip() != "0"
-FEEDBACK_MAX_GIORNO = int(float(os.environ.get("FEEDBACK_MAX_GIORNO", "60")))   # controlli proposti al giorno
 GIUDIZI = {"f": "falso", "o": "originale", "n": "non_so"}
 PREZZI_RAPIDI = (30, 40, 50, 60, 80, 100, 120, 150, 200)
 _RE_NUMERO = re.compile(r"^\d{1,5}(?:[.,]\d{1,2})?$")
@@ -26,7 +23,6 @@ _PAROLE = {
     "o": "o", "orig": "o", "originale": "o", "legit": "o", "autentico": "o",
     "?": "n", "nonso": "n",
 }
-_proposti = {"giorno": "", "n": 0, "item": set()}
 
 
 def parse_risposta(testo):
@@ -49,23 +45,6 @@ def parse_risposta(testo):
     return giudizio, (None if giudizio == "falso" else prezzo)
 
 
-def _ammesso(item_id):
-    oggi = time.strftime("%Y-%m-%d", time.gmtime())
-    if _proposti["giorno"] != oggi:
-        _proposti.update({"giorno": oggi, "n": 0, "item": set()})
-    if item_id in _proposti["item"] or _proposti["n"] >= FEEDBACK_MAX_GIORNO:
-        return False
-    _proposti["item"].add(item_id)
-    _proposti["n"] += 1
-    return True
-
-
-def tastiera_giudizio(item_id):
-    return [[{"text": "✅ Originale", "callback_data": f"fb|{item_id}|o"},
-             {"text": "❌ Falso", "callback_data": f"fb|{item_id}|f"},
-             {"text": "❓ Non so", "callback_data": f"fb|{item_id}|n"}]]
-
-
 def tastiera_prezzo(item_id, fv=None):
     prezzi = list(PREZZI_RAPIDI)
     if fv:
@@ -80,28 +59,6 @@ def tastiera_prezzo(item_id, fv=None):
         righe.append(riga)
     righe.append([{"text": "Salta il prezzo", "callback_data": f"fp|{item_id}|0"}])
     return righe
-
-
-def testo_controllo(ctx, url, motivo):
-    """Testo Markdown del messaggio di controllo autenticita'. Pura."""
-    righe = [f"🔎 *Controllo autenticità* · 🏷️ {esc(str(ctx.get('brand') or 'n/d'))}"]
-    if ctx.get("titolo"):
-        righe.append(esc(str(ctx["titolo"])))
-    pezzi = []
-    if ctx.get("prezzo") is not None:
-        pezzi.append(f"💶 {ctx['prezzo']:.0f} €")
-    if ctx.get("sem"):
-        pezzi.append(str(ctx["sem"]))
-    if ctx.get("fv"):
-        pezzi.append(f"fair value ~{ctx['fv']} €")
-    if pezzi:
-        righe.append(esc(" · ".join(pezzi)))
-    if motivo:
-        righe.append("❗ " + esc(str(motivo)[:220]))
-    if url:
-        righe.append(f"[vedi su Vinted]({url})")
-    righe.append("Cosa dici tu? (puoi anche rispondere con «f», «o» o «o 90»)")
-    return "\n".join(righe)
 
 
 def _base_testo(testo):
