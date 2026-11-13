@@ -1278,7 +1278,11 @@ async def on_comando_venduto(event):
 
 def _testo_report_radar(ore=24):
     dal = time.time() - ore * 3600
-    righe, candidati, velocita = archivio_radar.report_giornaliero(db.leggi_eventi("radar_v2", dal), db.leggi_eventi("tracciato_radar", dal), ore)
+    eventi_esito = db.leggi_eventi("radar_esito", dal)
+    righe, candidati, velocita = archivio_radar.report_giornaliero(db.leggi_eventi("radar_v2", dal), db.leggi_eventi("tracciato_radar", dal), ore,
+                                                                   eventi_esito=eventi_esito)
+    gv, inviati, scartati, senza_esito = archivio_radar.funnel(righe, eventi_esito, ore)
+    log.info("REPORT RADAR | funnel | gv=%s inviati=%s scartati=%s senza_esito=%s", gv, inviati, scartati, senza_esito)
     for r in righe:
         log.info("REPORT RADAR (%s h) | %s | tot=%s verdi=%s gialli=%s gv_venduti=%s/%s scarto=%s", ore, r["nome"], r["tot"], r["verdi"], r["gialli"], r["gv_venduti"], r["gv"], r["motivo"])
     if candidati:
