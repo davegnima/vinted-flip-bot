@@ -683,3 +683,15 @@ def test_verifica_una_sola_richiesta_e_corregge_il_prezzo(monkeypatch):
     ris_ottime = asyncio.run(mj.verifica({**base, "condition": "Ottime"}, b"img", [b"img"]))
     assert ris_ottime["rivendita"] > ris_buone["rivendita"]
     assert ris_ottime["rivendita"] / ris_buone["rivendita"] <= 1.10 + 0.01  # la rivendita mista pesa anche semaforo e altro
+
+
+def test_prompt_gemini_moda_ha_le_regole_archiviate():
+    """13/11: il prompt di Gemini moda porta le regole di prezzo del vecchio Cervello e quelle di autenticita' del vecchio Occhio,
+    senza dipendere da bot/prompts.py (archiviato)."""
+    from bot import moda_gemini, prompt_moda
+    p = moda_gemini.SYSTEM_PROMPT
+    for pezzo in ("M MISSONI", "LORO PIANA MAGLIERIA", "BRUNELLO CUCINELLI MAGLIERIA", "ANCORAGGIO PREZZI", "FILTRO OUTLIER",
+                  "CONTROLLO DEL PREGIUDIZIO", "Etichetta tagliata", "Pineider"):
+        assert pezzo in p, pezzo
+    for vecchio in ("note_analista", "Resellbot", "materiale_confermato", "comp_candidati"):
+        assert vecchio not in prompt_moda.REGOLE_PREZZO, vecchio

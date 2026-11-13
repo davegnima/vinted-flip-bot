@@ -1,0 +1,79 @@
+"""Regole del controllo Gemini sulla moda (bot/moda_gemini.py): il meglio dei prompt di Occhio e Cervello, archiviati il 13/11.
+
+REGOLE_PREZZO: testo del vecchio Cervello (linee ed ere, liquidita', calibrazioni per brand, ancoraggio prezzi, filtro outlier), copiato
+alla lettera; tolti solo i paragrafi legati a campi che non esistono piu' (Resellbot, note_analista, materiale_confermato).
+REGOLE_AUTENTICITA: le regole dell'Occhio che il prompt di Gemini non aveva. Le calibrazioni per brand vengono da dati reali: non
+cambiarle senza motivo."""
+
+REGOLE_AUTENTICITA = """CONTROLLO DEL PREGIUDIZIO DA PREZZO BASSO (regole del vecchio Occhio, casi reali)
+- Prima di scrivere "replica" con confidenza alta chiediti: lo stesso identico dettaglio (etichetta, font, cucitura) ti sembrerebbe sospetto se il prezzo fosse 200 EUR invece di 6? Se la risposta e' "forse no" il giudizio e' contaminato dal prezzo: scendi a "dubbia" e scrivi in `da_chiedere` cosa serve vedere. Caso reale: un Dries Van Noten autentico a 5,95 EUR giudicato falso per un font "grossolano" che un controllo ha smentito.
+- "replica" richiede in `indizi` e in `motivo` la discrepanza ESATTA: quale font e in cosa differisce, proporzioni del logo, cuciture irregolari, etichetta di lavaggio con codice o paese incoerente, hardware di qualita' sbagliata. Mai "discrepanze evidenti" senza dettaglio: quel testo arriva all'utente cosi' com'e'.
+- Prada e Miu Miu: un codice o un numero di serie leggibile da solo non prova nulla (non puoi verificarlo). Conta che il cartellino interno abbia layout, font e fattura tipici del brand: lettering lineare senza grazie, spaziatura regolare, materiale coerente. Se manca, non si legge o non convince: al massimo "dubbia" e chiedi la foto del cartellino interno in `da_chiedere`, anche se l'esterno e' impeccabile (e' il difetto piu' comune dei falsi ben fatti).
+- Etichetta tagliata o recisa (resti del cartellino al collo, marchio mozzato, striscia tagliata): su Max Mara e' il segno di un capo da outlet. Scrivi "etichetta tagliata (outlet)" in `indizi` e tieni bassa la rivendita.
+- Brand che producono anche in Asia o in vari Paesi (Acne Studios: Portogallo, Italia, Cina; Dries Van Noten: Europa e India per i ricami; Jacquemus, Courreges, The Row, Toteme): il paese da solo non e' un segnale, valutalo con il resto.
+- Etichetta del solo tessuto: se dentro il capo c'e' solo l'etichetta di un lanificio ("Ing. Loro Piana & C.", "Super 110's", Zegna, Vitale Barberis Canonico, Cerruti) e nessuna etichetta, logo o bottone di chi ha confezionato il capo, NON e' un capo di quel brand: "altra_marca" se si legge il vero produttore (caso reale: giacca Pineider venduta come Loro Piana), altrimenti "non_verificabile", e la rivendita e' quella di un capo sartoriale senza marca.
+- Difetti: quelli minori (macchia lavabile, pilling) sono accettabili su capi sotto 15 EUR. Quelli strutturali non sono tutti uguali: un piccolo foro isolato su un pezzo d'archivio resta vendibile a forte sconto, piu' strappi o un'area ampia compromessa no."""
+
+REGOLE_PREZZO = """# LINEE E ERE: MAI mischiare nei comp la colonna ✓ con la ✗
+| Brand | ✓ Vale pieno | ✗ Vale meno / rischio fake |
+|---|---|---|
+| YSL | Vintage pre-2012, solo tailoring (blazer/cappotti/abiti) | Camicie/bluse (sature); borse moderne Loulou/Sac de Jour/Kate/Niki |
+| Alexander McQueen | Alexander McQueen | McQ (frazione del valore) |
+| Chloé | Chloé | See by Chloé |
+| Stella McCartney | Mainline | Collab Adidas/activewear |
+| Marni | Mainline | "Marni for H&M" / "Marni x H&M" (collab 2012, mass-market, non mainline) |
+| Helmut Lang | Era Lang 1986-2005 (archivio) | Era Link Theory dal 2006 (commerciale) |
+| Maison Margiela | Linee 1/10/0/22 | MM6 |
+| Missoni | Pattern zigzag mainline (archivio) | Missoni Sport; M Missoni — sottolinea diffusion, MAI comp Missoni mainline, tetto esplicito anche per gli abiti strutturati (vedi calibrazione sotto) |
+| Vivienne Westwood | Gold Label (couture, alto); Anglomania (NON è "economica" — ricercatissima, top anche basic €120-250+ usati, pezzi statement/metallici valgono di più) | Red Label / collab retailer |
+| Max Mara | Mainline | Weekend/Studio/Sportmax (salvo modello iconico o materiale pregiato) |
+| Moschino | Couture/Mainline | Love Moschino |
+| Versace | Mainline | Versace Jeans Couture / Versus |
+| Armani | Giorgio / Collezioni | Emporio / Exchange |
+| Arc'teryx | Veilance — SOLO se etichetta dice esplicitamente "VEILANCE" | Mainline outdoor/tecnico (se non vedi "Veilance" da nessuna parte, tratta come mainline) |
+| Yohji Yamamoto | Yohji Yamamoto / Y's / S'yte / Ground Y / Wildside | Y-3 (collab Adidas, streetwear di massa — scarta SEMPRE dai comp, anche se il titolo cita "Yohji Yamamoto") |
+| Junya Watanabe, Undercover, Thom Browne, Alaïa, Visvim, Kapital, 45RPM, Carol Christian Poell, Haider Ackermann, The Row, Boris Bidjan Saberi, sacai, Kiko Kostadinov | Mono-linea, rischio fake storicamente basso: valuta SEMPRE a pieno prezzo | — |
+
+**JPG — due diffusion facilmente confuse, controlla il testo ESATTO dell'etichetta:**
+"JEAN'S PAUL GAULTIER" (apostrofo dopo "Jean") → tetto rivendita realistico **€30**, non stimare sopra indipendentemente da stampe/loghi. "JPG.JEAN'S" o "JPG JEAN'S" (spesso "Collection N°...", mesh/stampe Y2K) → linea diversa, nessun tetto, valuta sui comp reali. Etichetta non leggibile → non assumere quale sia, abbassa Confidenza invece di applicare il tetto a caso. Tailoring JPG mainline (giacche/cappotti) vale di più, segue regole proprie.
+
+**Collaborazioni con altri brand nei comp** (es. Fred Perry x Raf Simons, Y-3, See by Chloé): mai usarle come comp mainline senza dirlo. O le escludi esplicitamente dichiarandolo in `rivendita_base`, o — se il capo IN ANALISI è esso stesso quella collab — usi SOLO comp della stessa collab.
+
+# LIQUIDITÀ PER SEGMENTO (calibra la stima e la confidenza)
+Archivio eclettico (Missoni, JPG, Pucci, Westwood, Mugler, Montana, Marni, Courrèges, Miu Miu): target 25-45, vendita lenta ma prezzo alto per pezzi iconici, valorizza provenienza/collezione. Quiet luxury 90s (Helmut Lang, Jil Sander, Margiela, Bottega, Max Mara): target 28-45, valorizza decade/collezione specifica, coats iconici molto più liquidi dei basic. Avantgarde (Rick Owens, Yohji, Dries, Ann Demeulemeester, Raf Simons, Loewe, Cucinelli, YSL, Chloé, Stella McCartney, Totême): community insider, alta disponibilità a premium con provenienza documentata. Giapponese/artigianale (Visvim, Kapital, CCP, Haider, The Row, Alaïa, BBS, Sacai, Kiko, Junya, Thom Browne, McQueen, Undercover): community verticale molto informata, taglie piccole 46-48 IT/S-M più liquide.
+
+**M MISSONI — CALIBRAZIONE SPECIFICA (sovrastima ricorrente in produzione), segnalata dall'utente il 2026-09-21.** M Missoni è la sottolinea diffusion di Missoni, non l'archivio zigzag mainline — condivide il nome nei titoli ma è una fascia di prezzo strutturalmente diversa, esattamente come MM6/Margiela o See by Chloé/Chloé. La ricerca comp confonde spesso le due etichette (annunci "Missoni" generici che sono in realtà M Missoni, o viceversa), gonfiando la stima se non correggi esplicitamente: MAI usare un comp Missoni mainline (pattern zigzag pieno, archivio) per stimare un capo M Missoni, in nessun caso. Tetto di rivendita realistico per M Missoni: **maglieria/basics (t-shirt, maglioni semplici, accessori piccoli) €25-45**; **abiti/capispalla strutturati con pattern zigzag riconoscibile €50-90** — resta comunque una FRAZIONE del corrispondente Missoni mainline, mai ancorare alla fascia alta senza un comp M Missoni concordante reale (non un comp Missoni mainline scambiato per tale). Se il tuo prezzo finale per un capo M Missoni supera €90, giustifica esplicitamente in `rivendita_base` perché è un'eccezione (pezzo iconico documentato, collezione rara), non limitarti a citare un comp che potrebbe essere mainline mal classificato.
+
+**LORO PIANA MAGLIERIA (maglioni, cardigan, pullover, girocolli, dolcevita) — CALIBRAZIONE SPECIFICA, segnalata dall'utente il 2026-09-21 con dati reali di vendita.** Questo segmento ha un bias di sovrastima ricorrente in produzione: comp ASK trattati come prezzo di vendita realistico su una categoria dove il mercato reale è molto più debole di quanto gli ASK suggeriscano. Dato reale dell'utente: un proprio maglione Loro Piana 100% cashmere, condizioni ottime, resta invenduto a €200 da tempo. Se il capo cashmere top di gamma dell'utente non si vende a €200, un capo generico non iconico (mainline base, non archivio/collezione documentata) vale strutturalmente meno. Target realistico per maglieria Loro Piana USATA, non iconica: **cashmere 100% €90-160**, **lana/misti (non cashmere) €60-110** — mai ancorare la stima alla fascia alta di questi range senza un motivo esplicito (collezione rara, condizioni come-nuovo documentate, più comp concordanti). Un difetto anche lieve (scucitura, pilling, alone) spinge verso il fondo del range o sotto, non basta lo sconto standard 20-30% dell'ANCORAGGIO PREZZI applicato meccanicamente — sii ESPLICITAMENTE più conservativo qui che sugli altri brand quiet-luxury. Se il tuo prezzo finale per un capo di maglieria Loro Piana supera €160, giustifica in `rivendita_base` perché questo pezzo è un'eccezione al range, non limitarti a citare il comp scontato.
+
+**BRUNELLO CUCINELLI MAGLIERIA (maglioni, cardigan, pullover, polo, maglioncini) — CALIBRAZIONE SPECIFICA, 2026-10-03.** Stesso bias di sovrastima del Loro Piana: il 2026-10-02 il bot ha stimato €160-180 per maglioni usati comprati a €20 con soli 1-2 comp, mentre la tabella interna del bot per questa categoria dà €44-59 (mediana) e €99 (fascia alta). Target realistico per maglieria Brunello Cucinelli USATA, non iconica: **cashmere/seta €70-120**, **cotone/lana/misti €40-75**, **maniche corte/maglioncini leggeri €35-70**. Non ancorare la stima alla fascia alta senza un motivo esplicito (collezione rara, come-nuovo documentato, più comp concordanti). Se il tuo prezzo finale per un capo di maglieria Brunello Cucinelli supera €120, giustifica in `rivendita_base` perché è un'eccezione al range.
+
+**Eccezioni vere, non stime gonfiate.** L'utente cerca proprio i venditori che prezzano male, quindi un target molto sopra il prezzo d'acquisto e' legittimo. Ma se il tuo prezzo target supera 3 volte il prezzo d'acquisto con meno di 3 comp validi, spiega in `rivendita_base` quali comp o quale caratteristica concreta del capo lo giustificano (modello iconico, linea rara, comp concordanti): senza motivo specifico resta nella fascia mediana dei comp.
+
+**Taglia**: standard/centrale (donna IT 40-44, uomo IT 48-52) = bacino ampio, alza liquidità. Estrema (donna <38 o >46, uomo <46 o >54) = bacino ridotto, abbassa `rivendita_confidenza`, dichiaralo in `rivendita_base`. Taglia ignota = dichiara il limite, non ignorarlo.
+
+**Stagionalità**: capo fuori stagione (invernale pesante in estate, o viceversa) = STESSO valore ma tempo di vendita più lungo — mai abbassare il prezzo per questo. Dichiara il mese consigliato per pubblicare (capispalla invernali da settembre, capi estivi da aprile).
+
+
+# MATERIALE DEI COMP DEVE CORRISPONDERE AL CAPO
+Il materiale cambia il valore quasi quanto la linea (es. Cucinelli: cashmere puro >> lana/cotone). Materiale noto → scarta o segnala esplicitamente i comp di materiale diverso. Materiale IGNOTO → il sistema applica un tetto piu' prudente in automatico (75* percentile dei comp invece del piu' caro), ma solo se la tua stima lo supera davvero.
+
+# ANCORAGGIO PREZZI — la regola più violata in produzione, massima attenzione
+Tutti i comp Vinted sono **ASK** (annunci attivi, NON necessariamente venduti, spesso sovrastimati rispetto al prezzo di vendita reale) — applica SEMPRE uno sconto prudente del 20-30% sul comp ASK scelto prima di trattarlo come stima di vendita realistica, mai citare un ASK come se fosse il prezzo di vendita atteso senza quello sconto.
+**Controllo numerico obbligatorio, ogni volta prima di scrivere il prezzo**: la tua stima di vendita non può MAI superare il comp ASK più alto (già scontato 20-30%, o il comp SOLD più alto se stai usando quello come riferimento) — se lo supera, non è "prudente", è un errore: abbassala.
+
+**PROCEDURA OBBLIGATORIA DI FILTRO OUTLIER, PRIMA di scrivere qualsiasi stima** — violazione osservata in produzione: un capo di categoria/prezzo minore (es. un singolo capo sartoriale) valutato usando come comp un capo di categoria completamente diversa e molto più costosa (es. un abito completo o un capospalla) comparso per errore nella stessa ricerca, ignorando tutti gli altri comp coerenti disponibili.
+1. Elenca TUTTI i prezzi comp ricevuti per la STESSA categoria di capo (pantalone con pantalone, giacca con giacca, mai giacca con abito completo o capospalla con capo singolo).
+2. Ordina questi prezzi e individua la mediana.
+3. **Scarta ogni comp che supera 3× la mediana o è inferiore a 1/3 della mediana** — quasi sempre appartiene a un capo diverso (categoria, materiale o edizione), a un annuncio ASK irrealistico, o a un risultato di ricerca fuori tema finito per errore nell'elenco.
+4. Calcola la stima SOLO sui comp rimasti dopo il filtro. Se dopo il filtro restano meno di 2 comp validi, dichiaralo esplicitamente in `rivendita_base` ("comp insufficienti dopo filtro outlier") e resta sulla fascia bassa/prudente, mai su un singolo comp isolato per giustificare una stima alta.
+Esempio reale di violazione da evitare: comp per un capo sartoriale con prezzi €11, €40, €47, €75, €160, €170, €499, €600 (quest'ultimo per un ABITO COMPLETO, non il capo singolo in analisi) → mediana ≈ €61, il €499 e il €600 vanno scartati (>3× mediana) insieme all'€11 (<1/3 mediana); la stima corretta si basa solo su €40-170, non su €600.
+**Violazione reale osservata (2026-09-21)**: cardigan Loro Piana in lana, con difetto, valutato su UN SOLO comp — €300, esplicitamente etichettato "Nuovo senza cartellino" — arrivando comunque a una stima di vendita di €180. Doppio errore: (a) un comp NWT (nuovo/mai indossato) NON è comparabile a un capo usato, l'ask NWT è sistematicamente più alto del prezzo di vendita realistico di un capo già indossato — se l'unico comp disponibile è NWT, applica uno sconto aggiuntivo oltre il 20-30% base (tratta come se fosse un ulteriore outlier alto, non come riferimento diretto), o cerca esplicitamente comp di capi USATI prima di rispondere; (b) un solo comp, punto 4 qui sopra, richiede di dichiararlo e restare prudenti — non è successo. Prima di finalizzare una stima basata su un singolo comp, controlla sempre se quel comp è NWT/nuovo e se rifletta davvero le condizioni del capo in analisi.
+
+Range di comp molto ampio (es. €25-200 per lo stesso brand) = quasi sempre stili diversi mescolati (basic vs lavorato/decorato) — usa solo i comp dello stesso stile del capo in analisi, mai la media di tutto il range.
+Nessun comp specifico per il modello, solo per il brand in generale → usa la fascia mediana-bassa trovata, mai quella ottimistica. Se la tua stima finale supera nettamente ogni prezzo SOLD citato, stai ragionando sul prezzo retail, non sul second-hand — correggi al ribasso.
+
+# SOTTOLINEA NEI COMPARABILI
+Se l'etichetta mostra una sottolinea o una linea specifica (M Missoni, JPG.JEAN'S, Weekend Max Mara, MM6...) non ancorare il prezzo ai comparabili del solo brand madre: un comparabile mainline e' quasi sempre piu' caro e fa sovrastimare. Usa solo i comparabili che nominano la stessa linea; se non ce ne sono, resta nella fascia bassa e abbassa `rivendita_confidenza`.
+Codici prodotto o diciture rare ("prototipo", "edizione limitata") non sono verificabili: se non compaiono nei comparabili non usarli per giustificare la stima.
+Il materiale e' noto quando compare nel titolo, nella descrizione o sull'etichetta letta in foto (es. titolo "Kaschmir Pullover" = cashmere). Se non compare da nessuna parte resta prudente."""
