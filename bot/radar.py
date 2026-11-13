@@ -28,6 +28,7 @@ from bot import db
 from bot.jev import descrizione_jev
 from bot import tracciamento as tr
 from bot import radar_matrice as rm
+from bot.radar_famiglie import modello_famiglia
 from bot.vinted_scrape import scrape_vinted_listing
 from bot.logger import log
 from bot.config import TELEGRAM_OWNER_CHAT_ID, TELEGRAM_ALERT_CHAT_ID
@@ -607,23 +608,29 @@ def _frase_senza_simili(v2):
     return frase
 
 
-def perche_non_inviato(v2):
-    """None se l'avviso va mandato, altrimenti la frase che dice perche' no (per il gruppo e per i log). Pura."""
+def esito_non_inviato(v2):
+    """(tipo, frase) di perche' l'avviso non va mandato, (None, None) se va mandato. Il tipo e' quello di `radar_esito`
+    (scartato_jev, jev_conf_bassa, scartato_verifica, altro). Pura."""
     if not v2 or v2.get("semaforo") not in RADAR_SEMAFORI:
         if v2 and v2.get("semaforo") == "rosso":
-            return "semaforo rosso: margine o ROI sotto soglia"
-        return "stima non disponibile: " + (_motivo_leggibile(v2.get("motivo")) if v2 else "annuncio non valutato")
+            return "scartato_verifica", "semaforo rosso: margine o ROI sotto soglia"
+        return "altro", "stima non disponibile: " + (_motivo_leggibile(v2.get("motivo")) if v2 else "annuncio non valutato")
     marca = (v2.get("brand") or "").strip().lower()
     if marca and RADAR_BRAND_SILENZIO and marca.startswith(RADAR_BRAND_SILENZIO):
-        return f"brand {v2.get('brand')} senza vendite veloci nei dati: avviso silenziato"
+        return "altro", f"brand {v2.get('brand')} senza vendite veloci nei dati: avviso silenziato"
     if RADAR_JEV_RICHIESTO and not (v2.get("jev") == "affare_vero" and (v2.get("jev_conf") or 0) >= RADAR_JEV_CONF_MIN):
         if v2.get("jev") == "affare_vero":
-            return f"Jev dice affare ma con confidenza {v2.get('jev_conf')} sotto la soglia {RADAR_JEV_CONF_MIN}"
-        return f"Jev non lo da' come affare ({v2.get('jev_motivo_frase') or v2.get('jev') or 'nessun giudizio'})"
+            return "jev_conf_bassa", f"Jev dice affare ma con confidenza {v2.get('jev_conf')} sotto la soglia {RADAR_JEV_CONF_MIN}"
+        return "scartato_jev", f"Jev non lo da' come affare ({v2.get('jev_motivo_frase') or v2.get('jev') or 'nessun giudizio'})"
     ver = v2.get("verificata")
     if RADAR_VERIFICA and RADAR_VERIFICA_SCARTA and ver and ver.get("semaforo") not in RADAR_SEMAFORI:
-        return f"comparabili verificati: solo {ver.get('n_stesso')} stesso modello e {ver.get('n_simili') or 0} simili su {ver.get('n_giudicati')}"
-    return None
+        return "scartato_verifica", f"comparabili verificati: solo {ver.get('n_stesso')} stesso modello e {ver.get('n_simili') or 0} simili su {ver.get('n_giudicati')}"
+    return None, None
+
+
+def perche_non_inviato(v2):
+    """None se l'avviso va mandato, altrimenti la frase che dice perche' no (per il gruppo e per i log). Pura."""
+    return esito_non_inviato(v2)[1]
 
 
 def _da_mandare(v2):
@@ -719,20 +726,21 @@ except ValueError:
     RADAR_GEMINI_RAPPORTO_MIN = 0.5
 
 
-async def invia_verdetto_v2(parsed, url, v2, foto=None, rivaluta=None, esito=None):
+async def _invia_verdetto_v2_interno(parsed, url, v2, foto=None, rivaluta=None, esito=None):
     """Manda al chat degli avvisi i verdetti v2 in RADAR_SEMAFORI (verde con suono, giallo silenzioso), subito dopo
     l'analisi: prima l'invio passava solo dal vecchio ramo e i gialli non arrivavano mai. Anti-duplicato per annuncio.
     Ritorna True solo se l'avviso e' stato consegnato. Se `esito` e' un dict lo riempie con `inviato`, `motivo` (perche' no,
     in italiano) e `v2` (il verdetto finale, rivalutato se Gemini ha cambiato modello): il gruppo non deve piu' dire "Inviato" a vuoto (1/11)."""
     esito = esito if esito is not None else {}
     v2 = _declassa_senza_simili(v2)
-    esito.update({"inviato": False, "motivo": None, "v2": v2, "scartato": False})
+    esito.update({"inviato": False, "motivo": None, "v2": v2, "scartato": False, "tipo": "altro"})
     if not _da_mandare(v2):
-        esito["motivo"] = perche_non_inviato(v2)
+        esito["tipo"], esito["motivo"] = esito_non_inviato(v2)
         esito["scartato"] = bool(v2 and v2.get("semaforo") in RADAR_SEMAFORI)
         return False
     if radar_in_pausa():
         esito["motivo"] = "radar in pausa (fascia notturna)"
+        esito["tipo"] = "altro"
         return False
     item_id = _estrai_item_id_da_url(url) if url else None
     if not item_id:
@@ -748,10 +756,12 @@ async def invia_verdetto_v2(parsed, url, v2, foto=None, rivaluta=None, esito=Non
         prezzo = _a_float(parsed.get("price"), None)
         # Controllo Gemini gratuito sulle foto (1/11): scarta rotti, repliche e oggetti diversi; se non risponde l'avviso parte con la riga che lo dichiara.
         g = await controlla_gemini((parsed.get("title") or ""), prezzo, url, foto_tracker=foto, item_id=item_id)
+        esito["gemini"] = _sintesi_gemini(g)
         if g and g["verdetto"] == "scarta":
             log.info("RADAR SCARTATO GEMINI | item=%s | semaforo=%s | conf=%s | motivo=%s | titolo=%s", item_id, v2.get("semaforo"), g.get("confidenza"),
                      g.get("motivo"), (parsed.get("title") or "")[:60])
             esito["motivo"] = f"Gemini lo scarta dalle foto ({g.get('motivo') or 'nessun motivo'})"
+            esito["tipo"] = "scartato_gemini"
             esito["scartato"] = True
             return False
         # Stima di Gemini molto sotto quella del codice (es. Ixus 65 contro 150): la rivendita del codice e' sospetta, l'avviso non parte.
@@ -760,6 +770,7 @@ async def invia_verdetto_v2(parsed, url, v2, foto=None, rivaluta=None, esito=Non
                 and riv_g < RADAR_GEMINI_RAPPORTO_MIN * riv_c):
             log.info("RADAR SCARTATO GEMINI | item=%s | stima_bassa | gemini=%s | codice=%s | conf_riv=%s", item_id, riv_g, riv_c, g.get("rivendita_confidenza"))
             esito["motivo"] = f"Gemini stima la rivendita a {riv_g:g} € contro {riv_c:g} € dei comparabili"
+            esito["tipo"] = "scartato_gemini"
             esito["scartato"] = True
             return False
         if rivaluta and g and g.get("ricerca_modello"):
@@ -772,6 +783,7 @@ async def invia_verdetto_v2(parsed, url, v2, foto=None, rivaluta=None, esito=Non
                     log.info("RADAR SCARTATO RIVALUTAZIONE | item=%s | semaforo=%s | margine=%s | motivo=%s | titolo=%s", item_id, v2.get("semaforo"),
                              v2.get("margine"), v2.get("motivo"), (parsed.get("title") or "")[:60])
                     esito["motivo"] = ("rifatta la stima sul modello letto da Gemini: " + (perche_non_inviato(v2) or "non regge"))
+                    esito["tipo"] = "scartato_rivalutazione"
                     esito["scartato"] = True
                     return False
         testo = testo_avviso_v2(parsed, url, v2, g)
@@ -780,14 +792,58 @@ async def invia_verdetto_v2(parsed, url, v2, foto=None, rivaluta=None, esito=Non
         if not await _invia_radar(testo, foto, suono=suono, ricerca=parsed.get("query_name"), url=url):
             _radar_inviati.discard(str(item_id))  # invio fallito: al prossimo giro si puo' ritentare
             esito["motivo"] = "Telegram non ha consegnato il messaggio"
+            esito["tipo"] = "errore_invio"
             return False
         esito["inviato"] = True
+        esito["tipo"] = "inviato"
         return True
     except Exception:
         _radar_inviati.discard(str(item_id))
         esito["motivo"] = "errore interno nell'invio (vedi log)"
+        esito["tipo"] = "errore_invio"
         log.warning("Radar: verdetto v2 non inviato per %s:\n%s", item_id, traceback.format_exc())
         return False
+
+
+def _sintesi_gemini(g):
+    """Esito e stima del controllo Gemini in una stringa breve per il DB e il tracciato ('conferma riv=120'). Pura."""
+    if not g:
+        return "nd"
+    riv = g.get("rivendita_eur")
+    return str(g.get("verdetto") or "nd") + (f" riv={riv:g}" if isinstance(riv, (int, float)) and riv else "")
+
+
+def scrivi_esito_radar(parsed, url, v2_iniziale, esito):
+    """Un evento `radar_esito` per ogni giallo o verde valutato: esito finale (inviato, scartato_jev, scartato_gemini, scartato_verifica,
+    scartato_rivalutazione, jev_conf_bassa, errore_invio, altro) e motivo. Non solleva mai."""
+    try:
+        if not v2_iniziale or v2_iniziale.get("semaforo") not in ("giallo", "verde"):
+            return
+        titolo = (parsed.get("title") or "")
+        item_id = _estrai_item_id_da_url(url) if url else None
+        db.scrivi_evento("radar_esito", item_id, parsed.get("brand"), {
+            "ricerca": (str(parsed.get("query_name") or "")[:40] or None), "modello": modello_famiglia(parsed.get("query_name"), titolo)[0],
+            "semaforo": v2_iniziale.get("semaforo"), "titolo": titolo[:80], "esito": esito.get("tipo") or "altro",
+            "motivo": (esito.get("motivo") or "")[:200] or None, "gemini": esito.get("gemini"),
+            "semaforo_finale": (esito.get("v2") or {}).get("semaforo")})
+        # Stessi campi nella riga TRACCIATO_RADAR (la serie parte prima dell'invio: si completa qui).
+        if item_id and str(item_id) in tr._tracc_ctx:
+            ctx = tr._tracc_ctx[str(item_id)]
+            ctx["esito_finale"] = esito.get("tipo") or "altro"
+            if esito.get("gemini"):
+                ctx["gemini"] = esito["gemini"]
+            db.aggiorna_serie(item_id, ctx=ctx)
+    except Exception:
+        log.warning("Radar: evento radar_esito non scritto:\n%s", traceback.format_exc())
+
+
+async def invia_verdetto_v2(parsed, url, v2, foto=None, rivaluta=None, esito=None):
+    """Come `_invia_verdetto_v2_interno` e in piu' scrive SEMPRE l'evento `radar_esito` per i gialli e i verdi (nessun ritorno silenzioso)."""
+    esito = esito if esito is not None else {}
+    try:
+        return await _invia_verdetto_v2_interno(parsed, url, v2, foto=foto, rivaluta=rivaluta, esito=esito)
+    finally:
+        scrivi_esito_radar(parsed, url, v2, esito)
 
 
 async def _manda_semaforo_radar(item_id, titolo, prezzo, url, modello, buy_max, v2=None, foto=None):
@@ -849,7 +905,8 @@ def traccia_verdetto_v2(parsed, url, v2, t0=None):
         "audit": "si" if audit else None, "vendita_stimata": v2.get("rivendita"), "richiesto_med": v2.get("richiesto_mediano"),
         "qualita": (v2.get("qualita") or {}).get("punteggio"), "costo_tot": v2.get("costo_totale"),
         "sped": v2.get("spedizione_stato"), "calib": v2.get("calibrazione"),
-        "ricerca": (str(parsed.get("query_name") or "")[:40] or None), "titolo": (parsed.get("title") or "")[:80] or None}.items()
+        "ricerca": (str(parsed.get("query_name") or "")[:40] or None), "titolo": (parsed.get("title") or "")[:80] or None,
+        "modello": modello_famiglia(parsed.get("query_name"), parsed.get("title") or "")[0]}.items()
         if v is not None}
     tr.tracc_avvia_serie(info, url, t0 or time.time(), offsets=RADAR_RICONTROLLI_SECONDI)
     log.info("RADAR TRACCIA AVVIO | item=%s | semaforo=%s | prezzo=%s", item_id, sem, prezzo)
