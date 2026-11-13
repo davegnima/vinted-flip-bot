@@ -302,3 +302,5 @@ Voci spostate da `STATO.md` il 13/11 senza modifiche al testo (ordine del vecchi
 
 - 13/11 sera (funnel chiuso nel DB, task T1 dell'audit): ogni giallo o verde del radar scrive un evento `radar_esito` con l'esito finale (`inviato`, `scartato_jev`, `jev_conf_bassa`, `scartato_gemini`, `scartato_verifica`, `scartato_rivalutazione`, `errore_invio`, `altro`) e il motivo. Il report (`/report_radar`) ha le colonne inviati e scartati per ricerca e la riga di log `REPORT RADAR | funnel | gv= inviati= scartati= senza_esito=`. `TRACCIATO_RADAR` e il CSV hanno `modello`, `titolo`, `gemini`, `esito_finale`. Motivo: il 12/11, 15 gialli/verdi su 73 non avevano nessuna riga che dicesse dove erano finiti. Da controllare dopo 24 h: `senza_esito=0`.
 
+- 13/11 sera (task T2 dell'audit): tolte dal tracker radar `V2 shimano dura-ace` (1515), `V2 vorwerk kobold` (1527), `V2 campagnolo record` (1542): 0 gialli/verdi dal 9 al 13/11. URL in `docs/analisi/radar-ricerche-potate-2026-11-13-b.json`. Restano 14 ricerche (lette da `/queries`).
+

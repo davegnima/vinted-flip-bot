@@ -6,7 +6,7 @@ I brand in FAIR_VALUE_BRAND_NUOVI hanno un fair value stimato da me, non misurat
   3. Jev guarda la prima foto e dice se l'articolo sembra originale del brand (indizio dalla sola foto, non una certificazione).
 Esito: 'conferma' (margine >= 50 EUR e ROI >= 100% sui comparabili, foto non sospetta), 'scarta' (i comparabili non reggono il margine
 oppure la foto sembra falsa/altra marca), 'non_verificato' (comparabili non trovati o Jev spento: l'avviso parte con l'avvertenza).
-Spenta con MODA_JEV=0; MODA_JEV_TUTTI=1 la estende a tutti gli avvisi (non solo ai brand nuovi). Costo: poche chiamate Jev solo per i pochi avvisi dei brand nuovi; tetto MODA_JEV_MAX_GIORNO.
+Spenta con MODA_JEV=0 (default 1, letta una volta sola in bot/config.py); MODA_JEV_TUTTI=1 la estende a tutti gli avvisi (non solo ai brand nuovi). Costo: poche chiamate Jev solo per i pochi avvisi dei brand nuovi; tetto MODA_JEV_MAX_GIORNO.
 """
 import os
 import re
@@ -16,7 +16,7 @@ import traceback
 from urllib.parse import quote
 
 from bot.comps import _cerca_vinted_testo_diretto, _miniature_comp
-from bot.config import SPEDIZIONE_STIMATA_EUR
+from bot.config import MODA_JEV, SPEDIZIONE_STIMATA_EUR
 from bot.costanti import VINTED_BRAND_IDS
 from bot.foto import download_image_bytes, optimize_image_bytes
 from bot.comps_filtri import BRAND_SOTTOLINEE_DA_ESCLUDERE
@@ -31,7 +31,6 @@ from bot.testo import RigaMd, _normalizza_titolo_per_link, link_markdown
 from bot.valore_mercato import comparabili_simili, parse_comp, query_comp, solo_usato, stima_mercato, valuta
 # ---- fine import ----
 
-MODA_JEV = os.environ.get("MODA_JEV", "0").strip() in ("1", "true", "si")
 MODA_JEV_MAX_GIORNO = int(os.environ.get("MODA_JEV_MAX_GIORNO", "600") or 600)
 # 02/11 (richiesta dell'utente): la verifica vale per TUTTI gli avvisi della moda, non solo per i brand nuovi. 0 = solo brand nuovi.
 MODA_JEV_TUTTI = os.environ.get("MODA_JEV_TUTTI", "0").strip() in ("1", "true", "si")

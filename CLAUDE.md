@@ -34,11 +34,13 @@ Userbot Telethon che riceve gli annunci dai tracker (`davegnima/Vinted-Notificat
 
 ## Mappa dei moduli (`bot/`)
 - Config e utilita': `config`, `logger`, `costanti`, `testo`, `parsing`, `tempi`, `operazioni`.
-- Logica pura: `prompt_moda`, `categorie`, `fair_value`, `velocita`, `filtri`, `comps_filtri`, `valore_mercato`, `qualita_comps`, `spedizione`, `radar_famiglie`, `radar_matrice`.
+- Logica pura: `prompt_moda`, `categorie`, `fair_value` (+ `fair_value_tabelle`: livelli, tarature, sottolinee), `velocita`, `filtri`, `comps_filtri`, `valore_mercato`, `qualita_comps`, `spedizione`, `radar_famiglie`, `radar_matrice`.
 - Stato e rete: `gemini_stato`, `proxy`, `http_clients`, `telegram_api`, `vinted_http`, `db`, `log_db`, `tracciamento`, `radar_appreso`, `archivio_radar`.
 - Chiamate esterne: `gemini_api`, `vinted_scrape`, `vinted_search`, `vinted_api`, `foto`, `comps`, `jev`.
-- Flusso: `pipeline`, `scheda` (messaggi Telegram), `moda_jev`, `moda_gemini`, `feedback`, `radar`, `radar_v2`, `radar_gemini`.
-- `main_telethon.py`: client Telethon, comandi, `main()` e un blocco di re-export (i test usano `m.NOME`).
+- Flusso: `pipeline`, `scheda` (messaggi Telegram), `moda_jev`, `moda_gemini`, `feedback`, `radar` (+ `radar_messaggi`: testi, didascalie, motivi), `radar_v2`, `radar_gemini`.
+- Client e comandi: `client_tg` (il client Telethon), `comandi` (gestori dei comandi del proprietario, senza decoratore), `cicli` (report radar, velocita', blocco del processo, arresto ordinato).
+- `main_telethon.py`: registrazione dei comandi (`client.on(...)(f)`), `watchdog_messaggi`, `on_new_message`, `main()` e un blocco di re-export (i test usano `m.NOME`).
+- Restano in `fair_value` `valuta_preavviso` e le soglie `PREAVVISO_*`, e in `radar` `testo_avviso_v2`/`testo_risposta_gruppo`: i test li regolano con monkeypatch su quel modulo.
 - Direzione degli import: config/logger -> logica pura -> stato/client -> pipeline -> main. Niente import circolari (`tests/test_struttura.py` importa ogni modulo da solo).
 - I client HTTP riassegnati a runtime si leggono come `hc._client_generico`, `hc._client_telegram`, `hc._CLIENT_VINTED_AUTH`: mai importarli per nome.
 
