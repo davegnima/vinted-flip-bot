@@ -33,10 +33,13 @@ La cronologia NON sta qui: `docs/storico/` (indice in `docs/storico/README.md`).
 5. Radar: Gemini "non disponibile" in 6 avvisi su 10 il 12/11; `Gemini TIMEOUT` ogni giorno (29 in 6 ore il 12/11, 21 su `gemini-3.1-flash-lite`).
 6. Radar: tabella per modello delle famiglie nuove (ps4, ps vita, wii u, game boy, psp, ds) e rifiuti 403/429; se salgono, abbassare `RADAR_FAMIGLIE_NUOVE_ORA`.
 7. Radar: una ricerca senza gialli/verdi in 7 giorni si toglie (`/report_radar`, `/esporta_radar`).
+8. Dopo il 13/11: `REPORT RADAR | funnel` con `senza_esito=0`; `profilo_venditore` fermo nel `RIEPILOGO BANDA OGGI`; tempi `GEMINI_USO` della moda con il prompt nuovo; avvisi moda e radar regolari dopo la rimozione di Occhio e Cervello.
 
 ## Punti aperti
-- **Piano dell'audit del 13/11**: `docs/analisi/audit-2026-11-13.md` (problemi per impatto/sforzo, piano radar a 3 ondate) e `docs/analisi/audit-2026-11-13-task.md` (task numerati per l'esecutore). Nessun task di codice e' stato eseguito.
-- `STATO.md` vecchio (252 KB) smistato in `docs/storico/` il 13/11: se una voce serve ancora come controllo, riportarla qui in una riga.
+- **Audit del 13/11**: `docs/analisi/audit-2026-11-13.md` e `-task.md`. Fatti il 13/11: domanda foto di Jev tolta (#406), funnel del radar nel DB (T1, #407), prompt Gemini moda con le regole di Occhio e Cervello (#408), ramo Occhio/Cervello tolto (T12, #409), codice morto e scrape del guardaroba tolti (T5, #410), variabili e `docs/pipeline.md` (T3, T4), pulizia del tracker (T11, tracker #37). Codice da 20.870 a 13.619 righe.
+- Restano dall'audit: T2 (togliere `V2 vorwerk kobold`, `V2 shimano dura-ace`, `V2 campagnolo record`), T6 (spezzare `main_telethon.py`, `radar.py`, `fair_value.py`), T7 (Gemini del radar "non disponibile"), T9 (test del percorso radar), T14, T15. Ondata 3 (nuove ricerche) ferma per scelta dell'utente.
+- `MODA_JEV` ha default diversi nel codice (0 in `bot/moda_jev.py`, 1 in `bot/fair_value.py`): in produzione e' impostata, ma va unificata.
+- Tracker: `ruff` resta rosso (87 errori che richiedono cambi di comportamento); le PR del tracker non fanno partire la CI.
 - Per l'utente: ruotare le chiavi incollate in chat in passato (Z.ai, token Graphify, Groq, OmniRoute).
 
 ## Dove guardare (un puntatore per tema)

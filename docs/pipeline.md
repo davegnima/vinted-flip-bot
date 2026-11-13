@@ -1,31 +1,227 @@
-# Pipeline e meccanismi (dettaglio)
+# Pipeline e meccanismi
 
-Spostato da `CLAUDE.md` il 7/10 senza modifiche di contenuto. Leggere solo la parte che serve al lavoro in corso.
+Un meccanismo per sezione. I default sono quelli letti dal codice il 13/11; l'elenco completo delle variabili e' in `.env.example` (controllato da `tools/controlla_env.py` e `tests/test_env.py`). La cronologia delle scelte e' in `docs/storico/`.
 
-tracker (messaggio Telegram) -> `process_listing` (`bot/pipeline.py`) -> filtri pre-scrape -> scrape pagina e foto -> filtri pre-Gemini -> stima rapida fair value (semaforo) -> `valuta_preavviso` -> avviso con il solo semaforo (autenticita' non verificata) -> Jev sui comparabili (`bot/moda_jev.py`) -> Gemini gratuito sulle foto (`bot/moda_gemini.py`). Dal 13/11 il ramo Occhio/Cervello e' tolto dal codice (era spento dal 1/11 con `SOLO_SEMAFORO=1`): si recupera da git, vedi `_archive/2026-11-cervello/README.md`.
-- Stima rapida (`stima_fair_value`): ogni annuncio con brand ha un semaforo. Soglie dal 7/10: 🟢 ROI >= 200% (fair value x3) e margine >= 20; 🟡 ROI >= 100%; rigore confidenza bassa 1,0. Ordine: tabella dati -> appreso dai verdetti -> livello del brand x fattore categoria -> livello di default. Categoria da titolo, descrizione o catalogo Vinted (mappa che si impara sola: `CATALOGO_CATEGORIE_FILE`). Stime a confidenza bassa: soglie del semaforo x `FAIR_VALUE_RIGORE_BASSA` (1,0 dal 7/10); voci non apprese x `FAIR_VALUE_TARATURA_GLOBALE` (1,20; Missoni prima linea +10%, Cucinelli +26%, Prada +30% in piu' (6/11, da confronto con la rivendita p25 di Jev), da `FAIR_VALUE_TARATURA_BRAND`).
-- Avviso dal solo semaforo (dal 1/11, unico flusso della moda): dopo scrape/foto/filtri gratuiti l'avviso parte se scatta `valuta_preavviso` (esito `SOLO_SEMAFORO`, altrimenti `SKIP_SOLO_SEMAFORO` con serie ridotta). Autenticita' non verificata dal semaforo: la controllano Jev e Gemini. Niente Serper, riserva LLM o pannello di modelli (tolti per scelta dell'utente).
-- Cascata Gemini (`GEMINI_CASCATA`, per le foto `GEMINI_CASCATA_OCCHIO`; moda e radar), dal modello migliore al piu' leggero: `bot/gemini_stato.py`. 4 account Google (ora 5), quote per (key, modello). La quota giornaliera free si azzera a mezzanotte di Pacific (07:00 UTC con l'ora legale): i cooldown di quota finiscono li', non al "retry in 23h" di Google. Una key che risponde 401/403 (cancellata o disabilitata) si esclude per 6 ore per ogni modello e si passa alla successiva; il log dice `key #N NON VALIDA` e quante ne restano. Stallo/timeout di Gemini (5/10: annunci fermi 5-8 minuti): backoff al massimo `GEMINI_BACKOFF_MAX_S` (6 s), budget `GEMINI_BUDGET_CHIAMATA_S` (60 s) per chiamata, riga `Gemini TIMEOUT | fase | modello | dopo Ns`, e dopo `GEMINI_TIMEOUT_PER_PAUSA` (2) timeout di fila la fase salta Gemini per `GEMINI_PAUSA_TIMEOUT_SECONDI` (120) e passa al modello successivo della cascata.
-- Watchdog (11/10): `watchdog_messaggi` in `main_telethon.py` riavvia il processo se per `WATCHDOG_MINUTI` (10; 0 = spento) non arriva nulla dal gruppo del tracker e Telegram ha messaggi piu' recenti (Telethon puo' perdere gli aggiornamenti senza errori); non agisce nella pausa notturna.
-- Preavviso (`valuta_preavviso` in `bot/fair_value.py`): un album con TUTTE le foto e il semaforo parte nel gruppo COMPRA (`TELEGRAM_ALERT_CHAT_ID`, con suono) appena le foto sono scaricate, se la stima rapida e' promettente; a fine analisi lo stesso messaggio viene AGGIORNATO col verdetto (didascalia, max 1024 caratteri), senza altri messaggi nel gruppo; se l'annuncio viene scartato prima del verdetto, la riga finale riporta il motivo e il link al messaggio originale nella chat principale (solo se e' un supergruppo) (senza gruppo, la scheda in chat principale diventa push) (soglie `PREAVVISO_*`, spento con `PREAVVISO_ATTIVO=0`); non cambia il semaforo. Dal 5/10: regola `prezzo_basso` a <= 20 EUR; brand esclusi `PREAVVISO_BRAND_ESCLUSI` (Acne Studios, Marni), brand facili `PREAVVISO_BRAND_FACILI` (Jean Paul Gaultier, regola `brand_facile`, margine >= `PREAVVISO_MARGINE_FACILI`); suono solo se fair value/prezzo >= `PREAVVISO_SUONO_RAPPORTO_MIN` (4) o brand facile, gli altri arrivano in silenzio (`suono=si|no` nella riga `PREAVVISO`). Dal 10/10 ogni 🟢 (semaforo corretto) con margine rapido positivo manda il preavviso e SUONA (`PREAVVISO_SUONO_VERDE`, 0 = regole di prima). Preavviso lampo (10/10, `PREAVVISO_LAMPO`, 0 = spento): se la categoria si legge dal TITOLO il preavviso parte PRIMA dello scrape con la sola foto di copertina del tracker (riga di log `PREAVVISO LAMPO`); quello con l'album non parte piu'. Dopo il lampo, appena scaricate le foto, l'album completo arriva nel gruppo come risposta al preavviso, senza suono. Un preavviso rimasto senza verdetto diventa un messaggio compatto: esito (scartato/interrotto) in cima, poi solo testata col semaforo, titolo e link: su 8-9/10 (1.066 annunci) preavvisi col suono da ~52 a ~98 al giorno, venduti entro 5 min presi dal 29% al 50%, precisione 35% -> 32%. Il resto dei venduti in pochi secondi (circa meta') ha fair value 1,2-2,3 volte il prezzo e semaforo rosso: non e' distinguibile da un annuncio normale con quello che si sa all'arrivo (un punteggio addestrato su un giorno e provato sull'altro non faceva meglio delle regole). Dal 14/10 (regola `giallo_economico`, `PREAVVISO_GIALLO_PREZZO_MAX`=15, 0 = spento): ogni 🟡 fino a 15 EUR manda il preavviso e SUONA anche con margine rapido piccolo o confidenza bassa (8-13/10: il 🟡 <= 15 EUR vende entro 15 min nel 30% dei casi; stima ~7 suoni in piu' al giorno con le ricerche del 13/10); i brand esclusi restano fuori.
-- Arresto ordinato (14/10): su SIGTERM (deploy o riavvio) il bot non si ferma subito: continua a lavorare finche' le analisi in corso (moda e radar) finiscono, al massimo `ARRESTO_ATTESA_MAX_S` (90 s), poi si disconnette (righe `ARRESTO RICHIESTO` e `ARRESTO ORDINATO`). Railway aspetta `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` (100, variabile del worker) prima di SIGKILL: deve restare sopra `ARRESTO_ATTESA_MAX_S`. Il deploy dura quindi fino a ~1,5 minuti in piu'.
-- Scrape pagina annuncio (`bot/vinted_scrape.py`): se la risposta e' 200 ma leggera (< `PAGINA_LEGGERA_MAX_CARATTERI`, 60000: dal 6/10 14:17 UTC Vinted serve ai bot una pagina di ~20 KB senza foto) si riprova `PAGINA_LEGGERA_RETRY` (2) volte con un altro proxy e il log `Pagina annuncio leggera` riporta title, parole di blocco e testi visibili.
-- Tracciamento vendite (`bot/tracciamento.py`): ricontrolli a 15 s, 30 s, 1 min, 5 min, 15 min, 1 h. `stato=rimosso?` = pagina 200 senza dati (cancellata o in revisione: non e' un invenduto, nessuna classe); `n.d.` = nessuna risposta. Gli annunci spariti (rimosso, rimosso?, n.d.) si seguono comunque fino a 1 h: righe `RICONTROLLO STORIA` (serie degli stati) e `RICONTROLLO RIAPPARSO` (tornati online: legit check, non ban). 
-- Radar fuori moda: **fermo dal 10/10 per scelta dell'utente** (`RADAR_ATTIVO=0` nel worker: messaggi radar ignorati, matrice non caricata; servizio `vinted-radar` fermato; ricerche salvate in `docs/analisi/radar-ricerche-ferme-2026-10-10.md`). Com'era (`bot/radar.py`, fase 0 dal 7/10, SOLO osservazione: niente messaggi, niente AI): messaggi del tracker con `RADAR_MARCATORE` (📡) in testa o dalle chat radar saltano la pipeline moda. Chat radar: `RADAR_GROUP_ID`, oppure il gruppo "Radar grezzo" (`RADAR_GROUP_TITOLO`) trovato per nome all'avvio (log `RADAR GRUPPO | ... | id=`); il tracker radar posta li' (gruppo silenziato dall'utente). Modulo categoria da brand/parole (`RADAR_MODULI`, i 30 brand dell'utente), filtro di livello 1 su titolo e prezzo (parole vietate tipo rotto/per pezzi/stile, tetto `prezzo_max_l1`, minimo `RADAR_PREZZO_MIN` 10 EUR, che dall'8/10 non vale per un modello noto della matrice con buy max: l'errore di prezzo passa); chi passa (piu' 1 scartato su `RADAR_CAMPIONE_SCARTI_OGNI`) fa la visita della pagina senza guardaroba e una serie ridotta di ricontrolli (`RADAR_RICONTROLLI_SECONDI`: 1 min, 15 min, 1 h, per la banda) con esito `RADAR_L1_PASSA`/`RADAR_L1_CAMPIONE`. Pausa notturna dal 7/10: dalle `RADAR_PAUSA_DA` (23) alle `RADAR_PAUSA_A` (6), ora italiana, i messaggi radar si ignorano (log `RADAR PAUSA |`, vuoto = nessuna pausa; il tracker radar continua a leggere Vinted). Log `RADAR |`, `RADAR SCARTO |`, `MESSAGGIO RADAR |`; evento `radar` nel DB. Matrice modelli dall'8/10 (`bot/radar_matrice.py`, dati `data/radar_matrice.json`, tabella leggibile `docs/radar-matrice.md`): se il titolo cita un modello noto (tutte le parole di una sua chiave, vince la parola piu' rara; brand richiesto tranne LEGO e console) il livello 1 usa il suo buy max (margine >= `RADAR_MARGINE_MIN` 50, ROI >= `RADAR_ROI_MIN` 100%, riserva `RADAR_RISERVA_PER_PUNTO` 3% per punto di rischio sopra 2, tolleranza `RADAR_TOLLERANZA_BUY_MAX` 1,15) invece del tetto del modulo; motivi di scarto `modello_sotto_soglia:`, `modello_escluso:non_spedibile`, `sopra_buy_max:`. Modelli con affidabilita' bassa o insufficiente: tetto del modulo. Dal 9/10: righe con `parole_escluse` (console: giochi, accessori, custodie, schermi...) non si agganciano se il titolo le contiene; una riga "in scatola"/"sigillato" agganciata senza le sue parole nel titolo vale `senza_dati` (tetto del modulo, niente buy max). Righe LEGO con `parole_escluse` di minifigure/istruzioni/scatola vuota. Dal 9/10 la matrice ha anche modelli scelti per il tetto di 50 EUR (rivendita 100-250+ che compaiono a <= 50: 219 set LEGO da BrickEconomy, compatte a pellicola, obiettivi, walkman, Game & Watch, Montblanc, Seiko 6139, Georg Jensen/Torun) e i loro brand nei moduli. Dal 10/10 i moduli con `solo_matrice` (fotografia, collezionismo, audio, argento_gioielli: raggiunti solo da ricerche per modello) scartano cio' che la matrice non riconosce (motivo `modello_sconosciuto`, 1 su 10 visitato lo stesso dal campione). Spesa massima per pezzo dell'utente (8/10): `RADAR_SPESA_MAX` 50 EUR, sopra si scarta sempre (motivo `sopra_spesa_max:`), anche se il buy max e' piu' alto. Campi `modello=` e `buy_max=` nelle righe `RADAR |` e `RADAR SCARTO |`.
-- SQLite (`bot/db.py`, `/data/vinted_bot.sqlite3`): quote Gemini e eventi. I log restano la fonte del recap.
-- Semaforo corretto dalla velocita' (`bot/velocita.py`, tabella `bot/dati/velocita.json`, dall'8/10): il semaforo della stima rapida si moltiplica per il "lift" del brand (tasso di vendite entro 15 min del brand, ristretto verso la media con peso `VELOCITA_K` 10): soglie `VELOCITA_SOGLIA_VERDE` 0,40 e `VELOCITA_SOGLIA_GIALLO` 0,20, spento con `VELOCITA_ATTIVA=0`. `semaforo_base` e `lift_velocita` restano nella stima e nelle righe `PREAVVISO` (`sem_base`, `lift`) e `TRACCIATO`. La tabella si aggiorna ogni mattina con `tools/aggiorna_velocita.py`. Soglie PROPORZIONALI alla velocita' media della tabella (dal 9/10): verde da `VELOCITA_VERDE_X` 1,6 volte la media, giallo da `VELOCITA_GIALLO_X` 0,8 volte; con soglie fisse l'aggiornamento della tabella dell'8/10 (media da 0,25 a 0,19) faceva scendere a giallo anche un Cucinelli a 12 EUR con fair value 67 EUR (🟢 x lift 1,03 = 0,395 < 0,40).
-- Tracciamento (8/10): una riga `TRACCIATO` per annuncio a fine serie (esito del bot + semaforo + caratteristiche + esito di vendita); serie in `serie_pendenti` (DB), riprese all'avvio (`tracc_riprendi_serie`: controlli scaduti da piu' di 90 s fatti subito con la fascia reale); scartati dopo lo scrape (`SKIP_PRE_GEMINI`, `SKIP_SOLO_SEMAFORO`; `SKIP_PRE_CERVELLO` e `SKIP_ROSSO` esistono solo nei log vecchi) seguiti con la serie ridotta (5 min, 15 min, 1 h); `SKIP_PRE_SCRAPE` senza serie. Preferiti: letti a ogni controllo (`pref_serie`, `pref_max` nella riga `TRACCIATO`; salvati nel DB con la serie, quindi sopravvivono ai riavvii dal 8/10 sera; il campo `prenotato_s` e' il primo controllo prenotato); `prenotato` entro 1 h vale come venduto: la classe e' quella del PRIMO evento fra prenotazione e vendita (prenotato a 1 min e venduto a 30 min = AFFARE). Dati del 7/10: i preferiti all'arrivo (quasi sempre 0-1) NON predicono la vendita veloce; la crescita tra i controlli non e' ancora misurata.
-- Pausa notturna 23-6 ora italiana: sulla FONTE, cioe' nei tracker (`NIGHT_PAUSE_FROM/TO` sui servizi `vinted-radar` dal 8/10 e `vinted-notifications` dal 9/10: nessuna richiesta a Vinted, nessun messaggio al bot; il bot di analisi non si ferma e basta non ricevere annunci). Per il radar c'e' in piu' `RADAR_PAUSA_DA/A` nel worker.
+Flusso moda: tracker -> `process_listing` (`bot/pipeline.py`) -> filtri -> scrape pagina e foto -> stima rapida e semaforo -> `valuta_preavviso` -> avviso -> Jev -> Gemini. Flusso radar: tracker -> `bot/radar.py` -> filtro modelli -> comparabili e semaforo -> Jev -> Gemini -> avviso.
 
-- Frequenza del tracker moda (misurata 18/10): `query_refresh_delay` 3 s e' l'intervallo fra i giri; ogni giro scorre tutte le ricerche (~0,28 s l'una), quindi ogni ricerca e' riletta ogni ~3 s (p90 ~6 s). Il ritardo pubblicazione -> messaggio non e' misurato (vedi `STATO.md` 0ax).
+## Indice
+- Moda: [stima rapida e semaforo](#stima-rapida-e-semaforo) · [velocita](#velocita) · [preavviso](#preavviso) · [Jev moda](#jev-moda) · [Gemini moda](#gemini-moda) · [comparabili](#comparabili) · [scrape pagina](#scrape-pagina)
+- Comuni: [tracciamento vendite](#tracciamento-vendite) · [cascate e quote Gemini](#cascate-e-quote-gemini) · [Telegram](#telegram-blocchi-e-limitatore) · [banda e contatori](#banda-e-contatori) · [pausa notturna](#pausa-notturna) · [arresto e watchdog](#arresto-e-watchdog)
+- Radar: [filtro modelli](#radar-filtro-modelli) · [comparabili e semaforo](#radar-comparabili-e-semaforo) · [Jev](#radar-jev) · [Gemini](#radar-gemini) · [appreso](#radar-appreso) · [spedizione](#radar-spedizione)
+- [Ramo Occhio e Cervello](#ramo-occhio-e-cervello-rimosso)
 
-## Controllo Gemini sul radar (1/11)
-`bot/radar_gemini.py`: dopo semaforo e Jev, prima dell'invio, i soli gialli e verdi da mandare passano da UNA chiamata Gemini gratuita (ruolo `occhio`, cascata e chiavi di `GEMINI_API_KEYS`) con le foto scaricate dalla pagina come nella moda (fino a `RADAR_GEMINI_FOTO`, default 10 come la moda; ripiego: foto del tracker) e la descrizione. Un solo prompt per oggetti non moda: oggetto letto, corrispondenza al titolo, funzionante, completo, danni, autenticita', verdetto `conferma|dubbio|scarta` e la SUA stima di rivendita (`rivendita_eur`, confidenza, base), mostrata nel messaggio come stima accanto a quella del codice. Gemini non calcola margine, ROI o semaforo: la sua stima e' solo informativa. `scarta` = l'avviso non parte (log `RADAR SCARTATO GEMINI`); `dubbio` = parte muto con la riga "da rivedere"; senza risposta (quota, errore, oltre `RADAR_GEMINI_MAX_ORA`, default 40/h) parte lo stesso con la riga "Gemini: non disponibile". Log: `RADAR GEMINI`. Spegnere con `RADAR_GEMINI=0`.
-Modello e rivalutazione (1/11): Gemini legge anche il modello esatto (`ricerca_modello`, 2-5 parole) e una ricerca vicina (`ricerca_semantica`), e stima la velocita' di rivendita (`velocita_rivendita`: ore, giorni, settimane, mesi; sempre dichiarata come stima). Se `ricerca_modello` non coincide con la ricerca dei comparabili (`radar_v2.ricerca_diversa`), `radar_v2.rivaluta` (passata a `invia_verdetto_v2`) rifa' comparabili, verifica Jev e giudizio sul modello giusto, poi il codice ricalcola margine, ROI e semaforo (log `RADAR RIVALUTA` e `RADAR RIVALUTATO`; con la ricerca vicina o con simili il semaforo non supera il giallo; se torna rosso l'avviso non parte, log `RADAR SCARTATO RIVALUTAZIONE`; senza comparabili sul modello giusto parte al massimo giallo con la riga di avviso). Il bottone "Apri su Vinted" usa sempre l'url dell'annuncio, mai quello di un comparabile.
+## Stima rapida e semaforo
+`stima_fair_value` (`bot/fair_value.py`): ogni annuncio con brand ha un fair value (rivendita stimata) e un semaforo. Ordine: tabella dati, appreso dai verdetti (`fv_carica_appreso`), livello del brand x fattore categoria, livello di default. La categoria viene da titolo, descrizione o catalogo Vinted.
 
+| variabile | default | cosa fa |
+|---|---|---|
+| FAIR_VALUE_ROI_VERDE / _GIALLO | 200 / 100 | ROI minimo (%) di verde e giallo |
+| FAIR_VALUE_MARGINE_MIN_VERDE | 20 | margine minimo (EUR) del verde |
+| FAIR_VALUE_LIVELLO_DEFAULT | 45 | rivendita se il brand e' ignoto |
+| FAIR_VALUE_TARATURA_GLOBALE | 1.20 | fattore sulle voci non apprese |
+| FAIR_VALUE_TARATURA_BRAND | missoni=1.10,brunello cucinelli=1.26,prada=1.30 | fattori per brand |
+| FAIR_VALUE_RIGORE_BASSA | 1.0 | moltiplicatore soglie a confidenza bassa |
+| FAIR_VALUE_FILTRA / _FILTRA_ROI_MIN | 0 / 30 | scarto anticipato per ROI basso |
 
-## Rivendita mista e messaggio a blocchi (7/11)
-La rivendita mostrata e usata per margine/ROI e' la media pesata di tre stime: semaforo (`fair_value`), comparabili Vinted (scontati dei difetti) e Gemini (`rivendita_gemini_eur`, che ragiona con le regole di prezzo di `MODA_GEMINI_REGOLE_PREZZO` (`bot/prompt_moda.py`)). Pesi in `rivendita_mista` (`bot/moda_jev.py`): regola pratica, non misurata. Senza comparabili l'esito resta 'non verificato'. `ris`: `rivendita` (mista), `rivendita_comps` (solo comparabili, per `fv_registra_jev`), `parti_rivendita`, `rivendita_testata`. Layout in `bot/scheda.py::testo_preavviso` e `righe_messaggio`.
+## Velocita
+`bot/velocita.py` (`lift_brand`, `semaforo_corretto`): il semaforo si moltiplica per il lift del brand (quota di vendite entro 15 min, ristretta verso la media). Soglie proporzionali alla media della tabella `bot/dati/velocita.json`; la copia aggiornata sta sul volume e si rigenera con `tools/aggiorna_velocita.py`.
 
-## Gemini sulla moda: condizioni e difetti (7/11)
-Lo stesso controllo Gemini gratuito sulle foto (`bot/moda_gemini.py`, una sola chiamata per avviso) oltre all'autenticita' legge capo/modello, materiale, condizione, difetti e gravita'. `correggi_per_difetti` (`bot/moda_jev.py`) abbassa la rivendita dei comparabili dello sconto per difetti, con tetto per gravita' (lieve 15%, moderata 35%, grave 60%), e rifa' margine/ROI/esito. La stima di rivendita di Gemini (`rivendita_gemini_eur`) e' solo informativa. Variabili: `MODA_GEMINI`, `MODA_GEMINI_SEMPRE`, `MODA_GEMINI_FOTO`. Dal 9/11 Gemini fa anche da consigliere di flip: `tipo_oggetto` (se `non_moda` con confidenza >= 0,7 l'avviso e' scartato, `gemini:non_moda`) e `consiglio` (riga `💬` in testa alle righe Jev). I comparabili nel messaggio sono link con titolo (`RigaMd`).
+| variabile | default | cosa fa |
+|---|---|---|
+| VELOCITA_ATTIVA | 1 | 0 spegne la correzione |
+| VELOCITA_K | 10 | peso della restrizione verso la media |
+| VELOCITA_VERDE_X / _GIALLO_X | 1.6 / 0.8 | soglie in multipli della media |
+| VELOCITA_SOGLIA_VERDE / _GIALLO | vuoto (0) | soglie fisse, 0 = proporzionali |
+| VELOCITA_PREZZO_NEUTRO | 20 | sotto questo prezzo il lift lento non agisce |
+| VELOCITA_SOLO_ROSSO | 1 | il lift basso agisce solo sui rossi |
+
+## Preavviso
+`valuta_preavviso` (`bot/fair_value.py`, testo in `bot/scheda.py::testo_preavviso`): se la stima rapida e' promettente un album con il semaforo parte nel gruppo COMPRA (`TELEGRAM_ALERT_CHAT_ID`) e a fine analisi lo stesso messaggio si aggiorna col verdetto. Il lampo parte prima dello scrape con la foto del tracker. Se l'annuncio e' scartato, resta un messaggio compatto con il motivo.
+
+| variabile | default | cosa fa |
+|---|---|---|
+| PREAVVISO_ATTIVO / _LAMPO | 1 / 1 | interruttori del preavviso e del lampo |
+| PREAVVISO_MARGINE_MIN / _BASSO / _NUOVI | 25 / 20 / 50 | margini minimi (EUR) |
+| PREAVVISO_PREZZO_BASSO | 20 | sotto questo prezzo vale il margine basso |
+| PREAVVISO_GIALLO_PREZZO_MAX | 15 | ogni giallo fino a qui manda e suona |
+| PREAVVISO_SUONO_RAPPORTO_MIN / _VERDE | 4 / 1 | regole del suono |
+| PREAVVISO_BRAND_ESCLUSI / _FACILI | acne studios,marni,lancel / jean paul gaultier | liste brand |
+| PREAVVISO_DA_VERIFICARE(_MARGINE) | 1 (50) | avviso "da verificare" |
+
+## Jev moda
+`bot/moda_jev.py`: Jev (TypeSafe, a budget) giudica comparabili e autenticita'; l'avviso parte subito e si aggiorna con l'esito. `correggi_per_difetti` abbassa la rivendita; `rivendita_mista` pesa semaforo, comparabili e Gemini (pesi: regola pratica, non misurata). Margine, ROI ed esito li calcola Python.
+
+| variabile | default | cosa fa |
+|---|---|---|
+| MODA_JEV | 0 in `moda_jev.py`, 1 in `fair_value.py` | interruttore: in produzione si imposta a 1 |
+| MODA_JEV_SUBITO | 1 | avviso subito, poi aggiornato |
+| MODA_JEV_TUTTI | 0 | 1 = verifica anche i brand non nuovi |
+| MODA_JEV_MAX_GIORNO | 600 | verifiche massime al giorno |
+| MODA_JEV_MARGINE_MIN | 40 | sotto questo margine (EUR) scarta |
+| MODA_JEV_DISPERSIONE_MAX | 2.5 | p75/p25 dei comparabili, 0 = spento |
+| MODA_JEV_OMBRA / _MAX_ORA | 1 / 20 | prova in ombra e suo tetto orario |
+| PREAVVISO_TUTTI_A_JEV | 1 | tutti gli avvisi vanno a Jev |
+
+## Gemini moda
+`bot/moda_gemini.py::controlla`: una chiamata gratuita sulle foto legge autenticita', capo, condizione, difetti (gravita' con sconto massimo lieve 15%, moderata 35%, grave 60%), tipo oggetto (`non_moda` con confidenza >= 0,7 scarta) e consiglio. La sua stima di rivendita entra nella media mista. Prompt in `bot/prompt_moda.py`.
+
+| variabile | default | cosa fa |
+|---|---|---|
+| MODA_GEMINI | 1 | 0 spegne il controllo |
+| MODA_GEMINI_SEMPRE | 1 | su ogni avviso, non solo se Jev dubita |
+| MODA_GEMINI_MAX_ORA | 60 | chiamate massime all'ora |
+| MODA_GEMINI_FOTO | 8 | foto massime per chiamata |
+| MODA_GEMINI_REGOLE_PREZZO | 1 | regole di prezzo nel prompt |
+
+## Comparabili
+`bot/vinted_search.py` e `bot/comps.py`: ricerca dei prezzi in vendita dello stesso articolo; `bot/valore_mercato.py` (`stima_mercato`, `comparabili_simili`) toglie i fuori scala e calcola la stima, `bot/qualita_comps.py` e `bot/comps_filtri.py` filtrano. La condizione corregge i prezzi con una scala.
+
+| variabile | default | cosa fa |
+|---|---|---|
+| COMPS_COND_SCALA | 1 | moltiplicatore della correzione per condizione, 0 = nessuna |
+| MODA_COMPS_ORDINE | newest_first | ordine dei comparabili cercati |
+| MODA_COMPS_PROVA | vuoto | ordini alternativi da provare |
+| VINTED_API | 1 | 0 = solo scraping HTML |
+
+## Scrape pagina
+`scrape_vinted_listing` (`bot/vinted_scrape.py`): scarica la pagina dell'annuncio con un proxy. Se la risposta e' 200 ma leggera (Vinted serve ai bot una pagina senza foto) riprova con un altro proxy e logga `Pagina annuncio leggera`. Le foto si scaricano in `bot/foto.py`.
+
+| variabile | default | cosa fa |
+|---|---|---|
+| PAGINA_LEGGERA_MAX_CARATTERI | 60000 | sotto questa lunghezza la pagina e' leggera |
+| PAGINA_LEGGERA_RETRY | 2 | ritentativi con un altro proxy |
+| FOTO_DIRETTE | 1 | 0 spegne lo scarico diretto delle foto |
+| VINTED_ATTESA_403_S | 1 | attesa (s) dopo un 403 |
+| LAMPO_SENZA_CATEGORIA_MARGINE_MIN | 50 | margine (EUR) del lampo senza categoria |
+
+## Tracciamento vendite
+`bot/tracciamento.py` (`tracc_avvia_serie`, `_tracc_serie_interna`, `tracc_riprendi_serie`): ricontrolli a 15 s, 30 s, 1, 5, 15 min, 1 h; serie ridotta (5, 15 min, 1 h) per gli scartati. Una riga `TRACCIATO` a fine serie con esito del bot e di vendita; le serie pendenti stanno nel DB e si riprendono all'avvio. `rimosso?` = pagina 200 senza dati; `prenotato` entro 1 h vale come venduto. Messaggi: venduto veloce e allarme preferiti.
+
+| variabile | default | cosa fa |
+|---|---|---|
+| TRACCIAMENTO_ATTIVO | 1 | 0 spegne il tracciamento |
+| VENDUTO_VELOCE_MARGINE_MIN | 40 | margine (EUR) per il messaggio, 0 = spento |
+| ALLARME_PREF_ATTIVO | 1 | allarme sui preferiti in crescita |
+| ALLARME_PREF_60 / _300 | 3 / 6 | preferiti a 60 s e 300 s |
+| ALLARME_PREF_RAPPORTO | 1.5 | fair value/prezzo minimo |
+| SKIP_GIA_VENDUTI | 0 | 1 scarta i gia' venduti |
+
+## Cascate e quote Gemini
+`bot/gemini_stato.py` (`cascata_per`, quote per coppia chiave-modello) e `bot/gemini_api.py`. Chiavi di `GEMINI_API_KEYS`; la cascata va dal modello migliore al piu' leggero e scala quando la quota giornaliera finisce su tutte le chiavi (reset a mezzanotte Pacific). Chiave 401/403: esclusa 6 ore. Dopo `GEMINI_TIMEOUT_PER_PAUSA` timeout di fila la fase salta Gemini per `GEMINI_PAUSA_TIMEOUT_SECONDI`.
+
+| variabile | default | cosa fa |
+|---|---|---|
+| GEMINI_API_KEYS / GEMINI_API_KEY | vuote | chiavi gratuite (la singola e' il ripiego) |
+| GEMINI_CASCATA / _OCCHIO | vuote | modelli in ordine, la seconda per le foto |
+| GEMINI_MODEL_FALLBACK | gemini-3.1-flash-lite | modello di ripiego |
+| GEMINI_BACKOFF_MAX_S / _BUDGET_CHIAMATA_S | 6 / 60 | backoff e budget per chiamata |
+| GEMINI_TIMEOUT_S | 20 | timeout di una richiesta |
+| GEMINI_TIMEOUT_PER_PAUSA / _PAUSA_TIMEOUT_SECONDI | 2 / 120 | timeout di fila e pausa |
+
+## Telegram blocchi e limitatore
+`bot/telegram_api.py`: limitatore di ritmo (`TELEGRAM_MSG_MINUTO` messaggi o foto in 60 s, oltre la chiamata aspetta), attesa dei blocchi 429 (`_attendi_fine_blocco`) e coda dei messaggi muti. I messaggi si aggiornano in place (didascalia max 1024 caratteri). Bottoni di feedback in `bot/feedback.py`.
+
+| variabile | default | cosa fa |
+|---|---|---|
+| TELEGRAM_MSG_MINUTO | 14 | ritmo massimo, 0 = spento |
+| TELEGRAM_ATTESA_MUTI_MAX_S | 3 | attesa massima per i muti |
+| FEEDBACK_ATTIVO | 1 | 0 toglie i bottoni di feedback |
+| TELEGRAM_ALERT_CHAT_ID | vuoto | gruppo COMPRA degli avvisi |
+
+## Banda e contatori
+`bot/proxy.py`: ogni risposta Vinted aggiorna i contatori di banda per tipo (`_registra_banda`), salvati nel DB; il log `RIEPILOGO BANDA` li riassume (procedura in `docs/procedure/consumi.md`). Quarantena dei proxy che falliscono di fila. `PROXY_LIST` e `PROXY_ESCLUSI` non si toccano.
+
+| variabile | default | cosa fa |
+|---|---|---|
+| PROXY_QUARANTENA_SOGLIA | 3 | errori di fila prima della quarantena |
+| PROXY_QUARANTENA_ORE | 3 | durata della quarantena |
+| SONDA_BANDA_CAMPIONI | 10 | pagine misurate dalla sonda, 0 = spenta |
+| LOG_DB / LOG_DB_MAX_MB | 1 / 0 | log nel DB e suo limite (0 = nessuno) |
+| DB_FILE | /data/vinted_bot.sqlite3 | database sul volume |
+
+## Pausa notturna
+Sulla fonte: i tracker hanno `NIGHT_PAUSE_FROM/TO` (23-6 ora italiana; sono variabili dei servizi tracker, non del worker). Il worker non si ferma. Il radar ha in piu' `radar_in_pausa` (`bot/radar.py`): in quella fascia ignora i messaggi radar (motivo `pausa_notturna`).
+
+| variabile | default | cosa fa |
+|---|---|---|
+| RADAR_PAUSA_DA | 23 | inizio pausa del radar (vuoto = nessuna) |
+| RADAR_PAUSA_A | 6 | fine pausa del radar |
+| REPORT_RADAR_ORA_UTC | 5 | ora UTC del report giornaliero |
+
+## Arresto e watchdog
+`main_telethon.py`: su SIGTERM il bot finisce le analisi in corso (moda e radar) per al massimo `ARRESTO_ATTESA_MAX_S`, poi si disconnette. `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` (100, variabile di Railway) deve restare sopra. `watchdog_messaggi` riavvia se il gruppo tracker tace; `_thread_blocco` se il ciclo e' bloccato.
+
+| variabile | default | cosa fa |
+|---|---|---|
+| ARRESTO_ATTESA_MAX_S | 90 | attesa massima allo stop |
+| WATCHDOG_MINUTI | 10 | minuti di silenzio prima del riavvio, 0 = spento |
+| BLOCCO_SECONDI | 120 | battito mancante prima del riavvio, 0 = spento |
+
+## Radar: filtro modelli
+`bot/radar.py` (messaggi con `RADAR_MARCATORE`), `bot/radar_matrice.py` (`trova_modello`, `valuta_modello`, dati `data/radar_matrice.json`, tabella `docs/radar-matrice.md`), `bot/radar_famiglie.py` (`modello_famiglia`). Un titolo che cita un modello noto usa il suo buy max (margine, ROI, riserva per rischio, tolleranza); sopra `RADAR_SPESA_MAX` si scarta sempre.
+
+| variabile | default | cosa fa |
+|---|---|---|
+| RADAR_ATTIVO | 1 | 0 ignora i messaggi radar |
+| RADAR_PREZZO_MIN / RADAR_SPESA_MAX | 10 / 50 | prezzo minimo e spesa massima (EUR) |
+| RADAR_MARGINE_MIN / RADAR_ROI_MIN | 50 / 100 | margine (EUR) e ROI (%) minimi |
+| RADAR_RISERVA_PER_PUNTO | 0.03 | riserva per punto di rischio |
+| RADAR_TOLLERANZA_BUY_MAX | 1.15 | tolleranza sul buy max |
+| RADAR_CAMPIONE_SCARTI_OGNI | 10 | 1 scartato su N visitato lo stesso |
+| RADAR_FAMIGLIE_NUOVE_ORA | 40 | valutazioni orarie delle famiglie nuove |
+
+## Radar: comparabili e semaforo
+`bot/radar_v2.py` (`analizza`, `rivaluta`): ricerca dei comparabili con cache, pre-filtro per ricerca, semaforo e giallo `quasi_roi`. Il verdetto va nel DB (`bot/archivio_radar.py`). Avvisi solo per i semafori di `RADAR_SEMAFORI`.
+
+| variabile | default | cosa fa |
+|---|---|---|
+| RADAR_V2_CACHE_ORE | 24 | validita' della cache dei prezzi |
+| RADAR_V2_PARALLELO | 2 | ricerche in parallelo |
+| RADAR_V2_PREFILTRO / _RIF_ORE | 1 / 8 | pre-filtro e ore del riferimento |
+| RADAR_V2_SCALA_MIN | 3 | comparabili minimi prima di allargare |
+| RADAR_V2_MAX_GIORNO | 3000 | valutazioni massime al giorno |
+| RADAR_QUASI_ROI_MIN / _JEV_CONF / _MIN_N | 90 / 0.85 / 8 | regola `quasi_roi` (0 = spenta) |
+| RADAR_SEMAFORI | verde,giallo | semafori che avvisano |
+
+## Radar: Jev
+`bot/jev.py` (`giudica_completo`) e `bot/radar.py`: Jev giudica i comparabili e il modello; un giudizio sul "stesso modello" declassa il verde se i simili non reggono (`RADAR_VERIFICA`). Jev non alza mai un rosso, quindi si chiede solo a gialli, verdi e possibili `quasi_roi`.
+
+| variabile | default | cosa fa |
+|---|---|---|
+| RADAR_JEV_RICHIESTO | 1 | Jev richiesto per l'avviso |
+| RADAR_JEV_CONF_MIN | 0.7 | confidenza minima |
+| RADAR_JEV_SOLO_UTILI | 1 | 0 = Jev su tutti |
+| RADAR_VERIFICA / _VERIFICA_SCARTA | 1 / 0 | verifica "stesso modello"; 1 = scarta senza simili |
+| JEV_GIUDICE / JEV_COMPS / JEV_FOTO_COMPS | 0 / 0 / 0 | prove in ombra |
+| JEV_PRECONTROLLO / JEV_AUTENTICITA_FOTO | 1 / 5 | precontrollo e foto per l'autenticita' |
+
+## Radar: Gemini
+`bot/radar_gemini.py::controlla`: dopo semaforo e Jev, una chiamata Gemini gratuita sulle foto dei soli gialli e verdi. Esiti `conferma`, `dubbio` (parte muto, "da rivedere"), `scarta` (non parte). Legge il modello esatto: se la ricerca cambia, `rivaluta` rifa' comparabili e semaforo (un rosso non parte). La sua stima di rivendita e' solo informativa.
+
+| variabile | default | cosa fa |
+|---|---|---|
+| RADAR_GEMINI | 1 | 0 spegne il controllo |
+| RADAR_GEMINI_FOTO | 10 | foto massime per chiamata |
+| RADAR_GEMINI_MAX_ORA | 40 | chiamate massime all'ora |
+| RADAR_GEMINI_RAPPORTO_MIN | 0.5 | rapporto minimo con la stima del codice |
+
+## Radar: appreso
+`bot/radar_appreso.py` (`registra`, `limite_famiglia`, `da_saltare`, `carica_dal_db`): impara dai comparabili il prezzo sopra cui una famiglia non rende e salta in anticipo gli annunci sopra quel limite; 1 su N passa comunque per misurare.
+
+| variabile | default | cosa fa |
+|---|---|---|
+| RADAR_APPRESO | 1 | 0 spegne l'apprendimento |
+| RADAR_APPRESO_GIORNI | 14 | finestra dei dati |
+| RADAR_APPRESO_CAMPIONE | 10 | 1 annuncio su N passa comunque, 0 = mai |
+| RADAR_TRACCIA_ROSSI_1_SU | 10 | traccia 1 rosso su N |
+| RADAR_AUDIT_1_SU | 20 | audit di 1 scarto "non oggetto" su N |
+
+## Radar: spedizione
+`bot/spedizione.py` (`costo_spedizione`, `classe_taglia`, `paese_da_html`): il costo di spedizione entra nel prezzo d'acquisto di margine e ROI, in base a paese del venditore e taglia dell'oggetto; i campi si leggono dalla pagina gia' scaricata.
+
+| variabile | default | cosa fa |
+|---|---|---|
+| SPEDIZIONE_TARIFFE | vuoto | tariffe alternative (vuoto = quelle del codice) |
+
+## Ramo Occhio e Cervello (rimosso)
+Occhio e Cervello erano spenti dal 1/11 (`SOLO_SEMAFORO=1`) e sono stati tolti dal codice il 13/11. Si recuperano da git: vedi `_archive/2026-11-cervello/README.md`. Non esistono piu' le loro variabili.

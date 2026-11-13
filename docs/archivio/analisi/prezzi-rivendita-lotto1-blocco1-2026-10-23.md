@@ -1,6 +1,6 @@
 # Prezzi di rivendita, lotto 1, blocco 1 (23/10/2026)
 
-Risposta dell'altra sessione al prompt di `docs/prompt-prezzi-rivendita.md` (11 modelli di Casa). **Nessun numero e' caricato nelle liste del radar**: i dati sono troppo scarsi (regole 11 e 16).
+Risposta dell'altra sessione al prompt di `docs/archivio/prompt-prezzi-rivendita.md` (11 modelli di Casa). **Nessun numero e' caricato nelle liste del radar**: i dati sono troppo scarsi (regole 11 e 16).
 
 | Modello | Veloce | Normale | Venduti | Esito |
 |---|---|---|---|---|
