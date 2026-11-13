@@ -53,30 +53,6 @@ _RE_PRODOTTO_VINTED_CON_ID = re.compile(
 )
 
 
-def _etichetta_piattaforma_da_url(url):
-    """Determina eBay/Poshmark/Vinted dal DOMINIO dell'URL del comp, invece
-    di fidarsi dell'etichetta di fonte generica ('eBay/Poshmark', 'ricerca
-    on-demand') -- aggiunto il 2026-09-25 su richiesta dell'utente: il pool
-    interno gia' sapeva distinguere eBay da Poshmark riga per riga (tag
-    '[ebay]'/'[poshmark]', vedi _query_resellbot_raw), ma quell'informazione
-    si perdeva non appena il Cervello ricopiava il comp nel suo JSON (il
-    campo fonte e' un enum a grana piu' larga, 'ebay_poshmark'). Il dominio
-    dell'URL e' un dato oggettivo, deciso in Python, mai dal modello -- stesso
-    principio delle altre reti di sicurezza deterministiche in questo file.
-    Ritorna None se il dominio non e' uno di quelli riconosciuti (lascia
-    l'etichetta generica invariata)."""
-    if not url:
-        return None
-    u = url.lower()
-    if "poshmark." in u:
-        return "Poshmark"
-    if "ebay." in u:
-        return "eBay"
-    if "vinted." in u:
-        return "Vinted"
-    return None
-
-
 def _normalizza_titolo_per_link(titolo):
     """Normalizzazione MINIMA (minuscolo, spazi compattati) per il lookup
     titolo->URL comp. Deliberatamente diversa da _normalizza_titolo_per_dedup,

@@ -10,12 +10,11 @@ import time
 import asyncio
 import traceback
 
-from bot.config import TELEGRAM_OWNER_CHAT_ID
 from bot.logger import log
 from bot import db
 from bot.testo import _escapa_markdown_legacy as esc
-from bot.telegram_api import (telegram_send_con_tastiera, telegram_edit_con_tastiera, telegram_get_updates,
-                              telegram_answer_callback, telegram_edit_tastiera, telegram_send_richiesta_prezzo, righe_feedback)
+from bot.telegram_api import (telegram_edit_con_tastiera, telegram_get_updates, telegram_answer_callback,
+                              telegram_edit_tastiera, telegram_send_richiesta_prezzo, righe_feedback)
 
 FEEDBACK_ATTIVO = os.environ.get("FEEDBACK_ATTIVO", "1").strip() != "0"
 FEEDBACK_MAX_GIORNO = int(float(os.environ.get("FEEDBACK_MAX_GIORNO", "60")))   # controlli proposti al giorno
@@ -48,21 +47,6 @@ def parse_risposta(testo):
     if giudizio is None and prezzo is None:
         return None
     return giudizio, (None if giudizio == "falso" else prezzo)
-
-
-def rischio_falso_da_verdetto(legit_verdetto, decisione, semaforo):
-    """True se vale la pena chiedere il tuo parere sul falso: il Cervello non e' convinto dell'autenticita' ma l'annuncio e'
-    economicamente interessante (COMPRA/TRATTA/CHIEDI FOTO oppure semaforo verde/giallo). Pura."""
-    if legit_verdetto not in ("sospetto_servono_altre_foto", "probabilmente_falso"):
-        return False
-    return decisione in ("COMPRA", "TRATTA", "CHIEDI ALTRE FOTO") or semaforo in ("🟢", "🟡")
-
-
-def rischio_falso_da_scarto(motivo_skip, semaforo):
-    """True se un annuncio scartato dall'Occhio per falso/frode/brand diverso e' economicamente interessante (semaforo verde/giallo):
-    sono i falsi negativi piu' costosi. Pura."""
-    m = str(motivo_skip or "")
-    return semaforo in ("🟢", "🟡") and m.startswith(("[FALSO CONCLAMATO", "[ANNUNCIO FRAUDOLENTO", "[BRAND NON CORRISPONDENTE"))
 
 
 def _ammesso(item_id):
@@ -125,15 +109,6 @@ def _base_testo(testo):
     return re.split(r"\n(?:Cosa dici|✅|❓|❌)", testo or "")[0]
 
 
-def contesto_annuncio(listing_info, esito=None, target=None, legit=None):
-    """Dati dell'annuncio da riportare nel messaggio e nel log del feedback. Pura."""
-    from bot.verdetto import _a_float
-    fv = (listing_info or {}).get("fair_value") or {}
-    return {"brand": (listing_info or {}).get("brand"), "titolo": ((listing_info or {}).get("title") or "")[:80],
-            "prezzo": _a_float((listing_info or {}).get("price"), None), "sem": fv.get("semaforo"), "fv": fv.get("fv"),
-            "esito": esito, "target": target, "legit": legit}
-
-
 def registra_feedback(item_id, giudizio, prezzo, fonte, ctx=None):
     """Salva il parere (DB + riga di log). Se c'e' un prezzo atteso lo registra anche come stima umana del fair value."""
     ctx = ctx or {}
@@ -181,24 +156,6 @@ def registra_nota(item_id, nota, ctx=None):
             k: ctx.get(k) for k in ("prezzo", "esito", "sem", "fv", "target", "legit", "motivo", "titolo")}})
     except Exception:
         log.warning("Nota non salvata nel DB:\n%s", traceback.format_exc())
-
-
-async def proponi_controllo(item_id, url, ctx, motivo, reply_to=None):
-    """Manda nella chat principale (senza suono) il messaggio con i bottoni, una volta per annuncio e nei limiti giornalieri.
-    Non solleva mai. Ritorna True se e' partito."""
-    if not FEEDBACK_ATTIVO or not item_id or not _ammesso(str(item_id)):
-        return False
-    try:
-        ctx = {**ctx, "motivo": motivo}
-        mid = await telegram_send_con_tastiera(TELEGRAM_OWNER_CHAT_ID, testo_controllo(ctx, url, motivo),
-                                               tastiera_giudizio(item_id), reply_to=reply_to, disable_notification=True)
-        log.info("FEEDBACK PROPOSTO | item=%s | brand='%s' | motivo=%s | inviato=%s", item_id, ctx.get("brand") or "n/d",
-                 str(motivo or "")[:60].replace("|", "/"), bool(mid))
-        _contesti[str(item_id)] = ctx
-        return bool(mid)
-    except Exception:
-        log.warning("Controllo autenticita' non proposto:\n%s", traceback.format_exc())
-        return False
 
 
 _contesti = {}   # item_id -> contesto del controllo proposto (per il log del parere)

@@ -44,9 +44,9 @@ def _gemini_in_blackout():
 def _gemini_registra_esito(successo):
     """Aggiorna il contatore di blackout dopo ogni chiamata Gemini completata
     (con successo o con tutti i tentativi/key esauriti). Chiamata da
-    chiama_gemini e da _chiama_gemini_raw dentro chiama_gemini_cervello_forzato
+    chiama_gemini
     -- stesso stato condiviso, perche' un blackout del modello colpisce
-    Occhio e Cervello allo stesso modo."""
+    tutte le fasi allo stesso modo."""
     if successo:
         if _gemini_5xx_consecutivi[0] >= SOGLIA_5XX_GEMINI_PER_BLACKOUT:
             log.info("Gemini: uscito dal blackout 5xx (una chiamata e' andata a buon fine).")
@@ -111,36 +111,21 @@ GEMINI_MODELLI_RISERVA = [
 GEMINI_MODEL_FALLBACK = GEMINI_MODELLI_RISERVA[0] if GEMINI_MODELLI_RISERVA else ""
 # CASCATA DI QUOTE (richiesta dall'utente il 2026-10-03): ogni modello Gemini ha la sua quota giornaliera per key.
 # Con GEMINI_CASCATA="gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite" (dal migliore al piu' leggero)
-# Occhio e Cervello partono dal primo modello e, quando la quota giornaliera finisce su TUTTE le key, scalano al
+# le chiamate sulle foto partono dal primo modello e, quando la quota giornaliera finisce su TUTTE le key, scalano al
 # successivo senza attese. Vuota = comportamento di prima (modello principale + GEMINI_MODEL_FALLBACK).
 GEMINI_CASCATA = [m.strip() for m in os.environ.get("GEMINI_CASCATA", "").split(",") if m.strip()]
-# Cascata per FASE (richiesta dall'utente il 2026-10-03): l'Occhio gira su ogni annuncio e conta la velocita',
-# il Cervello decide il prezzo e merita i modelli migliori (quota gratuita di pochi richieste al giorno).
-# GEMINI_CASCATA_OCCHIO / GEMINI_CASCATA_CERVELLO; se una manca vale la GEMINI_CASCATA generica.
+# Cascata per fase (occhio = chiamate sulle foto di moda e radar): GEMINI_CASCATA_OCCHIO; se manca vale la GEMINI_CASCATA generica.
 GEMINI_CASCATA_OCCHIO = [m.strip() for m in os.environ.get("GEMINI_CASCATA_OCCHIO", "").split(",") if m.strip()]
-GEMINI_CASCATA_CERVELLO = [m.strip() for m in os.environ.get("GEMINI_CASCATA_CERVELLO", "").split(",") if m.strip()]
-# Fascia "alta" (prezzo richiesto >= GEMINI_SOGLIA_PREZZO_ALTO): GEMINI_CASCATA_OCCHIO_ALTO / _CERVELLO_ALTO; se
-# mancano valgono quelle base della fase.
-GEMINI_CASCATA_OCCHIO_ALTO = [m.strip() for m in os.environ.get("GEMINI_CASCATA_OCCHIO_ALTO", "").split(",") if m.strip()]
-GEMINI_CASCATA_CERVELLO_ALTO = [m.strip() for m in os.environ.get("GEMINI_CASCATA_CERVELLO_ALTO", "").split(",") if m.strip()]
 
 
 def cascata_per(ruolo=None):
-    """Catena di modelli (dal migliore al piu' leggero) per la fase `ruolo` ("occhio" | "cervello"), [] = nessuna."""
+    """Catena di modelli (dal migliore al piu' leggero) per la fase `ruolo` ("occhio" | "occhio_radar"), [] = nessuna."""
     if ruolo == "occhio_radar":  # 10/11: il radar ha lo stato di timeout/pausa suo, ma stessa cascata dell'occhio
         ruolo = "occhio"
-    if ruolo in ("occhio_alto", "cervello_alto"):
-        alta = GEMINI_CASCATA_OCCHIO_ALTO if ruolo == "occhio_alto" else GEMINI_CASCATA_CERVELLO_ALTO
-        if alta:
-            return alta
-        ruolo = ruolo.replace("_alto", "")
-    specifica = {"occhio": GEMINI_CASCATA_OCCHIO, "cervello": GEMINI_CASCATA_CERVELLO}.get(ruolo) or []
+    specifica = {"occhio": GEMINI_CASCATA_OCCHIO}.get(ruolo) or []
     return specifica or GEMINI_CASCATA
 
 
-def tutti_i_modelli_cascata():
-    return {*GEMINI_CASCATA, *GEMINI_CASCATA_OCCHIO, *GEMINI_CASCATA_CERVELLO,
-            *GEMINI_CASCATA_OCCHIO_ALTO, *GEMINI_CASCATA_CERVELLO_ALTO}
 RAFFREDDAMENTO_MODELLO_SOVRACCARICO_SECONDI = 15 * 60
 RAFFREDDAMENTO_MODELLO_INESISTENTE_SECONDI = 24 * 3600
 _gemini_modello_escluso_fino = {}
@@ -190,7 +175,7 @@ def _gemini_url_effettivo(api_url, ruolo=None):
     """URL del primo modello disponibile della catena principale ->
     GEMINI_MODELLI_RISERVA. Se sono tutti esclusi si torna al principale
     (e da li' valgono rotazione key e backoff come prima). Sostituisce solo il
-    nome del modello nel path, quindi vale per Occhio e Cervello."""
+    nome del modello nel path, quindi vale per ogni fase."""
     cascata = cascata_per(ruolo)
     if cascata:
         for modello in cascata:
@@ -246,7 +231,7 @@ def _gemini_gestisci_modello_non_disponibile(api_url, url_usato, status_code, co
 # finche' funziona (niente round-robin ad ogni chiamata, sprecherebbe quota
 # su piu' key per nulla), e si avanza alla prossima SOLO quando una chiamata
 # incassa un 429 di quota esaurita -- vedi chiama_gemini e
-# chiama_gemini_cervello_forzato.
+# chiama_gemini.
 _GEMINI_API_KEYS_RAW = os.environ.get("GEMINI_API_KEYS", "").strip()
 GEMINI_API_KEYS = (
     [k.strip() for k in _GEMINI_API_KEYS_RAW.split(",") if k.strip()]
@@ -405,15 +390,6 @@ def _gemini_segna_key_quota_esaurita(key, modello=None, secondi=None):
 def _gemini_modello_senza_quota(modello):
     """True se la quota giornaliera di `modello` e' esaurita su TUTTE le key: la cascata passa al successivo."""
     return bool(GEMINI_API_KEYS) and all(_gemini_key_in_quota_esaurita(k, modello) for k in GEMINI_API_KEYS)
-
-
-def gemini_cascata_esaurita(ruolo=None):
-    """True se TUTTI i modelli della cascata di `ruolo` hanno la quota finita su tutte le key: Gemini non puo'
-    rispondere e la fase resta in pausa."""
-    modelli = cascata_per(ruolo)
-    # un modello escluso (404, sovraccarico) o senza quota su tutte le key non e' piu' utilizzabile: 4/10 la cascata
-    # restava "non esaurita" per un modello escluso e il bot continuava a chiamare Gemini ricevendo 429
-    return bool(modelli) and all(_gemini_modello_escluso(m) or _gemini_modello_senza_quota(m) for m in modelli)
 
 
 # STALLO DI GEMINI (5/10 14:01-14:09 UTC: ~10 annunci fermi 5-8 minuti): ogni chiamata ha un timeout di 30 s e il backoff

@@ -102,3 +102,24 @@ def url_da_entita(entita, parte):
         if "vinted." in candidato and parte in candidato:
             return candidato
     return None
+
+
+def _estrai_item_id_da_url(url):
+    if not url:
+        return None
+    m = re.search(r"/items/(\d+)", url)
+    return m.group(1) if m else None
+
+
+def _a_float(valore, default=None):
+    """Conversione tollerante a float (numeri, stringhe con virgola o simbolo euro); `default` se non convertibile."""
+    if valore is None:
+        return default
+    if isinstance(valore, bool):
+        return default
+    if isinstance(valore, (int, float)):
+        return float(valore)
+    try:
+        return float(str(valore).replace("€", "").replace(",", ".").strip())
+    except (ValueError, TypeError):
+        return default

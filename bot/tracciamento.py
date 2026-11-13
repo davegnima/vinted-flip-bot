@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 import httpx
 
-from bot.verdetto import _a_float, _estrai_item_id_da_url
+from bot.parsing import _a_float, _estrai_item_id_da_url
 from bot.fair_value import _jsonl_append, _jsonl_read
 from bot import db
 from bot.tempi import _parse_created_at_dt

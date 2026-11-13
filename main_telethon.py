@@ -1,10 +1,7 @@
 """
-Vinted Flip Oracle Bot (versione Telethon / userbot) -- Scenario G con fallback F
-====================================================================================
-Pipeline finale, basata sugli scenari di ottimizzazione dei costi e filtro.
-Include: categorie multilingua estese, niente fallback "dress" pericoloso su
-Vestiaire, e function calling FORZATO per il cervello Gemini (sostituisce
-google_search, che su Gemini non e' forzabile in modo affidabile).
+Vinted Flip Oracle Bot (userbot Telethon): riceve gli annunci dai tracker, li valuta e manda l'avviso su Telegram.
+Moda: semaforo (stima rapida) -> Jev sui comparabili -> Gemini gratuito sulle foto. Radar: bot/radar.py.
+Questo file ha il client Telethon, i comandi, main() e un blocco di re-export (i test usano m.NOME).
 """
 
 import os
@@ -61,21 +58,6 @@ from bot.costanti import (
     VINTED_HEADERS,
 )  # noqa: F401  (re-export)
 
-from bot.schemas import (
-    CATEGORIE_CAPO_ENUM,
-    CERVELLO_RESPONSE_SCHEMA,
-    OCCHIO_RESPONSE_SCHEMA,
-    OCCHIO_RESPONSE_SCHEMA_GEMINI,
-    _rimuovi_maxitems_da_array_di_oggetti,
-)  # noqa: F401  (re-export)
-
-from bot.prompts import (
-    GEMINI_CERVELLO_SYSTEM_PROMPT,
-    GEMINI_OCCHI_SYSTEM_PROMPT,
-    GEMINI_OCCHI_SYSTEM_PROMPT_JSON,
-    _costruisci_prompt_occhio_json,
-)  # noqa: F401  (re-export)
-
 from bot.logger import (
     _LOG_FORMATO,
     _SoloSottoWarning,
@@ -85,44 +67,19 @@ from bot.logger import (
 )  # noqa: F401  (re-export)
 
 from bot.config import (
+    VISUAL_SEARCH_ATTIVA,
+    VINTED_TRACKER_NAME_HINTS,
     BOT_VERSION,
-    BRAND_ESCLUSI_ALERT_CHIEDI_FOTO,
     COMMISSIONE_PROTEZIONE_FISSA,
     COMMISSIONE_PROTEZIONE_PCT,
-    COMP_DA_MEMORIA_AMMESSI,
-    DEBUG_CONFRONTO_COMP_TELEGRAM,
     GEMINI_API_KEY,
-    GEMINI_API_URL_CERVELLO,
     GEMINI_API_URL_OCCHIO,
-    GEMINI_MODEL_CERVELLO,
     GEMINI_MODEL_OCCHIO,
-    MAX_ANALISI_PARALLELE,
     MAX_GALLERY_PHOTOS,
-    OCCHIO_OUTPUT_JSON,
-    PREZZO_CERVELLO_INPUT,
-    PREZZO_CERVELLO_OUTPUT,
     PREZZO_GROUNDING_PER_QUERY,
     PREZZO_OCCHIO_INPUT,
     PREZZO_OCCHIO_OUTPUT,
-    QUOTA_INCASSO_NETTO,
-    REDDIT_CLIENT_ID,
-    REDDIT_CLIENT_SECRET,
-    REDDIT_USERNAME,
-    SCONTO_MAX_TRATTATIVA,
     SCONTO_TIPICO_TRATTATIVA_VENDITA,
-    SOGLIA_GIORNI_VENDITA_LAMPO,
-    SOGLIA_MARGINE_ALERT_CHIEDI_FOTO,
-    SOGLIA_MARGINE_ASSOLUTO_NOTIFICA,
-    SOGLIA_MARGINE_COMPRA,
-    SOGLIA_MARGINE_COMPRA_ALTA,
-    SOGLIA_MARGINE_TAGLIA_ESTREMA_ECCEZIONE,
-    SOGLIA_MARGINE_URGENZA,
-    SOGLIA_PREZZO_FURTO_ISTANTANEO,
-    SOGLIA_ROI_COMPRA,
-    SOGLIA_ROI_COMPRA_RIDOTTA,
-    SOGLIA_ROI_FURTO_ISTANTANEO,
-    SOGLIA_ROI_TAGLIA_ESTREMA_ECCEZIONE,
-    SOGLIA_ROI_URGENZA,
     SPEDIZIONE_STIMATA_EUR,
     TELEGRAM_ALERT_CHAT_ID,
     TELEGRAM_API,
@@ -132,11 +89,8 @@ from bot.config import (
     TELEGRAM_GROUP_ID,
     TELEGRAM_OWNER_CHAT_ID,
     TELEGRAM_SESSION_STRING,
-    TOLLERANZA_COMP_EUR,
     VINTED_ACCESS_TOKEN,
     VINTED_REFRESH_TOKEN,
-    VINTED_TRACKER_NAME_HINTS,
-    VISUAL_SEARCH_ATTIVA,
     _env_float,
 )  # noqa: F401  (re-export)
 
@@ -144,43 +98,8 @@ from bot.testo import (
     _RE_ALT_PRODOTTO_VINTED,
     _RE_PRODOTTO_VINTED_CON_ID,
     _escapa_markdown_legacy,
-    _etichetta_piattaforma_da_url,
     _normalizza_titolo_per_dedup,
     _normalizza_titolo_per_link,
-)  # noqa: F401  (re-export)
-
-from bot.occhio import (
-    ETICHETTA_VERDETTO_LEGIT,
-    calcola_scarto_occhio,
-    render_occhio_da_json,
-    valida_payload_occhio,
-)  # noqa: F401  (re-export)
-
-from bot.verdetto import (
-    CERVELLO_CAMPIONI_EXTRA,
-    CERVELLO_SPREAD_MAX,
-    EMOJI_DECISIONE,
-    ETICHETTA_CONFIDENZA,
-    ETICHETTA_FONTE_COMP,
-    ETICHETTA_LEGIT,
-    ETICHETTA_RISCHIO,
-    PREFISSI_FONTE_POOL,
-    URGENZA_RICHIEDE_COMP_REALE,
-    _a_float,
-    _comp_utilizzabili,
-    _estrai_item_id_da_url,
-    _estrai_prezzi_da_pool_ricerca,
-    _etichetta_fonte_pool,
-    _filtra_outlier,
-    _motivo_nessun_prezzo,
-    _percentile,
-    _prezzi_per_fonte_da_pool,
-    _riepilogo_comp_per_fonte,
-    calcola_verdetto,
-    classifica_provenienza_comp,
-    consolida_target_cervello,
-    render_messaggio_verdetto,
-    valida_payload_cervello,
 )  # noqa: F401  (re-export)
 
 from bot.categorie import (
@@ -223,13 +142,11 @@ from bot.fair_value import (
     _mediana_pesata,
     _moltiplicatore_fair_value,
     _riga_fair_value_testo,
-    _riga_fair_value_unica,
     _sottolinea_da_testo,
     check_skip_fair_value,
     fv_carica_appreso,
     fv_classifica_campione,
     fv_rapporto,
-    fv_registra_gemini,
     fv_registra_rapida,
     fv_registra_umana,
     fv_ricalibra,
@@ -247,7 +164,6 @@ from bot.filtri import (
 from bot.gemini_stato import (
     GEMINI_API_KEYS,
     GEMINI_CASCATA,
-    GEMINI_CASCATA_CERVELLO,
     GEMINI_CASCATA_OCCHIO,
     GEMINI_MODELLI_RISERVA,
     GEMINI_MODEL_FALLBACK,
@@ -334,6 +250,8 @@ from bot.telegram_api import (
 )  # noqa: F401  (re-export)
 
 from bot.parsing import (
+    _a_float,
+    _estrai_item_id_da_url,
     BRAND_REGEX,
     BRAND_VALORI_VUOTI,
     PRICE_REGEX,
@@ -443,25 +361,10 @@ from bot.foto import (
 
 from bot.gemini_api import (
     testa_chiavi_gemini,
-    ISTRUZIONE_FASE_JSON,
-    _estrai_testo_da_parts,
     chiama_gemini,
-    chiama_gemini_cervello,
     costo_gemini_token,
 )  # noqa: F401  (re-export)
 
-from bot.vinted_search import (
-    _estrai_articoli_vinted,
-    _risolvi_search_by_image_id,
-    build_vinted_search_url,
-    build_vinted_visual_search_url,
-)  # noqa: F401  (re-export)
-
-from bot.resellbot import (
-    TASSO_USD_EUR,
-    _cerca_ebay_sold_via_resellbot,
-    _query_resellbot_raw,
-)  # noqa: F401  (re-export)
 
 from bot.comps_filtri import (
     _articoli_vinted,
@@ -469,79 +372,32 @@ from bot.comps_filtri import (
     ESCLUSIONI_FALSI_POSITIVI_CATEGORIA,
     LINEA_O_ERA_NON_UTILI_PER_RICERCA,
     RUMORE_GENERICO_COMP,
-    _arricchisci_brand_per_ricerca,
     _e_linea_o_era_utile_per_ricerca,
     _estrai_articoli_da_alt_vinted,
     _estrai_mappa_url_comp_vinted,
-    _filtra_comp_per_brand_sottolinee,
-    _filtra_comp_per_categoria,
-    _rimuovi_comp_autoreferenziale,
 )  # noqa: F401  (re-export)
 
 from bot.comps import (
-    CODICI_REDDIT_CACHE_FILE,
     MARKER_NESSUN_ARTICOLO_VINTED,
-    REDDIT_ABILITATO,
-    REDDIT_USER_AGENT,
-    SOLD_CACHE_FRESCA_SECONDI,
-    SOLD_CACHE_MAX_VOCI,
-    SOLD_CACHE_STALE_SECONDI,
-    TIMEOUT_FONTE_VINTED_SECONDI,
     TIMEOUT_SCRAPE_DIRETTO_VINTED_TESTO_SECONDI,
-    _BRAND_NOTI_PER_INCROCIO_REDDIT,
-    _cerca_ebay_sold_con_fallback,
     _cerca_vinted_testo_diretto,
-    _codici_reddit_cache,
-    _estrai_codici_prodotto_da_occhio,
-    _recupera_comp_visuali_vinted,
-    _reddit_ottieni_token,
-    _reddit_token_cache,
-    _reddit_verifica_codice,
-    _salva_cache_codici_reddit,
-    _scrape_catalogo_vinted_diretto,
-    _sold_cache,
-    _sold_cache_chiave,
-    _sold_cache_leggi,
-    _sold_cache_scrivi,
-    _titoli_menzionano_altro_brand_reddit,
-    _titoli_menzionano_categoria_diversa_reddit,
-    search_comps_completo,
-    verifica_codici_prodotto_reddit,
-)  # noqa: F401  (re-export)
-
-from bot.skip_report import (
-    _estrai_margine_e_roi_da_blocco,
-    build_skip_report,
-    check_skip_pre_cervello,
-    estrai_margine_preliminare,
 )  # noqa: F401  (re-export)
 
 from bot.scheda import (
-    ANALISI_GEMINI_ATTIVA,
-    SOLO_SEMAFORO,
-    GALLERIA_ANTICIPATA,
     LUNGHEZZA_MAX_DESCRIZIONE_SCHEDA,
-    STATO_ANALISI_COMPLETATA,
-    STATO_ANALISI_COMPLETATA_UNIFICATA,
-    STATO_ANALISI_INTERROTTA,
-    _PermessoAnalisi,
-    _aggiorna_stato_scheda,
     _descrizione_utile,
     _didascalia_galleria_anticipata,
     _eta_annuncio_testo,
     _invia_galleria_anticipata,
-    _invia_risultato_telegram,
     _riga_caricato_annuncio,
     _riga_venditore_annuncio,
     _righe_dettagli_annuncio,
     _scheda_annuncio_testo,
     _stato_analisi_testo,
     _testa_prezzo_brand,
-    componi_testi_verdetto,
 )  # noqa: F401  (re-export)
 
 from bot.pipeline import (
-    _campione_target_cervello,
     _process_listing_interno,
     process_listing,
 )  # noqa: F401  (re-export)
@@ -581,63 +437,6 @@ from bot.pipeline import (
 # ---------------------------------------------------------------------------
 
 
-# RETI_SICUREZZA_ATTIVE: RITIRATO il 2026-09-19 con il passaggio al
-# cervello a output JSON strutturato. Non ha piu' nulla da attivare o
-# disattivare: le sei reti di sicurezza che governava
-# (verifica_ancoraggio_prezzo_comp, verifica_comp_citati_sono_reali,
-# forza_soglia_minima_compra, converti_tratta_senza_obiettivo_valido,
-# declassa_urgenza_se_borderline, applica_soglia_trattativa_40_percento)
-# esistevano per correggere a posteriori, via regex sul testo, numeri e
-# decisioni che il modello scriveva in prosa. Ora quei numeri il modello
-# non li scrive affatto: li calcola calcola_verdetto() in Python dai dati
-# strutturati, quindi non esiste piu' l'errore da correggere. La domanda
-# diagnostica che questo flag doveva risolvere (perche' le reti
-# intervenivano sul 94% degli item con il Cervello OpenAI, tolto il 23/10, contro lo
-# 0% con Gemini) resta senza risposta ed e' diventata priva di oggetto: le
-# reti intervenivano sul FORMATO del testo, e quel formato non c'e' piu'.
-# La variabile d'ambiente puo' restare impostata su Railway senza alcun
-# effetto; questo blocco di commento e' l'unica traccia che ne resta.
-#
-# Vecchia documentazione del flag, conservata per contesto storico:
-# RETI_SICUREZZA_ATTIVE: interruttore diagnostico temporaneo. Log di
-# produzione del 18-19/09/2026 hanno mostrato che col Cervello OpenAI (tolto il 23/10)
-# le reti di sicurezza post-processing (verifica_ancoraggio_prezzo_comp,
-# verifica_comp_citati_sono_reali, forza_soglia_minima_compra,
-# converti_tratta_senza_obiettivo_valido, declassa_urgenza_se_borderline,
-# applica_soglia_trattativa_40_percento) intervengono su ~94% degli item
-# (61/65), contro 0/43 con Gemini nello stesso periodo -- troppo alto per
-# essere solo "casi limite corretti", serve vedere l'output NUDO del
-# cervello per capire se il problema e' nel prompt o nel provider stesso.
-# A False, process_listing salta tutte le correzioni automatiche e manda
-# il verdetto cosi' come lo scrive il cervello -- SOLO per diagnosi
-# mirata, mai lasciare a False in modo permanente (nessuna rete a
-# protezione di falsi COMPRA basati su comp inventati).
-# (nessuna lettura della env var: il flag non governa piu' nulla)
-
-
-                                          # trattativa su Vinted prima di comprare: usato
-                                          # SOLO per calcolare "prezzo da listare" (di
-                                          # quanto listare sopra alla vendita attesa per
-                                          # avere margine di trattativa), NON per la
-                                          # decisione COMPRA/TRATTA che resta invariata
-
-
-# richiesta esplicita dell'utente -- il blocco incondizionato del 2026-09-22 ("mai COMPRA a
-# prezzo pieno, qualunque sia il brand") si e' rivelato troppo rigido su un caso reale (Rick
-# Owens taglia estrema, margine €157.90/ROI 714% declassato comunque a TRATTA): "le taglie
-# hanno impatto sui gg di turnover e magari un pochino sul prezzo di vendita ma non devono
-# impattare in questa forma cosi' rigida l'esito". Ora la taglia estrema declassa COMPRA a
-# TRATTA solo se l'affare NON supera anche questa soglia alternativa (margine E roi, non solo
-# uno dei due) -- un margine/ROI davvero fuori scala vale comunque il rischio di liquidita'
-# sulla taglia. Sotto questa soglia resta il declassamento automatico di prima.
-
-
-                                         # invece del default 4 -- si fallisce prima e si passa
-                                         # al fallback (prosa/verdetto senza extra) invece di
-                                         # aspettare minuti su una chiamata che quasi certamente
-                                         # fallira' comunque
-
-
 # ESCLUSIONI VOLUTE (non mappare per evitare falsi positivi o capi di scarso valore):
 # - Maje, John Smedley, Alberta Ferretti, Romeo Gigli, Gianfranco Ferre: rimossi il 2026-10-01
 #   dopo aver analizzato i verdetti reali (~7h di log): zero annunci sopra i 50 EUR di margine
@@ -659,169 +458,6 @@ from bot.pipeline import (
 
 
 # ---------------------------------------------------------------------------
-# FILTRO PRE-GEMINI
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# PROMPT DI SISTEMA
-# ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
-# OCCHIO: SCHEMA JSON STRUTTURATO (attivo solo con OCCHIO_OUTPUT_JSON=true)
-# ---------------------------------------------------------------------------
-# Stesso impianto del Cervello, applicato un passo piu' a monte: il modello
-# OSSERVA e Python DECIDE.
-#
-# L'Occhio in prosa produce anche un verdetto finanziario completo (margine,
-# ROI, decisione, urgenza, deal score) che il codice ri-estrae con regex in
-# estrai_margine_preliminare per decidere se saltare il Cervello. E' la
-# stessa classe di errore rimossa dal Cervello il 2026-09-19, sopravvissuta
-# nel primo stadio: un annuncio buono puo' morire per un margine allucinato
-# prima ancora di essere valutato con comp reali.
-#
-# In questo schema l'Occhio non produce NESSUN numero economico, e nemmeno
-# il flag di scarto: uno scarto e' una decisione, e si calcola in
-# calcola_scarto_occhio() dai campi osservativi. La versione calcolata e'
-# anche piu' severa di quella dichiarabile a parole, perche' puo' pretendere
-# che la controprova anti-bias sia stata eseguita prima di accettare un
-# "falso conclamato" (caso reale: Dries Van Noten autentico a EUR 5,95
-# scartato come falso con dettagli costruiti a posteriori).
-#
-# L'ordine dei campi e' una catena di ragionamento forzata: evidenza ->
-# trascrizione verbatim -> identificazione -> osservazione fisica ->
-# riscontri -> controprova -> verdetto. Il verdetto puo' essere scritto solo
-# dopo che i riscontri concreti sono gia' stati messi per iscritto.
-#
-# maxItems su ogni array. ATTENZIONE (scoperto il 2026-09-20, in produzione):
-# su responseJsonSchema Gemini applica un "complexity budget" interno non
-# documentato, e maxItems su un array di OGGETTI (etichette, difetti,
-# riscontri_autenticita) lo consuma molto piu' di maxItems su un array di
-# stringhe. Superato il budget la risposta e' un 400 INVALID_ARGUMENT generico
-# ("Request contains an invalid argument"), senza indicare quale campo.
-# Lo schema qui sotto resta la fonte di verita' completa (usata per i test e
-# per il troncamento locale in valida_payload_occhio); quello REALMENTE
-# spedito a Gemini e' OCCHIO_RESPONSE_SCHEMA_GEMINI, derivato piu' sotto
-# togliendo maxItems solo dagli array di oggetti.
-
-
-# ==========================================================================
-# SCARTO PRE-CERVELLO: calcolato, non dichiarato dal modello.
-# Sostituisce check_skip_pre_cervello (~10 substring match su prosa, con due
-# bug reali trovati in produzione il 2026-09-19: "Confidenza: Alta" con i due
-# punti non matchava mai, e le varianti "falso palese"/"falso evidente" non
-# erano previste).
-# ==========================================================================
-
-
-# ---------------------------------------------------------------------------
-# TELEGRAM BOT API HELPERS
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# PARSING MESSAGGI E SCRAPING VINTED
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# GEMINI E TOOLKIT IA
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# SCHEMA DI OUTPUT STRUTTURATO DEL CERVELLO (structured output / JSON mode)
-# ---------------------------------------------------------------------------
-# Sostituisce il verdetto in prosa e tutte le regex che ne estraevano i
-# numeri. L'ordine di propertyOrdering NON e' cosmetico: Gemini genera i
-# campi in quell'ordine, quindi e' letteralmente la catena di ragionamento
-# imposta al modello -- prima si impegna per iscritto su brand e linea,
-# poi elenca i comp, e solo alla fine produce il prezzo target. Non puo'
-# sparare un numero prima di aver dichiarato su quale linea lo sta
-# calcolando.
-#
-# Dal 31/10 il Cervello fa una sola chiamata con lo schema (vedi
-# chiama_gemini_cervello): niente piu' function calling ne' ricerca on-demand.
-#
-# Nota sui vincoli numerici: responseSchema accetta solo un sottoinsieme di
-# OpenAPI, quindi qui non si usano pattern/minimum/maximum -- i limiti
-# (sconto 20-30%, deal 1-10, tetti di prezzo) sono applicati in Python da
-# valida_payload_cervello/calcola_verdetto, che e' comunque dove devono
-# stare: un vincolo dichiarato nello schema verrebbe rispettato "quasi
-# sempre", uno applicato in codice sempre.
-
-
-# ---------------------------------------------------------------------------
-# FILTRO PRE-CERVELLO e VALIDAZIONE POST-GENERAZIONE
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# RETI DI SICUREZZA REGEX -- RIMOSSE il 2026-09-19
-# ---------------------------------------------------------------------------
-# Con il cervello a output JSON strutturato queste funzioni non hanno piu'
-# un oggetto su cui lavorare, quindi sono state eliminate invece di essere
-# lasciate nel file come codice morto (un file lungo pieno di funzioni che
-# non vengono mai chiamate e' un costo di lettura permanente, e prima o poi
-# qualcuno le riattiva senza accorgersi che parsano un formato che non
-# esiste piu'). Elenco di cosa e' sparito e di cosa lo sostituisce:
-#
-#   _normalizza_emoji_decisione        -> le emoji le scrive render_messaggio_
-#                                         verdetto da un dizionario, il modello
-#                                         non le produce piu'
-#   normalizza_urgenza_wording         -> l'urgenza e' un valore calcolato,
-#                                         non una parola da normalizzare
-#   forza_soglia_minima_compra         -> calcola_verdetto applica le soglie
-#                                         PRIMA di scrivere la decisione
-#   declassa_urgenza_se_borderline     -> idem, l'urgenza nasce gia' corretta
-#   applica_soglia_trattativa_40_percento -> l'offerta la calcola il codice,
-#                                         il modello non la propone piu'
-#   converti_tratta_senza_obiettivo_valido -> TRATTA esiste solo se
-#                                         l'obiettivo regge, per costruzione
-#   valida_contraddizioni_report       -> non esistono piu' contraddizioni
-#                                         possibili tra testo e numeri
-#   estrai_decisione_da_testo          -> la decisione e' un campo, non si
-#                                         estrae da nessuna parte
-#   _e_urgenza_alta                    -> verdetto["urgenza"] == "Alta"
-#   verifica_falso_ha_motivazione      -> legit_motivo_specifico e' un campo
-#                                         obbligatorio dello schema, e la
-#                                         lunghezza minima e' controllata in
-#                                         valida_payload_cervello
-#   verifica_ancoraggio_prezzo_comp    -> diventata un min() in calcola_verdetto
-#   verifica_comp_citati_sono_reali    -> diventata una differenza tra insiemi
-#                                         in classifica_provenienza_comp
-#
-# Restano invece _estrai_prezzi_da_pool_ricerca, _prezzi_per_fonte_da_pool,
-# _motivo_nessun_prezzo e _riepilogo_comp_per_fonte: servono ancora, sia per
-# il blocco debug Telegram sia per il confronto tra i comp dichiarati dal
-# cervello e quelli realmente presenti nel pool.
-#
-# Restano anche _estrai_margine_e_roi_da_blocco e estrai_margine_preliminare:
-# NON riguardano il cervello ma l'OCCHIO, che continua a produrre prosa e la
-# cui stima preliminare alimenta ancora check_skip_pre_cervello.
-
-
-# ---------------------------------------------------------------------------
-# MOTORE DI VERDETTO DETERMINISTICO
-# ---------------------------------------------------------------------------
-# Tutto cio' che prima era "il modello scrive un numero, una rete di
-# sicurezza controlla via regex se il numero e' plausibile" vive qui, come
-# aritmetica su dati strutturati. Il cervello fornisce i DATI della
-# valutazione (linea, comp, prezzo target), queste funzioni producono il
-# VERDETTO (margine, ROI, decisione, urgenza, offerta di trattativa).
-#
-# Conseguenza pratica: le violazioni che le vecchie reti inseguivano non
-# sono piu' "corrette a posteriori", sono impossibili. Un COMPRA sotto
-# soglia non puo' esistere perche' la decisione E' la soglia; un'offerta di
-# trattativa oltre il 40% non puo' esistere perche' l'offerta E' il 40%.
-
-
-# ---------------------------------------------------------------------------
-# PIPELINE PRINCIPALE
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
 # TELETHON CLIENT
 # ---------------------------------------------------------------------------
 
@@ -831,7 +467,6 @@ _recent_listings_seen = {}
 
 DEDUP_CONTENUTO_WINDOW_SECONDS = 300
 
-_semaforo_analisi = asyncio.Semaphore(MAX_ANALISI_PARALLELE)
 
 
 def _chiavi_dedup(parsed, url=None):
@@ -1640,24 +1275,12 @@ async def on_new_message(event):
             return
 
         cover = await event.message.download_media(bytes) if event.message.photo else None
-        # Prima: asyncio.to_thread(process_listing, ...), necessario perche'
-        # la pipeline era interamente sincrona e avrebbe bloccato il loop.
-        # Ora process_listing e' una coroutine e si attende direttamente:
-        # Telethon esegue ogni handler come task separato, quindi piu'
-        # annunci vengono elaborati davvero in parallelo, e le lunghe attese
-        # di rete (scraping, Gemini) non occupano piu' un thread
-        # ciascuna.
-        # Tetto alle analisi in parallelo (fix 2026-09-27): senza, un burst
-        # di N annunci faceva partire N pipeline complete insieme (scrape,
-        # Gemini), bruciando la quota Gemini e la RAM tutto in una
-        # volta. Dal 2026-09-28 il posto si prende DENTRO process_listing,
-        # dopo scrape + foto + galleria (leggeri, niente Gemini): in un burst
-        # le foto arrivano subito e in coda aspetta solo l'analisi Gemini.
-        # L'attesa resta visibile nei tempi della pipeline.
+        # process_listing e' una coroutine: Telethon esegue ogni handler come task separato, quindi gli annunci
+        # si elaborano in parallelo. Il contatore serve all'arresto ordinato (deploy).
         _analisi_attive["n"] += 1
         try:
             await process_listing(parsed, url, cover, msg_date=msg_date, t_ricevuto_bot=t_ricevuto_bot,
-                                  stato=stato_pipeline, semaforo=_semaforo_analisi)
+                                  stato=stato_pipeline)
         finally:
             _analisi_attive["n"] -= 1
     except Exception:
@@ -1681,17 +1304,7 @@ async def main():
             f"{pkg} {_v(pkg)}" for pkg in ("telethon", "httpx", "Pillow", "brotli", "curl_cffi")))
     except Exception:
         log.warning("Versioni delle dipendenze non leggibili:\n%s", traceback.format_exc())
-    log.info(
-        "Cervello: %s (output JSON strutturato) · comp da memoria del modello: %s",
-        GEMINI_MODEL_CERVELLO,
-        "ammessi" if COMP_DA_MEMORIA_AMMESSI else "esclusi dal calcolo",
-    )
-    log.info(
-        "Occhio: %s · output %s · scarto pre-cervello %s",
-        GEMINI_MODEL_OCCHIO,
-        "JSON strutturato" if OCCHIO_OUTPUT_JSON else "prosa",
-        "calcolato da campi tipizzati" if OCCHIO_OUTPUT_JSON else "da match testuale",
-    )
+    log.info("Gemini (foto, moda e radar): %s", GEMINI_MODEL_OCCHIO)
     await inizializza_client_http()
     try:
         from bot import log_db
@@ -1717,19 +1330,6 @@ async def main():
         fv_ricalibra()
     except Exception:
         log.warning("Fair value appreso non caricato:\n%s", traceback.format_exc())
-    if SOLO_SEMAFORO:
-        log.warning("SOLO SEMAFORO (SOLO_SEMAFORO=1): Occhio e Cervello spenti, gli avvisi partono dalla stima rapida.")
-    elif not ANALISI_GEMINI_ATTIVA:
-        log.warning("ANALISI GEMINI IN PAUSA (ANALISI_GEMINI=0): arrivera' solo la galleria, nessun verdetto.")
-        try:
-            await telegram_send_message(
-                TELEGRAM_OWNER_CHAT_ID,
-                "⏸️ Bot riavviato con l'analisi AI in pausa: riceverai solo le gallerie. "
-                "Per riattivarla: ANALISI_GEMINI=1 su Railway.",
-                disable_notification=True,
-            )
-        except Exception:
-            pass
     try:
         await client.start()
         await risolvi_gruppo_radar(client)

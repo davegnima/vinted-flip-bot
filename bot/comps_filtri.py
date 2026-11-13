@@ -3,9 +3,7 @@ import re
 import html
 
 
-from bot.costanti import CATEGORIA_KEYWORDS
-from bot.testo import _RE_ALT_PRODOTTO_VINTED, _RE_PRODOTTO_VINTED_CON_ID, _RE_TITOLO_PRODOTTO_VINTED, _normalizza_titolo_per_dedup, _normalizza_titolo_per_link
-from bot.logger import log
+from bot.testo import _RE_ALT_PRODOTTO_VINTED, _RE_PRODOTTO_VINTED_CON_ID, _RE_TITOLO_PRODOTTO_VINTED, _normalizza_titolo_per_link
 # ---- fine import ----
 # Falsi positivi idiomatici: "dress" in "dress shirt"/"dress pants" e' un
 # aggettivo (capo elegante), non indica un abito. Senza questa esclusione,
@@ -62,34 +60,6 @@ BRAND_SOTTOLINEE_DA_ESCLUDERE = {
 }
 
 
-def _filtra_comp_per_brand_sottolinee(testo_comp, brand):
-    """Esclude dai comp le righe che appartengono a una sottolinea/collab
-    nota del brand (vedi BRAND_SOTTOLINEE_DA_ESCLUDERE), che altrimenti
-    contamina la stima con prezzi di una fascia di mercato completamente
-    diversa pur condividendo il nome brand nel titolo."""
-    if not testo_comp or not brand:
-        return testo_comp
-
-    sottolinee = BRAND_SOTTOLINEE_DA_ESCLUDERE.get(brand.strip().lower(), [])
-    if not sottolinee:
-        return testo_comp
-
-    righe_filtrate = []
-    scartate = 0
-    for riga in testo_comp.split("\n"):
-        if riga.strip().startswith("-"):
-            riga_lower = riga.lower()
-            if any(sub in riga_lower for sub in sottolinee):
-                scartate += 1
-                continue
-        righe_filtrate.append(riga)
-
-    if scartate:
-        log.info("_filtra_comp_per_brand_sottolinee: scartate %d righe di sottolinea/collab per brand '%s'.", scartate, brand)
-
-    return "\n".join(righe_filtrate)
-
-
 # Valori di linea_o_era che NON sono un'etichetta letterale spendibile come
 # testo di ricerca (una descrizione di epoca/generica, non qualcosa che
 # compare scritto su un'etichetta o in un titolo Vinted) -- esclusi
@@ -116,120 +86,6 @@ def _e_linea_o_era_utile_per_ricerca(linea_o_era):
     if re.search(r"\b(19|20)\d{2}\b", testo):
         return False
     return True
-
-
-def _arricchisci_brand_per_ricerca(brand_annuncio, occhio_json):
-    """Brand/etichetta da usare per la ricerca comp, arricchito con
-    la sottolinea o la linea/etichetta specifica lette dall'Occhio quando
-    presenti e utili come testo di ricerca. Richiesto dall'utente il
-    2026-09-22 ("assicurati che quando la linea e' M Missoni o Jean's Paul
-    Gaultier il modello usi quella linea per trovare comp -- cosi' per tutte
-    le sottolinee"): generalizza due casi gia' osservati in produzione,
-    entrambi con lo stesso sintomo (comp della linea sbagliata, spesso piu'
-    cari, trattati come validi perche' la ricerca usava solo il brand madre).
-
-    1. Sottolinee con un nome diverso dal brand principale (Weekend Max
-       Mara, M Missoni, MM6...): gia' coperte da nome_sottolinea quando
-       relazione_brand == "sottolinea_stessa_maison" (fix del 2026-09-20).
-    2. Linee/etichette dello STESSO brand nominale ma con un testo di
-       etichetta specifico da cercare alla lettera per non mischiare fasce
-       di prezzo diverse (caso reale JPG: "JEAN'S PAUL GAULTIER" con
-       apostrofo vs "JPG.JEAN'S" sono due diffusion diverse, ma "Jean Paul
-       Gaultier" da solo non fa questa distinzione nella ricerca comp):
-       coperte da linea_o_era, indipendentemente da relazione_brand, filtrato
-       da _e_linea_o_era_utile_per_ricerca per escludere descrizioni di era
-       generiche.
-
-    Il campo brand del listing riflette quasi sempre solo il brand madre
-    scelto dal venditore, mai la sottolinea/linea specifica -- senza questo
-    arricchimento quel testo e' l'unico usato per la ricerca comp.
-    """
-    if not occhio_json:
-        return brand_annuncio
-
-    brand_annuncio_norm = (brand_annuncio or "").strip().lower()
-    etichette_da_aggiungere = []
-
-    if occhio_json.get("relazione_brand") == "sottolinea_stessa_maison":
-        nome_sottolinea = str(occhio_json.get("nome_sottolinea") or "").strip()
-        if nome_sottolinea and nome_sottolinea.lower() not in brand_annuncio_norm:
-            etichette_da_aggiungere.append(nome_sottolinea)
-
-    linea_o_era = str(occhio_json.get("linea_o_era") or "").strip()
-    if (
-        _e_linea_o_era_utile_per_ricerca(linea_o_era)
-        and linea_o_era.lower() not in brand_annuncio_norm
-        and linea_o_era.lower() not in (e.lower() for e in etichette_da_aggiungere)
-    ):
-        etichette_da_aggiungere.append(linea_o_era)
-
-    if not etichette_da_aggiungere:
-        return brand_annuncio
-
-    brand_arricchito = " ".join(etichette_da_aggiungere + [brand_annuncio or ""]).strip()
-    log.info(
-        "process_listing: brand arricchito per la ricerca comp: '%s' -> '%s' "
-        "(sottolinea/linea letta dall'Occhio sull'etichetta).",
-        brand_annuncio, brand_arricchito,
-    )
-    return brand_arricchito
-
-
-def _filtra_comp_per_categoria(testo_comp, categoria):
-    """Filtra le righe comp che non contengono nessuna keyword della
-    categoria rilevata (in nessuna lingua tra quelle coperte da
-    CATEGORIA_KEYWORDS), scartando anche falsi positivi idiomatici e
-    rumore generico (taglie bambino, collab diffusion economiche).
-    Necessario perche' eBay/Vestiaire a volte restituiscono risultati
-    "correlati al brand" fuori categoria nonostante la query includa la
-    categoria -- il motore di ricerca della fonte non la rispetta
-    rigidamente, quindi il filtro va fatto sui risultati."""
-    if not testo_comp or not categoria:
-        return testo_comp
-
-    keywords = CATEGORIA_KEYWORDS.get(categoria, [])
-    if not keywords:
-        return testo_comp
-
-    esclusioni = ESCLUSIONI_FALSI_POSITIVI_CATEGORIA.get(categoria, [])
-
-    righe_filtrate = []
-    scartate = 0
-    for riga in testo_comp.split("\n"):
-        if riga.strip().startswith("-"):
-            riga_lower = riga.lower()
-            e_rumore = any(kw in riga_lower for kw in RUMORE_GENERICO_COMP)
-            e_falso_positivo = any(kw in riga_lower for kw in esclusioni)
-            match_categoria = any(kw in riga_lower for kw in keywords)
-            if match_categoria and not e_rumore and not e_falso_positivo:
-                righe_filtrate.append(riga)
-            else:
-                scartate += 1
-        else:
-            righe_filtrate.append(riga)
-
-    if scartate:
-        log.info("_filtra_comp_per_categoria: scartate %d righe fuori categoria/rumore '%s'.", scartate, categoria)
-
-    return "\n".join(righe_filtrate)
-
-
-def _rimuovi_comp_autoreferenziale(testo_comp_vinted, titolo_annuncio):
-    """Filtra dai comp Vinted l'annuncio stesso in valutazione, che spesso
-    compare tra i risultati di ricerca (stesso titolo) senza essere un dato
-    di mercato indipendente -- rischia di essere scambiato per un comp
-    reale invece che per l'oggetto stesso."""
-    if not testo_comp_vinted or not titolo_annuncio:
-        return testo_comp_vinted
-
-    titolo_norm = _normalizza_titolo_per_dedup(html.unescape(titolo_annuncio))
-    righe_filtrate = []
-    for riga in testo_comp_vinted.split("\n"):
-        m = re.match(r"-\s*(.+?)\s*—\s*€", riga)
-        if m and _normalizza_titolo_per_dedup(html.unescape(m.group(1))) == titolo_norm:
-            continue
-        righe_filtrate.append(riga)
-    return "\n".join(righe_filtrate)
 
 
 def campione_pagina_vinted(html_content, lunghezza=900):

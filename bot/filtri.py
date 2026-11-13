@@ -4,7 +4,7 @@ import re
 
 
 from bot.costanti import BRAND_BLOCKLIST, VENDITORI_BLOCKLIST
-from bot.verdetto import _a_float
+from bot.parsing import _a_float
 # ---- fine import ----
 # Miu Miu top/haut/debardeur economici (richiesto dall'utente il 2026-09-30):
 # nei log sono tutti capi a prezzo basso con rischio fake altissimo e nessun
