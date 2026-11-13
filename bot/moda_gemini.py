@@ -13,7 +13,7 @@ import time
 
 from bot.gemini_api import chiama_gemini
 from bot.logger import log
-from bot.prompts import GEMINI_CERVELLO_SYSTEM_PROMPT
+from bot.prompt_moda import REGOLE_AUTENTICITA, REGOLE_PREZZO
 
 MODA_GEMINI = os.environ.get("MODA_GEMINI", "1").strip() not in ("0", "false", "no", "")
 # 5/11 (utente): il legit check approfondito su tutte le foto vale per OGNI avviso, non solo quando Jev dubita. MODA_GEMINI_SEMPRE=0 torna a "solo se serve".
@@ -25,14 +25,8 @@ except ValueError:
     MODA_GEMINI_MAX_ORA, MODA_GEMINI_FOTO = 60, 8
 # 7/11 (utente: 'recupera il prompt del Cervello'): la stima di rivendita di Gemini segue le regole di prezzo del Cervello (linee ed ere da non
 # mischiare, calibrazioni per brand, ANCORAGGIO PREZZI con sconto sugli ASK e filtro outlier, liquidita' per segmento), prese dallo stesso testo
-# di bot/prompts.py: un'unica fonte. MODA_GEMINI_REGOLE_PREZZO=0 le toglie (prompt piu' corto).
+# di bot/prompt_moda.py (13/11: dentro c'e' anche il meglio del vecchio Occhio). MODA_GEMINI_REGOLE_PREZZO=0 toglie le regole di prezzo.
 MODA_GEMINI_REGOLE_PREZZO = os.environ.get("MODA_GEMINI_REGOLE_PREZZO", "1").strip() not in ("0", "false", "no", "")
-
-
-def _regole_prezzo_cervello():
-    t = GEMINI_CERVELLO_SYSTEM_PROMPT
-    a, b = t.find("# LINEE E ERE"), t.find("# COSA DEVI PRODURRE")
-    return t[a:b].strip() if 0 <= a < b else ""
 
 
 CONF_REPLICA_MIN = 0.7   # sotto questa confidenza una "replica" resta un dubbio nel messaggio, non uno scarto
@@ -123,8 +117,9 @@ SCHEMA = {
                  "rivendita_gemini_eur", "rivendita_confidenza", "rivendita_base", "da_chiedere"],
 }
 
+SYSTEM_PROMPT = SYSTEM_PROMPT + "\n\n" + REGOLE_AUTENTICITA
 if MODA_GEMINI_REGOLE_PREZZO:
-    SYSTEM_PROMPT = SYSTEM_PROMPT + "\n\n" + _regole_prezzo_cervello()
+    SYSTEM_PROMPT = SYSTEM_PROMPT + "\n\n" + REGOLE_PREZZO
 
 _chiamate = []   # istanti delle chiamate dell'ultima ora: tetto MODA_GEMINI_MAX_ORA
 
