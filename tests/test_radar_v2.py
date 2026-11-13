@@ -838,7 +838,7 @@ def test_compatta_didascalia_fa_stare_l_avviso_in_una_didascalia_senza_toccare_i
     assert radar.spezza_didascalia(out)[1] == ""     # nessun secondo messaggio
 
 
-def test_senza_simili_il_verde_diventa_giallo_e_foto_diversa_non_filtra(monkeypatch):
+def test_senza_simili_il_verde_diventa_giallo(monkeypatch):
     from bot import radar
     monkeypatch.setattr(radar, "RADAR_VERIFICA", True)
     verde = {"semaforo": "verde", "jev": "affare_vero", "jev_conf": 0.9, "verificata": {"semaforo": "rosso", "n_stesso": 0, "n_giudicati": 7}}
@@ -846,11 +846,8 @@ def test_senza_simili_il_verde_diventa_giallo_e_foto_diversa_non_filtra(monkeypa
     assert d["semaforo"] == "giallo" and radar._da_mandare(d) is True and radar._con_suono(d) is True
     verificato = {**verde, "verificata": {"semaforo": "verde", "n_stesso": 8, "n_giudicati": 8}}
     assert radar._declassa_senza_simili(verificato)["semaforo"] == "verde"
-    foto = {"semaforo": "giallo", "jev": "falso_o_ricambio", "jev_conf": 0.9, "jev_motivo": "foto_diversa"}
-    assert radar._da_mandare(foto) is True
-    assert radar._da_mandare({**foto, "jev_motivo": "ricambio"}) is False
-    monkeypatch.setattr(radar, "RADAR_FOTO_DIVERSA_SCARTA", True)
-    assert radar._da_mandare(foto) is False
+    ricambio = {"semaforo": "giallo", "jev": "falso_o_ricambio", "jev_conf": 0.9, "jev_motivo": "ricambio"}
+    assert radar._da_mandare(ricambio) is False
 
 
 def test_brand_da_html_legge_id_e_nome_anche_con_virgolette_escapate():

@@ -14,9 +14,6 @@ import urllib.request
 from bot.logger import log
 
 JEV_GIUDICE = os.environ.get("JEV_GIUDICE", "0").strip() in ("1", "true", "si")
-# Prova sulle foto (25/10): Jev vede anche la prima foto, solo per gli annunci con semaforo verde. Anteprima di TypeSafe
-# (header TypeSafe-Danger-Zone-Images): i token per immagine si misurano dal log "JEV DOMANDE ... input_tokens=".
-JEV_FOTO = os.environ.get("JEV_FOTO", "0").strip() in ("1", "true", "si")
 # Giudizio per singolo comparabile (01/11): Jev dice, titolo per titolo, se e' lo stesso modello dell'annuncio. In ombra: la rivendita
 # ricalcolata sui soli "stesso modello" si scrive nel log e nell'evento, il semaforo non cambia.
 JEV_COMPS = os.environ.get("JEV_COMPS", "0").strip() in ("1", "true", "si")
@@ -46,15 +43,6 @@ DOMANDA_FOTO_COMP_MODA = {
 ENDPOINT = "https://api.typesafe.ai/v1/systemone"
 MODELLO = "jev-latest"
 HEADER_IMMAGINI = "TypeSafe-Danger-Zone-Images"
-RIFERIMENTO_FOTO = "foto1"
-DOMANDA_FOTO = {
-    "instructions": "La foto dell'annuncio mostra l'oggetto descritto nel titolo?",
-    "criteria": {
-        "corrisponde": "la foto mostra l'oggetto descritto, riconoscibile",
-        "non_corrisponde": "la foto mostra un altro oggetto, un ricambio, una replica o un lotto diverso dal titolo",
-        "non_chiaro": "la foto non permette di dirlo",
-    },
-}
 # Domande chiuse sui fatti dell'annuncio (25/10): ogni risposta e' un fatto, non un giudizio complessivo.
 DOMANDE = {
     "tipo": {
@@ -116,11 +104,9 @@ def verdetto_jev(risposte):
     scelte = {k: risposte.get(k, (None, None))[0] for k in DOMANDE}
     if any(v is None for v in scelte.values()):
         return None, None
-    confidenze = [v[1] for k, v in risposte.items() if k in DOMANDE or k == "foto"]
+    confidenze = [v[1] for k, v in risposte.items() if k in DOMANDE]
     confidenze = [c for c in confidenze if c is not None]
     conf = min(confidenze) if confidenze else None
-    if risposte.get("foto", (None, None))[0] == "non_corrisponde":
-        return "falso_o_ricambio", conf
     if scelte["tipo"] in TIPI_NON_VENDIBILI:
         return "falso_o_ricambio", conf
     if scelte["completo"] == "no" or scelte["prezzo"] == "sopra":
@@ -132,7 +118,6 @@ def verdetto_jev(risposte):
 
 ETICHETTE_ESITO = {"affare_vero": "affare", "non_affare": "non e' un affare", "falso_o_ricambio": "falso o ricambio"}
 FRASI_MOTIVO = {
-    "foto_diversa": "la foto non corrisponde al titolo",
     "ricambio": "e' solo un ricambio o un accessorio",
     "lotto": "e' un lotto di piu' oggetti",
     "replica_dubbio": "replica o descrizione poco chiara",
@@ -151,9 +136,7 @@ def motivo_jev(risposte):
     scelte = {k: risposte.get(k, (None, None))[0] for k in DOMANDE}
     if any(v is None for v in scelte.values()):
         return None, None
-    if risposte.get("foto", (None, None))[0] == "non_corrisponde":
-        codice = "foto_diversa"
-    elif scelte["tipo"] in TIPI_NON_VENDIBILI:
+    if scelte["tipo"] in TIPI_NON_VENDIBILI:
         codice = _MOTIVO_TIPO[scelte["tipo"]]
     elif scelte["completo"] == "no":
         codice = "guasto_incompleto"
@@ -228,14 +211,13 @@ def _chiama_jev(corpo):
         return json.loads(r.read().decode())
 
 
-def giudica(titolo, prezzo, prezzi_simili, rivendita, foto=None):
+def giudica(titolo, prezzo, prezzi_simili, rivendita):
     """(esito, confidenza) oppure (None, None). Versione senza descrizione ne' titoli dei simili: vedi giudica_completo."""
-    return giudica_completo(titolo, prezzo, prezzi_simili, rivendita, foto)[:2]
+    return giudica_completo(titolo, prezzo, prezzi_simili, rivendita)[:2]
 
 
-def giudica_completo(titolo, prezzo, prezzi_simili, rivendita, foto=None, descrizione=None, titoli_simili=None):
+def giudica_completo(titolo, prezzo, prezzi_simili, rivendita, descrizione=None, titoli_simili=None):
     """(esito, confidenza, simili, motivo) oppure quattro None se Jev non e' attivo o non risponde. Bloccante.
-    Con `foto` (bytes) e JEV_FOTO=1 Jev riceve anche la prima foto; se la richiesta con la foto fallisce, riprova solo testo.
     `descrizione` (tagliata a MAX_DESCRIZIONE caratteri) entra nello stato. Con `titoli_simili` Jev risponde anche a DOMANDA_SIMILI:
     la risposta ('stesso_modello', 'in_parte', 'diverso', confidenza) e' il terzo valore e non influisce sull'esito.
     Il quarto valore e' (codice, frase) da motivo_jev: il perche' dell'esito."""
@@ -243,7 +225,6 @@ def giudica_completo(titolo, prezzo, prezzi_simili, rivendita, foto=None, descri
     if not (JEV_GIUDICE and chiave):
         return None, None, None, None
     simili = ", ".join(f"{p:g}" for p in sorted(prezzi_simili)[:20]) or "nessuno"
-    formato = _formato_foto(foto) if JEV_FOTO else None
     stato = (f"Annuncio Vinted: {titolo}\nPrezzo chiesto: {prezzo} EUR\n"
              f"Prezzi chiesti di annunci simili usati: {simili}\n"
              f"Stima di rivendita (25 percentile): {rivendita} EUR")
@@ -258,27 +239,17 @@ def giudica_completo(titolo, prezzo, prezzi_simili, rivendita, foto=None, descri
     corpo = {"model": MODELLO, "state": stato, "questions": dict(domande)}
     if titoli:
         corpo["questions"]["simili"] = {"type": "choice", **DOMANDA_SIMILI}
-    if formato:
-        corpo["state"] += f"\nFoto dell'annuncio: {RIFERIMENTO_FOTO}"
-        corpo["assets"] = {RIFERIMENTO_FOTO: {"type": "image", "data_base64": base64.b64encode(foto).decode(),
-                                              "format": formato}}
-        corpo["questions"]["foto"] = {"type": "choice", **DOMANDA_FOTO}
     try:
         risposta = _chiama_jev(corpo)
     except Exception as e:  # noqa: BLE001 - Jev non deve bloccare il radar
-        if not formato:
-            log.warning("JEV | giudizio non disponibile: %s", str(e)[:200])
-            return None, None, None, None
-        log.warning("JEV FOTO | richiesta con foto non riuscita, riprovo solo testo: %s", str(e)[:200])
-        return giudica_completo(titolo, prezzo, prezzi_simili, rivendita, None, descrizione, titoli_simili)
+        log.warning("JEV | giudizio non disponibile: %s", str(e)[:200])
+        return None, None, None, None
     try:
         risposte = {k: (risposta["answers"][k].get("choice"), risposta["answers"][k].get("confidence"))
                     for k in domande}
     except Exception as e:  # noqa: BLE001
         log.warning("JEV | risposta non leggibile: %s", str(e)[:200])
         return None, None, None, None
-    if formato:
-        risposte["foto"] = (risposta["answers"]["foto"].get("choice"), risposta["answers"]["foto"].get("confidence"))
     simili_risp = None
     if titoli:
         try:
@@ -287,7 +258,7 @@ def giudica_completo(titolo, prezzo, prezzi_simili, rivendita, foto=None, descri
         except Exception:  # noqa: BLE001 - e' solo una prova in ombra
             simili_risp = None
     token = (risposta.get("usage") or {}).get("input_tokens")
-    log.info("JEV DOMANDE | titolo=%s | foto=%s | desc=%s | simili=%s | input_tokens=%s | %s", titolo[:60], formato or "no",
+    log.info("JEV DOMANDE | titolo=%s | desc=%s | simili=%s | input_tokens=%s | %s", titolo[:60],
              len(desc), simili_risp[0] if simili_risp else "-", token,
              " | ".join(f"{k}={v[0]}({v[1]})" for k, v in risposte.items()))
     esito, conf = verdetto_jev(risposte)

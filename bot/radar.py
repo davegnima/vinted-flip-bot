@@ -587,9 +587,8 @@ def da_cancellare(v2, esito=None):
 RADAR_VERIFICA = os.environ.get("RADAR_VERIFICA", "1").strip() not in ("0", "false", "no", "")
 SUFFISSO_SIMILI = ", ma i simili non sono lo stesso modello"
 # 7/11 (richiesta dell'utente: "perdermi meno affari veri possibili"): senza comparabili dello stesso modello il verde diventa un giallo muto che si vede
-# comunque, e il giudizio di Jev "foto diversa dal titolo" non filtra piu'. Con RADAR_VERIFICA_SCARTA=1 si torna allo scarto.
+# comunque. Con RADAR_VERIFICA_SCARTA=1 si torna allo scarto.
 RADAR_VERIFICA_SCARTA = os.environ.get("RADAR_VERIFICA_SCARTA", "0").strip() in ("1", "true", "si")
-RADAR_FOTO_DIVERSA_SCARTA = os.environ.get("RADAR_FOTO_DIVERSA_SCARTA", "0").strip() in ("1", "true", "si")
 
 
 def _declassa_senza_simili(v2):
@@ -617,8 +616,7 @@ def perche_non_inviato(v2):
     marca = (v2.get("brand") or "").strip().lower()
     if marca and RADAR_BRAND_SILENZIO and marca.startswith(RADAR_BRAND_SILENZIO):
         return f"brand {v2.get('brand')} senza vendite veloci nei dati: avviso silenziato"
-    foto_diversa = v2.get("jev") == "falso_o_ricambio" and v2.get("jev_motivo") == "foto_diversa" and not RADAR_FOTO_DIVERSA_SCARTA
-    if RADAR_JEV_RICHIESTO and not foto_diversa and not (v2.get("jev") == "affare_vero" and (v2.get("jev_conf") or 0) >= RADAR_JEV_CONF_MIN):
+    if RADAR_JEV_RICHIESTO and not (v2.get("jev") == "affare_vero" and (v2.get("jev_conf") or 0) >= RADAR_JEV_CONF_MIN):
         if v2.get("jev") == "affare_vero":
             return f"Jev dice affare ma con confidenza {v2.get('jev_conf')} sotto la soglia {RADAR_JEV_CONF_MIN}"
         return f"Jev non lo da' come affare ({v2.get('jev_motivo_frase') or v2.get('jev') or 'nessun giudizio'})"
