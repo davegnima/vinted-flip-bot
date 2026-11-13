@@ -1,5 +1,5 @@
 from bot.fair_value import valuta_preavviso, _valuta_preavviso_base as _valuta_base   # _valuta_base: regole base, senza i candidati da verificare
-from bot.scheda import _scheda_annuncio_testo, dati_deboli
+from bot.scheda import _scheda_annuncio_testo
 
 
 import pytest
@@ -56,13 +56,6 @@ def test_scheda_con_preavviso_ha_il_fulmine_in_prima_riga():
     assert prima.startswith("⚡ 🟢 ~+40 €")
     info["preavviso"] = False
     assert not _scheda_annuncio_testo(info, "https://www.vinted.it/items/1-x", 3).startswith("⚡")
-
-
-def test_dati_deboli():
-    assert dati_deboli({"decisione": "COMPRA", "comp_usati": [{"p": 1}]})
-    assert dati_deboli({"decisione": "TRATTA", "comp_usati": [{}, {}]}, stima_instabile=True)
-    assert not dati_deboli({"decisione": "COMPRA", "comp_usati": [{}, {}]})
-    assert not dati_deboli({"decisione": "NON COMPRARE", "comp_usati": []}, stima_instabile=True)
 
 
 def test_lingua_titolo_e_campi_annuncio():
@@ -222,66 +215,6 @@ def test_riga_scarto_con_motivo_e_link(monkeypatch):
     assert scheda.link_messaggio_chat_principale(None) is None
 
 
-def test_rosso_sicuro_salta_il_cervello(monkeypatch):
-    import bot.fair_value as fv_mod
-    from bot.fair_value import check_skip_rosso
-    monkeypatch.setattr(fv_mod, "SALTA_CERVELLO_ROSSO_TUTTI", False)                              # regola di prima dell'esperimento
-    rosso = {"semaforo": "🔴", "conf": "media", "margine": -12, "fv": 30, "brand": "Prada", "categoria": "maglia"}
-    assert check_skip_rosso({"fair_value": rosso, "price": 40})[0]
-    assert not check_skip_rosso({"fair_value": rosso, "price": 60})[0]                            # sopra la soglia di prezzo
-    assert not check_skip_rosso({"fair_value": {**rosso, "conf": "bassa"}, "price": 40})[0]        # stima debole
-    assert not check_skip_rosso({"fair_value": {**rosso, "margine": 5}, "price": 40})[0]           # margine non negativo
-    assert not check_skip_rosso({"fair_value": {**rosso, "semaforo": "🟡"}, "price": 40})[0]
-
-
-def test_esperimento_ogni_rosso_salta_il_cervello(monkeypatch):
-    import bot.fair_value as fv_mod
-    from bot.fair_value import check_skip_rosso
-    monkeypatch.setattr(fv_mod, "SALTA_CERVELLO_ROSSO_TUTTI", True)
-    rosso = {"semaforo": "🔴", "conf": "bassa", "margine": 25, "fv": 80, "brand": "prada", "categoria": "maglia"}
-    ok, motivo = check_skip_rosso({"fair_value": rosso, "price": 40})
-    assert ok and motivo.startswith("[ROSSO SICURO - ESPERIMENTO]")                              # contato come SKIP_ROSSO
-    assert check_skip_rosso({"fair_value": {**rosso, "margine": None}, "price": 40})[0]           # anche senza margine
-    assert not check_skip_rosso({"fair_value": rosso, "price": 60})[0]                            # sopra la soglia di prezzo
-    assert not check_skip_rosso({"fair_value": {**rosso, "semaforo": "🟡"}, "price": 40})[0]
-    assert not check_skip_rosso({"fair_value": {**rosso, "semaforo": "🟢"}, "price": 40})[0]
-    monkeypatch.setattr(fv_mod, "SALTA_CERVELLO_ROSSO_TUTTI", False)
-    assert not check_skip_rosso({"fair_value": rosso, "price": 40})[0]                            # spento: regola di prima
-
-
-def test_rosso_di_brand_lento_salta_il_cervello_anche_a_margine_positivo(monkeypatch):
-    import bot.fair_value as fv_mod
-    from bot.fair_value import check_skip_rosso
-    import bot.velocita as vel
-    monkeypatch.setattr(fv_mod, "SALTA_CERVELLO_ROSSO_TUTTI", False)
-    dati = {"base": 0.187, "semaforo": {"🔴": 0.1}, "brand": {"max mara": (155.0, 14.0), "zegna": (30.0, 1.0), "prada": (133.0, 37.0)}}
-    vecchio = vel._DATI
-    vel._DATI = dati
-    monkeypatch.setattr(vel, "VELOCITA_ATTIVA", True)
-    try:
-        mm = {"semaforo": "🔴", "conf": "alta", "margine": 20, "fv": 60, "brand": "max mara", "categoria": "giacca"}
-        ok, motivo = check_skip_rosso({"fair_value": mm, "price": 40})
-        assert ok and motivo.startswith("[ROSSO SICURO")                                          # contato come SKIP_ROSSO
-        assert not check_skip_rosso({"fair_value": {**mm, "fv": 110}, "price": 40})[0]            # rapporto 2,75: eccezione, passa
-        assert not check_skip_rosso({"fair_value": mm, "price": 60})[0]                           # sopra la soglia di prezzo
-        assert not check_skip_rosso({"fair_value": {**mm, "brand": "prada"}, "price": 40})[0]     # brand che ruota
-        assert not check_skip_rosso({"fair_value": {**mm, "brand": "zegna"}, "price": 40})[0]     # troppo pochi casi (n < 100)
-        assert not check_skip_rosso({"fair_value": {**mm, "conf": "bassa"}, "price": 40})[0]
-    finally:
-        vel._DATI = vecchio
-
-
-def test_fascia_alta_solo_con_stima_solida():
-    from bot.pipeline import ruoli_gemini
-    verde = {"semaforo": "🟢", "conf": "media"}
-    assert ruoli_gemini(20, verde)[0]
-    assert not ruoli_gemini(20, {**verde, "conf": "stima"})[0]    # conoscenza di mercato: dal prezzo
-    assert not ruoli_gemini(20, {**verde, "conf": "bassa"})[0]
-    assert ruoli_gemini(60, {**verde, "conf": "bassa"})[0]
-
-
-
-
 def test_preavviso_con_riga_dei_tempi(monkeypatch):
     import asyncio
     scheda, chiamate = _finti(monkeypatch)
@@ -292,22 +225,6 @@ def test_preavviso_con_riga_dei_tempi(monkeypatch):
     esito = asyncio.run(scheda.invia_preavviso(
         info, info["url"], [b"1", b"2"], riga_tempi="⏱ totale 12s", secondi={"pub_telegram": 8.0, "telegram_notifica": 4.0, "totale": 12.0}))
     assert esito["riga_tempi"] == "⏱ totale 12s" and esito["tipo"] == "album"
-
-
-
-
-def test_cascata_esaurita_conta_anche_i_modelli_esclusi(monkeypatch):
-    from bot import gemini_stato as g
-    monkeypatch.setattr(g, "GEMINI_CASCATA", ["m-escluso", "m-senza-quota"])
-    monkeypatch.setattr(g, "GEMINI_CASCATA_CERVELLO", [])
-    monkeypatch.setattr(g, "_gemini_modello_escluso", lambda m: m == "m-escluso")
-    monkeypatch.setattr(g, "_gemini_modello_senza_quota", lambda m: m == "m-senza-quota")
-    assert g.gemini_cascata_esaurita("cervello")
-    monkeypatch.setattr(g, "_gemini_modello_senza_quota", lambda m: False)
-    assert not g.gemini_cascata_esaurita("cervello")
-
-
-
 
 
 def test_tempi_da_caricato_con_testo_relativo():
@@ -363,30 +280,6 @@ def test_soglie_semaforo_ritarate():
     assert colore(fv / 3.2) == "🟢"
     assert colore(fv / 2.5) == "🟡"
     assert colore(fv / 1.6) == "🔴"
-
-
-def test_chiedi_foto_brand_esclusi_stessa_soglia_degli_altri():
-    from bot.scheda import chiedi_foto_da_notificare as n
-    assert n("Max Mara", 31) and not n("Max Mara", 30) and not n("Max Mara", None)
-    assert not n("Prada", 30) and n("Prada", 31) and n("Miu Miu", 79) and n("Loewe", 41)
-
-
-def test_richiesta_etichetta_solo_brand_a_rischio_con_stima_promettente():
-    from bot.scheda import richiede_etichetta, testo_richiesta_etichetta
-    motivo = "[NESSUNA ETICHETTA VISIBILE] Nessuna etichetta leggibile"
-    li = {"brand": "Prada", "title": "Cappotto Prada", "price": "60", "fair_value": {"semaforo": "🟡", "fv": 150, "margine": 90}}
-    assert richiede_etichetta(li, motivo)
-    assert richiede_etichetta({**li, "brand": "Miu Miu", "title": "Gonna"}, "[NESSUNA ETICHETTA INTERNA - PRADA/MIU MIU BORSA] x")
-    assert not richiede_etichetta({**li, "fair_value": {"semaforo": "🔴"}}, motivo)        # stima non promettente: niente rumore
-    for b in ("Max Mara", "Rick Owens", "Missoni"):                                         # estesi il 9/10
-        assert richiede_etichetta({**li, "brand": b, "title": "Blazer"}, motivo)
-    assert not richiede_etichetta({**li, "brand": "Fendi", "title": "Giacca"}, motivo)       # Fendi no (utente 9/10): scarto silenzioso
-    assert not richiede_etichetta(li, "[FALSO CONCLAMATO] etichetta falsa")                  # i falsi restano scartati
-    testo = testo_richiesta_etichetta(li, "https://www.vinted.it/items/1-x")
-    assert "CHIEDI L'ETICHETTA INTERNA" in testo and "potrebbe cortesemente inviarmi" in testo and "150" in testo
-    assert "interessato" not in testo
-    # sempre in italiano, anche per un annuncio in francese
-    assert "Buongiorno" in testo_richiesta_etichetta({**li, "title": "Manteau Prada pour femme"}, None)
 
 
 def test_preavviso_suona_per_ogni_verde(monkeypatch):
@@ -506,29 +399,6 @@ def test_con_lampo_il_verdetto_va_nella_didascalia_dell_album(monkeypatch):
     assert modifiche[1][0] == 8 and modifiche[1][1] <= 350 and modifiche[1][2]
 
 
-def test_max_mara_con_etichetta_tagliata_e_outlet_e_si_scarta():
-    from bot.occhio import calcola_scarto_occhio, valida_payload_occhio
-    o = {"relazione_brand": "corrisponde", "etichette": [
-        {"tipo": "main_label", "testo_verbatim": "MAX MARA", "leggibilita": "nitida", "etichetta_tagliata": True}]}
-    li = {"brand": "Max Mara", "title": "Cappotto"}
-    scarta, motivo = calcola_scarto_occhio(o, listing_info=li)
-    assert scarta and motivo.startswith("[OUTLET - ETICHETTA TAGLIATA]")
-    o["etichette"][0]["etichetta_tagliata"] = False
-    assert not calcola_scarto_occhio(o, listing_info=li)[0]
-    o["etichette"][0]["etichetta_tagliata"] = True
-    assert not calcola_scarto_occhio(o, listing_info={"brand": "Prada", "title": "Giacca"})[0]    # solo Max Mara
-    assert valida_payload_occhio({"etichette": [{"tipo": "main_label", "testo_verbatim": "x", "leggibilita": "nitida"}]})[0]["etichette"][0]["etichetta_tagliata"] is False
-
-
-def test_descrizione_incoerente_non_scarta_piu_ma_screenshot_si():
-    from bot.occhio import calcola_scarto_occhio
-    base = {"relazione_brand": "corrisponde", "etichette": [{"tipo": "main_label", "testo_verbatim": "PRADA", "leggibilita": "nitida"}]}
-    li = {"brand": "Prada", "title": "Maglione"}
-    assert not calcola_scarto_occhio({**base, "segnali_rischio_annuncio": ["descrizione_incoerente_con_le_foto"]}, listing_info=li)[0]
-    scarta, motivo = calcola_scarto_occhio({**base, "segnali_rischio_annuncio": ["screenshot_di_altro_annuncio"]}, listing_info=li)
-    assert scarta and motivo.startswith("[ANNUNCIO FRAUDOLENTO]")
-
-
 def test_venditore_con_link_al_profilo():
     from bot.scheda import _riga_venditore_annuncio
     info = {"seller_login": "anna_vintage", "seller_id": "49465070", "seller_feedback_count": 12,
@@ -558,16 +428,6 @@ def test_didascalia_toglie_la_riga_query_prima_di_accorciare():
     out = didascalia_verdetto(testo)
     assert "🔎" not in out and "x" * 300 in out and "y" * 300 in out
     assert riga in didascalia_verdetto("✅ COMPRA\n" + riga)   # sotto il limite resta
-
-
-def test_esperimento_rosso_esclude_jpg_e_max_mara(monkeypatch):
-    import bot.fair_value as fv_mod
-    from bot.fair_value import check_skip_rosso
-    monkeypatch.setattr(fv_mod, "SALTA_CERVELLO_ROSSO_TUTTI", True)
-    rosso = {"semaforo": "🔴", "conf": "bassa", "margine": 25, "fv": 80, "categoria": "maglia"}
-    for brand in ("Jean Paul Gaultier", "Max Mara", "jean paul gaultier"):
-        assert not check_skip_rosso({"fair_value": {**rosso, "brand": brand}, "price": 40})[0]   # va al Cervello
-    assert check_skip_rosso({"fair_value": {**rosso, "brand": "Prada"}, "price": 40})[0]
 
 
 def test_preavviso_brand_nuovo_verde_con_margine_netto():

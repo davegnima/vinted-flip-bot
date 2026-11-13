@@ -248,37 +248,6 @@ CATEGORIA_KEYWORDS = {
     "tuta": ["tuta", "combinaison", "combishort", "jumpsuit", "playsuit", "overall", "salopette"],
 }
 
-# Termine inglese "canonico" per ogni categoria, usato per le query eBay/
-# Vestiaire (dove i titoli sono in stragrande maggioranza in inglese anche
-# su siti localizzati IT/DE/FR). Cercare in italiano ("canotta") su questi
-# marketplace produce spesso zero match sul termine di categoria, facendo
-# collassare la query a "solo brand" e restituendo risultati fuori tema.
-CATEGORIA_TERMINE_EN = {
-    "abito": "dress",
-    "blusa": "blouse",
-    "camicia": "shirt",
-    "maglia": "sweater",
-    "t-shirt": "t-shirt",
-    "canotta": "tank top",
-    "felpa": "hoodie",
-    "gonna": "skirt",
-    "pantaloni": "trousers",
-    "jeans": "jeans",
-    "giacca": "jacket",
-    "gilet": "vest",
-    "cappotto": "coat",
-    "borsa": "bag",
-    "scarpe": "shoes",
-    "polo": "polo",
-    "costume": "swimsuit",
-    "intimo": "underwear",
-    "sciarpa": "scarf",
-    "cintura": "belt",
-    "cappello": "hat",
-    "occhiali": "glasses",
-    "tuta": "jumpsuit",
-}
-
 
 VINTED_HEADERS = {
     "User-Agent": (

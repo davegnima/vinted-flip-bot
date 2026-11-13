@@ -28,15 +28,15 @@ Userbot Telethon che riceve gli annunci dai tracker (`davegnima/Vinted-Notificat
 21. Pokemon (carte, booster, ecc.) non si monitora mai: nessuna ricerca dedicata (7/11).
 
 ## Flussi
-- **Moda**: tracker -> `process_listing` (`bot/pipeline.py`) -> scrape pagina e foto -> stima rapida (semaforo, `bot/fair_value.py`) -> `valuta_preavviso` -> avviso -> Jev sui comparabili (`bot/moda_jev.py`) -> Gemini gratuito sulle foto (`bot/moda_gemini.py`). Dal 1/11 `SOLO_SEMAFORO=1`: Occhio e Cervello (`occhio`, `verdetto`, `prompts`, `gemini_api`) sono spenti ma restano nel codice.
+- **Moda**: tracker -> `process_listing` (`bot/pipeline.py`) -> scrape pagina e foto -> stima rapida (semaforo, `bot/fair_value.py`) -> `valuta_preavviso` -> avviso -> Jev sui comparabili (`bot/moda_jev.py`) -> Gemini gratuito sulle foto (`bot/moda_gemini.py`). Occhio e Cervello (spenti dal 1/11) sono stati tolti dal codice il 13/11: elenco e commit di partenza in `_archive/2026-11-cervello/README.md`.
 - **Radar**: tracker -> `bot/radar.py` -> filtro modelli (`radar_famiglie`) -> comparabili e semaforo (`radar_v2`, `valore_mercato`, `spedizione`) -> Jev (`jev`) -> Gemini gratuito sulle foto (`radar_gemini`) -> avviso; esiti nel DB (`archivio_radar`).
-- Margine, ROI e decisione li calcola sempre Python, mai il modello.
+- Margine, ROI e semaforo li calcola sempre Python, mai il modello.
 
 ## Mappa dei moduli (`bot/`)
 - Config e utilita': `config`, `logger`, `costanti`, `testo`, `parsing`, `tempi`, `operazioni`.
-- Logica pura: `schemas`, `prompts`, `occhio`, `verdetto`, `categorie`, `fair_value`, `velocita`, `filtri`, `comps_filtri`, `skip_report`, `valore_mercato`, `qualita_comps`, `spedizione`, `radar_famiglie`, `radar_matrice`.
+- Logica pura: `prompt_moda`, `categorie`, `fair_value`, `velocita`, `filtri`, `comps_filtri`, `valore_mercato`, `qualita_comps`, `spedizione`, `radar_famiglie`, `radar_matrice`.
 - Stato e rete: `gemini_stato`, `proxy`, `http_clients`, `telegram_api`, `vinted_http`, `db`, `log_db`, `tracciamento`, `radar_appreso`, `archivio_radar`.
-- Chiamate esterne: `gemini_api`, `vinted_scrape`, `vinted_search`, `vinted_api`, `foto`, `resellbot`, `comps`, `jev`.
+- Chiamate esterne: `gemini_api`, `vinted_scrape`, `vinted_search`, `vinted_api`, `foto`, `comps`, `jev`.
 - Flusso: `pipeline`, `scheda` (messaggi Telegram), `moda_jev`, `moda_gemini`, `feedback`, `radar`, `radar_v2`, `radar_gemini`.
 - `main_telethon.py`: client Telethon, comandi, `main()` e un blocco di re-export (i test usano `m.NOME`).
 - Direzione degli import: config/logger -> logica pura -> stato/client -> pipeline -> main. Niente import circolari (`tests/test_struttura.py` importa ogni modulo da solo).
@@ -45,7 +45,7 @@ Userbot Telethon che riceve gli annunci dai tracker (`davegnima/Vinted-Notificat
 ## Test, CI, convenzioni
 - `python3 -m pytest -q` e `python3 -m pyflakes main_telethon.py bot` (la CI blocca solo i nomi non definiti), Python 3.13.
 - Branch `claude/...`, PR verso `main`, squash merge. Railway fa il deploy da `main` a ogni merge (circa 1,5 minuti).
-- Codice e commenti in italiano, stile come quello vicino. Niente modifiche a `prompts.py` senza motivo. Niente push forzati su branch altrui.
+- Codice e commenti in italiano, stile come quello vicino. Niente modifiche a `prompt_moda.py` senza motivo (le calibrazioni per brand sono frutto di dati reali). Niente push forzati su branch altrui.
 
 ## Railway
 - Worker: progetto "Vinted Flip Oracle" `cd06f689-76ef-4b17-aee8-0c04dc03a4d9`, ambiente `6f828acc-20fc-4858-a48b-3f63f57a5a03`, servizio `worker` `7f856e1e-dad7-4798-90de-ac6ca77e5756`.

@@ -7,8 +7,8 @@ import statistics
 import traceback
 
 
-from bot.verdetto import _a_float, _estrai_item_id_da_url
-from bot.velocita import semaforo_corretto, brand_lento
+from bot.parsing import _a_float, _estrai_item_id_da_url
+from bot.velocita import semaforo_corretto
 from bot.config import _env_float
 from bot.categorie import estrai_categoria_da_titolo, scegli_materiale_per_ricerca
 from bot.logger import log
@@ -445,46 +445,6 @@ def preavviso_con_suono(stima, prezzo):
     return bool(fv and prezzo and prezzo > 0 and fv / prezzo >= PREAVVISO_SUONO_RAPPORTO_MIN)
 
 
-# Rosso sicuro (2026-10-04, per ridurre le chiamate Gemini): stima rapida rossa con confidenza alta/media, margine
-# rapido NEGATIVO (fair value sotto il prezzo) e prezzo sotto la soglia della fascia alta -> il Cervello non viene
-# consultato (l'Occhio si': l'autenticita' e' gia' stata letta). Le eccezioni piu' care restano coperte dalla soglia di
-# prezzo. Spento con SALTA_CERVELLO_ROSSO=0. Gli esiti si loggano come SKIP_ROSSO per misurare i falsi negativi.
-SALTA_CERVELLO_ROSSO = os.environ.get("SALTA_CERVELLO_ROSSO", "1").strip() != "0"
-# Esperimento 18/10 (richiesto dall'utente): OGNI rosso sotto la soglia di prezzo salta il Cervello, qualunque confidenza e
-# margine rapido. Dati 10-17/10 (2.834 annunci): COMPRA/TRATTA su rosso = 277, veloci veri 11%; i rossi che qualificano
-# (margine >= 50 e ROI >= 100%) 33 in 8 giorni, veloci veri 4 (12%, contro 71% dei verdi). Misura: esiti SKIP_ROSSO con
-# motivo "[ROSSO SICURO - ESPERIMENTO]" nel TRACCIATO (veloci persi). Spento con SALTA_CERVELLO_ROSSO_TUTTI=0.
-SALTA_CERVELLO_ROSSO_TUTTI = os.environ.get("SALTA_CERVELLO_ROSSO_TUTTI", "1").strip() != "0"
-# 26/10 (utente): brand esclusi dall'esperimento, il loro rosso va al Cervello (recap 25/10: JPG 7 veloci su 14, Max Mara 3 su 5).
-SALTA_CERVELLO_ROSSO_ESCLUSI = {b.strip().lower() for b in os.environ.get("SALTA_CERVELLO_ROSSO_ESCLUSI", "jean paul gaultier,max mara").split(",") if b.strip()}
-RAPPORTO_ROSSO_LENTO_PASSA = _env_float("RAPPORTO_ROSSO_LENTO_PASSA", 2.5)   # fair value/prezzo da cui il brand lento passa al Cervello
-
-
-def check_skip_rosso(listing_info):
-    """(True, motivo) se l'annuncio e' un rosso sicuro (vedi SALTA_CERVELLO_ROSSO). Pura."""
-    from bot.config import GEMINI_SOGLIA_PREZZO_ALTO
-    stima = listing_info.get("fair_value") or {}
-    prezzo = _a_float(listing_info.get("price"), None)
-    brand = (stima.get("brand") or listing_info.get("brand") or "").strip().lower()
-    if (SALTA_CERVELLO_ROSSO_TUTTI and brand not in SALTA_CERVELLO_ROSSO_ESCLUSI and stima.get("semaforo") == "🔴"
-            and prezzo is not None and prezzo < GEMINI_SOGLIA_PREZZO_ALTO):
-        return True, (f"[ROSSO SICURO - ESPERIMENTO] Stima rapida {stima.get('brand')} {stima.get('categoria')}: semaforo rosso "
-                      f"(fair value ~{stima.get('fv')} € su {prezzo:.0f} €, confidenza {stima.get('conf')}) -- Cervello non consultato.")
-    if (not SALTA_CERVELLO_ROSSO or stima.get("semaforo") != "🔴" or stima.get("conf") not in ("alta", "media")
-            or stima.get("margine") is None or prezzo is None or prezzo >= GEMINI_SOGLIA_PREZZO_ALTO):
-        return False, None
-    if stima["margine"] >= 0:
-        # brand lento (9/10, Max Mara: 114 annunci, 16 COMPRA/TRATTA su 93 rossi, 1 solo veloce): il rosso salta il Cervello anche
-        # col margine rapido positivo, salvo un rapporto fair value/prezzo molto alto (le eccezioni restano)
-        fv = stima.get("fv")
-        if not (brand_lento(stima.get("brand") or listing_info.get("brand")) and fv and fv / prezzo < RAPPORTO_ROSSO_LENTO_PASSA):
-            return False, None
-        return True, (f"[ROSSO SICURO - BRAND LENTO] {stima.get('brand')} vende piano e la stima rapida e' rossa (fair value ~{fv} € "
-                      f"su {prezzo:.0f} €) -- Cervello non consultato.")
-    return True, (f"[ROSSO SICURO] Stima rapida {stima.get('brand')} {stima.get('categoria')}: fair value ~{stima.get('fv')} € "
-                  f"sotto il prezzo {prezzo:.0f} € (confidenza {stima.get('conf')}) -- Cervello non consultato.")
-
-
 # Filtro risparmio Gemini: se FAIR_VALUE_FILTRA=1 gli annunci con confidenza
 # alta/media e ROI stimato sotto FAIR_VALUE_FILTRA_ROI_MIN % vengono scartati
 # in silenzio prima di foto e Gemini. Di default e' in modalita' PROVA (0):
@@ -680,24 +640,6 @@ def stima_fair_value(listing_info):
     return out
 
 
-def _riga_fair_value_unica(stima, verdetto, campioni=None, instabile=False):
-    """UNICA riga di fair value del verdetto (prima erano due: 'Fair value' nella scheda e 'Rapido…Gemini…'
-    nel verdetto): giudizio rapido (con intervallo), stima di Gemini, semaforo e, se le valutazioni
-    indipendenti del Cervello divergono, l'avviso di stima instabile. Stringa vuota se non c'e' nulla."""
-    parti = []
-    if stima:
-        parti.append(f"Fair value ~{stima['fv']} € ({stima['minimo']}-{stima['massimo']})")
-    if verdetto and verdetto.get("vendita_attesa"):
-        parti.append(f"Gemini ~{verdetto['vendita_attesa']:.0f} €")
-    if not parti:
-        return ""
-    if stima and stima.get("semaforo"):
-        parti.append(stima["semaforo"])
-    if instabile and campioni:
-        parti.append(f"⚠️ stima instabile {campioni} €")
-    return "📊 " + " · ".join(parti)
-
-
 def _riga_fair_value_testo(stima):
     if not stima:
         return None
@@ -842,51 +784,6 @@ def fv_registra_jev(listing_info, url, ris):
                                                                   and (disp_r is None or disp_r <= _FV_JEV_DISPERSIONE_MAX))})
     except Exception:
         log.warning("Campione Jev non registrato:\n%s", traceback.format_exc())
-
-
-def fv_classifica_campione(listing_info, decisione, occhio_json=None, legit=None):
-    """Decide se l'esito di Gemini e' un campione valido per imparare il
-    valore del brand dichiarato, e con quale chiave. Caso tipico da NON
-    imparare: titolo "cappotto Max Mara" ma nelle foto l'etichetta e' Weekend
-    (sottolinea): Gemini lo valuta molto meno, e quel prezzo non e' quello di
-    un Max Mara. Regole:
-     - relazione_brand deve essere esplicitamente "corrisponde" (letto
-       dall'etichetta) -> campione del brand dichiarato;
-     - "sottolinea_stessa_maison" con nome noto -> campione della SOTTOLINEA
-       (riga separata, es. "weekend max mara"), mai del brand madre;
-     - brand_estraneo, tessuto_non_brand, non_leggibile, Occhio assente,
-       legit "probabilmente_falso" o SKIP -> scartato (motivo registrato).
-    Ritorna (valido, chiave_brand, motivo_scarto)."""
-    o = occhio_json or {}
-    rel = o.get("relazione_brand")
-    sott = str(o.get("nome_sottolinea") or "").strip().lower()
-    brand = _brand_fair_value(listing_info)
-    if decisione == "SKIP":
-        return False, None, "skip"
-    if legit == "probabilmente_falso":
-        return False, None, "probabilmente falso"
-    if rel == "corrisponde" and not sott:
-        return (True, brand, None) if brand else (False, None, "brand fuori tabella")
-    if rel == "sottolinea_stessa_maison" and sott:
-        chiave = sott if (not brand or brand in sott) else f"{sott} {brand}"
-        return True, chiave, None
-    return False, None, f"relazione brand: {rel or 'Occhio assente'}"
-
-
-def fv_registra_gemini(listing_info, url, decisione, verdetto, occhio_json=None, legit=None):
-    item_id = _estrai_item_id_da_url(url) if url else None
-    if not item_id:
-        return
-    v = verdetto or {}
-    valido, chiave_brand, motivo = fv_classifica_campione(listing_info, decisione, occhio_json, legit)
-    _fv_scrivi({
-        "tipo": "gemini", "item_id": str(item_id), "decisione": decisione,
-        "vendita": v.get("vendita_attesa"), "margine": v.get("margine"), "roi": v.get("roi"),
-        "n_comp_reali": v.get("n_comp_reali"), "valido": valido, "chiave_brand": chiave_brand,
-        "motivo_scarto": motivo, "relazione": (occhio_json or {}).get("relazione_brand"),
-        "sottolinea": (occhio_json or {}).get("nome_sottolinea"), "legit": legit,
-    })
-    _fv_dopo_scrittura()
 
 
 def fv_registra_umana(item_id, valore):

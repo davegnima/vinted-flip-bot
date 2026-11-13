@@ -23,7 +23,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from bot.radar_gemini import RADAR_GEMINI, controlla as controlla_gemini, riga_gemini
-from bot.verdetto import _a_float, _estrai_item_id_da_url
+from bot.parsing import _a_float, _estrai_item_id_da_url
 from bot import db
 from bot.jev import descrizione_jev
 from bot import tracciamento as tr

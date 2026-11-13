@@ -6,7 +6,7 @@ La cronologia NON sta qui: `docs/storico/` (indice in `docs/storico/README.md`).
 ## Stato corrente
 
 **Moda** (tracker `vinted-notifications`)
-- `SOLO_SEMAFORO=1` dal 1/11: Occhio e Cervello spenti. L'avviso parte dalla stima rapida (`valuta_preavviso`), poi Jev cerca i comparabili (`bot/moda_jev.py`) e Gemini gratuito guarda le foto (`bot/moda_gemini.py`).
+- Dal 1/11 Occhio e Cervello erano spenti (`SOLO_SEMAFORO=1`); il 13/11 sono stati tolti dal codice (`_archive/2026-11-cervello/README.md`). L'avviso parte dalla stima rapida (`valuta_preavviso`), poi Jev cerca i comparabili (`bot/moda_jev.py`) e Gemini gratuito guarda le foto (`bot/moda_gemini.py`).
 - Soglie in uso: margine rapido minimo 40 EUR per avvisare (`PREAVVISO_MARGINE_ASSOLUTO_MIN`), Jev scarta sotto 40 EUR di margine (`MODA_JEV_MARGINE_MIN`), tetto verifiche Jev `MODA_JEV_MAX_GIORNO`=1500 su Railway (alzato il 12/11 da 600), ombra 20/h fuori dal tetto.
 - Comparabili: una sola richiesta con condizioni 1+2+3 (scelta dell'utente dell'11/11), rivendita mista con pesi scelti dall'utente (non misurati).
 - Ricerche: ultime potature 11-13/11 (Versace, Belstaff, Acne, Frankie Shop, Stella McCartney, Farm Rio, Etro, Balmain, McQueen, Chloe; Barbour solo fino a 20 EUR nella ricerca 27). Elenco vero: pagina `/queries` del tracker.

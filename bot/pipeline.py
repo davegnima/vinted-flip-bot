@@ -1,106 +1,50 @@
 """Modulo estratto da main_telethon.py (spostamento meccanico)."""
 import os
-import json
 import time
 import asyncio
 import traceback
-from functools import partial
 
 
-from bot.scheda import aggiorna_scheda_jev, SOLO_SEMAFORO, avviso_solo_semaforo, testo_avviso_solo_semaforo, richiede_etichetta, invia_richiesta_etichetta, ANALISI_GEMINI_ATTIVA, STATO_ANALISI_COMPLETATA, STATO_ANALISI_INTERROTTA, _PermessoAnalisi, _aggiorna_stato_scheda, _invia_galleria_anticipata, _invia_risultato_telegram, aggiorna_preavviso, invia_galleria_dopo_lampo, invia_preavviso, riga_scarto_preavviso, componi_testi_verdetto, testo_preavviso
-from bot.verdetto import CERVELLO_CAMPIONI_EXTRA, _a_float, _estrai_item_id_da_url, _estrai_prezzi_da_pool_ricerca, _riepilogo_comp_per_fonte, calcola_verdetto, classifica_provenienza_comp, consolida_target_cervello, render_messaggio_verdetto, valida_payload_cervello
-from bot.config import GEMINI_SOGLIA_PREZZO_ALTO, TELEGRAM_ALERT_CHAT_ID, DEBUG_CONFRONTO_COMP_TELEGRAM, OCCHIO_OUTPUT_JSON, SOGLIA_MARGINE_ASSOLUTO_NOTIFICA, TELEGRAM_OWNER_CHAT_ID
-from bot.feedback import proponi_controllo, rischio_falso_da_scarto, rischio_falso_da_verdetto, contesto_annuncio
+from bot.scheda import aggiorna_scheda_jev, testo_avviso_solo_semaforo, _invia_galleria_anticipata, aggiorna_preavviso, invia_galleria_dopo_lampo, invia_preavviso, riga_scarto_preavviso, testo_preavviso
+from bot.parsing import _a_float, _estrai_item_id_da_url
+from bot.config import TELEGRAM_ALERT_CHAT_ID, TELEGRAM_OWNER_CHAT_ID
 from bot.moda_jev import MODA_JEV_DISPERSIONE_MAX, MODA_JEV_SUBITO, serve_ombra, tratteni_per_verifica, verifica as verifica_moda_jev, righe_messaggio as righe_moda_jev, azione_codice, riga_verdetto as riga_verdetto_jev, riga_originalita as riga_originalita_jev, riga_esito_scheda
-from bot.fair_value import REGOLA_DA_VERIFICARE, FAIR_VALUE_FILTRA, check_skip_rosso, catalogo_impara, check_skip_fair_value, fv_registra_gemini, fv_registra_jev, fv_registra_rapida, stima_fair_value, valuta_preavviso, preavviso_con_suono, PREAVVISO_LAMPO
-from bot.prompts import GEMINI_CERVELLO_SYSTEM_PROMPT, GEMINI_OCCHI_SYSTEM_PROMPT, GEMINI_OCCHI_SYSTEM_PROMPT_JSON
-from bot.schemas import OCCHIO_RESPONSE_SCHEMA_GEMINI
+from bot.fair_value import REGOLA_DA_VERIFICARE, FAIR_VALUE_FILTRA, catalogo_impara, check_skip_fair_value, fv_registra_jev, fv_registra_rapida, stima_fair_value, valuta_preavviso, preavviso_con_suono, PREAVVISO_LAMPO
 from bot import db
-from bot.tracciamento import SKIP_GIA_VENDUTI, _log_esito, campi_annuncio, tracc_avvia_serie, tracc_registra_gia_venduto, tracc_registra_valutato
-from bot.comps_filtri import _arricchisci_brand_per_ricerca
-from bot.tempi import parse_caricato_secondi, _calcola_tempi_pipeline, _formatta_durata, _formatta_tappe_pipeline
-from bot.testo import _escapa_markdown_legacy
+from bot.tracciamento import SKIP_GIA_VENDUTI, _log_esito, campi_annuncio, tracc_avvia_serie, tracc_registra_gia_venduto
+from bot.tempi import parse_caricato_secondi, _calcola_tempi_pipeline, _formatta_tappe_pipeline
 from bot.vinted_scrape import _scrapa_guardaroba_venditore, scrape_vinted_listing
-from bot.skip_report import build_skip_report, check_skip_pre_cervello
 from bot.filtri import check_skip_pre_gemini
-from bot.gemini_api import chiama_gemini, chiama_gemini_cervello
 from bot.foto import download_image_bytes
 from bot.categorie import estrai_categoria_da_titolo
 from bot.logger import log
-from bot.occhio import render_occhio_da_json, valida_payload_occhio, applica_paese_al_verdetto, applica_prove_al_verdetto, riga_controllo_occhio
-from bot.comps import search_comps_completo, verifica_codici_prodotto_reddit
 from bot.telegram_api import telegram_send_message
 # ---- fine import ----
-
-async def _campione_target_cervello(chiama, user_text):
-    """Una valutazione in piu' del Cervello. Ritorna (v|None, problemi, costo): v e' il verdetto validato (il
-    chiamante usa quello piu' vicino alla mediana, cosi' testo e numeri restano coerenti)."""
-    try:
-        vj, err, costo = await chiama(GEMINI_CERVELLO_SYSTEM_PROMPT, user_text)
-        if err:
-            return None, [], costo or 0.0
-        v2, problemi2 = valida_payload_cervello(vj)
-        t = v2.get("prezzo_target_vendita_eur")
-        if not (isinstance(t, (int, float)) and t > 0):
-            return None, [], costo or 0.0
-        return v2, problemi2, costo or 0.0
-    except Exception:
-        log.warning("Campione extra del Cervello fallito:\n%s", traceback.format_exc())
-        return None, [], 0.0
-
 
 _TASK_OMBRA = set()
 
 
-async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricevuto_bot=None, stato=None,
-                          semaforo=None):
-    permesso = _PermessoAnalisi(semaforo) if semaforo is not None else None
+async def process_listing(parsed, url, cover_photo_bytes, msg_date=None, t_ricevuto_bot=None, stato=None):
     if stato is None:
         stato = {}
-    esito_finale = STATO_ANALISI_COMPLETATA
+    interrotta = False
     try:
         await _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=msg_date,
-                                       t_ricevuto_bot=t_ricevuto_bot, stato=stato,
-                                       permesso=permesso)
+                                       t_ricevuto_bot=t_ricevuto_bot, stato=stato)
     except BaseException as e:
-        esito_finale = STATO_ANALISI_INTERROTTA
+        interrotta = True
         riavvio = not isinstance(e, Exception)   # CancelledError/KeyboardInterrupt: il bot si sta fermando (deploy), non e' un errore dell'analisi
         stato["_interrotta_da_riavvio"] = riavvio
         raise
     finally:
-        if permesso is not None:
-            permesso.rilascia()
-        await _aggiorna_stato_scheda(stato, esito_finale)
-        # preavviso rimasto senza verdetto (scartato prima del Cervello o analisi interrotta): riga finale
+        # preavviso rimasto senza verdetto (scartato o analisi interrotta): riga finale
         if stato.get("task_preavviso") is not None and not stato.get("preavviso_aggiornato"):
             await aggiorna_preavviso(
                 stato, url, riga_finale=riga_scarto_preavviso(
                     (stato.get("listing_info") or {}).get("_motivo_scarto"),
                     stato.get("msg_id_scheda") or stato.get("msg_id_galleria"),
-                    interrotta=(esito_finale == STATO_ANALISI_INTERROTTA),
+                    interrotta=interrotta,
                     riavvio=bool(stato.get("_interrotta_da_riavvio"))))
-
-
-def ruoli_gemini(prezzo, stima_rapida, soglia=None):
-    """(tier_alto, ruolo_occhio, ruolo_cervello, da_cosa) per scegliere la cascata Gemini PRIMA dell'Occhio.
-    Decide la stima rapida di fair value (tabella + appreso, istantanea): semaforo 🟢/🟡 = margine/ROI promettenti ->
-    cascate '_alto' (modelli migliori); 🔴 = poco margine -> base, salvo prezzo >= soglia (le eccezioni sono i capi che la
-    tabella sottostima). Se la stima manca o ha confidenza bassa si
-    ripiega sul prezzo richiesto: dalla soglia (GEMINI_SOGLIA_PREZZO_ALTO) in su = alto."""
-    soglia = GEMINI_SOGLIA_PREZZO_ALTO if soglia is None else soglia
-    semaforo = (stima_rapida or {}).get("semaforo")
-    if (stima_rapida or {}).get("conf") in ("bassa", "stima"):
-        semaforo = None   # stima debole (brand/categoria sconosciuti o solo conoscenza di mercato): la fascia si sceglie dal prezzo
-    if semaforo in ("🟢", "🟡"):
-        alto, da = True, "stima"
-    elif semaforo == "🔴":
-        # stima rapida bassa: base, MA dalla soglia di prezzo in su alto lo stesso (le eccezioni sono proprio i capi che
-        # la tabella sottostima: es. Dries van Noten 50 EUR, stima rossa, poi COMPRA con target 150)
-        alto = prezzo is not None and prezzo >= soglia
-        da = "prezzo" if alto else "stima"
-    else:
-        alto, da = (prezzo is not None and prezzo >= soglia), "prezzo"
-    return alto, ("occhio_alto" if alto else "occhio"), ("cervello_alto" if alto else "cervello"), da
 
 
 LAMPO_SENZA_CATEGORIA_MARGINE_MIN = float(os.environ.get("LAMPO_SENZA_CATEGORIA_MARGINE_MIN", "50"))   # 0 = spento
@@ -140,14 +84,12 @@ def _preavviso_lampo(listing_info, url, cover_photo_bytes, msg_date, t_ricevuto_
         log.warning("Preavviso lampo non inviato:\n%s", traceback.format_exc())
 
 
-async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None, t_ricevuto_bot=None, stato=None,
-                                   permesso=None):
+async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None, t_ricevuto_bot=None, stato=None):
     listing_info = dict(parsed)
     listing_info["url"] = url
     if stato is not None:
         stato["listing_info"] = listing_info   # letto a fine analisi (motivo dello scarto per il preavviso)
     t0 = t_ricevuto_bot or time.time()  # arrivo del messaggio del tracker: riferimento dei controlli vendite
-    costo_totale = 0.0
 
     # Cronometro a tappe (richiesto dall'utente il 2026-09-21, dopo aver
     # visto un "telegram->notifica 27s" e chiesto dove si perde il tempo):
@@ -397,614 +339,75 @@ async def _process_listing_interno(parsed, url, cover_photo_bytes, msg_date=None
             # per rispondere alla galleria invece di lasciarla appesa.
             stato["msg_id_galleria"] = msg_id_galleria
 
-    if SOLO_SEMAFORO:
-        # Niente Occhio ne' Cervello: l'avviso e' la regola del preavviso (stima rapida). Chi non scatta resta tracciato
-        # (serie ridotta) per misurare quanti veloci si perdono.
-        if task_guardaroba is not None:
-            task_guardaroba.cancel()
-        fv_sem = listing_info.get("fair_value") or {}
-        if listing_info.get("preavviso") and listing_info.get("verifica_jev"):
-            # brand nuovo (stima a priori non misurata): comparabili Vinted + Jev + foto prima di avvisare (bot/moda_jev.py)
-            ris_jev = await verifica_moda_jev(listing_info, photo_bytes_list[0] if photo_bytes_list else None, photo_bytes_list)
-            fv_registra_jev(listing_info, url, ris_jev)   # 6/11: la rivendita dei comparabili alimenta l'apprendimento del fair value
-            await aggiorna_scheda_jev(stato, riga_esito_scheda(ris_jev))
-            if ris_jev["esito"] == "scarta":
-                listing_info["_motivo_scarto"] = "verifica Jev: " + ris_jev["motivo"]
-                _log_esito(listing_info, "SKIP_SOLO_SEMAFORO", sem=fv_sem.get("semaforo"), motivo="jev:" + ris_jev["motivo"], azione=azione_codice(ris_jev))
-                if listing_info.get("jev_subito"):   # il messaggio era gia' partito: lo stesso messaggio dice che e' stato scartato, con i passi (5/11)
-                    _brand_jev = (listing_info.get("fair_value") or {}).get("brand") or listing_info.get("brand")
-                    listing_info.update(righe_jev=righe_moda_jev(ris_jev, _brand_jev), riga_verdetto_jev=riga_verdetto_jev(ris_jev),
-                                        rivendita_jev=None, parti_rivendita=None)
-                    if not await aggiorna_preavviso(stato, url, testo_verdetto=testo_preavviso(dict(listing_info), url)):
-                        await aggiorna_preavviso(stato, url, riga_finale=riga_scarto_preavviso("verifica Jev: " + ris_jev["motivo"], msg_id_galleria))
-                return
-            _brand_jev = (listing_info.get("fair_value") or {}).get("brand") or listing_info.get("brand")
-            listing_info["righe_jev"] = righe_moda_jev(ris_jev, _brand_jev)
-            listing_info["riga_verdetto_jev"] = riga_verdetto_jev(ris_jev)
-            listing_info["riga_originalita_jev"] = riga_originalita_jev(ris_jev)
-            listing_info["rivendita_jev"], listing_info["parti_rivendita"] = ris_jev.get("rivendita_testata") or ris_jev.get("rivendita"), ris_jev.get("parti_rivendita")   # per l'intestazione "prezzo ➜ rivendita" (5/11)
-            _log_esito(listing_info, "SOLO_SEMAFORO", sem=fv_sem.get("semaforo"), margine=fv_sem.get("margine"), azione=azione_codice(ris_jev))
-            if listing_info.get("jev_subito") and await aggiorna_preavviso(stato, url, testo_verdetto=testo_preavviso(dict(listing_info), url)):
-                log.info("AVVISO SOLO SEMAFORO | item=%s | prezzo=%s | sem=%s | jev=%s | aggiornato", _estrai_item_id_da_url(url),
-                         listing_info.get("price"), fv_sem.get("semaforo"), ris_jev["esito"])
-                return
-            if not TELEGRAM_ALERT_CHAT_ID or await invia_preavviso(dict(listing_info), url, photo_bytes_list) is None:
-                await telegram_send_message(TELEGRAM_ALERT_CHAT_ID or TELEGRAM_OWNER_CHAT_ID, testo_avviso_solo_semaforo(listing_info, url, msg_id_galleria))
-            log.info("AVVISO SOLO SEMAFORO | item=%s | prezzo=%s | sem=%s | jev=%s", _estrai_item_id_da_url(url),
+    # Niente Occhio ne' Cervello: l'avviso e' la regola del preavviso (stima rapida). Chi non scatta resta tracciato
+    # (serie ridotta) per misurare quanti veloci si perdono.
+    if task_guardaroba is not None:
+        task_guardaroba.cancel()
+    fv_sem = listing_info.get("fair_value") or {}
+    if listing_info.get("preavviso") and listing_info.get("verifica_jev"):
+        # brand nuovo (stima a priori non misurata): comparabili Vinted + Jev + foto prima di avvisare (bot/moda_jev.py)
+        ris_jev = await verifica_moda_jev(listing_info, photo_bytes_list[0] if photo_bytes_list else None, photo_bytes_list)
+        fv_registra_jev(listing_info, url, ris_jev)   # 6/11: la rivendita dei comparabili alimenta l'apprendimento del fair value
+        await aggiorna_scheda_jev(stato, riga_esito_scheda(ris_jev))
+        if ris_jev["esito"] == "scarta":
+            listing_info["_motivo_scarto"] = "verifica Jev: " + ris_jev["motivo"]
+            _log_esito(listing_info, "SKIP_SOLO_SEMAFORO", sem=fv_sem.get("semaforo"), motivo="jev:" + ris_jev["motivo"], azione=azione_codice(ris_jev))
+            if listing_info.get("jev_subito"):   # il messaggio era gia' partito: lo stesso messaggio dice che e' stato scartato, con i passi (5/11)
+                _brand_jev = (listing_info.get("fair_value") or {}).get("brand") or listing_info.get("brand")
+                listing_info.update(righe_jev=righe_moda_jev(ris_jev, _brand_jev), riga_verdetto_jev=riga_verdetto_jev(ris_jev),
+                                    rivendita_jev=None, parti_rivendita=None)
+                if not await aggiorna_preavviso(stato, url, testo_verdetto=testo_preavviso(dict(listing_info), url)):
+                    await aggiorna_preavviso(stato, url, riga_finale=riga_scarto_preavviso("verifica Jev: " + ris_jev["motivo"], msg_id_galleria))
+            return
+        _brand_jev = (listing_info.get("fair_value") or {}).get("brand") or listing_info.get("brand")
+        listing_info["righe_jev"] = righe_moda_jev(ris_jev, _brand_jev)
+        listing_info["riga_verdetto_jev"] = riga_verdetto_jev(ris_jev)
+        listing_info["riga_originalita_jev"] = riga_originalita_jev(ris_jev)
+        listing_info["rivendita_jev"], listing_info["parti_rivendita"] = ris_jev.get("rivendita_testata") or ris_jev.get("rivendita"), ris_jev.get("parti_rivendita")   # per l'intestazione "prezzo ➜ rivendita" (5/11)
+        _log_esito(listing_info, "SOLO_SEMAFORO", sem=fv_sem.get("semaforo"), margine=fv_sem.get("margine"), azione=azione_codice(ris_jev))
+        if listing_info.get("jev_subito") and await aggiorna_preavviso(stato, url, testo_verdetto=testo_preavviso(dict(listing_info), url)):
+            log.info("AVVISO SOLO SEMAFORO | item=%s | prezzo=%s | sem=%s | jev=%s | aggiornato", _estrai_item_id_da_url(url),
                      listing_info.get("price"), fv_sem.get("semaforo"), ris_jev["esito"])
             return
-        if listing_info.get("preavviso"):
-            _log_esito(listing_info, "SOLO_SEMAFORO", sem=fv_sem.get("semaforo"), margine=fv_sem.get("margine"))
-            testo_sem = testo_avviso_solo_semaforo(listing_info, url, msg_id_galleria)
-            if not await aggiorna_preavviso(stato, url, testo_verdetto=testo_sem):
-                await telegram_send_message(TELEGRAM_ALERT_CHAT_ID or TELEGRAM_OWNER_CHAT_ID, testo_sem)
-            log.info("AVVISO SOLO SEMAFORO | item=%s | prezzo=%s | sem=%s", _estrai_item_id_da_url(url),
-                     listing_info.get("price"), fv_sem.get("semaforo"))
-        else:
-            listing_info["_motivo_scarto"] = "semaforo non promettente (solo semaforo)"
-            _log_esito(listing_info, "SKIP_SOLO_SEMAFORO", sem=fv_sem.get("semaforo"))
-            if serve_ombra(fv_sem):
-                # Jev in ombra (6/11): il semaforo scarta, ma se la stima e' poco sicura i comparabili dicono se sottostima (es. Cult Gaia)
-                async def _ombra(li=dict(listing_info), u=url, foto=list(photo_bytes_list or [])):
-                    ris = await verifica_moda_jev(li, None, None, solo_comparabili=True)
-                    fv_registra_jev(li, u, ris)
-                    if not (ris.get("ok_comps") and (ris.get("dispersione") or 0) <= MODA_JEV_DISPERSIONE_MAX):
-                        return
-                    # 6/11 (utente): se i comparabili dicono che il semaforo sbagliava il rosso diventa un avviso con la verifica completa
-                    # (foto comparabili, legit check Jev e Gemini): solo se Jev conferma parte il messaggio.
-                    ris = await verifica_moda_jev(li, foto[0] if foto else None, foto)
-                    fv_registra_jev(li, u, ris)
-                    if ris["esito"] != "conferma":
-                        log.info("RECUPERO JEV | item=%s | esito=%s | motivo=%s | sem_originale=%s", _estrai_item_id_da_url(u), ris["esito"], ris["motivo"], fv_sem.get("semaforo"))
-                        return
-                    marca = (li.get("fair_value") or {}).get("brand") or li.get("brand")
-                    li.update(righe_jev=righe_moda_jev(ris, marca), riga_verdetto_jev=riga_verdetto_jev(ris),
-                              riga_originalita_jev=riga_originalita_jev(ris), rivendita_jev=ris.get("rivendita_testata") or ris.get("rivendita"), parti_rivendita=ris.get("parti_rivendita"))
-                    li["riga_recupero"] = (f"♻️ Recuperato: il semaforo lo dava {fv_sem.get('semaforo')} (fair value ~{fv_sem.get('fv')} €), "
-                                           f"i comparabili dicono ~{ris.get('rivendita'):.0f} €")
-                    # 7/11 (utente): il messaggio recuperato deve avere le foto come gli altri avvisi (album o foto con bottone), non solo testo
-                    if not TELEGRAM_ALERT_CHAT_ID or await invia_preavviso(dict(li), u, foto) is None:
-                        await telegram_send_message(TELEGRAM_ALERT_CHAT_ID or TELEGRAM_OWNER_CHAT_ID, testo_preavviso(dict(li), u, riga_finale=""))
-                    log.info("RECUPERO JEV | item=%s | esito=conferma | brand=%s | prezzo=%s | rivendita=%s | sem_originale=%s | fv_stima=%s",
-                             _estrai_item_id_da_url(u), marca, li.get("price"), ris.get("rivendita"), fv_sem.get("semaforo"), fv_sem.get("fv"))
-                t = asyncio.create_task(_ombra())
-                _TASK_OMBRA.add(t)
-                t.add_done_callback(_TASK_OMBRA.discard)
+        if not TELEGRAM_ALERT_CHAT_ID or await invia_preavviso(dict(listing_info), url, photo_bytes_list) is None:
+            await telegram_send_message(TELEGRAM_ALERT_CHAT_ID or TELEGRAM_OWNER_CHAT_ID, testo_avviso_solo_semaforo(listing_info, url, msg_id_galleria))
+        log.info("AVVISO SOLO SEMAFORO | item=%s | prezzo=%s | sem=%s | jev=%s", _estrai_item_id_da_url(url),
+                 listing_info.get("price"), fv_sem.get("semaforo"), ris_jev["esito"])
         return
-
-    if not ANALISI_GEMINI_ATTIVA:
-        if task_guardaroba is not None:
-            task_guardaroba.cancel()
-        pezzi_tempi_pausa, _ = _calcola_tempi_pipeline(listing_info, msg_date, t_ricevuto_bot)
-        log.info("ANALISI GEMINI IN PAUSA: solo galleria per '%s'%s%s (%s)",
-                 listing_info.get("title"),
-                 "" if msg_id_galleria is not None else " -- ATTENZIONE: invio galleria fallito",
-                 f" — Tempi: {' · '.join(pezzi_tempi_pausa)}" if pezzi_tempi_pausa else "",
-                 " · ".join(_formatta_tappe_pipeline(t_tappe)))
-        return
-
-    # Da qui in poi Gemini: solo ora si prende il posto nel tetto di analisi
-    # parallele (MAX_ANALISI_PARALLELE). Prima il posto si prendeva
-    # all'arrivo del messaggio, quindi in un burst anche scrape e galleria
-    # restavano in coda dietro alle analisi Gemini degli altri annunci.
-    if permesso is not None:
-        await permesso.acquisisci(url)
-
-    if task_guardaroba is not None:
-        await task_guardaroba
-        listing_info["seller_top_items"] = scraped.get("seller_top_items") or []
-        listing_info["seller_wardrobe_debug"] = scraped.get("seller_wardrobe_debug") or "n/d"
-
-    age_days = listing_info.get("age_days")
-    age_text = f"{age_days:.1f} giorni fa" if age_days is not None else "non disponibile"
-
-    seller_info_parts = []
-    feedback_count = listing_info.get("seller_feedback_count")
-    feedback_rep = listing_info.get("seller_feedback_reputation")
-    items_count = listing_info.get("seller_items_count")
-    seller_login = listing_info.get("seller_login")
-    seller_country = listing_info.get("seller_country")
-    seller_top_items = listing_info.get("seller_top_items") or []
-
-    if seller_login:
-        seller_info_parts.append(f"Username: {seller_login}")
-    if seller_country:
-        seller_info_parts.append(f"Paese: {seller_country}")
-    if feedback_count is not None:
-        stelle = f"{feedback_rep:.1f}/5" if feedback_rep is not None else "n/d"
-        seller_info_parts.append(f"Recensioni: {feedback_count} ({stelle} stelle)")
-    if items_count is not None:
-        seller_info_parts.append(f"Articoli in vendita: {items_count}")
-    if seller_top_items:
-        seller_info_parts.append(f"Primi articoli in vendita: {', '.join(seller_top_items)}")
-
-    seller_info_text = "\n".join(seller_info_parts) if seller_info_parts else "non disponibile"
-
-    user_text_occhi = (
-        f"Titolo annuncio: {listing_info.get('title')}\n"
-        f"Brand dichiarato: {listing_info.get('brand')}\n"
-        f"Prezzo richiesto: {listing_info.get('price')} EUR\n"
-        f"Taglia: {listing_info.get('size') or 'non disponibile'}\n"
-        f"Condizione dichiarata: {listing_info.get('condition') or 'non disponibile'}\n"
-        f"Materiale (da pagina annuncio): {listing_info.get('material_raw') or 'non disponibile'}\n"
-        f"Colore (da pagina annuncio): {listing_info.get('color_raw') or 'non disponibile'}\n"
-        f"Descrizione venditore: {listing_info.get('description') or 'non disponibile'}\n"
-        f"\nPROFILO VENDITORE:\n{seller_info_text}"
-    )
-    if fallback_solo_cover_photo:
-        user_text_occhi += (
-            "\n\nATTENZIONE: lo scraping delle foto dell'annuncio e' fallito. Stai vedendo "
-            "SOLO l'immagine di copertina, non la galleria completa. NON concludere "
-            "'nessuna etichetta visibile' o 'non verificabile' come se il venditore non "
-            "avesse fotografato le etichette: molto probabilmente le ha fotografate, ma "
-            "quelle foto non sono arrivate fino a te. Valuta cio' che vedi e segnala "
-            "esplicitamente il limite."
-        )
-
-    # Fascia di modello Gemini scelta SUBITO dal prezzo richiesto (dato del tracker, disponibile prima dell'Occhio):
-    # dalla soglia in su Occhio e Cervello partono dalle cascate "_alto" (modelli migliori), sotto da quelle base.
-    # Nessuna chiamata in piu' ne' in coda: cambia solo quale modello si interroga per primo.
-    tier_alto, ruolo_occhio, ruolo_cervello, tier_da = ruoli_gemini(
-        _a_float(listing_info.get("price"), None), listing_info.get("fair_value"))
-
-    # --- OCCHIO: due rami, scelti da OCCHIO_OUTPUT_JSON.
-    # In entrambi i casi il resto della pipeline riceve `output_occhi` come
-    # testo: in modalita' JSON e' il rendering del dict, cosi' build_skip_report
-    # e il prompt del Cervello continuano a funzionare senza modifiche.
-    occhio_json = None
-    problemi_occhio = []
-    if OCCHIO_OUTPUT_JSON:
-        output_grezzo, costo_occhi, _ = await chiama_gemini(
-            GEMINI_OCCHI_SYSTEM_PROMPT_JSON, user_text_occhi, photo_bytes_list, grounding=False,
-            response_schema=OCCHIO_RESPONSE_SCHEMA_GEMINI, ruolo=ruolo_occhio)
-        try:
-            occhio_json, problemi_occhio = valida_payload_occhio(json.loads(output_grezzo))
-            output_occhi = render_occhio_da_json(occhio_json, problemi_occhio)
-            log.info(riga_controllo_occhio(occhio_json, _estrai_item_id_da_url(url) if url else "n/d"))
-            if problemi_occhio:
-                log.info("Occhio JSON con %d anomalie: %s", len(problemi_occhio), problemi_occhio)
-        except (json.JSONDecodeError, TypeError, ValueError) as e:
-            # Fallback esplicito e non silenzioso: se il JSON non e'
-            # parsabile si prosegue col testo grezzo sul ramo prosa, cosi'
-            # un annuncio non va perso per un problema di formato. Se
-            # compare spesso nei log, e' il segnale che flash-lite non
-            # regge lo schema e conviene rimettere OCCHIO_OUTPUT_JSON=false.
-            log.warning("Occhio: JSON non parsabile (%s), fallback al ramo prosa. Grezzo: %s",
-                        e, (output_grezzo or "")[:400])
-            occhio_json = None
-            output_occhi = output_grezzo
+    if listing_info.get("preavviso"):
+        _log_esito(listing_info, "SOLO_SEMAFORO", sem=fv_sem.get("semaforo"), margine=fv_sem.get("margine"))
+        testo_sem = testo_avviso_solo_semaforo(listing_info, url, msg_id_galleria)
+        if not await aggiorna_preavviso(stato, url, testo_verdetto=testo_sem):
+            await telegram_send_message(TELEGRAM_ALERT_CHAT_ID or TELEGRAM_OWNER_CHAT_ID, testo_sem)
+        log.info("AVVISO SOLO SEMAFORO | item=%s | prezzo=%s | sem=%s", _estrai_item_id_da_url(url),
+                 listing_info.get("price"), fv_sem.get("semaforo"))
     else:
-        output_occhi, costo_occhi, _ = await chiama_gemini(
-            GEMINI_OCCHI_SYSTEM_PROMPT, user_text_occhi, photo_bytes_list, grounding=False, ruolo=ruolo_occhio)
-    costo_totale += costo_occhi
-    t_tappe.append(("occhio", time.time()))
-
-    # Prezzo del prodotto: base di OGNI calcolo economico a valle.
-    prezzo_prodotto = _a_float(listing_info.get("price"), None)
-
-    decisione = "NON COMPRARE"
-    urgenza = "Bassa"
-    costo_cervello = 0.0
-    costo_campioni = 0.0
-    campioni_target = None
-    stima_instabile = False
-    pool_ricerca_grezzo = ""
-    tentare_ricerca_visuale = False
-    fonte_visuale_riuscita = False
-    verdetto_calcolato = None
-    legit_cervello = None
-
-    e_skip, motivo_skip = check_skip_pre_cervello(output_occhi, listing_info, occhio_json=occhio_json)
-    if not e_skip:
-        e_skip, motivo_skip = check_skip_rosso(listing_info)
-    if e_skip:
-        log.info("FILTRO PRE-CERVELLO ATTIVATO. Motivo: %s", motivo_skip)
-        if motivo_skip.startswith("[FALSO CONCLAMATO"):
-            log.info("FALSO CONCLAMATO -- output occhi grezzo per '%s':\n%s", listing_info.get("title"), output_occhi)
-        output_finale = build_skip_report(listing_info, motivo_skip, output_occhi_testo=output_occhi)
-        scenario_usato = "SKIP"
-        listing_info["_motivo_scarto"] = motivo_skip   # intero, per il messaggio di preavviso
-        _log_esito(listing_info, "SKIP_ROSSO" if motivo_skip.startswith("[ROSSO SICURO") else "SKIP_PRE_CERVELLO",
-                   motivo=motivo_skip[:80])
-    else:
-        titolo_annuncio = listing_info.get("title") or ""
-        brand_annuncio = listing_info.get("brand") or ""
-        categoria_per_ricerca = estrai_categoria_da_titolo(
-            titolo_annuncio, listing_info.get("description")) or ""
-        catalog_id = listing_info.get("catalog_id")
-        material_per_ricerca = listing_info.get("material_per_ricerca")
-        cover_photo_id = listing_info.get("cover_photo_id")
-        item_id_annuncio = _estrai_item_id_da_url(url)
-
-        # Brand da usare per la RICERCA comp, arricchito con la sottolinea
-        # (nome_sottolinea) e/o la linea/etichetta specifica (linea_o_era)
-        # lette dall'Occhio sull'etichetta quando presenti. Vedi il
-        # docstring di _arricchisci_brand_per_ricerca per la casistica
-        # completa (Weekend Max Mara, M Missoni, JPG "JPG.JEAN'S" ecc.) --
-        # generalizzato il 2026-09-22 su richiesta dell'utente per coprire
-        # anche i casi in cui la sottolinea/linea vive in linea_o_era
-        # anziche' in nome_sottolinea.
-        brand_per_ricerca = _arricchisci_brand_per_ricerca(brand_annuncio, occhio_json)
-
-        # Nome del sarto/maker reale, DIVERSO dal brand dichiarato E dalla
-        # sottolinea gia' gestita sopra (aggiunto il 2026-09-20, caso reale:
-        # annuncio con brand Vinted "Loro Piana" -- in realta' solo il nome
-        # del TESSUTO usato -- ma etichetta fisica del vero produttore "I
-        # Caracciolo", sartoria terza che ha usato quel tessuto. Il capo
-        # NON e' una sottolinea di Loro Piana (non esiste "Loro Piana by
-        # Caracciolo"), e' un capo di un maker completamente diverso: la
-        # ricerca comp strutturata su "Loro Piana" resta comunque utile (e'
-        # il mercato di riferimento per capi in quel tessuto), ma da sola
-        # ignora completamente se il nome del sarto abbia un suo valore di
-        # mercato riconoscibile -- vedi il fan-out extra sotto in
-        # search_comps_completo (parametro nome_sarto).
-        nome_sarto_o_maker = None
-        if occhio_json:
-            brand_letto = str(occhio_json.get("brand_letto_etichetta") or "").strip()
-            if (
-                brand_letto
-                and occhio_json.get("relazione_brand") != "sottolinea_stessa_maison"
-                and brand_letto.lower() not in brand_annuncio.lower()
-                and brand_annuncio.lower() not in brand_letto.lower()
-            ):
-                nome_sarto_o_maker = brand_letto
-                log.info(
-                    "process_listing: nome sarto/maker diverso dal brand dichiarato rilevato "
-                    "dall'Occhio: '%s' (brand dichiarato: '%s') -- aggiunta ricerca comp extra.",
-                    nome_sarto_o_maker, brand_annuncio,
-                )
-
-        # Dettaglio distintivo di taglio/design (aggiunto il 2026-09-25, vedi
-        # occhio_schema.dettaglio_distintivo_ricerca): usato per restringere
-        # la query eBay/Poshmark su Resellbot oltre a brand+categoria+materiale
-        # -- stesso schema di nome_sarto_o_maker sopra, letto qui dal JSON
-        # dell'Occhio e inoltrato a search_comps_completo.
-        dettaglio_distintivo = None
-        if occhio_json:
-            dettaglio_distintivo = (str(occhio_json.get("dettaglio_distintivo_ricerca") or "").strip() or None)
-
-        scenario_usato = "F"
-        comps_text = None
-        mappa_url_comp = {}
-
-        # Verifica codici prodotto su Reddit (aggiunta 2026-09-26): lanciata
-        # in parallelo alla ricerca comp con asyncio.gather, cosi' non
-        # aggiunge secondi alla pipeline. Se REDDIT_ABILITATO e' False
-        # (credenziali non configurate) ritorna subito "" senza fare alcuna
-        # chiamata di rete.
-        (comps_text, comp_ok, tentare_ricerca_visuale, fonte_visuale_riuscita, mappa_url_comp), testo_verifica_codici = await asyncio.gather(
-            search_comps_completo(
-                brand_per_ricerca, categoria_per_ricerca, titolo_annuncio,
-                catalog_id=catalog_id, material_per_ricerca=material_per_ricerca,
-                cover_photo_id=cover_photo_id, item_id=item_id_annuncio,
-                nome_sarto=nome_sarto_o_maker, dettaglio_distintivo=dettaglio_distintivo,
-                condizione=listing_info.get("condition"),
-            ),
-            verifica_codici_prodotto_reddit(occhio_json, brand_per_ricerca, categoria_per_ricerca=categoria_per_ricerca),
-        )
-        t_tappe.append(("comp", time.time()))
-        if comp_ok:
-            scenario_usato = "G"
-
-        if testo_verifica_codici:
-            output_occhi += testo_verifica_codici
-
-        contesto_listing = (
-            f"{user_text_occhi}\n"
-            f"Annuncio pubblicato: {age_text}\n"
-            f"URL annuncio: {url or 'non disponibile'}"
-        )
-        if scenario_usato == "G":
-            user_text_cervello = (
-                f"{contesto_listing}\n\n"
-                f"--- LA TUA VALUTAZIONE PRELIMINARE ---\n"
-                f"{output_occhi}\n--- FINE ---\n\n"
-                f"--- {comps_text} ---\n\n"
-                "Usa i risultati di ricerca web PRE-RACCOLTI come base. Non puoi fare altre ricerche: "
-                "se sono scarsi, assenti o palesemente fuori tema, dichiaralo e abbassa la confidenza."
-            )
-        else:
-            user_text_cervello = (
-                f"{contesto_listing}\n\n"
-                f"--- LA TUA VALUTAZIONE PRELIMINARE ---\n"
-                f"{output_occhi}\n--- FINE ---\n\n"
-                "NOTA: non ci sono risultati di ricerca pre-raccolti e non puoi fare ricerche. "
-                "Ogni prezzo viene dalla tua conoscenza: marcalo fonte='memoria_modello' e abbassa la confidenza."
-            )
-
-        chiama_cervello = partial(chiama_gemini_cervello, ruolo=ruolo_cervello)
-        verdetto_json, errore_cervello, costo_cervello = await chiama_cervello(
-            GEMINI_CERVELLO_SYSTEM_PROMPT, user_text_cervello)
-        costo_totale += costo_cervello
-        t_tappe.append(("cervello", time.time()))
-
-        # Pool di TUTTO il testo grezzo di ricerca visto dal cervello per
-        # questo item (i comp pre-raccolti). Serve a stabilire la provenienza
-        # reale di ogni comp che il cervello dichiara (vedi classifica_provenienza_comp).
-        pool_ricerca_grezzo = comps_text or ""
-
-        if errore_cervello:
-            # Un errore qui e' definitivo: senza il JSON non c'e' verdetto da
-            # calcolare. Si avvisa invece di restare in silenzio, perche' un
-            # annuncio valutato a meta' e' peggio di uno non valutato.
-            log.warning("Cervello fallito per '%s': %s", listing_info.get("title"), errore_cervello)
-            listing_info["_motivo_scarto"] = "errore del Cervello: nessun verdetto"
-            _log_esito(listing_info, "ERRORE_CERVELLO")
-            await telegram_send_message(
-                TELEGRAM_OWNER_CHAT_ID,
-                f"⚠️ *Valutazione non completata* — {listing_info.get('title')}\n"
-                f"{errore_cervello}\n{url or ''}\n"
-                f"_Costo comunque sostenuto: ${costo_totale:.4f}_",
-                reply_to=msg_id_galleria,
-            )
-            if avviso_solo_semaforo(listing_info):
-                # 🟢 senza Cervello: l'affare potenziale non si perde, parte l'avviso dal solo semaforo (nel gruppo, sul
-                # preavviso se c'e', altrimenti come messaggio nuovo con suono)
-                testo_sem = testo_avviso_solo_semaforo(listing_info, url, msg_id_galleria)
-                if not await aggiorna_preavviso(stato, url, testo_verdetto=testo_sem):
-                    await telegram_send_message(TELEGRAM_ALERT_CHAT_ID or TELEGRAM_OWNER_CHAT_ID, testo_sem)
-                log.info("AVVISO SOLO SEMAFORO | item=%s | prezzo=%s", _estrai_item_id_da_url(url), listing_info.get("price"))
-            return
-
-        v, problemi = valida_payload_cervello(verdetto_json)
-        stats_comp = classifica_provenienza_comp(v, pool_ricerca_grezzo)
-        applica_paese_al_verdetto(v, occhio_json, listing_info)   # Made in insolito (brand "medio"): non puo' restare autentico
-        applica_prove_al_verdetto(v, occhio_json, listing_info.get("brand"))
-        legit_cervello = v.get("legit_verdetto")
-        verdetto_calcolato = calcola_verdetto(v, prezzo_prodotto)
-        campioni_target = None
-        stima_instabile = False
-        if CERVELLO_CAMPIONI_EXTRA > 0 and verdetto_calcolato["decisione"] in ("COMPRA", "TRATTA"):
-            # Valutazioni extra in PARALLELO (la latenza e' quella di una sola chiamata). Si usa la mediana dei
-            # target e, come verdetto di riferimento, la valutazione piu' vicina alla mediana: testo
-            # dell'analista, comparabili e numeri restano coerenti tra loro.
-            extra = await asyncio.gather(*(
-                _campione_target_cervello(chiama_cervello, user_text_cervello)
-                for _ in range(CERVELLO_CAMPIONI_EXTRA)))
-            costo_campioni = sum(c for _, _, c in extra)
-            costo_totale += costo_campioni
-            campioni = [(v, problemi)] + [(v2, p2) for v2, p2, _ in extra if v2 is not None]
-            targets = [c[0].get("prezzo_target_vendita_eur") for c in campioni]
-            valore_c, spread_c, stima_instabile = consolida_target_cervello(targets)
-            campioni_target = "/".join(f"{t:.0f}" for t in sorted(t for t in targets if t))
-            if valore_c is not None and len(campioni) > 1:
-                v, problemi = min(campioni, key=lambda c: abs(c[0]["prezzo_target_vendita_eur"] - valore_c))
-                v["prezzo_target_vendita_eur"] = valore_c
-                stats_comp = classifica_provenienza_comp(v, pool_ricerca_grezzo)
-                applica_paese_al_verdetto(v, occhio_json, listing_info)
-                applica_prove_al_verdetto(v, occhio_json, listing_info.get("brand"))
-                legit_cervello = v.get("legit_verdetto")
-                verdetto_calcolato = calcola_verdetto(v, prezzo_prodotto)
-            t_tappe.append(("campioni_target", time.time()))
-        decisione = verdetto_calcolato["decisione"]
-        urgenza = verdetto_calcolato["urgenza"]
-        output_finale = render_messaggio_verdetto(
-            v, verdetto_calcolato, problemi, stats_comp,
-            item_id=item_id_annuncio, cover_photo_id=cover_photo_id, brand=brand_per_ricerca,
-            catalog_id=catalog_id, mappa_url_comp=mappa_url_comp,
-        )
-
-        log.info(
-            "Verdetto '%s': %s (%s urgenza) — margine=%s ROI=%s — comp usati=%d (%d da memoria) — limiti=%s",
-            listing_info.get("title"), decisione, urgenza,
-            f"{verdetto_calcolato['margine']:.2f}" if verdetto_calcolato["margine"] is not None else "n/d",
-            f"{verdetto_calcolato['roi']:.0f}%" if verdetto_calcolato["roi"] is not None else "n/d",
-            len(verdetto_calcolato["comp_usati"]), stats_comp["n_memoria"],
-            verdetto_calcolato["limiti_applicati"] or "nessuno",
-        )
-        _log_esito(
-            listing_info, decisione,
-            margine=f"{verdetto_calcolato['margine']:.0f}" if verdetto_calcolato["margine"] is not None else None,
-            roi=f"{verdetto_calcolato['roi']:.0f}%" if verdetto_calcolato["roi"] is not None else None,
-            legit=legit_cervello,
-            acquisto=f"{prezzo_prodotto:.0f}" if isinstance(prezzo_prodotto, (int, float)) else None,
-            target=f"{v['prezzo_target_vendita_eur']:.0f}" if isinstance(v.get("prezzo_target_vendita_eur"), (int, float)) else None,
-            n_comp=len(verdetto_calcolato["comp_usati"]),
-            campioni=campioni_target, instabile="si" if stima_instabile else None,
-            tier="alto" if tier_alto else "base", tier_da=tier_da,
-        )
-        tracc_registra_valutato(
-            listing_info, url, decisione,
-            target=v.get("prezzo_target_vendita_eur"), n_comp=len(verdetto_calcolato["comp_usati"]),
-        )
-
-    e_compra = decisione in ("COMPRA", "TRATTA", "CHIEDI ALTRE FOTO")
-
-    # ---- GATE MARGINE ASSOLUTO (qualita' del deal, non sicurezza) ----
-    # Sopprime la notifica quando il margine netto resta sotto l'obiettivo
-    # operativo, anche se ROI e soglia minima sono superati. Ora legge il
-    # margine calcolato invece di riestrarlo con una regex dal testo.
-    if verdetto_calcolato and SOGLIA_MARGINE_ASSOLUTO_NOTIFICA > 0:
-        margine_finale = verdetto_calcolato["margine"]
-        if (
-            margine_finale is not None
-            and margine_finale < SOGLIA_MARGINE_ASSOLUTO_NOTIFICA
-            and decisione != "NON COMPRARE"
-        ):
-            pezzi_tempi_gate, _ = _calcola_tempi_pipeline(listing_info, msg_date, t_ricevuto_bot)
-            log.info(
-                "GATE MARGINE ASSOLUTO: notifica soppressa per '%s' (margine=%.2f EUR < soglia %d EUR). Decisione: %s%s (%s)",
-                listing_info.get("title"), margine_finale, SOGLIA_MARGINE_ASSOLUTO_NOTIFICA, decisione,
-                f" — Tempi: {' · '.join(pezzi_tempi_gate)}" if pezzi_tempi_gate else "",
-                " · ".join(_formatta_tappe_pipeline(t_tappe)),
-            )
-            if msg_id_galleria is not None:
-                # La galleria e' gia' in chat: chiuderla invece di lasciarla appesa su "Analisi in corso...".
-                # Dal 2026-10-03 senza un messaggio in piu': si riscrive la riga di stato della scheda.
-                testo_gate = (f"🔇 {decisione}: margine {margine_finale:.2f} € sotto la soglia di notifica "
-                              f"({SOGLIA_MARGINE_ASSOLUTO_NOTIFICA} €), verdetto non inviato")
-                if stato is not None and stato.get("msg_id_scheda"):
-                    stato["stato_finale_override"] = testo_gate
-                else:
-                    await telegram_send_message(
-                        TELEGRAM_OWNER_CHAT_ID, testo_gate + ".", disable_notification=True, reply_to=msg_id_galleria,
-                    )
-            return
-
-    if scenario_usato == "SKIP":
-        info_scenario = " · filtro pre-cervello (occhi soli)"
-    elif scenario_usato == "F":
-        info_scenario = " · nessun comp pre-raccolto"
-    else:  # Scenario G
-        info_scenario = " · comp pre-raccolti"
-
-    info_foto = ""
-    if listing_info.get("fallback_solo_cover_photo"):
-        info_foto = (
-            "\n⚠️ *Scraping foto Vinted fallito* (probabile blocco/rate-limit) — "
-            "analisi basata SOLO sulla cover photo Telegram, non sulle foto reali "
-            "dell'annuncio. Un eventuale 'nessuna etichetta visibile' potrebbe "
-            "essere un falso negativo dovuto a questo, non ai capi reali."
-        )
-
-    # Titolo e brand vengono dallo scraping Vinted, non scritti da noi: un
-    # titolo con underscore/asterisco (es. "T_shirt_vintage") rompe il
-    # parsing Markdown esattamente come il testo del modello altrove (stesso
-    # bug del 2026-09-20, qui pero' sulla RIGA PIU' VISTA del messaggio,
-    # dentro *asterischi* di grassetto per giunta -- priorita' alta).
-    # Riga "Scenario" spostata in fondo al messaggio (richiesto dall'utente
-    # il 2026-09-20): e' un dettaglio diagnostico su come e' stata condotta
-    # la ricerca comp, non qualcosa che serve per decidere -- non ha senso
-    # occupare una riga in cima, dove il tempo di lettura e' piu' prezioso.
-    # Riga esito in cima anche per lo SKIP (richiesto dall'utente il
-    # 2026-09-20): stesso principio delle altre decisioni (emoji + esito
-    # prima di tutto), qui pero' senza brand/urgenza accodati -- lo SKIP e'
-    # un filtro pre-cervello, non un verdetto con margine, e brand/prezzo
-    # restano comunque visibili subito sotto nella riga titolo esistente.
-    riga_skip = "🚫 *SKIP*\n" if scenario_usato == "SKIP" else ""
-
-    header = (
-        riga_skip
-        + f"🆕 *{_escapa_markdown_legacy(listing_info.get('title'))}*\n"
-        f"🏷️ {_escapa_markdown_legacy(listing_info.get('brand')) or '?'} · 💰 {listing_info.get('price') or '?'} EUR"
-        f"{info_foto}"
-        + f"\n{'—' * 20}\n"  # niente URL nel testo: c'e' il bottone "Apri su Vinted"
-    )
-
-    # ---- BLOCCO DIAGNOSTICO: da dove vengono i comp REALMENTE ricevuti ----
-    # Attivo solo con DEBUG_CONFRONTO_COMP_TELEGRAM=true. Puro post-processing
-    # su dati gia' raccolti: nessuna chiamata IA aggiuntiva, costo zero.
-    if DEBUG_CONFRONTO_COMP_TELEGRAM and scenario_usato != "SKIP":
-        n_prezzi_pool_debug = len(_estrai_prezzi_da_pool_ricerca(pool_ricerca_grezzo))
-        if fonte_visuale_riuscita:
-            nota_visuale = "✅ riuscita"
-        elif tentare_ricerca_visuale:
-            nota_visuale = "❌ fallita per questo item"
-        else:
-            nota_visuale = "— non tentata"
-        output_finale += (
-            f"\n\n🔬 *DEBUG* — {n_prezzi_pool_debug} prezzi reali ricevuti, "
-            f"visuale: {nota_visuale}\n"
-            f"{_riepilogo_comp_per_fonte(pool_ricerca_grezzo)}"
-        )
-
-    # ---- FOOTER: scenario + costo IA -- entrambi dettagli diagnostici, non
-    # decisionali, quindi in fondo al messaggio (vedi nota sopra su header) ----
-    # Lo scenario e' un dettaglio diagnostico: nel log, non nel messaggio.
-    log.info("Scenario %s%s per '%s'", scenario_usato, info_scenario, listing_info.get("title"))
-    if scenario_usato == "SKIP":
-        footer_costo = f"\n💵 _Costo IA: 👁 ${costo_occhi:.4f} · Cervello non consultato_"
-    else:
-        footer_costo = (
-            f"\n💵 _Costo IA: 👁 ${costo_occhi:.4f} + 🧠 ${costo_cervello:.4f}"
-            + (f" + campioni ${costo_campioni:.4f}" if costo_campioni else "")
-            + f" = ${costo_totale:.4f}_"
-        )
-    # ---- FOOTER: tempi (richiesto dall'utente il 2026-09-21, "perdo casi
-    # perche' gia' acquistati -- vorrei monitorare il delay tra ogni step:
-    # pubblicazione annuncio -> scrape/messaggio del tracker -> nostra
-    # pipeline -> notifica"). Due tappe misurabili da qui:
-    #   pubblicato -> telegram: da created_at (data pubblicazione Vinted,
-    #     letta dalla pagina annuncio) a event.message.date (quando il
-    #     tracker esterno ha postato l'alert nel gruppo) -- e' il ritardo
-    #     PRIMA di noi (scraping+relay del tracker), fuori dal nostro
-    #     controllo ma utile da vedere separato dal resto.
-    #   telegram -> notifica: da quando il nostro handler ha ricevuto quel
-    #     messaggio (t_ricevuto_bot) a ORA, un attimo prima di inviare --
-    #     questo e' il nostro overhead (scrape Vinted, download foto,
-    #     Occhio, eventuale Cervello) ed e' la parte su cui possiamo agire.
-    # Nessuna delle due parti e' garantita disponibile (created_at manca se
-    # Vinted non espone la data in pagina; msg_date/t_ricevuto_bot mancano
-    # se process_listing viene chiamato da un altro percorso in futuro):
-    # ogni pezzo mancante si omette invece di mostrare un numero fasullo.
-    # Tappa finale del cronometro: da qui in poi resta solo costruire il
-    # messaggio e inviarlo (network verso Telegram, non cronometrato a
-    # parte -- e' gia' incluso nel 'totale'/'telegram->notifica' sopra).
-    t_tappe.append(("invio", time.time()))
-    dettaglio_tappe = _formatta_tappe_pipeline(t_tappe)
-
-    pezzi_tempi, _secondi_tempi = _calcola_tempi_pipeline(listing_info, msg_date, t_ricevuto_bot)
-    footer_tempi = (f"\n⏱ _✅ completata · {' · '.join(pezzi_tempi + dettaglio_tappe)}_"
-                    if (pezzi_tempi or dettaglio_tappe) else "")
-    if pezzi_tempi or dettaglio_tappe:
-        log.info("Tempi pipeline per '%s': %s (%s)", listing_info.get("title"),
-                  " · ".join(pezzi_tempi), " · ".join(dettaglio_tappe))
-
-    output_finale = output_finale + "\n" + footer_costo + footer_tempi
-    # Footer del messaggio compatto: costo IA e tempo notifica come emoji + valore (dettaglio per tappa nei log).
-    _notifica = _secondi_tempi.get("telegram_notifica")
-    footer_compatto = (f"💵 ${costo_totale:.3f}" if scenario_usato != "SKIP" else "") + (
-        f" · ⏱ {_formatta_durata(_notifica)}" if _notifica else "")
-
-    # Verdetto + riga economica in cima al messaggio, poi brand accodato alla
-    # riga decisione (richiesto dall'utente il 2026-09-20, secondo giro di
-    # layout: prima si leggeva emoji/decisione/urgenza, poi titolo, poi
-    # prezzo grezzo, poi solo dopo il margine -- troppi salti per un
-    # messaggio pensato per ~3 secondi di lettura su notifica). Ordine
-    # finale: decisione+brand, margine/ROI, titolo, link. La riga col
-    # prezzo grezzo dell'annuncio sparisce come riga a se': e' gia'
-    # implicita nella cifra "acquisto pieno" della riga margine (che include
-    # anche protezione acquisti e spedizione, quindi e' il numero che conta
-    # davvero). render_messaggio_verdetto scrive decisione come prima riga e
-    # margine/ROI (o l'avviso "calcolo non disponibile") come seconda, per
-    # costruzione: si staccano entrambe e si ricompone l'header da zero.
-    # Non tocca lo scenario SKIP: build_skip_report ha un formato diverso
-    # (piu' verboso, "## Verdetto operativo" come intestazione di sezione,
-    # non righe singole) e non fa parte del layout compatto riprogettato in
-    # questa sessione.
-    testo_unificato = None
-    if scenario_usato != "SKIP" and "\n" in output_finale:
-        header, output_finale, testo_unificato = componi_testi_verdetto(
-            listing_info, verdetto_calcolato, output_finale, info_foto, campioni_target, stima_instabile, url=url,
-            v=v, footer_compatto=footer_compatto)
-
-    try:
-        fv_registra_gemini(listing_info, url, decisione, verdetto_calcolato,
-                           occhio_json=occhio_json, legit=legit_cervello)
-    except Exception:
-        log.warning("Esito Gemini non archiviato:\n%s", traceback.format_exc())
-    if scenario_usato == "SKIP":
-        # Richiesto dall'utente il 2026-10-03: lo SKIP non manda messaggi, resta solo nei log (SKIP_PRE_CERVELLO
-        # nell'ESITO). Se la scheda e' gia' in chat, la sua riga di stato dice solo che e' stato scartato.
-        richiesta_etichetta = False
-        if richiede_etichetta(listing_info, motivo_skip):
-            richiesta_etichetta = await invia_richiesta_etichetta(listing_info, url, reply_to=msg_id_galleria)
-            log.info("RICHIESTA ETICHETTA | item=%s | brand='%s' | inviata=%s",
-                     _estrai_item_id_da_url(url) if url else "n/d", listing_info.get("brand"), richiesta_etichetta)
-        if not richiesta_etichetta:
-            log.info("SKIP non inviato su Telegram per '%s': %s", listing_info.get("title"), motivo_skip)
-        # scartato per falso ma economicamente interessante: chiedo il tuo parere (etichetta vera per tarare l'Occhio)
-        if rischio_falso_da_scarto(motivo_skip, (listing_info.get("fair_value") or {}).get("semaforo")):
-            await proponi_controllo(_estrai_item_id_da_url(url) if url else None, url,
-                                    contesto_annuncio(listing_info, esito="SKIP_PRE_CERVELLO"), motivo_skip, reply_to=msg_id_galleria)
-        if stato is not None and stato.get("msg_id_scheda"):
-            stato["stato_finale_override"] = (
-                "🔎 Etichetta interna non visibile: richiesta al venditore" if richiesta_etichetta
-                else f"🚫 Scartato: {(motivo_skip or '')[:120]}")
-        return
-    await _invia_risultato_telegram(
-        listing_info, url, photo_bytes_list,
-        header, output_finale, decisione, e_compra,
-        scenario_usato, urgenza,
-        margine=verdetto_calcolato["margine"] if verdetto_calcolato else None,
-        msg_id_galleria=msg_id_galleria, stato=stato, testo_unificato=testo_unificato,
-    )
-    try:
-        if rischio_falso_da_verdetto(v.get("legit_verdetto"), decisione, (listing_info.get("fair_value") or {}).get("semaforo")):
-            await proponi_controllo(
-                _estrai_item_id_da_url(url) if url else None, url,
-                contesto_annuncio(listing_info, esito=decisione, legit=v.get("legit_verdetto"),
-                                  target=(verdetto_calcolato or {}).get("target")),
-                f"il Cervello: {v.get('legit_verdetto')} · {str(v.get('legit_motivo_specifico') or '')[:160]}", reply_to=msg_id_galleria)
-    except Exception:
-        log.warning("Controllo autenticita' non proposto:\n%s", traceback.format_exc())
+        listing_info["_motivo_scarto"] = "semaforo non promettente (solo semaforo)"
+        _log_esito(listing_info, "SKIP_SOLO_SEMAFORO", sem=fv_sem.get("semaforo"))
+        if serve_ombra(fv_sem):
+            # Jev in ombra (6/11): il semaforo scarta, ma se la stima e' poco sicura i comparabili dicono se sottostima (es. Cult Gaia)
+            async def _ombra(li=dict(listing_info), u=url, foto=list(photo_bytes_list or [])):
+                ris = await verifica_moda_jev(li, None, None, solo_comparabili=True)
+                fv_registra_jev(li, u, ris)
+                if not (ris.get("ok_comps") and (ris.get("dispersione") or 0) <= MODA_JEV_DISPERSIONE_MAX):
+                    return
+                # 6/11 (utente): se i comparabili dicono che il semaforo sbagliava il rosso diventa un avviso con la verifica completa
+                # (foto comparabili, legit check Jev e Gemini): solo se Jev conferma parte il messaggio.
+                ris = await verifica_moda_jev(li, foto[0] if foto else None, foto)
+                fv_registra_jev(li, u, ris)
+                if ris["esito"] != "conferma":
+                    log.info("RECUPERO JEV | item=%s | esito=%s | motivo=%s | sem_originale=%s", _estrai_item_id_da_url(u), ris["esito"], ris["motivo"], fv_sem.get("semaforo"))
+                    return
+                marca = (li.get("fair_value") or {}).get("brand") or li.get("brand")
+                li.update(righe_jev=righe_moda_jev(ris, marca), riga_verdetto_jev=riga_verdetto_jev(ris),
+                          riga_originalita_jev=riga_originalita_jev(ris), rivendita_jev=ris.get("rivendita_testata") or ris.get("rivendita"), parti_rivendita=ris.get("parti_rivendita"))
+                li["riga_recupero"] = (f"♻️ Recuperato: il semaforo lo dava {fv_sem.get('semaforo')} (fair value ~{fv_sem.get('fv')} €), "
+                                       f"i comparabili dicono ~{ris.get('rivendita'):.0f} €")
+                # 7/11 (utente): il messaggio recuperato deve avere le foto come gli altri avvisi (album o foto con bottone), non solo testo
+                if not TELEGRAM_ALERT_CHAT_ID or await invia_preavviso(dict(li), u, foto) is None:
+                    await telegram_send_message(TELEGRAM_ALERT_CHAT_ID or TELEGRAM_OWNER_CHAT_ID, testo_preavviso(dict(li), u, riga_finale=""))
+                log.info("RECUPERO JEV | item=%s | esito=conferma | brand=%s | prezzo=%s | rivendita=%s | sem_originale=%s | fv_stima=%s",
+                         _estrai_item_id_da_url(u), marca, li.get("price"), ris.get("rivendita"), fv_sem.get("semaforo"), fv_sem.get("fv"))
+            t = asyncio.create_task(_ombra())
+            _TASK_OMBRA.add(t)
+            t.add_done_callback(_TASK_OMBRA.discard)

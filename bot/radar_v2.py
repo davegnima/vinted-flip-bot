@@ -24,7 +24,7 @@ from bot.radar import RADAR_SPESA_MAX, parola_vietata, radar_in_pausa
 from bot.radar_famiglie import consenti_nuova, modello_famiglia
 from bot.radar_matrice import RADAR_MARGINE_MIN, buy_max, costo_acquisto
 from bot.testo import _normalizza_titolo_per_link
-from bot.verdetto import _a_float, _estrai_item_id_da_url
+from bot.parsing import _a_float, _estrai_item_id_da_url
 from bot.vinted_http import _vinted_get_con_retry
 from bot.vinted_scrape import _decodifica_stringa_json
 from bot.valore_mercato import comparabili_simili, e_un_pezzo, nomi_candidati, parse_comp, query_alternative, query_comp, solo_usato, stima_mercato, valuta

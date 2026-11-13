@@ -10,7 +10,6 @@ from bot import feedback as fb
 def db_pulito(tmp_path, monkeypatch):
     db.chiudi()
     monkeypatch.setattr(db, "DB_FILE", str(tmp_path / "f.sqlite3"))
-    fb._proposti.update({"giorno": "", "n": 0, "item": set()})
     fb._contesti.clear()
     yield
     db.chiudi()
@@ -25,45 +24,10 @@ def test_parse_risposta(testo, atteso):
     assert fb.parse_risposta(testo) == atteso
 
 
-def test_quando_proporre_il_controllo():
-    assert fb.rischio_falso_da_verdetto("sospetto_servono_altre_foto", "COMPRA", "🔴")
-    assert fb.rischio_falso_da_verdetto("probabilmente_falso", "NON COMPRARE", "🟢")
-    assert not fb.rischio_falso_da_verdetto("probabilmente_falso", "NON COMPRARE", "🔴")        # falso e senza interesse economico
-    assert not fb.rischio_falso_da_verdetto("probabilmente_autentico", "COMPRA", "🟢")
-    assert fb.rischio_falso_da_scarto("[FALSO CONCLAMATO] etichetta", "🟢")
-    assert fb.rischio_falso_da_scarto("[BRAND NON CORRISPONDENTE] x", "🟡")
-    assert not fb.rischio_falso_da_scarto("[FALSO CONCLAMATO] etichetta", "🔴")
-    assert not fb.rischio_falso_da_scarto("[CONDIZIONE DISTRUTTA] x", "🟢")
-
-
-def test_tastiere_e_testo():
-    t = fb.tastiera_giudizio("55")
-    assert [b["callback_data"] for b in t[0]] == ["fb|55|o", "fb|55|f", "fb|55|n"]
+def test_tastiera_prezzi():
     p = fb.tastiera_prezzo("55", fv=112)
     dati = [b["callback_data"] for r in p for b in r]
     assert "fp|55|110" in dati and "fp|55|0" in dati and all(len(d) <= 64 for d in dati)
-    testo = fb.testo_controllo({"brand": "Prada", "titolo": "Maglione", "prezzo": 19.0, "sem": "🟢", "fv": 79}, "https://www.vinted.it/items/55-x", "etichetta dubbia")
-    assert "Controllo autenticità" in testo and "Prada" in testo and "etichetta dubbia" in testo and "vedi su Vinted" in testo
-
-
-def test_proponi_controllo_una_volta_e_nel_limite(monkeypatch):
-    inviati = []
-
-    async def invia(chat, testo, tastiera, reply_to=None, disable_notification=True):
-        inviati.append((testo, tastiera, reply_to, disable_notification))
-        return 7
-
-    monkeypatch.setattr(fb, "telegram_send_con_tastiera", invia)
-    monkeypatch.setattr(fb, "FEEDBACK_MAX_GIORNO", 2)
-
-    async def prova():
-        r = [await fb.proponi_controllo("1", "https://www.vinted.it/items/1-x", {"brand": "Prada"}, "m", reply_to=5)]
-        r.append(await fb.proponi_controllo("1", "https://www.vinted.it/items/1-x", {"brand": "Prada"}, "m"))     # stesso annuncio
-        r.append(await fb.proponi_controllo("2", "https://www.vinted.it/items/2-x", {"brand": "Prada"}, "m"))
-        r.append(await fb.proponi_controllo("3", "https://www.vinted.it/items/3-x", {"brand": "Prada"}, "m"))     # oltre il limite
-        return r
-    assert asyncio.run(prova()) == [True, False, True, False]
-    assert inviati[0][2] == 5 and inviati[0][3] is True      # in risposta alla galleria, senza suono
 
 
 def test_bottoni_registrano_giudizio_e_prezzo(monkeypatch):

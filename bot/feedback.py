@@ -6,19 +6,15 @@ qualunque scheda o verdetto del bot ("f", "o", "o 90", "90"). Ogni input finisce
 log `FEEDBACK |` con il contesto dell'annuncio: sono le etichette VERE con cui tarare Occhio, Cervello e semaforo."""
 import os
 import re
-import time
 import asyncio
 import traceback
 
-from bot.config import TELEGRAM_OWNER_CHAT_ID
 from bot.logger import log
 from bot import db
-from bot.testo import _escapa_markdown_legacy as esc
-from bot.telegram_api import (telegram_send_con_tastiera, telegram_edit_con_tastiera, telegram_get_updates,
-                              telegram_answer_callback, telegram_edit_tastiera, telegram_send_richiesta_prezzo, righe_feedback)
+from bot.telegram_api import (telegram_edit_con_tastiera, telegram_get_updates, telegram_answer_callback,
+                              telegram_edit_tastiera, telegram_send_richiesta_prezzo, righe_feedback)
 
 FEEDBACK_ATTIVO = os.environ.get("FEEDBACK_ATTIVO", "1").strip() != "0"
-FEEDBACK_MAX_GIORNO = int(float(os.environ.get("FEEDBACK_MAX_GIORNO", "60")))   # controlli proposti al giorno
 GIUDIZI = {"f": "falso", "o": "originale", "n": "non_so"}
 PREZZI_RAPIDI = (30, 40, 50, 60, 80, 100, 120, 150, 200)
 _RE_NUMERO = re.compile(r"^\d{1,5}(?:[.,]\d{1,2})?$")
@@ -27,7 +23,6 @@ _PAROLE = {
     "o": "o", "orig": "o", "originale": "o", "legit": "o", "autentico": "o",
     "?": "n", "nonso": "n",
 }
-_proposti = {"giorno": "", "n": 0, "item": set()}
 
 
 def parse_risposta(testo):
@@ -50,38 +45,6 @@ def parse_risposta(testo):
     return giudizio, (None if giudizio == "falso" else prezzo)
 
 
-def rischio_falso_da_verdetto(legit_verdetto, decisione, semaforo):
-    """True se vale la pena chiedere il tuo parere sul falso: il Cervello non e' convinto dell'autenticita' ma l'annuncio e'
-    economicamente interessante (COMPRA/TRATTA/CHIEDI FOTO oppure semaforo verde/giallo). Pura."""
-    if legit_verdetto not in ("sospetto_servono_altre_foto", "probabilmente_falso"):
-        return False
-    return decisione in ("COMPRA", "TRATTA", "CHIEDI ALTRE FOTO") or semaforo in ("🟢", "🟡")
-
-
-def rischio_falso_da_scarto(motivo_skip, semaforo):
-    """True se un annuncio scartato dall'Occhio per falso/frode/brand diverso e' economicamente interessante (semaforo verde/giallo):
-    sono i falsi negativi piu' costosi. Pura."""
-    m = str(motivo_skip or "")
-    return semaforo in ("🟢", "🟡") and m.startswith(("[FALSO CONCLAMATO", "[ANNUNCIO FRAUDOLENTO", "[BRAND NON CORRISPONDENTE"))
-
-
-def _ammesso(item_id):
-    oggi = time.strftime("%Y-%m-%d", time.gmtime())
-    if _proposti["giorno"] != oggi:
-        _proposti.update({"giorno": oggi, "n": 0, "item": set()})
-    if item_id in _proposti["item"] or _proposti["n"] >= FEEDBACK_MAX_GIORNO:
-        return False
-    _proposti["item"].add(item_id)
-    _proposti["n"] += 1
-    return True
-
-
-def tastiera_giudizio(item_id):
-    return [[{"text": "✅ Originale", "callback_data": f"fb|{item_id}|o"},
-             {"text": "❌ Falso", "callback_data": f"fb|{item_id}|f"},
-             {"text": "❓ Non so", "callback_data": f"fb|{item_id}|n"}]]
-
-
 def tastiera_prezzo(item_id, fv=None):
     prezzi = list(PREZZI_RAPIDI)
     if fv:
@@ -98,40 +61,9 @@ def tastiera_prezzo(item_id, fv=None):
     return righe
 
 
-def testo_controllo(ctx, url, motivo):
-    """Testo Markdown del messaggio di controllo autenticita'. Pura."""
-    righe = [f"🔎 *Controllo autenticità* · 🏷️ {esc(str(ctx.get('brand') or 'n/d'))}"]
-    if ctx.get("titolo"):
-        righe.append(esc(str(ctx["titolo"])))
-    pezzi = []
-    if ctx.get("prezzo") is not None:
-        pezzi.append(f"💶 {ctx['prezzo']:.0f} €")
-    if ctx.get("sem"):
-        pezzi.append(str(ctx["sem"]))
-    if ctx.get("fv"):
-        pezzi.append(f"fair value ~{ctx['fv']} €")
-    if pezzi:
-        righe.append(esc(" · ".join(pezzi)))
-    if motivo:
-        righe.append("❗ " + esc(str(motivo)[:220]))
-    if url:
-        righe.append(f"[vedi su Vinted]({url})")
-    righe.append("Cosa dici tu? (puoi anche rispondere con «f», «o» o «o 90»)")
-    return "\n".join(righe)
-
-
 def _base_testo(testo):
     """Il testo del messaggio di controllo senza la domanda finale e senza le righe di esito aggiunte dai passi precedenti."""
     return re.split(r"\n(?:Cosa dici|✅|❓|❌)", testo or "")[0]
-
-
-def contesto_annuncio(listing_info, esito=None, target=None, legit=None):
-    """Dati dell'annuncio da riportare nel messaggio e nel log del feedback. Pura."""
-    from bot.verdetto import _a_float
-    fv = (listing_info or {}).get("fair_value") or {}
-    return {"brand": (listing_info or {}).get("brand"), "titolo": ((listing_info or {}).get("title") or "")[:80],
-            "prezzo": _a_float((listing_info or {}).get("price"), None), "sem": fv.get("semaforo"), "fv": fv.get("fv"),
-            "esito": esito, "target": target, "legit": legit}
 
 
 def registra_feedback(item_id, giudizio, prezzo, fonte, ctx=None):
@@ -181,24 +113,6 @@ def registra_nota(item_id, nota, ctx=None):
             k: ctx.get(k) for k in ("prezzo", "esito", "sem", "fv", "target", "legit", "motivo", "titolo")}})
     except Exception:
         log.warning("Nota non salvata nel DB:\n%s", traceback.format_exc())
-
-
-async def proponi_controllo(item_id, url, ctx, motivo, reply_to=None):
-    """Manda nella chat principale (senza suono) il messaggio con i bottoni, una volta per annuncio e nei limiti giornalieri.
-    Non solleva mai. Ritorna True se e' partito."""
-    if not FEEDBACK_ATTIVO or not item_id or not _ammesso(str(item_id)):
-        return False
-    try:
-        ctx = {**ctx, "motivo": motivo}
-        mid = await telegram_send_con_tastiera(TELEGRAM_OWNER_CHAT_ID, testo_controllo(ctx, url, motivo),
-                                               tastiera_giudizio(item_id), reply_to=reply_to, disable_notification=True)
-        log.info("FEEDBACK PROPOSTO | item=%s | brand='%s' | motivo=%s | inviato=%s", item_id, ctx.get("brand") or "n/d",
-                 str(motivo or "")[:60].replace("|", "/"), bool(mid))
-        _contesti[str(item_id)] = ctx
-        return bool(mid)
-    except Exception:
-        log.warning("Controllo autenticita' non proposto:\n%s", traceback.format_exc())
-        return False
 
 
 _contesti = {}   # item_id -> contesto del controllo proposto (per il log del parere)
