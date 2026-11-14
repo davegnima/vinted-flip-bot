@@ -690,18 +690,22 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
                         link_comps = vicini
                         ris["da_foto"] = True
                         log.info("MODA JEV FOTO | brand=%s | stesso_o_simili=%s/%s | rivendita=%s | titolo=%s", brand, len(vicini), len(coppie), v.get("rivendita"), titolo[:60])
-        if v is not None and not v.get("ok"):
-            # 5/11 (utente): se i comparabili scartano gia' l'annuncio il legit check (Jev e Gemini, token e quota) non serve
-            ris["legit_saltato"] = True
-        elif foto_jpeg:
+        async def controlla_originalita():
             # 5/11 (utente): Jev guarda TUTTE le foto (fino a JEV_AUTENTICITA_FOTO), non solo la prima: etichette, wash tag, made in, hardware
             altre = [f for f in (tutte_le_foto or [])[1:MAX_FOTO_AUTENTICITA] if f]
             tutte_jpeg = [foto_jpeg] + [await asyncio.to_thread(optimize_image_bytes, f, 768) for f in altre]
             ris["autenticita"] = await asyncio.to_thread(giudica_autenticita, titolo, brand, tutte_jpeg)
-        if not ris.get("legit_saltato") and serve_controllo(ris["autenticita"], prezzo, (v or {}).get("rivendita")):
-            # Jev non e' sicuro dell'originalita' (o il prezzo e' troppo basso): Gemini gratuito guarda tutte le foto
-            ris["gemini"] = await controlla_gemini(titolo, brand, prezzo, listing_info.get("description"), tutte_le_foto or ([foto] if foto else []),
-                                                   item_id=listing_info.get("item_id"), comps=comps_pool)
+            if serve_controllo(ris["autenticita"], prezzo, (v or {}).get("rivendita")):
+                # Jev non e' sicuro dell'originalita' (o il prezzo e' troppo basso): Gemini gratuito guarda tutte le foto
+                ris["gemini"] = await controlla_gemini(titolo, brand, prezzo, listing_info.get("description"), tutte_le_foto or ([foto] if foto else []),
+                                                       item_id=listing_info.get("item_id"), comps=comps_pool)
+
+        if v is not None and not v.get("ok"):
+            # 5/11 (utente): se i comparabili scartano gia' l'annuncio il legit check (Jev e Gemini, token e quota) non serve.
+            # 14/11 (utente, Celine pullover): se poi la rivendita mista (semaforo) CONFERMA, il controllo si fa comunque (vedi sotto).
+            ris["legit_saltato"] = True
+        elif foto_jpeg:
+            await controlla_originalita()
         registra_legit(listing_info, brand, ris["gemini"], linea)
         if ris["gemini"]:
             nota, linea_foto = linea_da_etichetta(ris["gemini"].get("linea_etichetta"), brand)
@@ -746,6 +750,14 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
         ris["rivendita_testata"] = (v or {}).get("rivendita") if v else mix   # senza comparabili: solo per l'intestazione, l'esito resta non verificato
         ris["esito"], ris["motivo"] = decidi(v, ris["autenticita"], ris["gemini"], ris["foto_comps"],
                                          None if ris["da_foto"] or not stima or not stima.get("p25") else stima["p75"] / stima["p25"])
+        if ris.get("legit_saltato") and ris["esito"] == "conferma" and foto_jpeg:
+            # 14/11 (utente: "scartato sui prezzi, poi confermato: avrei dovuto fare il legit check"): i comparabili da soli scartavano ma la
+            # rivendita mista ha confermato, quindi l'originalita' va controllata prima di dire CONFERMATO
+            ris["legit_saltato"] = False
+            await controlla_originalita()
+            registra_legit(listing_info, brand, ris["gemini"], linea)
+            ris["esito"], ris["motivo"] = decidi(v, ris["autenticita"], ris["gemini"], ris["foto_comps"],
+                                             None if ris["da_foto"] or not stima or not stima.get("p25") else stima["p75"] / stima["p25"])
         if v:
             ris.update(n=v.get("n") or len(prezzi), rivendita=v.get("rivendita"), margine=v.get("margine"), roi=v.get("roi"),
                        esempi=list(comps_pool[:3]), link_comps=link_comps)
