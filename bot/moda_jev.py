@@ -334,7 +334,7 @@ def rivendita_mista(fv, riv_comps, n_comps, gemini, riv_rilevanza=None):
 
 
 CONF_GEMINI_PREVALE = 0.85   # Gemini "coerente" con almeno questa confidenza...
-CONF_JEV_REPLICA_DEBOLE = 0.75   # ...corregge una "replica probabile" di Jev se questa e' sotto questa confidenza
+CONF_JEV_REPLICA_DEBOLE = 0.85   # ...corregge una "replica probabile" di Jev se questa e' sotto questa confidenza
 # 14/11 (utente, YSL Variation a 7 EUR scartato e venduto in 15 s): se Gemini ha LETTO sull'etichetta il nome del brand (anche con una linea:
 # "Yves Saint Laurent variation") la soglia di Gemini scende a CONF_GEMINI_PREVALE_ETICHETTA (il caso aveva 0,80 contro 0,85). 0 = spento.
 CONF_GEMINI_PREVALE_ETICHETTA = float(os.environ.get("CONF_GEMINI_PREVALE_ETICHETTA", "0.8") or 0)
