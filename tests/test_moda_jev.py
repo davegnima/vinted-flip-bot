@@ -683,3 +683,14 @@ def test_prompt_gemini_moda_ha_le_regole_archiviate():
         assert pezzo in p, pezzo
     for vecchio in ("note_analista", "Resellbot", "materiale_confermato", "comp_candidati"):
         assert vecchio not in prompt_moda.REGOLE_PREZZO, vecchio
+
+
+def test_gemini_prevale_con_etichetta_del_brand():
+    # caso YSL Variation 14/11: Jev replica 0,72, Gemini probabile 0,80 con etichetta "Yves Saint Laurent variation"
+    g = {"autenticita": "probabile", "confidenza": 0.8, "etichetta_letta": "Yves Saint Laurent variation"}
+    a = ("replica_probabile", 0.72)
+    assert mj.decidi({"ok": True}, a, g, None, None, "yves saint laurent")[0] == "conferma"
+    assert mj.decidi({"ok": True}, a, g)[0] == "scarta"                                   # senza brand la soglia resta 0,85
+    assert mj.decidi({"ok": True}, a, {**g, "etichetta_letta": "non_leggibile"}, None, None, "yves saint laurent")[0] == "scarta"
+    assert mj.decidi({"ok": True}, a, {**g, "confidenza": 0.7}, None, None, "yves saint laurent")[0] == "scarta"
+    assert mj.decidi({"ok": True}, ("replica_probabile", 0.9), g, None, None, "yves saint laurent")[0] == "scarta"   # Jev sicura: non si corregge
