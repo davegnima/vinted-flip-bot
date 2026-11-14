@@ -44,6 +44,7 @@ Flusso moda: tracker -> `process_listing` (`bot/pipeline.py`) -> filtri -> scrap
 | PREAVVISO_MARGINE_MIN / _BASSO / _NUOVI | 25 / 20 / 50 | margini minimi (EUR) |
 | PREAVVISO_PREZZO_BASSO | 20 | sotto questo prezzo vale il margine basso |
 | PREAVVISO_GIALLO_PREZZO_MAX | 15 | ogni giallo fino a qui manda e suona |
+| PREAVVISO_SUONO_MARGINE_MIN / _ROI_MIN | 40 / 100 | ogni preavviso con margine rapido e ROI sopra queste soglie suona, di qualunque colore (14/11) |
 | PREAVVISO_SUONO_RAPPORTO_MIN / _VERDE | 4 / 1 | regole del suono |
 | PREAVVISO_BRAND_ESCLUSI / _FACILI | acne studios,marni,lancel / jean paul gaultier | liste brand |
 | PREAVVISO_DA_VERIFICARE(_MARGINE) | 1 (50) | avviso "da verificare" |

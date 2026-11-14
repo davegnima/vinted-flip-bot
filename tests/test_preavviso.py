@@ -478,3 +478,14 @@ def test_caricato_ore_non_diventa_un_tempo():
     msg = datetime.fromtimestamp(1_000_000, tz=timezone.utc)
     pezzi, sec = _calcola_tempi_pipeline({"uploaded_text": "un'ora fa", "t_scrape": 999_990}, msg, None, t_riferimento=1_000_003)
     assert "pub_telegram" not in sec
+
+
+def test_preavviso_suona_con_margine_40_e_roi_100(monkeypatch):
+    from bot import fair_value as fv
+    # caso Loro Piana 14/11: 🟡, prezzo 35, fv 99, margine 64, ROI 183% -> suona
+    loro = {**_stima("🟡", 64), "fv": 99, "brand": "loro piana"}
+    assert fv.preavviso_con_suono(loro, 35)
+    assert not fv.preavviso_con_suono({**loro, "margine": 39}, 35)          # margine sotto 40: muto
+    assert not fv.preavviso_con_suono({**loro, "margine": 45, "fv": 70}, 60)  # ROI 75% < 100: muto
+    monkeypatch.setattr(fv, "PREAVVISO_SUONO_MARGINE_MIN", 0)               # interruttore
+    assert not fv.preavviso_con_suono(loro, 35)

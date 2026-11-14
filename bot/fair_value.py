@@ -77,6 +77,10 @@ PREAVVISO_SUONO_VERDE = os.environ.get("PREAVVISO_SUONO_VERDE", "1").strip() != 
 # (9% entro 60 s), quindi preavviso con suono anche con margine rapido piccolo o confidenza bassa. Stima: ~14 suoni in piu' al
 # giorno col volume dell'8-13/10, ~7 con le ricerche del 13/10 (da verificare). 0 = spento.
 PREAVVISO_GIALLO_PREZZO_MAX = _env_float("PREAVVISO_GIALLO_PREZZO_MAX", 15)
+# 14/11 (utente: "se margine > 40 EUR e ROI 100% devono suonare"; caso Loro Piana 35 EUR, 🟡 ROI 183%, margine 64, arrivato muto): ogni
+# preavviso con margine rapido >= PREAVVISO_SUONO_MARGINE_MIN e ROI >= PREAVVISO_SUONO_ROI_MIN % suona, qualunque sia il colore. 0 = spento.
+PREAVVISO_SUONO_MARGINE_MIN = _env_float("PREAVVISO_SUONO_MARGINE_MIN", 40)
+PREAVVISO_SUONO_ROI_MIN = _env_float("PREAVVISO_SUONO_ROI_MIN", 100)
 # PREAVVISO LAMPO (10/10): per gli annunci la cui categoria si legge dal TITOLO il preavviso parte PRIMA dello scarico della pagina, con
 # la sola foto di copertina del tracker (da ~3 s a meno di 1 s). Il messaggio e' lo stesso: a fine analisi viene aggiornato col verdetto.
 # Spento con PREAVVISO_LAMPO=0 (il preavviso parte dopo lo scrape, con l'album completo).
@@ -172,6 +176,10 @@ def preavviso_con_suono(stima, prezzo):
     if PREAVVISO_SUONO_VERDE and stima.get("semaforo") == "🟢":
         return True
     if _giallo_economico(stima, prezzo):
+        return True
+    marg = stima.get("margine")
+    if (PREAVVISO_SUONO_MARGINE_MIN > 0 and marg is not None and prezzo and prezzo > 0
+            and marg >= PREAVVISO_SUONO_MARGINE_MIN and marg / prezzo * 100 >= PREAVVISO_SUONO_ROI_MIN):
         return True
     fv = stima.get("fv")
     return bool(fv and prezzo and prezzo > 0 and fv / prezzo >= PREAVVISO_SUONO_RAPPORTO_MIN)
