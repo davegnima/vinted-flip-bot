@@ -756,11 +756,12 @@ def test_invia_radar_ripiega_sul_testo_se_la_foto_e_rifiutata(monkeypatch):
 def test_scartati_nel_merito_si_cancellano_gli_altri_no(monkeypatch):
     import asyncio
     from bot import radar
-    # Gemini scarta -> da cancellare
+    monkeypatch.setattr(radar, "RADAR_CANCELLA_SCARTI_MERITO", False)
+    # Gemini scarta -> resta nel gruppo con la risposta muta (14/11)
     _prepara_invio(monkeypatch, gemini={"verdetto": "scarta", "confidenza": 1.0, "motivo": "rotto"})
     esito = {}
     asyncio.run(radar.invia_verdetto_v2({"title": "Gba", "price": "40"}, "https://www.vinted.it/items/930-x", V2_GIALLO, esito=esito))
-    assert esito["scartato"] and radar.da_cancellare(V2_GIALLO, esito)
+    assert esito["scartato"] and not radar.da_cancellare(V2_GIALLO, esito)
     # Telegram fallito, pausa e duplicato -> restano nel gruppo
     _prepara_invio(monkeypatch, consegna=False)
     esito = {}
@@ -973,3 +974,15 @@ def test_avviso_proprio_non_e_un_annuncio_del_tracker():
     assert e_avviso_proprio("• 600 € https://www.vinted.it/items/2")
     assert not e_avviso_proprio("📡\n💰 120.00 EUR\n🏷️ Nintendo\n🆕 Nintendo Switch\n🔎 Query: V2 console")
     assert not e_avviso_proprio("")
+
+
+def test_scarto_nel_merito_resta_nel_gruppo_con_la_risposta(monkeypatch):
+    """14/11 (utente): gli scarti di Jev o Gemini restano nel gruppo muti, con il motivo."""
+    from bot import radar
+    monkeypatch.setattr(radar, "RADAR_CANCELLA_SCARTI_MERITO", False)
+    v2 = {"semaforo": "giallo", "motivo": "ok", "rivendita": 120.0, "margine": 70.0, "roi": 150.0, "n": 6}
+    esito = {"scartato": True, "inviato": False, "motivo": "Jev non lo da' come affare (dichiarato rotto)", "tipo": "scartato_jev"}
+    assert not radar.da_cancellare(v2, esito)
+    assert "Avviso non inviato" in radar.testo_risposta_gruppo(v2, esito)
+    monkeypatch.setattr(radar, "RADAR_CANCELLA_SCARTI_MERITO", True)
+    assert radar.da_cancellare(v2, esito)
