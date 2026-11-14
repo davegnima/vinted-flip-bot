@@ -661,6 +661,7 @@ def test_verifica_una_sola_richiesta_e_corregge_il_prezzo(monkeypatch):
     monkeypatch.setattr(mj, "giudica_autenticita", lambda *a: ("non_chiaro", 0.56))
     monkeypatch.setattr(mj, "optimize_image_bytes", lambda b, n: b)
     monkeypatch.setattr(mj, "JEV_FOTO_COMPS", False)
+    monkeypatch.setattr(mj, "MODA_COMPS_ATTRIBUTI", False)
 
     async def nessun_gemini(*a, **k):
         return None
@@ -695,3 +696,19 @@ def test_gemini_prevale_con_etichetta_del_brand():
     assert mj.decidi({"ok": True}, a, {**g, "etichetta_letta": "non_leggibile"}, None, None, "yves saint laurent")[0] == "scarta"
     assert mj.decidi({"ok": True}, a, {**g, "confidenza": 0.7}, None, None, "yves saint laurent")[0] == "scarta"
     assert mj.decidi({"ok": True}, ("replica_probabile", 0.9), g, None, None, "yves saint laurent")[0] == "scarta"   # Jev sicura: non si corregge
+
+
+def test_url_comparabili_con_colore_e_materiale_solo_se_dati():
+    from bot import moda_jev as mj
+    base = mj.url_comparabili("gucci", None, 2050, None, None)
+    assert "color_ids" not in base and "search_text" not in base
+    url = mj.url_comparabili("gucci", None, 2050, None, None, colore=1, materiale=5)
+    assert "&color_ids[]=1" in url and "&material_ids[]=5" in url
+
+
+def test_id_filtro_da_variabile(monkeypatch):
+    from bot import moda_jev as mj
+    monkeypatch.setattr(mj, "_FILTRI_IDS", {"colori": {"nero": 1}})
+    assert mj.id_filtro("colori", "Nero, Bianco") == 1
+    assert mj.id_filtro("colori", "Rosso") is None
+    assert mj.id_filtro("materiali", "Seta") is None

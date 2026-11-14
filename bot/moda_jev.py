@@ -8,6 +8,7 @@ Esito: 'conferma' (margine >= 50 EUR e ROI >= 100% sui comparabili, foto non sos
 oppure la foto sembra falsa/altra marca), 'non_verificato' (comparabili non trovati o Jev spento: l'avviso parte con l'avvertenza).
 Spenta con MODA_JEV=0 (default 1, letta una volta sola in bot/config.py); MODA_JEV_TUTTI=1 la estende a tutti gli avvisi (non solo ai brand nuovi). Costo: poche chiamate Jev solo per i pochi avvisi dei brand nuovi; tetto MODA_JEV_MAX_GIORNO.
 """
+import json
 import os
 import re
 import time
@@ -86,8 +87,9 @@ MODA_COMPS_ORDINE = os.environ.get("MODA_COMPS_ORDINE", "newest_first").strip() 
 MODA_COMPS_PROVA = [o.strip() for o in os.environ.get("MODA_COMPS_PROVA", "").split(",") if o.strip()]
 
 
-def url_comparabili(brand, testo=None, catalogo=None, ordine=None, condizione=None, stato=None):
-    """Ricerca dei simili: brand_ids[] + categoria foglia dell'annuncio + parole del titolo (se ci sono). None senza id brand. Pura."""
+def url_comparabili(brand, testo=None, catalogo=None, ordine=None, condizione=None, stato=None, colore=None, materiale=None):
+    """Ricerca dei simili: brand_ids[] + categoria foglia dell'annuncio + parole del titolo (se ci sono); colore e materiale (id Vinted)
+    solo se dati. None senza id brand. Pura."""
     bid = id_brand(brand)
     if not bid and not brand:
         return None
@@ -95,7 +97,32 @@ def url_comparabili(brand, testo=None, catalogo=None, ordine=None, condizione=No
     t = f"&search_text={quote(testo if bid else ((brand or '') + ' ' + (testo or '')).strip())}" if (testo or not bid) else ""
     c = f"&catalog[]={catalogo}" if catalogo else ""
     b = f"brand_ids[]={bid}" if bid else "currency=EUR"
-    return f"https://www.vinted.it/catalog?{b}{c}{t}&order={ordine or MODA_COMPS_ORDINE}{f'&status_ids[]={stato}' if stato else stati_comps(condizione)}"
+    extra = (f"&color_ids[]={colore}" if colore else "") + (f"&material_ids[]={materiale}" if materiale else "")
+    return f"https://www.vinted.it/catalog?{b}{c}{t}{extra}&order={ordine or MODA_COMPS_ORDINE}{f'&status_ids[]={stato}' if stato else stati_comps(condizione)}"
+
+
+# 14/11 (utente): terza ricerca dei comparabili, SENZA parole chiave: brand + categoria + condizione (+ colore e materiale se si conoscono
+# gli id Vinted). Id verificati non ce ne sono nel repo e Claude non visita vinted.it (regola 7): si inseriscono da variabile
+# `VINTED_FILTRI_IDS` (JSON {"colori": {"nero": 1}, "materiali": {"seta": 5}}, nomi in minuscolo come li scrive l'annuncio). Senza id il
+# filtro colore/materiale non si applica e il messaggio lo dice. MODA_COMPS_ATTRIBUTI=0 la spegne. Va IN OMBRA: si mostra e si registra
+# nel log `COMPS ORDINE`, non entra nella rivendita mista finche' i dati non dicono che e' la migliore.
+MODA_COMPS_ATTRIBUTI = os.environ.get("MODA_COMPS_ATTRIBUTI", "1").strip() not in ("0", "false", "no", "")
+try:
+    _FILTRI_IDS = json.loads(os.environ.get("VINTED_FILTRI_IDS", "") or "{}")
+except ValueError:
+    _FILTRI_IDS = {}
+
+
+def id_filtro(tipo, nome):
+    """Id Vinted di un colore ('colori') o materiale ('materiali') dal nome scritto nell'annuncio; None se non e' tra quelli configurati. Pura."""
+    nome = (nome or "").strip().lower()
+    tabella = _FILTRI_IDS.get(tipo) or {}
+    if nome in tabella:
+        return tabella[nome]
+    for chiave, valore in tabella.items():   # "Nero, Bianco" -> primo nome noto
+        if chiave and chiave in nome:
+            return valore
+    return None
 
 
 MODA_JEV_OMBRA = os.environ.get("MODA_JEV_OMBRA", "1").strip() not in ("0", "false", "no", "")
@@ -558,6 +585,8 @@ def righe_messaggio(ris, brand=None):
         righe.append("🔎 Comparabili: nessuno")
     if comps is not None:
         riga = f"📅 Più recenti: {n}"
+        if ris.get("parola_base"):
+            riga += f" (\"{ris['parola_base']}\")"
         pc = ris.get("prezzi_comps")
         if pc:
             riga += f" · {pc[0]:g}–{pc[1]:g} €" if pc[0] != pc[1] else f" · {pc[0]:g} €"
@@ -574,6 +603,8 @@ def righe_messaggio(ris, brand=None):
     if ris.get("rivendita_ril"):
         # 8/11 (utente: 'aggiungili'): anche i comparabili ordinati per rilevanza, con fascia, rivendita e link
         riga = f"🎯 Più rilevanti: {ris.get('n_ril') or 0}"
+        if ris.get("parola_ril"):
+            riga += f" (\"{ris['parola_ril']}\")"
         pr = ris.get("prezzi_comps_ril")
         if pr:
             riga += f" · {pr[0]:g}–{pr[1]:g} €" if pr[0] != pr[1] else f" · {pr[0]:g} €"
@@ -584,6 +615,18 @@ def righe_messaggio(ris, brand=None):
             righe += [RigaMd(f"• {link_markdown(t, u)} · {p:g} €") for t, p, u in link_ril[:2]]
         elif not ris.get("link_comps_ril"):
             righe += [f"• {p:g} € {t[:40]}" for t, p in (ris.get("esempi_ril") or [])[:3]]
+    if ris.get("rivendita_att"):
+        # 14/11 (utente): terza ricerca senza parole chiave (brand, categoria, condizione, colore/materiale se noti), con i link
+        riga = f"🧩 Senza parole ({'+'.join(ris.get('filtri_attributi') or []) or 'solo brand, categoria, condizione'}): {ris.get('n_att') or 0}"
+        pa = ris.get("prezzi_comps_att")
+        if pa:
+            riga += f" · {pa[0]:g}–{pa[1]:g} €" if pa[0] != pa[1] else f" · {pa[0]:g} €"
+        righe.append(riga + f" · ~{ris['rivendita_att']:.0f} €")
+        link_att = ris.get("link_comps_att") or []
+        if link_att:
+            righe += [RigaMd(f"• {link_markdown(t, u)} · {p:g} €") for t, p, u in link_att[:3]]
+        else:
+            righe += [f"• {p:g} € {t[:40]}" for t, p in (ris.get("esempi_att") or [])[:3]]
     if ris.get("legit_saltato"):
         righe.append("⏭ Legit check saltato: scartato sui prezzi")
     else:
@@ -637,7 +680,9 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
         # La linea (es. Weekend per Max Mara) si legge da titolo e descrizione; se le foto dicono altro si rifa' la ricerca (vedi sotto).
         linea = linea_dal_testo(f"{titolo} {brand or ''}", brand, listing_info.get("description"))
 
-        async def cerca(linea, ordine=None):
+        parole_usate = {}   # ricerca -> parola chiave con cui e' uscita (None = senza parole)
+
+        async def cerca(linea, ordine=None, attributi=False):
             testo = " ".join(query_comp(titolo, brand).split()[len((brand or "").split()):][:3])
             if linea:
                 # la linea (es. "weekend") entra nella ricerca anche se non e' nelle prime parole del titolo
@@ -645,10 +690,14 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
                 if parola not in testo.lower():
                     testo = f"{parola} {testo}".strip()
             usate, mappe = [], []
-            for t in ([testo, None] if testo else [None]):
+            colore = id_filtro("colori", listing_info.get("color_raw")) if attributi else None
+            materiale = id_filtro("materiali", listing_info.get("material_raw")) if attributi else None
+            chiave_ricerca = "attributi" if attributi else (ordine or "base")
+            parole_usate[chiave_ricerca] = None
+            for t in ([None] if attributi else ([testo, None] if testo else [None])):
                 # 11/11 (utente): UNA richiesta con le condizioni concatenate (nuovo senza cartellino, ottime, buone + quella dell'annuncio);
                 # la condizione di ogni comparabile si legge dalla risposta e il prezzo si corregge di poco nella stima (vedi sotto)
-                url = url_comparabili(brand, t, catalogo, ordine, listing_info.get("condition"))
+                url = url_comparabili(brand, t, catalogo, ordine, listing_info.get("condition"), colore=colore, materiale=materiale)
                 if not url:
                     break
                 risposta, ok, _mappa = await _cerca_vinted_testo_diretto(url)
@@ -662,6 +711,7 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
                 if t:
                     comps = comparabili_simili(comps, t, brand)
                 usate = comps
+                parole_usate[chiave_ricerca] = t
                 if len(comps) >= MIN_COMPARABILI:
                     break
             # prezzi portati alla condizione dell'annuncio (comparabile peggiore: sale; migliore: scende), solo per la stima; condizione ignota = invariato
@@ -746,6 +796,21 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
                      fv.get("categoria"), prezzo, MODA_COMPS_ORDINE, _riga_stima(stima), _riga_stima(st_ril), fv.get("fv"))
         except Exception:
             log.info("Moda Jev: ricerca per rilevanza non riuscita")
+        ris["parola_base"], ris["parola_ril"] = parole_usate.get("base"), parole_usate.get("relevance")
+        if MODA_COMPS_ATTRIBUTI:
+            try:
+                _ua, _la, st_att, v_att = await cerca(linea, None, attributi=True)
+                filtri = [n for n, k in (("colore", "colori"), ("materiale", "materiali")) if id_filtro(k, listing_info.get("color_raw" if n == "colore" else "material_raw"))]
+                ris["filtri_attributi"] = filtri
+                if st_att and v_att and v_att.get("rivendita"):
+                    ris["rivendita_att"], ris["n_att"] = v_att["rivendita"], v_att.get("n") or st_att.get("n")
+                    ris["link_comps_att"], ris["esempi_att"] = _la, list(_ua[:3])
+                    ris["prezzi_comps_att"] = (st_att["minimo"], st_att["massimo"])
+                log.info("COMPS ATTRIBUTI | item=%s | brand=%s | cat=%s | prezzo=%s | filtri=%s | base=%s | att=%s | ril=%s | fv_stima=%s | parole base=%s ril=%s",
+                         listing_info.get("item_id") or "-", brand, fv.get("categoria"), prezzo, "+".join(filtri) or "solo condizione", _riga_stima(stima),
+                         _riga_stima(st_att), _riga_stima(st_ril) if riv_ril is not None else None, fv.get("fv"), ris["parola_base"], ris["parola_ril"])
+            except Exception:
+                log.info("Moda Jev: ricerca per attributi non riuscita")
         v, sconto = correggi_per_difetti(v, prezzo, ris["gemini"], margine_min_jev(brand))
         if sconto:
             ris["sconto_difetti"], ris["rivendita_prima_difetti"] = sconto, v.get("rivendita_prima_difetti")
