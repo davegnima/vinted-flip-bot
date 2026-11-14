@@ -338,13 +338,16 @@ RADAR_CHAT_ID = (os.environ.get("RADAR_CHAT_ID") or "").strip() or None
 
 
 def chat_avvisi_radar():
-    """Chat degli avvisi radar (9/11, utente: gialli e verdi nel gruppo Vinted bot, niente COMPRA): RADAR_CHAT_ID se impostata,
-    altrimenti il gruppo radar (quello dei messaggi del tracker, anche trovato per nome all'avvio), poi COMPRA e l'owner come ultima risorsa."""
+    """Chat degli avvisi radar (14/11, utente: verdi, gialli e venduti veloci nel gruppo COMPRA): RADAR_CHAT_ID se impostata,
+    altrimenti TELEGRAM_ALERT_CHAT_ID (COMPRA), poi il gruppo radar (quello dei messaggi del tracker, anche trovato per nome all'avvio), poi COMPRA e l'owner come ultima risorsa."""
     if RADAR_CHAT_ID:
         return RADAR_CHAT_ID
+    # 14/11 (utente: avvisi nel gruppo COMPRA, dove arriva gia' la moda): il gruppo radar resta per gli annunci grezzi e le risposte.
+    if TELEGRAM_ALERT_CHAT_ID:
+        return TELEGRAM_ALERT_CHAT_ID
     if RADAR_GROUP_ID is not None:
         return RADAR_GROUP_ID
-    return next(iter(sorted(RADAR_CHAT_IDS)), None) or TELEGRAM_ALERT_CHAT_ID or TELEGRAM_OWNER_CHAT_ID
+    return next(iter(sorted(RADAR_CHAT_IDS)), None) or TELEGRAM_OWNER_CHAT_ID
 # Filtro Jev (1/11, utente): si manda solo cio' che Jev dichiara "affare" (niente rotti, ricambi, incompleti) con confidenza minima.
 RADAR_JEV_RICHIESTO = os.environ.get("RADAR_JEV_RICHIESTO", "1").strip() not in ("0", "false", "no", "")
 try:
