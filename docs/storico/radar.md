@@ -306,3 +306,5 @@ Voci spostate da `STATO.md` il 13/11 senza modifiche al testo (ordine del vecchi
 
 
 - 14/11 Avvisi del radar cancellati dal bot stesso: dal 10/11 19:04 UTC (#377 aveva tolto `gia_visto` da `MOTIVI_TECNICI_NON_CANCELLA` per far sparire i doppioni del tracker) l'avviso mandato nel gruppo radar veniva riletto come annuncio gia' visto e cancellato dopo meno di un secondo: 115 righe `RADAR PULIZIA ... motivo=gia_visto` dal 10/11 al 13/11, 12 avvisi consegnati e cancellati il 13/11. Ora `e_avviso_proprio` (`bot/radar_messaggi.py`) riconosce i messaggi del bot e `on_new_message` li lascia (`RADAR AVVISO PROPRIO`). In piu': un annuncio arrivato senza bottoni (`RADAR SENZA ANNUNCIO`, Nintendo Switch 120 EUR del 13/11 16:03 UTC) viene riletto una volta dopo 2 s.
+
+- 14/11 Scarti nel merito (Jev, Gemini, rivalutazione) restano nel gruppo radar come risposta muta con il motivo, non piu' cancellati: `RADAR_CANCELLA_SCARTI_MERITO=0` (richiesta dell'utente). Il 14/11 mattina tre venduti veloci (15 min) erano scarti di Jev o Gemini.

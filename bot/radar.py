@@ -485,6 +485,9 @@ def testo_risposta_gruppo(v2, esito=None):
 # Scarti che non sono l'oggetto intero (ricambio, accessorio, scatola, parola vietata, prezzo segnaposto, titolo generico):
 # il messaggio del tracker nel gruppo si cancella invece di rispondere (richiesta dell'utente, 31/10: niente rumore).
 RADAR_CANCELLA_SCARTI = os.environ.get("RADAR_CANCELLA_SCARTI", "1").strip() not in ("0", "false", "no", "")
+# 14/11 (utente: "voglio muti nel gruppo"): gli scarti di Jev, Gemini e rivalutazione restano nel gruppo con la risposta muta
+# che dice perche' non e' partito l'avviso. 1 = li cancella come prima.
+RADAR_CANCELLA_SCARTI_MERITO = os.environ.get("RADAR_CANCELLA_SCARTI_MERITO", "0").strip() in ("1", "true", "si")
 MOTIVI_NON_OGGETTO = ("parola_vietata", "pezzo_o_accessorio", "prezzo_segnaposto", "titolo_generico", "famiglia_senza_margine", "jev_tipo")
 
 
@@ -500,8 +503,10 @@ MOTIVI_TECNICI_NON_CANCELLA = ("senza_id", "ombra_spenta", "pausa_notturna")   #
 def da_cancellare(v2, esito=None):
     """True se il verdetto e' un rosso da togliere dal gruppo: non e' l'oggetto intero, oppure (RADAR_CANCELLA_ROSSI) e' rosso.
     Con `esito` anche i gialli/verdi scartati nel merito (Jev, comparabili, Gemini, rivalutazione): 1/11, scelta dell'utente. Pura."""
-    if esito and (esito.get("scartato") or esito.get("inviato")):
+    if esito and esito.get("inviato"):
         return True   # inviato: l'avviso completo e' gia' nel gruppo, il messaggio del tracker sarebbe un doppione
+    if esito and esito.get("scartato") and RADAR_CANCELLA_SCARTI_MERITO:
+        return True
     if not v2:
         # non valutato (modello fuori lista, sopra il tetto, ecc.): non e' un giallo ne' un verde, si toglie dal gruppo (9/11, utente)
         return (((esito or {}).get("saltato") or "").split(":")[0]) not in MOTIVI_TECNICI_NON_CANCELLA
