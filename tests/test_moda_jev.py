@@ -719,3 +719,11 @@ def test_spezzoni_filtri_trova_chiavi_colore_e_materiale():
     html = '{"item":{"color1_id":1,"color1":"Nero","material_id":44,"title":"x"}}'
     out = spezzoni_filtri(html)
     assert any("color1_id" in t for t in out) and any("material_id" in t for t in out)
+
+
+def test_rivendita_mista_conta_anche_senza_parole():
+    from bot.moda_jev import rivendita_mista
+    fv = {"fv": 60, "conf": "media"}
+    senza, _ = rivendita_mista(fv, 100, 10, None, 80)
+    con, parti = rivendita_mista(fv, 100, 10, None, 80, 140)
+    assert parti["attributi"] == 140 and con > senza
