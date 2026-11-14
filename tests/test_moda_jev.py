@@ -356,12 +356,13 @@ def test_gemini_prevale_su_jev_replica_debole_e_recuperato_con_foto():
     from bot.scheda import testo_preavviso
     g = {"autenticita": "probabile", "confidenza": 0.95}
     assert gemini_prevale(("replica_probabile", 0.51), g)
-    assert not gemini_prevale(("replica_probabile", 0.8), g)
+    assert gemini_prevale(("replica_probabile", 0.8), g)          # 14/11 (utente): con Gemini sicuro Jev conta solo sopra 0,85
+    assert not gemini_prevale(("replica_probabile", 0.9), g)
     assert not gemini_prevale(("replica_probabile", 0.51), {"autenticita": "probabile", "confidenza": 0.7})
     assert not gemini_prevale(("replica_probabile", 0.51), {"autenticita": "dubbia", "confidenza": 0.95})
     assert not gemini_prevale(("altra_marca", 0.5), g)
     assert decidi({"ok": True}, ("replica_probabile", 0.65), g)[0] == "conferma"   # sopra la soglia di scarto di Jev, ma Gemini prevale
-    assert decidi({"ok": True}, ("replica_probabile", 0.8), g)[0] == "scarta"
+    assert decidi({"ok": True}, ("replica_probabile", 0.9), g)[0] == "scarta"
     ris = {"esito": "conferma", "motivo": "ok", "n": 10, "rivendita": 100.0, "margine": 71.0, "roi": 375.0, "autenticita": ("replica_probabile", 0.51), "gemini": g}
     assert riga_originalita(ris).startswith("🔐 Originalità: ✅ LEGIT") and "prevale Gemini" in riga_originalita(ris)
     assert "possibile replica" not in riga_verdetto(ris)
