@@ -1,4 +1,4 @@
-# Stato del progetto (aggiornato 2026-11-13)
+# Stato del progetto (aggiornato 2026-11-14)
 
 Da rileggere a inizio sessione dopo `CLAUDE.md`. Solo stato corrente, controlli e punti aperti: massimo 60 righe.
 La cronologia NON sta qui: `docs/storico/` (indice in `docs/storico/README.md`). Regole per aggiornare: `docs/procedure/aggiorna-stato.md`.
@@ -10,7 +10,7 @@ La cronologia NON sta qui: `docs/storico/` (indice in `docs/storico/README.md`).
 - Soglie in uso: margine rapido minimo 40 EUR per avvisare (`PREAVVISO_MARGINE_ASSOLUTO_MIN`), Jev scarta sotto 40 EUR di margine (`MODA_JEV_MARGINE_MIN`), tetto verifiche Jev `MODA_JEV_MAX_GIORNO`=1500 su Railway (alzato il 12/11 da 600), ombra 20/h fuori dal tetto.
 - Comparabili: una sola richiesta con condizioni 1+2+3 (scelta dell'utente dell'11/11), rivendita mista con pesi scelti dall'utente (non misurati).
 - Ricerche: ultime potature 11-13/11 (Versace, Belstaff, Acne, Frankie Shop, Stella McCartney, Farm Rio, Etro, Balmain, McQueen, Chloe; Barbour solo fino a 20 EUR nella ricerca 27). Elenco vero: pagina `/queries` del tracker.
-- Ultimo recap (dati 12/11): veloci 15,8%; semaforo verde 37%, giallo 16%, rosso 9%; preavviso precisione 26%, richiamo 64%.
+- Ultimo recap (dati 13/11, 06:00-22:56 UTC, 824 chiusi): veloci 19,2% (veri 17,1%); semaforo verde 35%, giallo 22%, rosso 8%; preavviso precisione 30%, richiamo 79%; Jev conferma 84 (51% veloci); Etro 60->6 annunci e Barbour 239->94 dopo la potatura (Barbour 12% veloci).
 
 **Radar fuori moda** (tracker `vinted-radar`)
 - Ricerche attive: circa 17 (19 il 9/11, tolte `V2 ghd` e `V2 audio e hifi` il 13/11); numero da confermare su `/queries`.
