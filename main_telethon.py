@@ -174,6 +174,7 @@ from bot.pipeline import (
 )  # noqa: F401  (re-export)
 
 from bot.client_tg import client  # noqa: F401  (re-export)
+from bot.venduti_sonda import VENDUTI_SONDA, sonda_venduti
 
 from bot.cicli import (
     ARRESTO_ATTESA_MAX_S,
@@ -539,6 +540,8 @@ async def main():
         asyncio.get_event_loop().create_task(ciclo_callback())
         asyncio.get_event_loop().create_task(ciclo_report_radar())
         asyncio.get_event_loop().create_task(ciclo_velocita())
+        if VENDUTI_SONDA:
+            asyncio.get_event_loop().create_task(sonda_venduti())
         _battito["t"] = time.time()
         asyncio.get_event_loop().create_task(_battito_loop())
         _thread_blocco()
