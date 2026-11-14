@@ -1,10 +1,7 @@
 # Stato del progetto (aggiornato 2026-11-14)
-
 Da rileggere a inizio sessione dopo `CLAUDE.md`. Solo stato corrente, controlli e punti aperti: massimo 60 righe.
 La cronologia NON sta qui: `docs/storico/` (indice in `docs/storico/README.md`). Regole per aggiornare: `docs/procedure/aggiorna-stato.md`.
-
 ## Stato corrente
-
 **Moda** (tracker `vinted-notifications`)
 - Dal 1/11 Occhio e Cervello erano spenti (`SOLO_SEMAFORO=1`); il 13/11 sono stati tolti dal codice (`_archive/2026-11-cervello/README.md`). L'avviso parte dalla stima rapida (`valuta_preavviso`), poi Jev cerca i comparabili (`bot/moda_jev.py`) e Gemini gratuito guarda le foto (`bot/moda_gemini.py`).
 - Soglie in uso: margine rapido minimo 40 EUR per avvisare (`PREAVVISO_MARGINE_ASSOLUTO_MIN`), Jev scarta sotto 40 EUR di margine (`MODA_JEV_MARGINE_MIN`), tetto verifiche Jev `MODA_JEV_MAX_GIORNO`=1500 su Railway (alzato il 12/11 da 600), ombra 20/h fuori dal tetto.
@@ -12,23 +9,20 @@ La cronologia NON sta qui: `docs/storico/` (indice in `docs/storico/README.md`).
 - Ricerche: ultime potature 11-13/11 (Versace, Belstaff, Acne, Frankie Shop, Stella McCartney, Farm Rio, Etro, Balmain, McQueen, Chloe; Barbour solo fino a 20 EUR nella ricerca 27). Elenco vero: pagina `/queries` del tracker.
 - Ultimo recap (dati 13/11, 06:00-22:56 UTC, 824 chiusi): veloci 19,2% (veri 17,1%); semaforo verde 35%, giallo 22%, rosso 8%; preavviso precisione 30%, richiamo 79%; Jev conferma 84 (51% veloci); Etro 60->6 annunci e Barbour 239->94 dopo la potatura (Barbour 12% veloci).
 - 14/11 (PR #415, #419, #421): suona ogni preavviso con margine >= 40 EUR e ROI >= 100% (`PREAVVISO_SUONO_*`); da misurare quanti suoni in piu'.
-- 14/11: terza ricerca comps senza parole chiave in ombra (`MODA_COMPS_ATTRIBUTI`, riga `COMPS ATTRIBUTI`, riga 🧩 nel messaggio); colore/materiale solo con `VINTED_FILTRI_IDS` (id non verificati). Messaggio mostra la parola chiave di recenti e rilevanti. Prima analisi su 477 righe: rilevanza mediana 0,86 x recenti, piu' vicina al semaforo; senza id annuncio nel log non si confronta con la velocita'.
+- 14/11: ricerca per rilevanza con filtri colore/materiale in parallela (`MODA_COMPS_ATTRIBUTI`, riga `COMPS ATTRIBUTI`, 🧩 nel messaggio), parte solo con gli id in `VINTED_FILTRI_IDS`; i recenti escono dalla rivendita mista. Messaggio mostra la parola chiave di recenti e rilevanti. Sonda `SONDA FILTRI` (8 pagine) per ricavare gli id (materiale per primo): leggere il log, compilare `VINTED_FILTRI_IDS`, poi `SONDA_FILTRI_PAGINE=0`. Rilevanza mediana 0,86 x recenti su 477 righe (senza id annuncio non si confronta con la velocita').
 - Rotazione veloce: brand con lift >= 1,3 e ROI >= 100% avvisano da margine 30 (non 40), con suono; Jev usa la stessa soglia (`PREAVVISO_ROTAZIONE_*`). Base: 13/11, margine 30-40 e lift >= 1,3 = 47% veloci su 45 casi (1 giorno). Da riverificare. Barbour ora ha lift 0,7: non ne beneficia.
 - Legit check: se i comparabili scartano ma la rivendita mista conferma, il legit check (Jev+Gemini) si fa comunque (caso Celine pullover); prima restava "saltato" con CONFERMATO. Aperto: comparabili di quel caso erano camicie/T-shirt (titolo tedesco "Maenner Pullover"), da capire. Gemini prevale su una replica debole di Jev (< 0,85) anche con confidenza 0,80 se ha letto il brand sull'etichetta (`CONF_GEMINI_PREVALE_ETICHETTA`); caso YSL Variation 7 EUR, venduto in 15 s. Le linee YSL (Variation, Rive Gauche) NON sono nelle sottolinee: aggiungerle abbasserebbe la confidenza della stima, da decidere con dati.
-
 **Radar fuori moda** (tracker `vinted-radar`)
 - Ricerche attive: 14, lette da `/queries` il 13/11 sera (Console, Fotocamere digitali, Collezionismo, V2 ps5, switch, ps4 pro, 3ds, dyson, bose, rolleiflex, canon ae-1, shure sm7b, seiko uomo, console). Tolte il 13/11: ghd, audio e hifi, shimano dura-ace, vorwerk kobold, campagnolo record (URL in `docs/analisi/radar-ricerche-potate-2026-11-13*.json`). Prossime candidate: rolleiflex e canon ae-1 (0 gialli/verdi in 5 giorni).
 - Valutazione: `bot/radar_v2.py` (comparabili Vinted, 25° percentile), filtro modelli `bot/radar_famiglie.py` (tetti: ps5 150, switch 90, ps4/ps vita/wii u 80, ps4 pro/3ds 60, altri 50), Jev richiesto con confidenza >= 0,7, Gemini gratuito sulle foto, eccezione `quasi_roi`.
 - Avvisi: gialli e verdi con suono (13/11) nel gruppo radar, venduti veloci con suono (14/11), tutti nel gruppo COMPRA (14/11); gli annunci grezzi e le risposte di scarto restano nel gruppo radar. Il tracker radar manda i suoi annunci muti dal 14/11 (`TELEGRAM_SILENT=1` su Railway, servizio `vinted-radar`). Dal 14/11 gli scarti di Jev e Gemini restano nel gruppo muti con il motivo (`RADAR_CANCELLA_SCARTI_MERITO=0`, richiesta dell'utente). Dal 10/11 al 14/11 il bot cancellava anche i propri avvisi (letti come doppioni `gia_visto`): corretto il 14/11 (`e_avviso_proprio`, riga `RADAR AVVISO PROPRIO`).
 - Numeri misurati 9-13/11 (774 annunci tracciati): venduti entro 1 h verdi 68%, gialli 49%, rossi 29%. Il 12/11 (08-20 UTC): 73 gialli/verdi, 10 avvisi consegnati. Dettaglio: `docs/analisi/audit-2026-11-13.md`.
-
 **Infrastruttura**
 - Banda proxy del worker misurata: 4,4 GB l'11/11, 3,4 GB il 12/11 (obiettivo 30 GB/giorno, tetto 1 TB/mese): ampio margine. Rifiuti 403/429 su `pagina_annuncio`: 2,1% l'11/11, 1,7% il 12/11, 4,0% il 13/11 (fino alle 16:31 UTC).
 - Contatori e log salvati in SQLite sul volume `/data` (`bot/db.py`, `bot/log_db.py`); niente Postgres.
 - Telegram: il blocco 429 si rispetta sempre; i messaggi con suono non passano dal limitatore.
 - Tracker: `items_per_query=1` (deciso dall'utente, non cambiare).
 - Il recap mattutino (routine 05:47 Europe/Rome) arriva nella sessione: istruzioni in `docs/recap.md`.
-
 ## Controlli da fare
 1. Barbour a 20 EUR (ricerca 27): veloci % e volume dopo qualche giorno.
 2. Tetto Jev 1500: verifiche al giorno e righe `tetto_giornaliero` (devono restare 0).
@@ -39,7 +33,6 @@ La cronologia NON sta qui: `docs/storico/` (indice in `docs/storico/README.md`).
 7. Radar: una ricerca senza gialli/verdi in 7 giorni si toglie (`/report_radar`, `/esporta_radar`).
 8. Dopo il 14/11: a ogni `RADAR PRIVATO | consegnato=si` deve seguire `RADAR AVVISO PROPRIO` e mai `RADAR PULIZIA ... gia_visto` sullo stesso annuncio entro pochi secondi.
 9. Dopo il 13/11: `REPORT RADAR | funnel` con `senza_esito=0`; `profilo_venditore` fermo nel `RIEPILOGO BANDA OGGI`; tempi `GEMINI_USO` della moda con il prompt nuovo; avvisi moda e radar regolari dopo la rimozione di Occhio e Cervello.
-
 ## Punti aperti
 - **Archivio venduti moda** (piano a 6 fasi, utente 14/11): fase 0 chiusa, sonda del 14/11 11:29 UTC con 4 richieste su 4 bloccate (403) dal worker, `VENDUTI_SONDA` a 0. Il dataset Kaggle `justinpakzad/vestiaire-fashion-dataset` risulta non trovato (pagina 404, API 403, non verificato se rimosso). Fase 1 scritta: `bot/venduti_norma.py` (normalizzazione), `bot/venduti_db.py` (tabella `venduti` nel SQLite), `tests/test_venduti.py`. Prossimo: `tools/venduti_da_vinted.py` (venduti Vinted tracciati e comparabili Jev) e `tools/matrice_moda.py` (fasi 2-3). Fonti esterne solo se l'utente ne porta una (file o PDF salvati da lui) o autorizza una spesa.
 - **Audit del 13/11**: `docs/analisi/audit-2026-11-13.md` e `-task.md`. Fatti il 13/11: domanda foto di Jev tolta (#406), funnel del radar nel DB (T1, #407), prompt Gemini moda con le regole di Occhio e Cervello (#408), ramo Occhio/Cervello tolto (T12, #409), codice morto e scrape del guardaroba tolti (T5, #410), variabili e `docs/pipeline.md` (T3, T4), pulizia del tracker (T11, tracker #37). Codice da 20.870 a 13.619 righe.
@@ -47,7 +40,6 @@ La cronologia NON sta qui: `docs/storico/` (indice in `docs/storico/README.md`).
 - Da decidere con l'utente (visto nei log del 13/11): gialli con suono con "0 su N stesso modello" (controller a 20 EUR stimato 142); verdi con Jev a confidenza 0,25-0,28 (due PS5 a 115 EUR, profilo da truffa): `RADAR_JEV_CONF_MIN` su Railway e' sotto il default 0,7.
 - Tracker: `ruff` resta rosso (87 errori che richiedono cambi di comportamento); le PR del tracker non fanno partire la CI.
 - Per l'utente: ruotare le chiavi incollate in chat in passato (Z.ai, token Graphify, Groq, OmniRoute).
-
 ## Dove guardare (un puntatore per tema)
 | Tema | File |
 |---|---|

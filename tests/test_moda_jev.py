@@ -203,7 +203,7 @@ def test_verifica_salta_il_legit_check_se_i_comparabili_scartano(monkeypatch):
     async def gemini(*a, **k):
         chiamato.append("gemini")
     monkeypatch.setattr(mj, "controlla_gemini", gemini)
-    info = {"title": "Nightwear", "price": 25, "catalog_id": 123, "fair_value": {"brand": "zimmermann", "fv": 115}}
+    info = {"title": "Nightwear", "price": 25, "catalog_id": 123, "fair_value": {"brand": "zimmermann", "fv": 50}}
     ris = asyncio.run(mj.verifica(info, b"img", [b"img"]))
     assert ris["esito"] == "scarta" and ris["legit_saltato"] is True and chiamato == []
 
@@ -413,8 +413,9 @@ def test_rivendita_mista_pesa_semaforo_comparabili_e_gemini_e_li_mostra_in_testa
     assert parti == {"semaforo": 100.0, "comparabili": 200.0, "gemini": 150.0}
     assert abs(mix - (100 * 0.2 + 200 * 0.16 + 150 * 0.2) / 0.56) < 0.01
     mix2, parti2 = rivendita_mista({"fv": 100, "conf": "media"}, 200, 5, None, 160)   # con la ricerca per rilevanza: 1 x w
-    assert parti2["rilevanza"] == 160.0 and abs(mix2 - (100 * 0.2 + 200 * 0.16 + 160 * 0.2) / 0.56) < 0.01
-    assert parti_rivendita_testo(parti2) == " (semaforo 100 · recenti 200 · rilevanti 160)"
+    # 14/11 (utente): con la rilevanza i "piu' recenti" escono dalla media
+    assert parti2 == {"semaforo": 100.0, "rilevanza": 160.0} and abs(mix2 - 130.0) < 0.01
+    assert parti_rivendita_testo(parti2) == " (semaforo 100 · rilevanti 160)"
     # Gemini poco sicuro o assente: non entra; nessuna stima: (None, {})
     assert "gemini" not in rivendita_mista({"fv": 100, "conf": "alta"}, 200, 9, {"rivendita_gemini_eur": 150, "rivendita_confidenza": 0.3})[1]
     assert rivendita_mista(None, None, 0, None) == (None, {})
@@ -712,3 +713,18 @@ def test_id_filtro_da_variabile(monkeypatch):
     assert mj.id_filtro("colori", "Nero, Bianco") == 1
     assert mj.id_filtro("colori", "Rosso") is None
     assert mj.id_filtro("materiali", "Seta") is None
+
+
+def test_spezzoni_filtri_trova_chiavi_colore_e_materiale():
+    from bot.vinted_scrape import spezzoni_filtri
+    html = '{"item":{"color1_id":1,"color1":"Nero","material_id":44,"title":"x"}}'
+    out = spezzoni_filtri(html)
+    assert any("color1_id" in t for t in out) and any("material_id" in t for t in out)
+
+
+def test_rivendita_mista_conta_anche_senza_parole():
+    from bot.moda_jev import rivendita_mista
+    fv = {"fv": 60, "conf": "media"}
+    senza, _ = rivendita_mista(fv, 100, 10, None, 80)
+    con, parti = rivendita_mista(fv, 100, 10, None, 80, 140)
+    assert parti["attributi"] == 140 and con > senza
