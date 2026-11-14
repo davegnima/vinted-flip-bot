@@ -489,3 +489,22 @@ def test_preavviso_suona_con_margine_40_e_roi_100(monkeypatch):
     assert not fv.preavviso_con_suono({**loro, "margine": 45, "fv": 70}, 60)  # ROI 75% < 100: muto
     monkeypatch.setattr(fv, "PREAVVISO_SUONO_MARGINE_MIN", 0)               # interruttore
     assert not fv.preavviso_con_suono(loro, 35)
+
+
+def test_rotazione_veloce_abbassa_il_margine(monkeypatch):
+    from bot import fair_value as fv
+    from bot import moda_jev as mj
+    # capo di un brand veloce (Loro Piana) (lift 1,66), ROI 233%, margine 35 < 40: avviso con suono (regola 'rotazione')
+    barb = {**_stima("🟡", 35), "fv": 50, "brand": "loro piana", "lift_velocita": 1.66}
+    assert fv.valuta_preavviso(barb, 15) == (True, "rotazione")
+    assert fv.preavviso_con_suono(barb, 15)
+    assert fv.valuta_preavviso({**barb, "margine": 29}, 15)[1] != "rotazione"        # sotto 30
+    assert fv.valuta_preavviso({**barb, "lift_velocita": 1.1}, 15)[1] != "rotazione"  # brand non veloce
+    assert fv.valuta_preavviso({**barb, "margine": 35, "fv": 85}, 50)[1] != "rotazione"  # ROI 70% < 100
+    monkeypatch.setattr(fv, "PREAVVISO_ROTAZIONE_MARGINE_MIN", 0)                    # interruttore
+    assert fv.valuta_preavviso(barb, 15)[1] != "rotazione"
+    monkeypatch.undo()
+    # Jev: soglia di margine ridotta solo per i brand veloci (Loro Piana lift 1,6 nella tabella; Barbour 0,7)
+    assert mj.margine_min_jev("loro piana") == 30.0
+    assert mj.margine_min_jev("barbour") == mj.MODA_JEV_MARGINE_MIN
+    assert mj.margine_min_jev(None) == mj.MODA_JEV_MARGINE_MIN
