@@ -6,6 +6,7 @@
 #      python3 v2_ricerche.py --console  (aggiunge le 9 ricerche console e giochi dell'ondata 1, 31/10)
 #      python3 v2_ricerche.py --onda3    (aggiunge il resto della lista V2 non ancora sul tracker, senza categorie a rischio; 31/10)
 #      python3 v2_ricerche.py --onda4    (aggiunge le ricerche di categorie nuove: LEGO, pedali, retro games, strumenti; 01/11)
+#      python3 v2_ricerche.py --onda12   (aggiunge 5 ricerche casa e collezionismo, 14/11)
 #      python3 v2_ricerche.py --onda2    (aggiunge le 14 ricerche per brand di utensili, hi-fi, foto, casa, bimbi: raccolta dati larga, 31/10)
 import sys,os,re,html,json,urllib.request,urllib.parse
 QUI=os.path.dirname(os.path.abspath(__file__)); B='https://vinted-radar-production.up.railway.app'
@@ -96,6 +97,10 @@ ONDA11=[ # 13/11 (utente: punta sulle console): ricerche dedicate ai modelli con
  ('V2 ps4','ps4',None,[3025],50),('V2 ps vita','ps vita',None,[3025],50),('V2 wii u','wii u',None,[3025],50),('V2 nintendo ds','nintendo ds',None,[3025],50),
  ('V2 switch lite','switch lite',None,[3025],60),
 ]
+ONDA12=[ # 14/11 (utente: allarga a casa e collezionismo): lotto piccolo, tetto 50 EUR (regola 10, nessun dato di vendita misurato), niente price_from. Controllo a 24 h, decisione a 72 h (>= 5 verdi/gialli e >= 15 casi con esito, altrimenti si pota).
+ ('V2 royal copenhagen','','royal copenhagen',STOV+BIC+VASI,50),('V2 steiff','','steiff',[],50),
+ ('V2 heroquest','heroquest',None,[4881],50),('V2 murano vasi','murano',None,VASI,50),('V2 fumetti box completi','box completo',None,[5425],50),
+]
 RISCHIO=(
          # 13/11 tolte su richiesta utente (dati 5 giorni: GHD 1 affare su 33 gialli/verdi, audio e hifi 1 su 17): rumore
          'V2 ghd','V2 audio e hifi (sonos, pioneer, marantz, technics, bang olufsen)','V2 pokemon booster box', # 07/11: Pokemon mai monitorato (regola utente)
@@ -167,6 +172,12 @@ if '--onda7' in sys.argv:
     for nome,txt,br,cat,pt in ONDA7:
         if nome in gia or nome in RISCHIO: continue
         u='https://www.vinted.it/catalog?'+f'search_text={urllib.parse.quote(txt)}&'+''.join(f'catalog[]={i}&' for i in cat)+f"price_to={pt}&currency=EUR&order=newest_first"
+        post('/add_query',{'query':u,'query_name':nome}); print('ok',nome)
+if '--onda12' in sys.argv:
+    gia=_nomi_sul_tracker()
+    for nome,txt,br,cat,pt in ONDA12:
+        if nome in gia or nome in RISCHIO: continue
+        u='https://www.vinted.it/catalog?'+(f'search_text={urllib.parse.quote(txt)}&' if txt else '')+(''.join(f'brand_ids[]={B_[b]}&' for b in br.split('+')) if br else '')+''.join(f'catalog[]={i}&' for i in cat)+f"price_to={pt}&currency=EUR&order=newest_first"
         post('/add_query',{'query':u,'query_name':nome}); print('ok',nome)
 if '--onda11' in sys.argv:
     gia=_nomi_sul_tracker()
