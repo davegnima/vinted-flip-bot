@@ -399,8 +399,8 @@ def test_da_mandare_richiede_jev_affare(monkeypatch):
     assert radar._da_mandare({**ok, "jev_conf": 0.6}) is False
     assert radar._da_mandare({"semaforo": "verde", "jev": None, "jev_conf": None}) is False
     assert radar._da_mandare({**ok, "semaforo": "rosso"}) is False
-    assert radar.chat_avvisi_radar() == (radar.RADAR_CHAT_ID or radar.RADAR_GROUP_ID or next(iter(sorted(radar.RADAR_CHAT_IDS)), None)
-                                         or radar.TELEGRAM_ALERT_CHAT_ID or radar.TELEGRAM_OWNER_CHAT_ID)
+    assert radar.chat_avvisi_radar() == (radar.RADAR_CHAT_ID or radar.TELEGRAM_ALERT_CHAT_ID or radar.RADAR_GROUP_ID
+                                         or next(iter(sorted(radar.RADAR_CHAT_IDS)), None) or radar.TELEGRAM_OWNER_CHAT_ID)
 
 
 def test_verifica_comparabili_filtra_e_toglie_il_suffisso(monkeypatch):
