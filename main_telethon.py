@@ -19,6 +19,7 @@ from bot.gemini_stato import ripristina_stato_gemini
 from bot.tracciamento import importa_tracciamento_jsonl, tracc_riprendi_serie
 from bot.feedback import ciclo_callback
 from bot.radar_v2 import analizza as radar_v2_analizza, rivaluta as radar_v2_rivaluta
+from bot.radar_messaggi import e_avviso_proprio
 from bot.radar import RADAR_CHAT_IDS, RADAR_RISPOSTA_GRUPPO, RADAR_CANCELLA_SCARTI, da_cancellare, testo_risposta_gruppo, radar_in_pausa, e_messaggio_radar, gestisci_annuncio_radar, traccia_verdetto_v2, invia_verdetto_v2, risolvi_gruppo_radar, togli_marcatore
 from bot.costanti import (
     VINTED_HEADERS,
@@ -401,8 +402,20 @@ async def on_new_message(event):
         text = event.message.message or ""
         # Radar (fase 0, solo osservazione): ricerche fuori dall'abbigliamento, smistate prima della pipeline moda.
         if e_messaggio_radar(text, event.chat_id):
+            if e_avviso_proprio(text):
+                # Avviso scritto dal bot nel gruppo radar: non e' un annuncio del tracker, resta dov'e'.
+                log.info("RADAR AVVISO PROPRIO | msg_id=%s | lasciato nel gruppo", msg_id)
+                return
             url_radar = (extract_url_from_text(text) or url_da_bottoni(event.message.buttons, "/items/")
                          or url_da_entita(event.message.entities, "/items/"))
+            if not _estrai_item_id_da_url(url_radar):
+                # 14/11: a volte Telegram consegna l'annuncio senza i bottoni (Nintendo Switch a 120 EUR rimasta senza verdetto): si rilegge una volta.
+                try:
+                    await asyncio.sleep(2)
+                    riletto = await client.get_messages(event.chat_id, ids=msg_id)
+                    url_radar = url_da_bottoni(getattr(riletto, "buttons", None), "/items/") or url_da_entita(getattr(riletto, "entities", None), "/items/")
+                except Exception as exc:
+                    log.warning("RADAR SENZA ANNUNCIO | rilettura non riuscita msg_id=%s (%s)", msg_id, type(exc).__name__)
             log.info("MESSAGGIO RADAR | msg_id=%s | item=%s", msg_id, _estrai_item_id_da_url(url_radar))
             if not _estrai_item_id_da_url(url_radar):
                 # 01/11: messaggi del gruppo radar senza link all'annuncio (non sono annunci) ricevevano la risposta "semaforo non calcolato"

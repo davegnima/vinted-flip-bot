@@ -304,3 +304,5 @@ Voci spostate da `STATO.md` il 13/11 senza modifiche al testo (ordine del vecchi
 
 - 13/11 sera (task T2 dell'audit): tolte dal tracker radar `V2 shimano dura-ace` (1515), `V2 vorwerk kobold` (1527), `V2 campagnolo record` (1542): 0 gialli/verdi dal 9 al 13/11. URL in `docs/analisi/radar-ricerche-potate-2026-11-13-b.json`. Restano 14 ricerche (lette da `/queries`).
 
+
+- 14/11 Avvisi del radar cancellati dal bot stesso: dal 10/11 19:04 UTC (#377 aveva tolto `gia_visto` da `MOTIVI_TECNICI_NON_CANCELLA` per far sparire i doppioni del tracker) l'avviso mandato nel gruppo radar veniva riletto come annuncio gia' visto e cancellato dopo meno di un secondo: 115 righe `RADAR PULIZIA ... motivo=gia_visto` dal 10/11 al 13/11, 12 avvisi consegnati e cancellati il 13/11. Ora `e_avviso_proprio` (`bot/radar_messaggi.py`) riconosce i messaggi del bot e `on_new_message` li lascia (`RADAR AVVISO PROPRIO`). In piu': un annuncio arrivato senza bottoni (`RADAR SENZA ANNUNCIO`, Nintendo Switch 120 EUR del 13/11 16:03 UTC) viene riletto una volta dopo 2 s.

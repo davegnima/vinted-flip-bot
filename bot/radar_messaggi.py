@@ -34,6 +34,16 @@ def pallino_semaforo(v2, predefinito="🔎"):
     return SEMAFORO_EMOJI.get((v2 or {}).get("semaforo"), predefinito)
 
 
+# Inizi dei messaggi che il bot stesso scrive nel gruppo radar (avviso, seguito della didascalia, venduto veloce).
+INIZI_AVVISO_PROPRIO = ("🟢", "🟡", "🔴", "⚪", "🏁", "💶", "🧠", "👁", "💡", "🔁", "🔗", "📊", "•", "Comparabili")
+
+
+def e_avviso_proprio(testo):
+    """True se il messaggio del gruppo radar e' un avviso scritto dal bot e non un annuncio del tracker (14/11: dal 10/11 l'avviso
+    appena mandato veniva letto come doppione `gia_visto` e cancellato dopo meno di un secondo, 115 volte in 4 giorni). Pura."""
+    return (testo or "").lstrip().startswith(INIZI_AVVISO_PROPRIO)
+
+
 def _righe_link_comps(v2):
     """Link dei comparabili che reggono la stima (gialli e verdi), per controllarli a occhio. Vuote se non ci sono. Pura."""
     link = (v2 or {}).get("link_comps") or []
