@@ -335,17 +335,32 @@ def rivendita_mista(fv, riv_comps, n_comps, gemini, riv_rilevanza=None):
 
 CONF_GEMINI_PREVALE = 0.85   # Gemini "coerente" con almeno questa confidenza...
 CONF_JEV_REPLICA_DEBOLE = 0.75   # ...corregge una "replica probabile" di Jev se questa e' sotto questa confidenza
+# 14/11 (utente, YSL Variation a 7 EUR scartato e venduto in 15 s): se Gemini ha LETTO sull'etichetta il nome del brand (anche con una linea:
+# "Yves Saint Laurent variation") la soglia di Gemini scende a CONF_GEMINI_PREVALE_ETICHETTA (il caso aveva 0,80 contro 0,85). 0 = spento.
+CONF_GEMINI_PREVALE_ETICHETTA = float(os.environ.get("CONF_GEMINI_PREVALE_ETICHETTA", "0.8") or 0)
 
 
-def gemini_prevale(autenticita, gemini):
+def _etichetta_nomina_brand(gemini, brand):
+    """True se l'etichetta letta da Gemini contiene una parola del brand (almeno 4 lettere) o la sigla 'ysl'. Pura."""
+    et = str((gemini or {}).get("etichetta_letta") or "").lower()
+    if not et or not brand:
+        return False
+    parole = [w for w in re.split(r"[^a-zà-ÿ]+", str(brand).lower()) if len(w) >= 4]
+    return any(w in et for w in parole) or (str(brand).lower() == "yves saint laurent" and "ysl" in et)
+
+
+def gemini_prevale(autenticita, gemini, brand=None):
     """True se Gemini (tutte le foto, etichette lette) dice "coerente" con confidenza alta e Jev (una sola lettura per foto) dice "replica probabile"
     con confidenza non alta: prevale Gemini (7/11, utente: caso Jean Paul Gaultier, Jev 51% replica contro Gemini 95% coerente). Una replica di Jev
     sicura, o "altra marca", non si corregge. Pura."""
     return bool(autenticita and autenticita[0] == "replica_probabile" and (autenticita[1] or 0) < CONF_JEV_REPLICA_DEBOLE
-                and gemini and gemini.get("autenticita") == "probabile" and (gemini.get("confidenza") or 0) >= CONF_GEMINI_PREVALE)
+                and gemini and gemini.get("autenticita") == "probabile"
+                and ((gemini.get("confidenza") or 0) >= CONF_GEMINI_PREVALE
+                     or (CONF_GEMINI_PREVALE_ETICHETTA and (gemini.get("confidenza") or 0) >= CONF_GEMINI_PREVALE_ETICHETTA
+                         and _etichetta_nomina_brand(gemini, brand))))
 
 
-def decidi(valutazione, autenticita, gemini=None, foto_comps=None, dispersione=None):
+def decidi(valutazione, autenticita, gemini=None, foto_comps=None, dispersione=None, brand=None):
     """(esito, motivo) dalle due verifiche. `valutazione` = dict di valuta() o None se i comparabili mancano; `autenticita` =
     (scelta, confidenza) o None; `gemini` = dict del controllo Gemini su tutte le foto o None. Il falso scarta sempre; senza comparabili
     l'avviso parte non verificato. Pura."""
@@ -354,7 +369,7 @@ def decidi(valutazione, autenticita, gemini=None, foto_comps=None, dispersione=N
     if e_non_moda(gemini):   # 9/11: Gemini vede che non e' moda (es. un profumo con il nome di un brand): niente avviso
         return "scarta", "gemini:non_moda"
     if autenticita and autenticita[0] in ("replica_probabile", "altra_marca") and (autenticita[1] or 0) >= CONF_AUTENTICITA_MIN \
-            and not gemini_prevale(autenticita, gemini):
+            and not gemini_prevale(autenticita, gemini, brand):
         return "scarta", "foto:" + autenticita[0]
     if valutazione is None:
         return "non_verificato", "comparabili_non_trovati"
@@ -418,7 +433,7 @@ def _stato_originalita(ris):
     def peggio(nuovo_stato):
         ordine = ["nessuno", "ok", "non_chiaro", "dubbio", "replica"]
         return nuovo_stato if ordine.index(nuovo_stato) > ordine.index(stato) else stato
-    if a and a[0] and gemini_prevale(a, g):
+    if a and a[0] and gemini_prevale(a, g, ris.get("brand")):
         parti.append(f"Jev foto: replica probabile ({(a[1] or 0):.0%}), ma Gemini sulle etichette dice coerente: prevale Gemini")
         stato = "ok"
         a = None
@@ -609,7 +624,7 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
     fv = listing_info.get("fair_value") or {}
     brand = fv.get("brand")
     ris = {"esito": "non_verificato", "motivo": "errore", "n": 0, "rivendita": None, "margine": None, "roi": None, "esempi": [], "autenticita": None, "foto_comps": None, "gemini": None, "link_comps": [], "da_foto": False,
-           "margine_min": margine_min_jev(brand)}
+           "margine_min": margine_min_jev(brand), "brand": brand}
     try:
         titolo = listing_info.get("title") or ""
         prezzo = float(listing_info.get("price") or 0)
@@ -749,7 +764,7 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
             v = valuta(prezzo, stima_mix, spedizione_eur=SPEDIZIONE_STIMATA_EUR, margine_min=margine_min_jev(brand))
         ris["rivendita_testata"] = (v or {}).get("rivendita") if v else mix   # senza comparabili: solo per l'intestazione, l'esito resta non verificato
         ris["esito"], ris["motivo"] = decidi(v, ris["autenticita"], ris["gemini"], ris["foto_comps"],
-                                         None if ris["da_foto"] or not stima or not stima.get("p25") else stima["p75"] / stima["p25"])
+                                         None if ris["da_foto"] or not stima or not stima.get("p25") else stima["p75"] / stima["p25"], brand)
         if ris.get("legit_saltato") and ris["esito"] == "conferma" and foto_jpeg:
             # 14/11 (utente: "scartato sui prezzi, poi confermato: avrei dovuto fare il legit check"): i comparabili da soli scartavano ma la
             # rivendita mista ha confermato, quindi l'originalita' va controllata prima di dire CONFERMATO
@@ -757,7 +772,7 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
             await controlla_originalita()
             registra_legit(listing_info, brand, ris["gemini"], linea)
             ris["esito"], ris["motivo"] = decidi(v, ris["autenticita"], ris["gemini"], ris["foto_comps"],
-                                             None if ris["da_foto"] or not stima or not stima.get("p25") else stima["p75"] / stima["p25"])
+                                             None if ris["da_foto"] or not stima or not stima.get("p25") else stima["p75"] / stima["p25"], brand)
         if v:
             ris.update(n=v.get("n") or len(prezzi), rivendita=v.get("rivendita"), margine=v.get("margine"), roi=v.get("roi"),
                        esempi=list(comps_pool[:3]), link_comps=link_comps)
