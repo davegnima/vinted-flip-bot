@@ -98,10 +98,11 @@ ONDA11=[ # 13/11 (utente: punta sulle console): ricerche dedicate ai modelli con
  ('V2 switch lite','switch lite',None,[3025],60),
 ]
 ONDA12=[ # 14/11 (utente: allarga a casa e collezionismo): lotto piccolo, tetto 50 EUR (regola 10, nessun dato di vendita misurato), niente price_from. Controllo a 24 h, decisione a 72 h (>= 5 verdi/gialli e >= 15 casi con esito, altrimenti si pota).
- ('V2 royal copenhagen','','royal copenhagen',STOV+BIC+VASI,50),('V2 steiff','','steiff',[],50),
+ ('V2 royal copenhagen','','royal copenhagen',STOV+BIC+VASI,50),
  ('V2 heroquest','heroquest',None,[4881],50),('V2 murano vasi','murano',None,VASI,50),('V2 fumetti box completi','box completo',None,[5425],50),
 ]
 RISCHIO=(
+         'V2 steiff', # 14/11 tolta su richiesta utente
          # 13/11 tolte su richiesta utente (dati 5 giorni: GHD 1 affare su 33 gialli/verdi, audio e hifi 1 su 17): rumore
          'V2 ghd','V2 audio e hifi (sonos, pioneer, marantz, technics, bang olufsen)','V2 pokemon booster box', # 07/11: Pokemon mai monitorato (regola utente)
          'V2 dyson airwrap','V2 dyson supersonic','V2 dyson v15','V2 bose quietcomfort 45','V2 bose soundlink','V2 ghd platinum','V2 switch lite','V2 switch 2','V2 kartell','V2 garmin edge','V2 brompton','V2 switch oled', # 07/11 sera: le prime 8 erano modelli gia' coperti da V2 dyson/bose/ghd/switch (duplicati, tolte su richiesta utente); le altre 4: 0 gialli/verdi in 24 h
