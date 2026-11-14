@@ -13,7 +13,7 @@ La cronologia NON sta qui: `docs/storico/` (indice in `docs/storico/README.md`).
 - Ultimo recap (dati 13/11, 06:00-22:56 UTC, 824 chiusi): veloci 19,2% (veri 17,1%); semaforo verde 35%, giallo 22%, rosso 8%; preavviso precisione 30%, richiamo 79%; Jev conferma 84 (51% veloci); Etro 60->6 annunci e Barbour 239->94 dopo la potatura (Barbour 12% veloci).
 
 **Radar fuori moda** (tracker `vinted-radar`)
-- Ricerche attive: circa 17 (19 il 9/11, tolte `V2 ghd` e `V2 audio e hifi` il 13/11); numero da confermare su `/queries`.
+- Ricerche attive: 14, lette da `/queries` il 13/11 sera (Console, Fotocamere digitali, Collezionismo, V2 ps5, switch, ps4 pro, 3ds, dyson, bose, rolleiflex, canon ae-1, shure sm7b, seiko uomo, console). Tolte il 13/11: ghd, audio e hifi, shimano dura-ace, vorwerk kobold, campagnolo record (URL in `docs/analisi/radar-ricerche-potate-2026-11-13*.json`). Prossime candidate: rolleiflex e canon ae-1 (0 gialli/verdi in 5 giorni).
 - Valutazione: `bot/radar_v2.py` (comparabili Vinted, 25° percentile), filtro modelli `bot/radar_famiglie.py` (tetti: ps5 150, switch 90, ps4/ps vita/wii u 80, ps4 pro/3ds 60, altri 50), Jev richiesto con confidenza >= 0,7, Gemini gratuito sulle foto, eccezione `quasi_roi`.
 - Avvisi: gialli e verdi con suono (13/11), rossi cancellati dal gruppo.
 - Numeri misurati 9-13/11 (774 annunci tracciati): venduti entro 1 h verdi 68%, gialli 49%, rossi 29%. Il 12/11 (08-20 UTC): 73 gialli/verdi, 10 avvisi consegnati. Dettaglio: `docs/analisi/audit-2026-11-13.md`.
@@ -37,8 +37,8 @@ La cronologia NON sta qui: `docs/storico/` (indice in `docs/storico/README.md`).
 
 ## Punti aperti
 - **Audit del 13/11**: `docs/analisi/audit-2026-11-13.md` e `-task.md`. Fatti il 13/11: domanda foto di Jev tolta (#406), funnel del radar nel DB (T1, #407), prompt Gemini moda con le regole di Occhio e Cervello (#408), ramo Occhio/Cervello tolto (T12, #409), codice morto e scrape del guardaroba tolti (T5, #410), variabili e `docs/pipeline.md` (T3, T4), pulizia del tracker (T11, tracker #37). Codice da 20.870 a 13.619 righe.
-- Restano dall'audit: T2 (togliere `V2 vorwerk kobold`, `V2 shimano dura-ace`, `V2 campagnolo record`), T6 (spezzare `main_telethon.py`, `radar.py`, `fair_value.py`), T7 (Gemini del radar "non disponibile"), T9 (test del percorso radar), T14, T15. Ondata 3 (nuove ricerche) ferma per scelta dell'utente.
-- `MODA_JEV` ha default diversi nel codice (0 in `bot/moda_jev.py`, 1 in `bot/fair_value.py`): in produzione e' impostata, ma va unificata.
+- Restano dall'audit: T9 (test del percorso radar), T14, T15. T7 non serve ora: il 13/11 Gemini del radar mancava in 1 avviso su 11 (il 12/11 in 6 su 10) e il secondo tentativo esiste gia'. Ondata 3 (nuove ricerche) ferma per scelta dell'utente.
+- Da decidere con l'utente (visto nei log del 13/11): gialli con suono con "0 su N stesso modello" (controller a 20 EUR stimato 142); verdi con Jev a confidenza 0,25-0,28 (due PS5 a 115 EUR, profilo da truffa): `RADAR_JEV_CONF_MIN` su Railway e' sotto il default 0,7.
 - Tracker: `ruff` resta rosso (87 errori che richiedono cambi di comportamento); le PR del tracker non fanno partire la CI.
 - Per l'utente: ruotare le chiavi incollate in chat in passato (Z.ai, token Graphify, Groq, OmniRoute).
 

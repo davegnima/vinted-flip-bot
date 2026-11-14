@@ -54,3 +54,7 @@ def _env_float(nome, default):
         return float(os.environ.get(nome, str(default)).replace(",", "."))
     except ValueError:
         return float(default)
+
+
+# Jev sui comparabili della moda: UNICA lettura (prima moda_jev.py usava default 0 e fair_value.py default 1). Default acceso (in produzione lo e').
+MODA_JEV = os.environ.get("MODA_JEV", "1").strip() not in ("0", "false", "no", "")
