@@ -333,6 +333,25 @@ def _estrai_attributi_annuncio(html_pagina):
 
 _DIAGNOSTICA_ATTRIBUTI_RESTANTI = [3]
 
+# 14/11 (utente): per filtrare i comparabili per colore e materiale servono gli id Vinted, che nel repo non ci sono e che lo storico
+# (solo nomi, niente id) non puo' dare. Sonda: le prime pagine annuncio scaricate loggano gli spezzoni JSON con color/material (riga
+# `SONDA FILTRI`), da cui si ricava la coppia nome -> id. Si spegne da sola dopo SONDA_FILTRI_PAGINE pagine.
+_SONDA_FILTRI_RESTANTI = [int(os.environ.get("SONDA_FILTRI_PAGINE", "8") or 0)]
+_RE_SONDA_FILTRI = re.compile(r'.{0,60}"(?:colou?r|material)[A-Za-z_0-9]*"\s*:\s*[^,}]{0,80}[,}]?', re.I)
+
+
+def spezzoni_filtri(html_pagina, massimo=6):
+    """Spezzoni di JSON con chiavi colore/materiale (per ricavare gli id Vinted). Pura."""
+    visti, out = set(), []
+    for m in _RE_SONDA_FILTRI.finditer(html_pagina or ""):
+        t = m.group(0).strip()
+        if t not in visti:
+            visti.add(t)
+            out.append(t[:200])
+        if len(out) >= massimo:
+            break
+    return out
+
 
 def _diagnostica_attributi_mancanti(html_pagina, result, attributi, url):
     """Se dopo tutti i tentativi taglia/condizione restano vuote, logga (max 3
@@ -657,6 +676,9 @@ async def scrape_vinted_listing(url):
             if not result["material_per_ricerca"] and result.get("description"):
                 result["material_per_ricerca"] = scegli_materiale_per_ricerca(result["description"])
         _diagnostica_attributi_mancanti(html_pagina, result, attributi, url)
+        if _SONDA_FILTRI_RESTANTI[0] > 0:
+            _SONDA_FILTRI_RESTANTI[0] -= 1
+            log.info("SONDA FILTRI | colore=%s | materiale=%s | spezzoni=%s", result.get("color_raw"), result.get("material_raw"), spezzoni_filtri(html_pagina))
 
         # ---- DATI VENDITORE E SELLER_LOGIN (con blocklist compatibility) ----
         seller_login_m = re.search(r'data-testid="profile-username"[^>]*>([^<]{2,40})<', html_pagina)
