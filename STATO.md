@@ -15,7 +15,7 @@ La cronologia NON sta qui: `docs/storico/` (indice in `docs/storico/README.md`).
 **Radar fuori moda** (tracker `vinted-radar`)
 - Ricerche attive: 14, lette da `/queries` il 13/11 sera (Console, Fotocamere digitali, Collezionismo, V2 ps5, switch, ps4 pro, 3ds, dyson, bose, rolleiflex, canon ae-1, shure sm7b, seiko uomo, console). Tolte il 13/11: ghd, audio e hifi, shimano dura-ace, vorwerk kobold, campagnolo record (URL in `docs/analisi/radar-ricerche-potate-2026-11-13*.json`). Prossime candidate: rolleiflex e canon ae-1 (0 gialli/verdi in 5 giorni).
 - Valutazione: `bot/radar_v2.py` (comparabili Vinted, 25° percentile), filtro modelli `bot/radar_famiglie.py` (tetti: ps5 150, switch 90, ps4/ps vita/wii u 80, ps4 pro/3ds 60, altri 50), Jev richiesto con confidenza >= 0,7, Gemini gratuito sulle foto, eccezione `quasi_roi`.
-- Avvisi: gialli e verdi con suono (13/11), rossi cancellati dal gruppo.
+- Avvisi: gialli e verdi con suono (13/11) nel gruppo radar, rossi cancellati. Dal 10/11 al 14/11 il bot cancellava anche i propri avvisi (letti come doppioni `gia_visto`): corretto il 14/11 (`e_avviso_proprio`, riga `RADAR AVVISO PROPRIO`).
 - Numeri misurati 9-13/11 (774 annunci tracciati): venduti entro 1 h verdi 68%, gialli 49%, rossi 29%. Il 12/11 (08-20 UTC): 73 gialli/verdi, 10 avvisi consegnati. Dettaglio: `docs/analisi/audit-2026-11-13.md`.
 
 **Infrastruttura**
@@ -33,7 +33,8 @@ La cronologia NON sta qui: `docs/storico/` (indice in `docs/storico/README.md`).
 5. Radar: Gemini "non disponibile" in 6 avvisi su 10 il 12/11; `Gemini TIMEOUT` ogni giorno (29 in 6 ore il 12/11, 21 su `gemini-3.1-flash-lite`).
 6. Radar: tabella per modello delle famiglie nuove (ps4, ps vita, wii u, game boy, psp, ds) e rifiuti 403/429; se salgono, abbassare `RADAR_FAMIGLIE_NUOVE_ORA`.
 7. Radar: una ricerca senza gialli/verdi in 7 giorni si toglie (`/report_radar`, `/esporta_radar`).
-8. Dopo il 13/11: `REPORT RADAR | funnel` con `senza_esito=0`; `profilo_venditore` fermo nel `RIEPILOGO BANDA OGGI`; tempi `GEMINI_USO` della moda con il prompt nuovo; avvisi moda e radar regolari dopo la rimozione di Occhio e Cervello.
+8. Dopo il 14/11: a ogni `RADAR PRIVATO | consegnato=si` deve seguire `RADAR AVVISO PROPRIO` e mai `RADAR PULIZIA ... gia_visto` sullo stesso annuncio entro pochi secondi.
+9. Dopo il 13/11: `REPORT RADAR | funnel` con `senza_esito=0`; `profilo_venditore` fermo nel `RIEPILOGO BANDA OGGI`; tempi `GEMINI_USO` della moda con il prompt nuovo; avvisi moda e radar regolari dopo la rimozione di Occhio e Cervello.
 
 ## Punti aperti
 - **Audit del 13/11**: `docs/analisi/audit-2026-11-13.md` e `-task.md`. Fatti il 13/11: domanda foto di Jev tolta (#406), funnel del radar nel DB (T1, #407), prompt Gemini moda con le regole di Occhio e Cervello (#408), ramo Occhio/Cervello tolto (T12, #409), codice morto e scrape del guardaroba tolti (T5, #410), variabili e `docs/pipeline.md` (T3, T4), pulizia del tracker (T11, tracker #37). Codice da 20.870 a 13.619 righe.

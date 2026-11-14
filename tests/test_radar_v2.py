@@ -959,3 +959,17 @@ def test_famiglie_nuove_e_tetto_orario():
     finally:
         rf.NUOVI_MAX_ORA = vecchio
         rf._recenti.clear()
+
+
+def test_avviso_proprio_non_e_un_annuncio_del_tracker():
+    """14/11: l'avviso mandato nel gruppo radar veniva riletto come doppione e cancellato."""
+    from bot.radar_messaggi import e_avviso_proprio
+    from bot.radar import testo_avviso_v2
+    from bot.tracciamento import testo_venduto_veloce_radar
+    v2 = {"semaforo": "verde", "rivendita": 200.0, "margine": 80.0, "roi": 150.0, "n": 6}
+    avviso = testo_avviso_v2({"title": "Ps5 slim", "price": "115"}, "https://www.vinted.it/items/1-ps5", v2)
+    assert e_avviso_proprio(avviso)
+    assert e_avviso_proprio(testo_venduto_veloce_radar("1", "https://www.vinted.it/items/1-ps5", 115, 240, {"semaforo": "giallo", "margine": 80}))
+    assert e_avviso_proprio("• 600 € https://www.vinted.it/items/2")
+    assert not e_avviso_proprio("📡\n💰 120.00 EUR\n🏷️ Nintendo\n🆕 Nintendo Switch\n🔎 Query: V2 console")
+    assert not e_avviso_proprio("")
