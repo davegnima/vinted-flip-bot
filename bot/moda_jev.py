@@ -101,11 +101,10 @@ def url_comparabili(brand, testo=None, catalogo=None, ordine=None, condizione=No
     return f"https://www.vinted.it/catalog?{b}{c}{t}{extra}&order={ordine or MODA_COMPS_ORDINE}{f'&status_ids[]={stato}' if stato else stati_comps(condizione)}"
 
 
-# 14/11 (utente): terza ricerca dei comparabili, SENZA parole chiave: brand + categoria + condizione (+ colore e materiale se si conoscono
-# gli id Vinted). Id verificati non ce ne sono nel repo e Claude non visita vinted.it (regola 7): si inseriscono da variabile
-# `VINTED_FILTRI_IDS` (JSON {"colori": {"nero": 1}, "materiali": {"seta": 5}}, nomi in minuscolo come li scrive l'annuncio). Senza id il
-# filtro colore/materiale non si applica e il messaggio lo dice. MODA_COMPS_ATTRIBUTI=0 la spegne. Dal 14/11 (utente) conta anche nella rivendita mista (peso come la rilevanza, non due volte se la ricerca base e' gia' senza parole); si mostra e si registra
-# nel log `COMPS ATTRIBUTI`.
+# 14/11 (utente): ricerca PER RILEVANZA con filtri colore e materiale, in parallela a quella per rilevanza normale. Id verificati non ce ne sono
+# nel repo e Claude non visita vinted.it (regola 7): si inseriscono da `VINTED_FILTRI_IDS` (JSON {"colori": {"nero": 1}, "materiali": {"seta": 5}},
+# nomi in minuscolo come li scrive l'annuncio; la sonda `SONDA FILTRI` serve a ricavarli). Parte solo se almeno un id e' noto. Entra nella rivendita
+# mista (peso della rilevanza) e nel log `COMPS ATTRIBUTI` per confrontarla con la rilevanza semplice. MODA_COMPS_ATTRIBUTI=0 la spegne.
 MODA_COMPS_ATTRIBUTI = os.environ.get("MODA_COMPS_ATTRIBUTI", "1").strip() not in ("0", "false", "no", "")
 try:
     _FILTRI_IDS = json.loads(os.environ.get("VINTED_FILTRI_IDS", "") or "{}")
@@ -338,13 +337,13 @@ def rivendita_mista(fv, riv_comps, n_comps, gemini, riv_rilevanza=None, riv_attr
     0,1 bassa: comparabili per rilevanza w, comparabili per data (newest_first) 0,8 x w, Gemini w (uguale al semaforo, solo se la sua
     confidenza e' almeno 0,4). Rapporti scelti dall'utente (10/11: prima rilevanza 2,5 x e newest_first 1,8 x; ora Gemini e rilevanza
     contano uguale, newest_first un po' meno), non misurati. `parti` = {'semaforo','comparabili','rilevanza','gemini'} con i soli
-    valori presenti. 14/11 (utente): conta anche la ricerca senza parole chiave (`attributi`, peso w come la rilevanza). (None, {}) se non c'e' nessuna stima. Pura."""
+    valori presenti. 14/11 (utente): i 'piu' recenti' escono dalla media se c'e' una ricerca per rilevanza; entra la rilevanza con colore/materiale (`attributi`, peso w come la rilevanza, solo con id noti). (None, {}) se non c'e' nessuna stima. Pura."""
     parti, pesi = {}, {}
     w = {"alta": 0.3, "media": 0.2}.get((fv or {}).get("conf"), 0.1)
     if fv and fv.get("fv"):
         parti["semaforo"] = float(fv["fv"])
         pesi["semaforo"] = w
-    if riv_comps:
+    if riv_comps and not (riv_rilevanza or riv_attributi):   # 14/11 (utente): i "piu' recenti" fuori dalla media, restano solo se non c'e' altro
         parti["comparabili"] = float(riv_comps)
         pesi["comparabili"] = 0.8 * w
     if riv_rilevanza:
@@ -530,7 +529,7 @@ def parti_rivendita_testo(parti):
     """' (semaforo 82 · comparabili 270 · Gemini 250)': i valori da cui nasce la rivendita mista, solo quelli presenti. Vuota con un solo valore. Pura."""
     if not parti or len(parti) < 2:
         return ""
-    nomi = {"semaforo": "semaforo", "comparabili": "recenti", "rilevanza": "rilevanti", "attributi": "senza parole", "gemini": "Gemini"}
+    nomi = {"semaforo": "semaforo", "comparabili": "recenti", "rilevanza": "rilevanti", "attributi": "rilev.+filtri", "gemini": "Gemini"}
     return " (" + " · ".join(f"{nomi[k]} {parti[k]:.0f}" for k in nomi if k in parti) + ")"
 
 
@@ -620,7 +619,7 @@ def righe_messaggio(ris, brand=None):
             righe += [f"• {p:g} € {t[:40]}" for t, p in (ris.get("esempi_ril") or [])[:3]]
     if ris.get("rivendita_att"):
         # 14/11 (utente): terza ricerca senza parole chiave (brand, categoria, condizione, colore/materiale se noti), con i link
-        riga = f"🧩 Senza parole ({'+'.join(ris.get('filtri_attributi') or []) or 'solo brand, categoria, condizione'}): {ris.get('n_att') or 0}"
+        riga = f"🧩 Rilevanza + {'+'.join(ris.get('filtri_attributi') or [])}: {ris.get('n_att') or 0}"
         pa = ris.get("prezzi_comps_att")
         if pa:
             riga += f" · {pa[0]:g}–{pa[1]:g} €" if pa[0] != pa[1] else f" · {pa[0]:g} €"
@@ -693,11 +692,12 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
                 if parola not in testo.lower():
                     testo = f"{parola} {testo}".strip()
             usate, mappe = [], []
+            ordine = "relevance" if attributi else ordine
             colore = id_filtro("colori", listing_info.get("color_raw")) if attributi else None
             materiale = id_filtro("materiali", listing_info.get("material_raw")) if attributi else None
             chiave_ricerca = "attributi" if attributi else (ordine or "base")
             parole_usate[chiave_ricerca] = None
-            for t in ([None] if attributi else ([testo, None] if testo else [None])):
+            for t in ([testo, None] if testo else [None]):
                 # 11/11 (utente): UNA richiesta con le condizioni concatenate (nuovo senza cartellino, ottime, buone + quella dell'annuncio);
                 # la condizione di ogni comparabile si legge dalla risposta e il prezzo si corregge di poco nella stima (vedi sotto)
                 url = url_comparabili(brand, t, catalogo, ordine, listing_info.get("condition"), colore=colore, materiale=materiale)
@@ -800,21 +800,19 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
         except Exception:
             log.info("Moda Jev: ricerca per rilevanza non riuscita")
         ris["parola_base"], ris["parola_ril"] = parole_usate.get("base"), parole_usate.get("relevance")
-        if MODA_COMPS_ATTRIBUTI:
+        filtri = [n for n, k in (("colore", "colori"), ("materiale", "materiali")) if id_filtro(k, listing_info.get("color_raw" if n == "colore" else "material_raw"))]
+        if MODA_COMPS_ATTRIBUTI and filtri:   # solo se si conosce almeno un id (senza, sarebbe la stessa ricerca per rilevanza)
             try:
                 _ua, _la, st_att, v_att = await cerca(linea, None, attributi=True)
-                filtri = [n for n, k in (("colore", "colori"), ("materiale", "materiali")) if id_filtro(k, listing_info.get("color_raw" if n == "colore" else "material_raw"))]
                 ris["filtri_attributi"] = filtri
                 if st_att and v_att and v_att.get("rivendita"):
                     ris["rivendita_att"], ris["n_att"] = v_att["rivendita"], v_att.get("n") or st_att.get("n")
-                    # se la ricerca base e' gia' uscita senza parole chiave ed e' senza colore/materiale e' la STESSA ricerca: non conta due volte
-                    if ris["parola_base"] is not None or filtri:
-                        riv_att = v_att["rivendita"]
+                    riv_att = v_att["rivendita"]
                     ris["link_comps_att"], ris["esempi_att"] = _la, list(_ua[:3])
                     ris["prezzi_comps_att"] = (st_att["minimo"], st_att["massimo"])
-                log.info("COMPS ATTRIBUTI | item=%s | brand=%s | cat=%s | prezzo=%s | filtri=%s | base=%s | att=%s | ril=%s | fv_stima=%s | parole base=%s ril=%s",
-                         listing_info.get("item_id") or "-", brand, fv.get("categoria"), prezzo, "+".join(filtri) or "solo condizione", _riga_stima(stima),
-                         _riga_stima(st_att), _riga_stima(st_ril) if riv_ril is not None else None, fv.get("fv"), ris["parola_base"], ris["parola_ril"])
+                log.info("COMPS ATTRIBUTI | item=%s | brand=%s | cat=%s | prezzo=%s | filtri=%s | att=%s | ril=%s | base=%s | fv_stima=%s | parola=%s",
+                         listing_info.get("item_id") or "-", brand, fv.get("categoria"), prezzo, "+".join(filtri), _riga_stima(st_att),
+                         _riga_stima(st_ril) if riv_ril is not None else None, _riga_stima(stima), fv.get("fv"), parole_usate.get("attributi"))
             except Exception:
                 log.info("Moda Jev: ricerca per attributi non riuscita")
         v, sconto = correggi_per_difetti(v, prezzo, ris["gemini"], margine_min_jev(brand))
