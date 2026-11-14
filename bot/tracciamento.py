@@ -474,8 +474,9 @@ async def _invia_venduto_veloce_radar(item_id, url, prezzo, venduto_s, classe, c
     log.info("RADAR VENDUTO VELOCE | item=%s | classe=%s | venduto_s=%s | semaforo=%s | margine=%s | chat=%s",
              item_id, classe, venduto_s, ctx.get("semaforo"), ctx.get("margine"), "si" if chat else "no")
     if chat:
+        # 14/11 (utente: "ricevo solo i venduti e gialli e verdi"): il venduto veloce del radar fa suono.
         await telegram_send_with_buttons(chat, testo_venduto_veloce_radar(item_id, url, prezzo, venduto_s, ctx), url, None,
-                                         disable_notification=True)
+                                         disable_notification=False)
 
 
 async def _invia_allarme_preferiti(item_id, url, brand, prezzo, offset_s, preferiti):
