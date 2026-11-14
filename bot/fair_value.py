@@ -81,10 +81,33 @@ PREAVVISO_GIALLO_PREZZO_MAX = _env_float("PREAVVISO_GIALLO_PREZZO_MAX", 15)
 # preavviso con margine rapido >= PREAVVISO_SUONO_MARGINE_MIN e ROI >= PREAVVISO_SUONO_ROI_MIN % suona, qualunque sia il colore. 0 = spento.
 PREAVVISO_SUONO_MARGINE_MIN = _env_float("PREAVVISO_SUONO_MARGINE_MIN", 40)
 PREAVVISO_SUONO_ROI_MIN = _env_float("PREAVVISO_SUONO_ROI_MIN", 100)
+# 14/11 (utente: "una camicia Barbour che vende sui 50 EUR, comprata a 15 EUR faccio meno ma la rivendo veloce: voglio questa flessibilita'
+# nel filtro"): ROTAZIONE VELOCE. Brand con lift di velocita' >= PREAVVISO_ROTAZIONE_LIFT_MIN (vendono in fretta, dati di velocita.json) e ROI >= 100%:
+# il margine minimo scende da 40 a PREAVVISO_ROTAZIONE_MARGINE_MIN (preavviso con suono, e Jev non scarta sopra quella soglia).
+# Misura (13/11, 794 annunci chiusi, ROI >= 100%): margine 30-40 con lift >= 1,3: 21 veloci su 45 (47%) contro il 20% di base; con lift < 1,3 il
+# 27% (n=52) e sotto 1,0 lo 0% (n=12); margine 20-30 con lift >= 1,3: 21% (n=34), nessun vantaggio, per questo la soglia e' 30. Un giorno
+# solo, pochi casi: da riverificare coi recap. 0 = spento.
+PREAVVISO_ROTAZIONE_MARGINE_MIN = _env_float("PREAVVISO_ROTAZIONE_MARGINE_MIN", 30)
+PREAVVISO_ROTAZIONE_ROI_MIN = _env_float("PREAVVISO_ROTAZIONE_ROI_MIN", 100)
+PREAVVISO_ROTAZIONE_LIFT_MIN = _env_float("PREAVVISO_ROTAZIONE_LIFT_MIN", 1.3)
 # PREAVVISO LAMPO (10/10): per gli annunci la cui categoria si legge dal TITOLO il preavviso parte PRIMA dello scarico della pagina, con
 # la sola foto di copertina del tracker (da ~3 s a meno di 1 s). Il messaggio e' lo stesso: a fine analisi viene aggiornato col verdetto.
 # Spento con PREAVVISO_LAMPO=0 (il preavviso parte dopo lo scrape, con l'album completo).
 PREAVVISO_LAMPO = os.environ.get("PREAVVISO_LAMPO", "1").strip() != "0"
+
+
+def rotazione_veloce(stima, prezzo):
+    """True se l'annuncio e' di un brand che ruota in fretta (lift di velocita') con ROI e margine rapidi sopra le soglie di
+    PREAVVISO_ROTAZIONE_*. Pura."""
+    stima = stima or {}
+    marg, lift = stima.get("margine"), stima.get("lift_velocita")
+    try:
+        lift = float(lift)
+    except (TypeError, ValueError):
+        return False
+    return bool(PREAVVISO_ROTAZIONE_MARGINE_MIN > 0 and prezzo and prezzo > 0 and marg is not None
+                and stima.get("semaforo") in ("🟢", "🟡") and stima.get("conf") != "bassa" and lift >= PREAVVISO_ROTAZIONE_LIFT_MIN
+                and marg >= PREAVVISO_ROTAZIONE_MARGINE_MIN and marg / prezzo * 100 >= PREAVVISO_ROTAZIONE_ROI_MIN)
 
 
 def _giallo_economico(stima, prezzo):
@@ -120,7 +143,8 @@ def valuta_preavviso(stima, prezzo):
     """(scatta, regola): push sulla scheda anticipata. Pura. Se la regola base non scatta, i candidati con margine e ROI promettenti
     escono con regola 'da_verificare' (solo dopo la verifica Jev)."""
     scatta, regola = _valuta_preavviso_base(stima, prezzo)
-    if scatta and PREAVVISO_MARGINE_ASSOLUTO_MIN > 0 and ((stima or {}).get("margine") or 0) < PREAVVISO_MARGINE_ASSOLUTO_MIN:
+    if (scatta and regola != "rotazione" and PREAVVISO_MARGINE_ASSOLUTO_MIN > 0
+            and ((stima or {}).get("margine") or 0) < PREAVVISO_MARGINE_ASSOLUTO_MIN):
         scatta, regola = False, "no"
     if (not scatta and PREAVVISO_TUTTI_A_JEV and PREAVVISO_ATTIVO and prezzo and prezzo > 0 and stima
             and (stima.get("brand") or "").lower() not in PREAVVISO_BRAND_ESCLUSI
@@ -148,6 +172,8 @@ def _valuta_preavviso_base(stima, prezzo):
         return False, "no"
     if brand in PREAVVISO_PREZZO_MAX_BRAND and prezzo > PREAVVISO_PREZZO_MAX_BRAND[brand]:
         return False, "no"
+    if rotazione_veloce(stima, prezzo):
+        return True, "rotazione"
     if _giallo_economico(stima, prezzo):
         return True, "giallo_economico"
     if stima.get("conf") == "bassa":
@@ -176,6 +202,8 @@ def preavviso_con_suono(stima, prezzo):
     if PREAVVISO_SUONO_VERDE and stima.get("semaforo") == "🟢":
         return True
     if _giallo_economico(stima, prezzo):
+        return True
+    if rotazione_veloce(stima, prezzo):
         return True
     marg = stima.get("margine")
     if (PREAVVISO_SUONO_MARGINE_MIN > 0 and marg is not None and prezzo and prezzo > 0

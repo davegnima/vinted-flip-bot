@@ -43,6 +43,16 @@ try:
     MODA_JEV_MARGINE_MIN = float(os.environ.get("MODA_JEV_MARGINE_MIN", "40"))
 except ValueError:
     MODA_JEV_MARGINE_MIN = 40.0
+def margine_min_jev(brand):
+    """Margine minimo di Jev per il brand: MODA_JEV_MARGINE_MIN, ridotto a PREAVVISO_ROTAZIONE_MARGINE_MIN per i brand che ruotano in fretta
+    (14/11, utente: flessibilita' sul margine per i capi che si rivendono veloci; stessa soglia di lift del preavviso). Pura."""
+    from bot.fair_value import PREAVVISO_ROTAZIONE_MARGINE_MIN, PREAVVISO_ROTAZIONE_LIFT_MIN
+    from bot.velocita import lift_brand
+    if 0 < PREAVVISO_ROTAZIONE_MARGINE_MIN < MODA_JEV_MARGINE_MIN and brand and lift_brand(brand) >= PREAVVISO_ROTAZIONE_LIFT_MIN:
+        return PREAVVISO_ROTAZIONE_MARGINE_MIN
+    return MODA_JEV_MARGINE_MIN
+
+
 # 6/11 (utente): limite alla dispersione. Sui comparabili del testo (dopo aver tolto i fuori scala, come fa stima_mercato) il rapporto
 # p75/p25 dei prezzi sopra questa soglia dice che non c'e' un prezzo di mercato: niente CONFERMATO, resta la stima rapida. Soglia SCELTA,
 # non misurata (la fascia "stretta" di stima_mercato e' 1,6); si regola con MODA_JEV_DISPERSIONE_MAX, 0 = spento.
@@ -281,7 +291,7 @@ def comparabili_non_simili(foto_comps):
     return "diverso" in scelte and not any(sc in ("simile", "stesso_modello") for sc in scelte)
 
 
-def correggi_per_difetti(v, prezzo, gemini):
+def correggi_per_difetti(v, prezzo, gemini, margine_min=None):
     """(v_nuovo, sconto_pct): abbassa la rivendita dei comparabili (in genere in buone condizioni) dei difetti letti da Gemini nelle foto e
     rifa' margine, ROI ed esito con le stesse soglie di valuta(). Lo sconto e' una stima di Gemini, con tetto per gravita' (moda_gemini).
     Senza difetti, senza rivendita o senza Gemini ritorna (v, 0). Non cambia v. Pura."""
@@ -290,7 +300,7 @@ def correggi_per_difetti(v, prezzo, gemini):
         return v, 0.0
     stima = {"rivendita": v["rivendita"] * (1 - pct / 100), "affidabilita": v.get("affidabilita"), "n": v.get("n"),
              "richiesto_mediano": v.get("richiesto_mediano"), "vendita_rapida": v.get("vendita_rapida"), "calibrazione": v.get("calibrazione")}
-    nuovo = valuta(prezzo, stima, spedizione_eur=SPEDIZIONE_STIMATA_EUR, margine_min=MODA_JEV_MARGINE_MIN)
+    nuovo = valuta(prezzo, stima, spedizione_eur=SPEDIZIONE_STIMATA_EUR, margine_min=MODA_JEV_MARGINE_MIN if margine_min is None else margine_min)
     nuovo["rivendita_prima_difetti"] = v["rivendita"]
     return nuovo, pct
 
@@ -489,7 +499,7 @@ def riga_verdetto(ris):
             if mot.endswith("roi_basso"):
                 dove = f"ROI {ris['roi']:.0f}% < 100%"
             else:
-                dove = f"margine ~{ris['margine']:.0f} € < {MODA_JEV_MARGINE_MIN:g} €"
+                dove = f"margine ~{ris['margine']:.0f} € < {ris.get('margine_min', MODA_JEV_MARGINE_MIN):g} €"
             dif = f" · difetti −{ris['sconto_difetti']:.0f}%" if ris.get("sconto_difetti") else ""
             # 8/11: la rivendita e' quella mista (semaforo, comparabili per data e per rilevanza, Gemini): si mostrano i valori da cui nasce
             return f"🚫 SCARTATO · rivendita ~{ris['rivendita']:.0f} €{parti_rivendita_testo(ris.get('parti_rivendita'))}{dif} · {dove}"
@@ -598,7 +608,8 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
     """Dict {esito, motivo, n, rivendita, margine, roi, link, autenticita}. Mai eccezioni: in caso di errore 'non_verificato'."""
     fv = listing_info.get("fair_value") or {}
     brand = fv.get("brand")
-    ris = {"esito": "non_verificato", "motivo": "errore", "n": 0, "rivendita": None, "margine": None, "roi": None, "esempi": [], "autenticita": None, "foto_comps": None, "gemini": None, "link_comps": [], "da_foto": False}
+    ris = {"esito": "non_verificato", "motivo": "errore", "n": 0, "rivendita": None, "margine": None, "roi": None, "esempi": [], "autenticita": None, "foto_comps": None, "gemini": None, "link_comps": [], "da_foto": False,
+           "margine_min": margine_min_jev(brand)}
     try:
         titolo = listing_info.get("title") or ""
         prezzo = float(listing_info.get("price") or 0)
@@ -640,7 +651,7 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
                     break
             # prezzi portati alla condizione dell'annuncio (comparabile peggiore: sale; migliore: scende), solo per la stima; condizione ignota = invariato
             st = stima_mercato([aggiusta_prezzo_comp(p, condizione_comp(_t, p), listing_info.get("condition")) for _t, p in usate], min_n=MIN_COMPARABILI)
-            return usate, comparabili_con_link(usate, mappe), st, (valuta(prezzo, st, spedizione_eur=SPEDIZIONE_STIMATA_EUR, margine_min=MODA_JEV_MARGINE_MIN) if st else None)
+            return usate, comparabili_con_link(usate, mappe), st, (valuta(prezzo, st, spedizione_eur=SPEDIZIONE_STIMATA_EUR, margine_min=margine_min_jev(brand)) if st else None)
 
         if linea:
             ris["linea"] = linea
@@ -675,7 +686,7 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
                 if vicini:
                     stima_v = stima_mercato(prezzi_v, min_n=1)
                     if stima_v:
-                        v = {**valuta(prezzo, stima_v, spedizione_eur=SPEDIZIONE_STIMATA_EUR, margine_min=MODA_JEV_MARGINE_MIN), "n": len(vicini)}
+                        v = {**valuta(prezzo, stima_v, spedizione_eur=SPEDIZIONE_STIMATA_EUR, margine_min=margine_min_jev(brand)), "n": len(vicini)}
                         link_comps = vicini
                         ris["da_foto"] = True
                         log.info("MODA JEV FOTO | brand=%s | stesso_o_simili=%s/%s | rivendita=%s | titolo=%s", brand, len(vicini), len(coppie), v.get("rivendita"), titolo[:60])
@@ -716,7 +727,7 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
                      fv.get("categoria"), prezzo, MODA_COMPS_ORDINE, _riga_stima(stima), _riga_stima(st_ril), fv.get("fv"))
         except Exception:
             log.info("Moda Jev: ricerca per rilevanza non riuscita")
-        v, sconto = correggi_per_difetti(v, prezzo, ris["gemini"])
+        v, sconto = correggi_per_difetti(v, prezzo, ris["gemini"], margine_min_jev(brand))
         if sconto:
             ris["sconto_difetti"], ris["rivendita_prima_difetti"] = sconto, v.get("rivendita_prima_difetti")
             if riv_ril:
@@ -731,7 +742,7 @@ async def verifica(listing_info, foto, tutte_le_foto=None, solo_comparabili=Fals
         if v and mix and len(parti) > 1:
             stima_mix = {k: v.get(k) for k in ("affidabilita", "n", "richiesto_mediano", "vendita_rapida", "calibrazione")}
             stima_mix["rivendita"] = mix
-            v = valuta(prezzo, stima_mix, spedizione_eur=SPEDIZIONE_STIMATA_EUR, margine_min=MODA_JEV_MARGINE_MIN)
+            v = valuta(prezzo, stima_mix, spedizione_eur=SPEDIZIONE_STIMATA_EUR, margine_min=margine_min_jev(brand))
         ris["rivendita_testata"] = (v or {}).get("rivendita") if v else mix   # senza comparabili: solo per l'intestazione, l'esito resta non verificato
         ris["esito"], ris["motivo"] = decidi(v, ris["autenticita"], ris["gemini"], ris["foto_comps"],
                                          None if ris["da_foto"] or not stima or not stima.get("p25") else stima["p75"] / stima["p25"])
